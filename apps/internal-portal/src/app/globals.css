@@ -1,0 +1,343 @@
+/* Nexraah internal console — design tokens.
+   Palette and type scale are taken from the approved prototype
+   (artifact 672876f9, "Internal console"). Retune here, nowhere else. */
+
+:root {
+  --font-heading: 'Source Serif 4', Georgia, serif;
+  --font-body: 'Public Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Roboto Mono', ui-monospace, SFMono-Regular, monospace;
+
+  --color-bg: #f0f3f8;
+  --color-surface: #ffffff;
+  --color-text: #15202f;
+  --color-divider: #c6d0e0;
+
+  --color-accent: #173a75;
+  --color-accent-300: #93a9cc;
+  --color-accent-400: #5b77ac;
+  --color-accent-500: #173a75;
+  --color-accent-600: #143165;
+  --color-accent-700: #173a75;
+  --color-accent-800: #102a57;
+  --color-accent-900: #0b1d3d;
+
+  --color-neutral-300: #d3dbe7;
+  --color-neutral-400: #b2bece;
+  --color-neutral-700: #48566b;
+
+  /* Semantic tones. Every state pill, panel and figure uses a pair. */
+  --mint: #1d6a4c;
+  --mint-tint: #e4f0ea;
+  --flag: #8a6317;
+  --flag-tint: #f7efde;
+  --red: #9a3529;
+  --red-tint: #f6eae7;
+  --blue: #1e5a93;
+  --blue-tint: #e6ecf8;
+  --grey: #5d5d60;
+  --grey-tint: #eaeef5;
+
+  --sidebar-w: 208px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: -0.015em;
+}
+
+h1 {
+  font-size: 31px;
+}
+h2 {
+  font-size: 19px;
+}
+h3 {
+  font-size: 17px;
+}
+
+a {
+  color: var(--color-accent-700);
+  text-underline-offset: 3px;
+}
+a:hover {
+  color: var(--color-accent-800);
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.eyebrow {
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-neutral-700);
+}
+
+.muted {
+  color: var(--color-neutral-700);
+}
+
+.surface {
+  background: var(--color-surface);
+  border: 1px solid var(--color-divider);
+}
+
+/* ---- buttons ---------------------------------------------------------- */
+
+.btn {
+  font-family: inherit;
+  font-size: 13px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--color-accent);
+  background: var(--color-accent);
+  color: #f0f3f8;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+.btn:hover:not(:disabled) {
+  background: var(--color-accent-800);
+  border-color: var(--color-accent-800);
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.btn-secondary {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-color: var(--color-divider);
+}
+.btn-secondary:hover:not(:disabled) {
+  background: var(--grey-tint);
+  border-color: var(--color-neutral-400);
+}
+.btn-danger {
+  background: var(--red);
+  border-color: var(--red);
+  color: #fff;
+}
+.btn-sm {
+  min-height: 30px;
+  font-size: 12px;
+  padding: 0 10px;
+}
+
+/* ---- tag / pill ------------------------------------------------------- */
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  background: var(--grey-tint);
+  color: var(--grey);
+}
+
+/* ---- fields ----------------------------------------------------------- */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.field > label {
+  font-size: 11.5px;
+  color: var(--color-neutral-700);
+}
+.field input,
+.field select,
+.field textarea {
+  font-family: inherit;
+  font-size: 13.5px;
+  padding: 8px 10px;
+  min-height: 36px;
+  border: 1px solid var(--color-divider);
+  background: var(--color-surface);
+  color: var(--color-text);
+  width: 100%;
+}
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+  outline: 2px solid var(--color-accent-300);
+  outline-offset: -1px;
+}
+.field input:disabled,
+.field textarea:disabled {
+  background: var(--grey-tint);
+  color: var(--color-neutral-700);
+}
+.field .req::after {
+  content: ' ●';
+  color: var(--color-accent-400);
+  font-size: 8px;
+  vertical-align: middle;
+}
+.field .err {
+  font-size: 11.5px;
+  color: var(--red);
+}
+
+/* ---- table ------------------------------------------------------------ */
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+table.table th {
+  font-size: 9.5px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--color-neutral-700);
+  font-weight: 500;
+  text-align: left;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--color-divider);
+  white-space: nowrap;
+}
+table.table td {
+  padding: 9px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-text) 8%, transparent);
+  vertical-align: top;
+}
+table.table tbody tr:hover {
+  background: color-mix(in srgb, var(--color-accent) 5%, transparent);
+}
+.num {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* NFR-06 — every screen usable on a phone. Tables become cards below 768px;
+   the label comes from the column header via data-label, set by DataTable. */
+@media (max-width: 767px) {
+  table.table thead {
+    display: none;
+  }
+  table.table,
+  table.table tbody,
+  table.table tr,
+  table.table td {
+    display: block;
+    width: 100%;
+  }
+  table.table tr {
+    border: 1px solid var(--color-divider);
+    background: var(--color-surface);
+    margin-bottom: 8px;
+    padding: 4px 0;
+  }
+  table.table td {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    border-bottom: 0;
+    padding: 5px 12px;
+  }
+  table.table td::before {
+    content: attr(data-label);
+    font-size: 9.5px;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--color-neutral-700);
+    flex: none;
+  }
+  .num {
+    text-align: left;
+  }
+}
+
+/* ---- misc ------------------------------------------------------------- */
+
+.row-tap {
+  cursor: pointer;
+  user-select: none;
+}
+
+.stat-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  background: var(--color-surface);
+  border: 1px solid var(--color-divider);
+}
+.stat-strip > div {
+  padding: 12px 15px;
+  border-right: 1px solid var(--color-divider);
+}
+.stat-strip > div:last-child {
+  border-right: 0;
+}
+.stat-value {
+  font-family: var(--font-mono);
+  font-size: 23px;
+  margin-top: 2px;
+}
+
+.bar {
+  height: 7px;
+  background: var(--grey-tint);
+  overflow: hidden;
+}
+.bar > span {
+  display: block;
+  height: 100%;
+  background: var(--color-accent);
+}
+
+/* ---- print ------------------------------------------------------------ */
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: #fff;
+  }
+  .sheet {
+    page-break-after: always;
+    box-shadow: none;
+    border: 0;
+  }
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+}

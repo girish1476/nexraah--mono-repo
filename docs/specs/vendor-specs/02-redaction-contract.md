@@ -1,0 +1,129 @@
+# 02 · The redaction contract — wave `P1`
+
+**Depends on:** 01
+**Delivers:** the DTOs every later part returns, the four layers that make them safe, and the isolation suite that runs on every deploy.
+
+> **This is the most important part in the vendor specification.** Implement it first, test it first. `NFR-02`, `BR-55`, `D-38`.
+
+Everything in parts 03–08 is a screen over one of these DTOs. Build them now and each later screen inherits a payload that is already safe. Retrofitting redaction is how the first version leaked.
+
+---
+
+## 1 · The only shape a transporter may receive for a load
+
+```ts
+interface PortalLoadDTO {
+  code:            string        // IND-4471   — NOT LD-
+  originCity:      string
+  destCity:        string
+  material:        string
+  weightTn:        number
+  truckType:       string
+  pickupDate:      string
+  transitDays:     number | null
+  reportingRule:   'SAME_DAY' | 'NEXT_DAY' | 'SCHEDULED' | null
+  reportingAt:     string | null
+  branch:          string
+  bidMin:          number | null // paise
+  bidMax:          number | null // paise
+  advancePct:      number
+  remarks:         string | null
+  myQuote:         { amount: number; status: string } | null
+}
+```
+
+**Absent by construction — not optional, not nulled, not hidden:**
+
+`clientId` · `clientName` · `sellRate` · `quoteCount` · `otherQuotes` · `margin` · `sourcingRate` · `branchTarget` · anything about another vendor.
+
+`code` is the indent code `IND-`, not `LD-`. `LD-` is the lead series (FSD B6) and belongs to a different entity entirely — using it here would be a wrong reference, not a redaction failure, but it is the kind of mistake that survives review.
+
+`myQuote` is the only field that reflects any quote at all, and it reflects exactly one: theirs.
+
+## 2 · The lorry receipt DTO
+
+The LR is visible (`BR-54`, `D-36`) because the transporter physically carries it and could not otherwise see what they are carrying.
+
+```ts
+interface PortalLorryReceiptDTO {
+  lrNo, tripNo, lrDate, bookedAt, branch
+  originCity, destCity
+  goodsDescription, materialType, packageType, quantity, actualWeightTn, grossWeightTn
+  vehicleNo, vehicleType, capacityTn, bodyType
+  driverName, driverPhone, driverLicence
+  ewayNo, ewayValidTill
+  transitDays, remarks
+  freight:        number      // paise — THEIR awarded rate
+  advancePaid:    number      // paise
+  balanceDue:     number      // paise
+  status:         'BOOKED' | 'RELEASED' | 'IN_TRANSIT' | 'DELIVERED'
+  barcodePayload: string      // Code 39 of lrNo
+  pdfUrl:         string      // signed, 15-minute expiry
+}
+```
+
+**Absent:** `consignor`, `consignee`, `clientName`, `clientInvoiceNo`, `clientInvoiceValue`, `sellRate`.
+
+> **The printed document does show consignor and consignee.** It must — legally, the LR is the contract of carriage and names both parties. The portal does not surface them because **the portal is a searchable record and the paper is not.** A driver holding one LR learns one consignee; a transporter with a portal login and a script learns our entire client list. That asymmetry is the whole argument, and it is why `pdfUrl` is a signed 15-minute URL to a server-rendered document rather than a client-side render of this DTO.
+
+## 3 · The four enforcement layers
+
+Each layer catches what the one above it might miss. None is sufficient alone.
+
+| Layer | Mechanism | Catches |
+|---|---|---|
+| **Database** | `vendor_api` role, column-level grants only (part 01 §1.2). Forbidden columns are unreadable by the credential the process holds | A service that selects `*` |
+| **Process** | `vendor-api` is a separate NestJS app; internal controllers are not loaded and cannot be reached from port 4001 (`ADR-01`) | A route added to the wrong module |
+| **Repository** | Every query scoped `WHERE vendor_id = ctx.vendorId`. No override parameter | Vendor A reading vendor B's row on a column both may see |
+| **Serialisation** | Explicit DTO classes with `@Expose()`. **Never return an entity directly** | A column later granted for one purpose leaking into an unrelated response |
+
+Plus two process controls:
+
+- **Test** — E2E asserts forbidden keys are absent from the **JSON body**, not merely unrendered. A field that reaches the browser has leaked, whatever the UI does with it.
+- **Review** — any PR touching `vendor-api` requires a second reviewer.
+
+### Why `@Expose()` and not `@Exclude()`
+
+Allow-list, never deny-list. `@Exclude()` means a column added next quarter is exposed by default and stays exposed until someone notices. `@Expose()` means it is invisible until someone deliberately names it — the same argument as `ADR-01`, one layer down.
+
+---
+
+## 4 · The isolation suite
+
+**Runs on every deploy, not every release.** Sign in as vendor A and assert:
+
+| # | Assertion | Why this shape |
+|---|---|---|
+| 1 | `GET /portal/loads` — body contains no `clientName`, `sellRate` or `quoteCount` key **at any depth** | Recurse the JSON. A nested `myQuote.indent.sellRate` passes a top-level check |
+| 2 | `GET /portal/trips` — returns only vendor A's trips | Row scoping, not column scoping |
+| 3 | `GET /portal/trips/{vendorB_trip}/lorry-receipt` → **404, not 403** | A 403 confirms the trip exists. Never confirm existence |
+| 4 | `GET /trips`, `/pnl`, `/invoices`, `/compliance` → 403 | Console routes are not served by this process at all; the assertion proves the deployment did not merge them |
+| 5 | Lorry receipt DTO contains no `consignor`, `consignee`, `clientInvoiceNo` | §2 |
+| 6 | As `vendor_api`, `SELECT client_id FROM indents` **raises** | The negative grant test from part 01 |
+
+Assertions 1 and 5 are written against a **key-walk helper**, not a fixed field list, so a new forbidden field added to §1 or §2 is picked up by adding one string to a constant rather than by remembering to write a test.
+
+---
+
+## 5 · Copy is part of the contract
+
+`BR-55` is as much about wording as payload. Three places where a correct payload can still leak:
+
+| Screen | Wrong | Right |
+|---|---|---|
+| Load filled by another vendor | *"You lost to a lower bid"* | Card silently removed from the list (part 03) |
+| Rejected quote | *"Rejected — winning bid ₹39,800"* | **Rejected**, no reason ever (part 03) |
+| Below-band quote refused | *"The client is only paying ₹41,500"* | *"Nexraah will not award this lane below ₹38,000 — it would run at a loss for you and for the desk"* (part 03) |
+
+The refusal message quotes `bidMin`, which the transporter is already entitled to see. It never quotes `sellRate`, which they are not.
+
+---
+
+## 6 · Done when
+
+- [ ] `PortalLoadDTO` and `PortalLorryReceiptDTO` exist as `@Expose()` classes in `apps/vendor-api`
+- [ ] No portal endpoint returns an entity; a lint rule or review checklist enforces it
+- [ ] Repository scoping is applied in the repository layer with no override path
+- [ ] All six isolation assertions pass, wired into the deploy pipeline
+- [ ] The key-walk helper is driven by a constant list, not repeated per test
+- [ ] Second-reviewer rule documented on the `vendor-api` path

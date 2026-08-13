@@ -1,0 +1,111 @@
+/* Design tokens ported from the transporter-portal prototype. */
+:root {
+  --font-heading: 'Source Serif 4', Georgia, serif;
+  --font-body: 'Public Sans', system-ui, -apple-system, sans-serif;
+
+  --color-bg: #f0f3f8;
+  --color-surface: #ffffff;
+  --color-text: #15202f;
+  --color-divider: #c6d0e0;
+  --color-accent: #173a75;
+  --color-accent-700: #173a75;
+  --color-accent-800: #102a57;
+  --color-neutral-300: #d3dbe7;
+  --color-neutral-400: #b2bece;
+  --color-neutral-700: #48566b;
+
+  /* status tones: ink + tint */
+  --mint: #1d6a4c;
+  --mint-t: #e0ede7;
+  --flag: #8a6317;
+  --flag-t: #f4ebda;
+  --red: #9a3529;
+  --red-t: #f3e4e1;
+  --blue: #1e5a93;
+  --blue-t: #e6ecf8;
+  --grey: #5d5d60;
+  --grey-t: #eef1f6;
+
+  --tab-h: 64px;
+  --bar-h: 76px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  font-family: var(--font-body);
+  background: var(--color-bg);
+  color: var(--color-text);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+/* Phone-first (NFR-06): one column, capped so a laptop is not broken. */
+.screen {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 16px 16px calc(var(--tab-h) + var(--bar-h));
+  min-height: 100vh;
+}
+
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-divider);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 10px;
+  width: 100%;
+  text-align: left;
+  display: block;
+}
+
+.card-title {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  font-size: 17px;
+}
+
+.muted {
+  color: var(--color-neutral-700);
+  font-size: 13px;
+}
+
+.pill {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.row-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.field {
+  width: 100%;
+  border: 1px solid var(--color-divider);
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--color-surface);
+}

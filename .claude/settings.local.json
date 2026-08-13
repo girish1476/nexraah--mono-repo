@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-Content C:\\\\nexraah\\\\README.md; Get-Content C:\\\\nexraah\\\\package.json; Get-ChildItem C:\\\\nexraah\\\\apps,C:\\\\nexraah\\\\docs -Recurse -Depth 2 -Force | Where-Object { $_.FullName -notmatch 'node_modules' } | Select-Object -ExpandProperty FullName)"
+    ]
+  }
+}

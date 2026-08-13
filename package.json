@@ -1,0 +1,14 @@
+{
+  "name": "nexraah",
+  "version": "1.0.0",
+  "private": true,
+  "packageManager": "pnpm@9.15.3",
+  "scripts": {
+    "dev:vendor": "pnpm --parallel --filter \"./apps/vendor-*\" dev",
+    "dev:internal": "pnpm --parallel --filter \"./apps/internal-*\" dev",
+    "dev": "pnpm --parallel -r dev",
+    "build:vendor": "pnpm --filter \"./apps/vendor-*\" build",
+    "build:internal": "pnpm --filter \"./apps/internal-*\" build",
+    "build": "pnpm -r build"
+  }
+}
