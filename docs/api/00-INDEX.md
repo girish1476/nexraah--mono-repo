@@ -1,6 +1,8 @@
-# Internal console — API contract
+# `internal-api` — API contract
 
 **What this is.** The frontend of the internal console is built. This directory records **every HTTP call it makes**, with the exact request and response shape it expects, so `internal-api` can be built against a fixed target rather than a moving one.
+
+**Plus the transporter surface.** Under `ADR-02`, `internal-api` also serves `/api/v1/portal/*` — reached through the `vendor-api` proxy, called by no internal screen. Those contracts are in [`11-portal.md`](11-portal.md) and follow different rules for errors, idempotency and file upload. Files `01`–`10` are the internal surface only.
 
 **Authority.** `docs/specs/internal-spec/*` is the specification. These files add nothing to it; they pin down the wire format the specification leaves open. Where the two disagree, the spec part wins and this file is wrong.
 
@@ -23,6 +25,7 @@
 | [08-rfq](08-rfq.md) | C8 | RFQ, lanes, sourcing, quote build-up, award |
 | [09-reporting](09-reporting.md) | C9 | Today, Home, P&L, exports |
 | [10-telematics-import](10-telematics-import.md) | C10 · C11 | Fleet board, ping ingest, go-live import |
+| [11-portal](11-portal.md) | P1–P7 | **Transporter surface.** All 18 `/portal/*` routes, service-key provenance, per-write idempotency, multipart upload, error mapping (`ADR-02`) |
 
 ---
 
@@ -89,7 +92,7 @@ These belong to `internal-api` but no screen invokes them. They are listed so th
 |---|---|
 | `POST /telematics/ping` | The GPS provider's webhook, HMAC-signed, no JWT |
 | Background jobs (`pod-ageing`, `placement-failure`, `eway-expiry`, `invoice-ageing`, `charge-capture-exception`, `forfeiture-report`, `notification-dispatch`, `attachment-retention`, `identity-image-purge`, `bank-reconciliation`) | The scheduler — part 13 §3 |
-| Transporter-facing routes | None. `internal-api` serves no `/portal/*` route at all (`ADR-01`) |
+| `/api/v1/portal/*` | `vendor-api` (port 4001), proxying on behalf of `vendor-portal`. No internal screen calls these. Contracts in [`11-portal.md`](11-portal.md) (`ADR-02`) |
 
 ---
 

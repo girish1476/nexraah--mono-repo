@@ -76,9 +76,11 @@ Each is listed with its original wording at the head of `Nexraah-FSD-v2.2.md`, s
 
 ## 4 · Repository alignment
 
-Resolved separately as **`ADR-01`** and already written into both specs: four applications (`internal-portal` 3002, `internal-api` 4002, `vendor-portal` 3001, `vendor-api` 4001), Next.js 14, jotai + axios, react-hook-form + zod installed at first-wizard wave.
+Resolved separately as **`ADR-01`**, then re-decided as **`ADR-02`**: four processes (`internal-portal` 3002, `internal-api` 4002, `vendor-portal` 3001, `vendor-api` 4001), Next.js 14, jotai + axios, react-hook-form + zod installed at first-wizard wave — but only **one** backend. `internal-api` owns every operation and serves `/api/v1/portal/*`; `vendor-api` is a proxy with no database credentials.
 
-The four-app split is stronger for the redaction contract than the single-app-with-route-groups shape the specs originally described — a separate `vendor_api` Postgres role with column-level grants turns `BR-55` from *"we remembered to redact"* into *"the credential cannot read the column"*. Both specs now describe the built shape.
+`ADR-01` gave the vendor side its own backend. That was stronger for the redaction contract than the single-app-with-route-groups shape the specs originally described, and it was also two implementations of every rule spanning both sides — `BR-05`, `BR-23`, `BR-51`, `BR-53` were each specified twice, in two processes, with no test spanning both. `ADR-02` collapses the backend and keeps the redaction guarantee by binding `/portal/*` handlers to a second connection pool authenticated as `vendor_api`: `BR-55` stays *"the credential cannot read the column"* rather than reverting to *"we remembered to redact"*.
+
+**Neither ADR is an FSD requirement.** FSD v2.2 mandates redaction at the source (`NFR-02`, `BR-55`, `D-38`) and names no topology, which is why this was re-decidable at all. The FSD rule is unchanged and still binding either way. Spec files still carrying the `ADR-01` shape are marked stale in place; `docs/adr/ADR-02-internal-owns-operations.md` is authoritative.
 
 One item remains open and is tracked in Spec 1 §1.3, not here: the **Expo shell (`P8`) is out of FSD `B1` scope** — *"The transporter portal is web only in version one"* — and needs a change request before it ships. §2–§7 of Spec 1 work as responsive web with no shell present.
 

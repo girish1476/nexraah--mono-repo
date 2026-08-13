@@ -5,6 +5,8 @@ Companion to *FSD v2.2* and *Spec 2 — Internal Console*
 
 > **Split for building: [`vendor-specs/00-INDEX.md`](vendor-specs/00-INDEX.md).** Those parts are canonical. This file remains the single-file narrative and is not edited further — if the two disagree, a part file wins and this version is stale.
 
+> **Stale as of `ADR-02`.** §1, §1.1 and §1.2 below describe `vendor-api` as a full backend with its own Postgres role. It is not: `internal-api` owns every operation and serves `/api/v1/portal/*`; `vendor-api` is a proxy with no database credentials. The redaction rules, DTOs and screens in §2–§7 are unchanged in substance — only the process they live in moved. Read [`../adr/ADR-02-internal-owns-operations.md`](../adr/ADR-02-internal-owns-operations.md) and `vendor-specs/01-P1-foundation.md` §1 instead.
+
 | | |
 |---|---|
 | **Who uses it** | Transporters. External. One account per vendor. Hundreds of them. |

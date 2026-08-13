@@ -24,9 +24,16 @@ internal-api         NestJS · port 4002 · /api/v1/*
 Supabase  Postgres · Auth · Storage
 ```
 
-**Four processes, two boundaries** (`ADR-01`, Spec 1 §1.2). `internal-portal` + `internal-api` are separate applications from `vendor-portal` + `vendor-api` — separate deployables, separate Postgres roles, no shared server process. The two sides share the **database and `packages/*` types, nothing else**: no shared layout, no shared component, no shared controller, no `if (isTransporter)` anywhere.
+**Four processes, one backend** (`ADR-02`). `internal-portal` and `vendor-portal` are separate applications — separate deployables, no shared layout, no shared component, no `if (isTransporter)` anywhere. `internal-api` is the only process that touches the database; `vendor-api` is a proxy for `/api/v1/portal/*` with no database credentials.
 
-This spec owns the `internal_api` role, which has full schema access. `vendor_api` holds column-level grants only; adding a column a transporter must never see requires no change here, because the grant is never issued.
+This spec owns **both** Postgres roles and the two pools that bind them:
+
+| Pool | Role | Serves |
+|---|---|---|
+| `internalPool` | `internal_api` — full schema access | `/api/v1/*` |
+| `portalPool` | `vendor_api` — column-level grants only | `/api/v1/portal/*`, provided by `PortalModule` |
+
+Adding a column a transporter must never see requires no change to the portal handlers, because the grant is never issued and the query raises. That is the whole of redaction layer one — see `../vendor-specs/02-redaction-contract.md` §3 and `../../adr/ADR-02-internal-owns-operations.md` §3. Session-mode pooling is mandatory; see part 14 §5.
 
 | Layer | Choice |
 |---|---|

@@ -178,16 +178,20 @@ Rules needing context — `BR-01`, `BR-07`, `BR-10`, `BR-39`, `BR-40`, `BR-57`, 
 
 ---
 
-## 7 · Database roles — `ADR-01`
+## 7 · Database roles — `ADR-02`
 
-Both roles are created in the same migration as the tables. A grant added later is a grant that gets forgotten.
+Both roles are created in the same migration as the tables. A grant added later is a grant that gets forgotten. **Both are held by `internal-api`**, on two separate connection pools — the grants themselves are unchanged from `ADR-01`.
 
-| Role | Grants |
-|---|---|
-| `internal_api` | Full DML on every table **except** `audit_events`, where it holds `INSERT` and `SELECT` only |
-| `vendor_api` | Column-level `SELECT` only on the subset Spec 1 needs, plus `INSERT`/`UPDATE` on `quotes`, `vendor_fleet`, `pod_receipts` (attach fields), `vendor_bills`, `attachments`. **No grant at all** on `indents.client_id`, `indents.sell_rate`, `clients`, `invoices`, `receipts`, `rfqs`, `rate_card_lanes`, `trip_charges.billed_amount` |
+| Role | Pool | Grants |
+|---|---|---|
+| `internal_api` | `internalPool` — serves `/api/v1/*` | Full DML on every table **except** `audit_events`, where it holds `INSERT` and `SELECT` only |
+| `vendor_api` | `portalPool` — serves `/api/v1/portal/*`, bound by `PortalModule` | Column-level `SELECT` only on the subset Spec 1 needs, plus `INSERT`/`UPDATE` on `quotes`, `vendor_fleet`, `pod_receipts` (attach fields), `vendor_bills`, `attachments`. **No grant at all** on `indents.client_id`, `indents.sell_rate`, `clients`, `invoices`, `receipts`, `rfqs`, `rate_card_lanes`, `trip_charges.billed_amount` |
 
 `BR-55` stops being "we remembered to redact" and becomes "the credential cannot read the column". A DTO that forgets an `@Exclude()` is a code review away from leaking; a missing `GRANT` is not.
+
+**One amendment `ADR-02` requires:** `vendor_api` gains `INSERT` on `audit_events`. Portal writes now happen in a process that can audit them, and `NFR-03` was previously blind to every transporter action. `SELECT`, `UPDATE` and `DELETE` remain ungranted — a transporter's request may append to the log and may not read or alter it.
+
+Neither role is `service_role`. Supabase's `service_role` key bypasses every grant and is used by nothing in this system; see part 14 §4.
 
 ---
 

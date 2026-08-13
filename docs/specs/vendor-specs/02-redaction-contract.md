@@ -72,10 +72,12 @@ Each layer catches what the one above it might miss. None is sufficient alone.
 
 | Layer | Mechanism | Catches |
 |---|---|---|
-| **Database** | `vendor_api` role, column-level grants only (part 01 §1.2). Forbidden columns are unreadable by the credential the process holds | A service that selects `*` |
-| **Process** | `vendor-api` is a separate NestJS app; internal controllers are not loaded and cannot be reached from port 4001 (`ADR-01`) | A route added to the wrong module |
+| **Database** | `portalPool` authenticates as `vendor_api`, column-level grants only (part 01 §1.2). `PortalModule` binds it; no portal repository can name `internalPool`. Forbidden columns are unreadable by the credential the query runs under | A service that selects `*` |
+| **Process** | `/portal/*` requires `X-Portal-Service`; every other internal route rejects that key. `vendor-api` proxies `/portal/*` and nothing else, so no internal path is internet-reachable through the vendor edge (`ADR-02`) | A route added to the wrong module |
 | **Repository** | Every query scoped `WHERE vendor_id = ctx.vendorId`. No override parameter | Vendor A reading vendor B's row on a column both may see |
 | **Serialisation** | Explicit DTO classes with `@Expose()`. **Never return an entity directly** | A column later granted for one purpose leaking into an unrelated response |
+
+> **What `ADR-02` changed here.** The database layer used to rest on the operating system: a different process held a different Postgres login. It now rests on `internal-api`'s module wiring — same credential, same grants, same raised error, but a binding rather than a process boundary. That is weaker, and it is why §3.1 of the ADR makes the binding structural and why assertion 6 below gained a runtime half. The process layer moved from "internal controllers are not loaded" to "internal routes are not reachable through the vendor edge, and the vendor edge's key is rejected everywhere else".
 
 Plus two process controls:
 
@@ -97,11 +99,17 @@ Allow-list, never deny-list. `@Exclude()` means a column added next quarter is e
 | 1 | `GET /portal/loads` — body contains no `clientName`, `sellRate` or `quoteCount` key **at any depth** | Recurse the JSON. A nested `myQuote.indent.sellRate` passes a top-level check |
 | 2 | `GET /portal/trips` — returns only vendor A's trips | Row scoping, not column scoping |
 | 3 | `GET /portal/trips/{vendorB_trip}/lorry-receipt` → **404, not 403** | A 403 confirms the trip exists. Never confirm existence |
-| 4 | `GET /trips`, `/pnl`, `/invoices`, `/compliance` → 403 | Console routes are not served by this process at all; the assertion proves the deployment did not merge them |
+| 4a | `GET :4001/api/v1/trips`, `/pnl`, `/invoices`, `/compliance` → **404** | The edge proxies `/portal/*` and nothing else. No internal path is reachable from the internet-facing process |
+| 4b | Vendor A's token + a valid service key against `:4002/api/v1/trips` → **403 `WRONG_AUDIENCE`** | A transporter principal cannot reach an internal route even from inside the network |
+| 4c | A valid service key against any non-portal `:4002` route → **403 `WRONG_AUDIENCE`** | The vendor edge's credential is rejected everywhere except `/portal/*`. Catches a mis-added proxy rule |
+| 4d | `/portal/*` **without** `X-Portal-Service` → **403 `SERVICE_KEY_REQUIRED`** | `/portal/*` is not directly internet-reachable |
 | 5 | Lorry receipt DTO contains no `consignor`, `consignee`, `clientInvoiceNo` | §2 |
-| 6 | As `vendor_api`, `SELECT client_id FROM indents` **raises** | The negative grant test from part 01 |
+| 6a | As `vendor_api`, `SELECT client_id FROM indents` **raises** | The negative grant test from part 01 |
+| 6b | A portal handler issuing `SELECT client_id FROM indents` **raises at runtime**, and `PortalModule`'s `DB` token resolves to `portalPool` | `ADR-02` moved layer one from a process boundary to a module binding. 6a proves the grant; 6b proves the binding. Without 6b the whole layer can be voided by one `internalPool` injection and every other assertion still passes |
 
 Assertions 1 and 5 are written against a **key-walk helper**, not a fixed field list, so a new forbidden field added to §1 or §2 is picked up by adding one string to a constant rather than by remembering to write a test.
+
+Assertion 4 was one line under `ADR-01` — "console routes are not served by this process at all" — and split into four because the guarantee is no longer free. It used to be a property of the deployment; it is now four rules that have to hold.
 
 ---
 
@@ -121,9 +129,10 @@ The refusal message quotes `bidMin`, which the transporter is already entitled t
 
 ## 6 · Done when
 
-- [ ] `PortalLoadDTO` and `PortalLorryReceiptDTO` exist as `@Expose()` classes in `apps/vendor-api`
+- [ ] `PortalLoadDTO` and `PortalLorryReceiptDTO` exist as `@Expose()` classes in `apps/internal-api/src/portal`
 - [ ] No portal endpoint returns an entity; a lint rule or review checklist enforces it
 - [ ] Repository scoping is applied in the repository layer with no override path
-- [ ] All six isolation assertions pass, wired into the deploy pipeline
+- [ ] **A lint rule fails the build if anything under `src/portal` injects `internalPool`**
+- [ ] All nine isolation assertions pass (1, 2, 3, 4a–4d, 5, 6a, 6b), wired into the deploy pipeline
 - [ ] The key-walk helper is driven by a constant list, not repeated per test
-- [ ] Second-reviewer rule documented on the `vendor-api` path
+- [ ] Second-reviewer rule documented on `apps/internal-api/src/portal` **and** `apps/vendor-api`

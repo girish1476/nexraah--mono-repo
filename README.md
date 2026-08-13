@@ -6,27 +6,38 @@ pnpm monorepo.
 
 | App               | Stack   | Port | Description        |
 | ----------------- | ------- | ---- | ------------------ |
-| `vendor-api`      | NestJS  | 4001 | Vendor backend     |
+| `vendor-api`      | NestJS  | 4001 | Vendor edge — **proxy only, no DB** |
 | `vendor-portal`   | Next.js | 3001 | Vendor frontend    |
-| `internal-api`    | NestJS  | 4002 | Internal backend   |
+| `internal-api`    | NestJS  | 4002 | **The** backend — all logic, all writes |
 | `internal-portal` | Next.js | 3002 | Internal frontend  |
 
-Both APIs serve under the global prefix `/api/v1`.
+Both serve under the global prefix `/api/v1`. `vendor-api` forwards `/api/v1/portal/*` to `internal-api` and serves no other path.
 
-## The vendor / internal boundary — `ADR-01`
+## The vendor / internal boundary — `ADR-02`
 
-The two sides are separate applications on purpose. A transporter must never learn who the client is, what we charge them, or what anyone else quoted (FSD `NFR-02`, `BR-55`, `D-38`) — and the cheapest way to guarantee that is to make a leak require deliberate work rather than forgetfulness.
+A transporter must never learn who the client is, what we charge them, or what anyone else quoted (FSD `NFR-02`, `BR-55`, `D-38`). The cheapest way to guarantee that is to make a leak require deliberate work rather than forgetfulness.
+
+**`internal-api` owns every operation and every write.** It serves the transporter surface itself under `/api/v1/portal/*`. `vendor-api` is a **proxy with no database credentials** — it terminates TLS for the external audience, rate-limits, and forwards.
+
+```
+vendor-portal :3001 ──▶ vendor-api :4001 ──▶ internal-api :4002 ──▶ Supabase Postgres
+                        proxy only            all logic, all writes
+                        no DB credentials     portalPool  → vendor_api role  → /portal/*
+                                              internalPool → internal_api role → everything else
+```
 
 | Boundary | What it buys |
 | --- | --- |
 | Separate Next.js apps | No shared layout, navigation or component that could render a client name. No `if (isTransporter)` branch to get wrong |
-| Separate NestJS apps | A vendor request never enters a process with internal controllers loaded |
-| Separate deployables | The portal can be rolled back or firewalled on its own |
-| Separate Postgres roles | `vendor_api` gets column-level `GRANT`s only. It cannot read `client_id` or `sell_rate` at all |
+| Two connection pools | `/portal/*` handlers run as `vendor_api`, which has column-level `GRANT`s only. A portal query that selects `client_id` or `sell_rate` **raises at the database** |
+| Service key both ways | `/portal/*` requires `X-Portal-Service`; every other route rejects it. The vendor edge cannot reach an internal route |
+| Separate deployables | The external edge can be rolled back or firewalled on its own |
 
 The two sides share **the database and `packages/*` types. Nothing else.** `packages/*` is types and enums only — no runtime, and no package until a second consumer actually needs a symbol.
 
-Specs: `docs/specs/SPEC-1-vendor-portal-fullstack_1.md` §1.2, `docs/specs/SPEC-2-internal-console-fullstack.md` §1.
+`ADR-01` — a full second backend for the vendor side — is superseded. It duplicated `BR-05`, `BR-23`, `BR-51` and `BR-53` across two processes. Read [`docs/adr/ADR-02-internal-owns-operations.md`](docs/adr/ADR-02-internal-owns-operations.md) before touching either backend; spec files still carrying the `ADR-01` shape are marked stale in place.
+
+Specs: `docs/adr/ADR-02-internal-owns-operations.md`, `docs/api/11-portal.md`, `docs/specs/internal-spec/14-supabase-setup.md`.
 
 ## Setup
 
@@ -99,3 +110,5 @@ Every call the console makes, with request and response shapes, error codes and 
 | C1 foundation · C2 vendors · C3 indents · C4 trips | `01`–`04` |
 | C5 POD · C6 payments · C7 invoicing · C8 RFQ | `05`–`08` |
 | C9 reporting · C10 telematics · C11 import | `09`–`10` |
+| **Transporter surface** — all 18 `/portal/*` routes | [`11-portal.md`](docs/api/11-portal.md) |
+| **Supabase and DB setup** — migrations, pools, env, RLS decision | [`internal-spec/14-supabase-setup.md`](docs/specs/internal-spec/14-supabase-setup.md) |

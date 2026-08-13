@@ -2,9 +2,12 @@
 
 **Source:** `docs/specs/SPEC-1-vendor-portal-fullstack_1.md` v1.1, split into buildable parts.
 **Authority:** `docs/FSD/Nexraah-FSD-v2.2.md`. Every `BR-`, `NFR-`, `D-`, `R-`, `ACT-`, `MOD-` identifier resolves there.
-**Companion:** `docs/specs/internal-spec/00-INDEX.md` — the internal console, a separate application (`ADR-01`).
+**Companion:** `docs/specs/internal-spec/00-INDEX.md` — the internal console.
+**Architecture:** [`docs/adr/ADR-02-internal-owns-operations.md`](../../adr/ADR-02-internal-owns-operations.md). `vendor-portal` stays a separate frontend, but the **backend is `internal-api`** — it serves `/api/v1/portal/*` on a connection pool authenticated as `vendor_api`, and `vendor-api` is a proxy with no database credentials. `ADR-01`'s second backend is superseded. Wire contracts: [`docs/api/11-portal.md`](../../api/11-portal.md).
 
 These parts are canonical for building. `SPEC-1-vendor-portal-fullstack_1.md` remains the single-file narrative and is not edited further — if the two disagree, a part file wins and the whole-file version is stale.
+
+> **What `ADR-02` moved.** Parts 02–10 are unchanged in substance — the same DTOs, the same rules, the same screens. What moved is the process they run in: `apps/internal-api/src/portal/*` rather than `apps/vendor-api/src/*`. Parts 01 and 11 are amended in place; part 02's layer table and isolation assertions are rewritten.
 
 > **The rule this whole application exists to protect.** A transporter must never learn who our client is, what we charge them, or what anyone else quoted. It is `NFR-02`, `BR-55`, `D-38`, and every part below defers to it. Part 02 is not a feature; it is the reason the other parts are safe.
 
@@ -14,7 +17,7 @@ These parts are canonical for building. `SPEC-1-vendor-portal-fullstack_1.md` re
 
 | Part | Wave | Covers | Depends on |
 |---|---|---|---|
-| [01 · Foundation](01-P1-foundation.md) | **P1** | Architecture, `vendor_api` DB role, auth and provisioning, session, `PortalGuard`, repository scoping, suspension, rate limiting | — |
+| [01 · Foundation](01-P1-foundation.md) | **P1** | Architecture, `vendor_api` DB role and its pool, the proxy, service-key provenance, auth and provisioning, session, `PortalGuard`, repository scoping, suspension, rate limiting | — |
 | [02 · Redaction contract](02-redaction-contract.md) | **P1** | The DTOs, the four enforcement layers, the isolation test suite. **Build and test this before any screen** | 01 |
 | [03 · Loads & quotes](03-P2-loads-quotes.md) | **P2** | Available loads, place a quote, band verdict, my quotes, withdraw | 02 · console `C2`, `C3` |
 | [04 · Fleet](04-P3-fleet.md) | **P3** | Fleet inventory, `DOCS_DUE`, availability that gates quoting | 02 |

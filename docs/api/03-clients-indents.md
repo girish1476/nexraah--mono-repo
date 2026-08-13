@@ -208,7 +208,7 @@ Consumes the `TRP-` series inside the creating transaction (`BR-21`, `BR-14`) an
 
 ## Not this side
 
-Quote submission belongs to the transporter portal. `internal-api` reads `quotes` and awards; it never accepts a quote.
+Quote submission belongs to the transporter portal — no internal screen submits one, and no endpoint in **this file** accepts one. `internal-api` does serve it, at `POST /portal/loads/:code/quote` (`11-portal.md` §3, `ADR-02`), under the `vendor_api` pool and the `BR-05` band check. The endpoints here read `quotes` and award.
 
 ---
 

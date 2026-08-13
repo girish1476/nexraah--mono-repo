@@ -6,9 +6,11 @@ Endpoint index, NFR obligations, error catalogue, and the test suite that spans 
 
 ## 1 · Full endpoint index
 
-Every path is relative to the `vendor-api` global prefix `/api/v1`. `GET /portal/loads` is served at `http://localhost:4001/api/v1/portal/loads`.
+Every path is relative to the global prefix `/api/v1`. `vendor-portal` calls `http://localhost:4001/api/v1/portal/loads`; `vendor-api` proxies it to `internal-api` on 4002, which serves the handler (`ADR-02`). Wire contracts — headers, idempotency, upload, error mapping — are in [`../../api/11-portal.md`](../../api/11-portal.md).
 
-**`vendor-api` exposes no route outside `/portal/*`.**
+**`vendor-api` proxies `/portal/*` and serves no other path.** It holds no database credentials, no DTO and no rule.
+
+Three routes the screens need are absent from the table below and specified in `11-portal.md` §5: `GET /portal/loads/:code`, `GET /portal/trips/:id`, `GET /portal/trips/:id/bill`.
 
 | Method | Path | Permission | Rules | Part |
 |---|---|---|---|---|
@@ -40,10 +42,15 @@ Consistency matters more than cleverness here — a transporter sees these throu
 |---|---|---|---|
 | `VENDOR_SUSPENDED` | 403 | Reads allowed, writes refused | 01 |
 | `WRONG_AUDIENCE` | 403 | An internal principal hit `/portal/*` | 01 |
+| `SERVICE_KEY_REQUIRED` | 403 | Reached `/portal/*` without the edge's key | 01 |
 | `BELOW_BAND` | 422 | Quote below `bidMin`; payload carries `bidMin` | 03 |
 | `QUOTE_EXISTS` | 409 | Already quoted; screen offers withdraw | 03 |
 | `POD_NOT_APPROVED` | 409 | Bill submitted too early | 07 |
+| `IDEMPOTENCY_KEY_REQUIRED` | 400 | A write arrived without `Idempotency-Key` | — |
+| `UPSTREAM_TIMEOUT` | 504 | The edge gave up on `internal-api` | — |
 | — | **404** | Another vendor's record. **Never 403** | 02 |
+
+**An internal error code must never reach a transporter.** Portal handlers now live beside internal services, so `ADVANCE_BLOCKED`, `VENDOR_INCOMPLETE` and the rest of `../../api/00-conventions.md` §3 are one uncaught exception away from a portal response. Map before throwing; an unmapped code escaping to `/portal/*` is a `BR-55` finding. See `11-portal.md` §2.
 
 > **404, never 403, for another vendor's record.** A 403 confirms the record exists. Vendor A probing `/portal/trips/{id}/lorry-receipt` across an id range learns how many trips vendor B is running, which is `NFR-02` leaking through a status code.
 
@@ -90,9 +97,13 @@ The loads limit is the interesting one. A transporter polling every ten seconds 
 1. `GET /portal/loads` — no `clientName`, `sellRate`, `quoteCount` at any depth
 2. `GET /portal/trips` — vendor A's trips only
 3. `GET /portal/trips/{vendorB_trip}/lorry-receipt` → **404, not 403**
-4. `GET /trips`, `/pnl`, `/invoices`, `/compliance` → 403
+4a. `GET :4001/api/v1/trips`, `/pnl`, `/invoices`, `/compliance` → **404** at the edge
+4b. Vendor A's token + service key against `:4002/api/v1/trips` → **403 `WRONG_AUDIENCE`**
+4c. A service key against any non-portal `:4002` route → **403 `WRONG_AUDIENCE`**
+4d. `/portal/*` without the service key → **403 `SERVICE_KEY_REQUIRED`**
 5. Lorry receipt DTO has no `consignor`, `consignee`, `clientInvoiceNo`
-6. As `vendor_api`, `SELECT client_id FROM indents` raises
+6a. As `vendor_api`, `SELECT client_id FROM indents` raises
+6b. A portal handler selecting `indents.client_id` raises at runtime; `PortalModule`'s `DB` token resolves to `portalPool`
 
 ---
 

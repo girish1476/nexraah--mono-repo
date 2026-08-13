@@ -2,7 +2,8 @@
 
 **Source:** `docs/specs/SPEC-2-internal-console-fullstack.md` v1.1, split into buildable parts.
 **Authority:** `docs/FSD/Nexraah-FSD-v2.2.md`. Every `BR-`, `NFR-`, `D-`, `R-`, `ACT-`, `MOD-` identifier resolves there.
-**Companion:** `docs/specs/SPEC-1-vendor-portal-fullstack_1.md` — the transporter portal, a separate application (`ADR-01`).
+**Companion:** `docs/specs/SPEC-1-vendor-portal-fullstack_1.md` — the transporter portal, a separate frontend.
+**Architecture:** [`docs/adr/ADR-02-internal-owns-operations.md`](../../adr/ADR-02-internal-owns-operations.md). `internal-api` owns every operation and also serves `/api/v1/portal/*`; `vendor-api` is a proxy with no database credentials. `ADR-01` — a second backend for the vendor side — is superseded. Read the ADR before part 01.
 
 These parts are canonical for building. `SPEC-2-internal-console-fullstack.md` remains the single-file narrative and is not edited further — if the two disagree, a part file wins and the whole-file version is stale.
 
@@ -14,6 +15,7 @@ These parts are canonical for building. `SPEC-2-internal-console-fullstack.md` r
 |---|---|---|---|
 | [01 · Foundation](01-C1-foundation.md) | **C1** | Architecture, roles, permissions, guards, approvals engine, numbering, attachments, audit trail, control panel, roles matrix, approvals inbox | — |
 | [02 · Data model](02-data-model.md) | **C1** | Full schema, both DB roles, constraints that carry rules | 01 |
+| [14 · Supabase & DB setup](14-supabase-setup.md) | **C1** | Migrations, DDL conventions, the two pools, Auth, Storage, pooling mode, RLS decision, env contract, seeding, backup | 02 |
 | [03 · Vendors & compliance](03-C2-vendors-compliance.md) | **C2** | Onboarding wizard, vendor search and detail, leads, market gap, issues, compliance desk | 01, 02 |
 | [04 · Clients & indents](04-C3-clients-indents.md) | **C3** | Client master, rate cards, indent raise, quotes, award, placement | 03 |
 | [05 · Trips & lorry receipt](05-C4-trips-lr.md) | **C4** | Trip search and detail, eleven documents, cross-check, charge capture, LR and print | 04 |
@@ -25,6 +27,8 @@ These parts are canonical for building. `SPEC-2-internal-console-fullstack.md` r
 | [11 · Telematics & notifications](11-C10-telematics-notifications.md) | **C10** | Fleet board, alerts, ping ingest, notification dispatch | 05 |
 | [12 · Go-live import](12-C11-go-live-import.md) | **C11** | Transporter panel, client master, opening balances | all |
 | [13 · Cross-cutting](13-cross-cutting.md) | all | NFR obligations, integrations, background jobs, testing | — |
+
+Part 14 sits out of numeric order because it was written after `ADR-02`. **Build order within `C1` is 01 → 02 → 14**; nothing can be built until a database exists.
 
 **C1 → C6 is the spine.** Both money gates and roughly all the financial protection the FSD names as the platform's purpose. Run it on one branch in parallel with current practice before extending.
 

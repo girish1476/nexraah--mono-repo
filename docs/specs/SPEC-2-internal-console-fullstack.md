@@ -30,9 +30,11 @@ internal-api         NestJS · port 4002 · /api/v1/*      ← this spec
 Supabase  Postgres · Auth · Storage
 ```
 
-**Four processes, two boundaries** (`ADR-01`, Spec 1 §1.2). `internal-portal` + `internal-api` are separate applications from `vendor-portal` + `vendor-api` — separate deployables, separate Postgres roles, no shared server process. The two sides share the **database and `packages/*` types, nothing else**: no shared layout, no shared component, no shared controller, no `if (isTransporter)` anywhere.
+**Four processes, one backend** (`ADR-02`). `internal-portal` and `vendor-portal` are separate applications — separate deployables, no shared layout, no shared component, no `if (isTransporter)` anywhere. **`internal-api` is the only process that touches the database, and it also serves the transporter surface** at `/api/v1/portal/*`; `vendor-api` is a proxy for that prefix with no database credentials.
 
-This spec owns the `internal_api` role, which has full schema access. `vendor_api` holds column-level grants only; adding a column that a transporter must never see requires no change here, because the grant is never issued.
+This spec owns **both** Postgres roles. `internal-api` runs two pools: `internalPool` as `internal_api` (full schema access) for `/api/v1/*`, and `portalPool` as `vendor_api` (column-level grants only) for `/api/v1/portal/*`, bound by `PortalModule`. Adding a column a transporter must never see requires no change to the portal handlers, because the grant is never issued and the query raises.
+
+> **`ADR-01` is superseded.** It gave the vendor side its own backend, which meant two implementations of `BR-05`, `BR-23`, `BR-51` and `BR-53` with no test spanning both. The transporter contracts are in `docs/api/11-portal.md`; the decision and its costs are in [`../adr/ADR-02-internal-owns-operations.md`](../adr/ADR-02-internal-owns-operations.md). §20 below predates it — part 14 of `internal-spec/` carries the current DB and Supabase setup.
 
 | Layer | Choice |
 |---|---|
