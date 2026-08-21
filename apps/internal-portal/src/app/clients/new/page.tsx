@@ -5,14 +5,21 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { errorMessage } from '@/apis';
-import { Field, FormGrid, ModuleGuard, PageHeader, Panel, Stack, useLevel, useToast } from '@/lib/ui';
+import { capitalizeWords } from '@/lib/format';
+import { checkGstin } from '@/lib/gstin';
+import { CityField, Field, FormGrid, ModuleGuard, PageHeader, Panel, Stack, useLevel, useToast } from '@/lib/ui';
 import { createClient } from '../apis';
 
 const schema = z
   .object({
     name: z.string().min(2, 'Required'),
-    billingCity: z.string().min(2, 'Required'),
-    gstin: z.string().optional(),
+    billingCity: z.string().min(2, 'Required').transform((v) => capitalizeWords(v)),
+    // Advisory only (checked against GSTN, never blocking) — normalized to
+    // uppercase but not format-gated, so a malformed value still saves.
+    gstin: z
+      .string()
+      .transform((v) => v.toUpperCase())
+      .optional(),
     contact: z.string().min(2, 'Required'),
     phone: z.string().regex(/^[6-9]\d{9}$/, 'Ten digits'),
     email: z.string().email('Not an email'),
@@ -41,6 +48,7 @@ export default function NewClientPage() {
   });
 
   const engagement = form.watch('engagement');
+  const gstinValue = form.watch('gstin');
 
   const submit = form.handleSubmit(async (values) => {
     try {
@@ -71,10 +79,24 @@ export default function NewClientPage() {
               <input {...form.register('name')} />
             </Field>
             <Field label="Billing city" required error={form.formState.errors.billingCity?.message}>
-              <input {...form.register('billingCity')} />
+              <CityField
+                listId="cities-billing-city"
+                {...form.register('billingCity')}
+                onBlur={(e) => form.setValue('billingCity', capitalizeWords(e.target.value))}
+              />
             </Field>
-            <Field label="GSTIN" hint="Checked against GSTN — advisory, never blocking.">
-              <input {...form.register('gstin')} />
+            <Field
+              label="GSTIN"
+              hint={
+                gstinValue && !checkGstin(gstinValue).valid
+                  ? `${checkGstin(gstinValue).reason} Checked against GSTN, but this will not block saving.`
+                  : 'Checked against GSTN where present — advisory, never blocking.'
+              }
+            >
+              <input
+                {...form.register('gstin')}
+                onBlur={(e) => form.setValue('gstin', e.target.value.toUpperCase())}
+              />
             </Field>
             <Field label="Contact" required error={form.formState.errors.contact?.message}>
               <input {...form.register('contact')} />

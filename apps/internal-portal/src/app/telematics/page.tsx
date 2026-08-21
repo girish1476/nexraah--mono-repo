@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { errorMessage } from '@/apis';
 import { fmtDateTime } from '@/lib/format';
+import { ALERT_LABEL, ALERT_TONE } from '@/lib/documents';
 import {
   Banner,
   Column,
@@ -15,26 +16,9 @@ import {
   Stack,
   StatStrip,
   Tag,
-  Tone,
 } from '@/lib/ui';
 import { getTelematics } from './apis';
 import { AlertKind, TelematicsResponse, VehicleRow } from './types';
-
-const ALERT_LABEL: Record<AlertKind, string> = {
-  OVERSPEED: 'Overspeed',
-  LONG_HALT: 'Long halt',
-  DARK_VEHICLE: 'No signal',
-  EWAY_EXPIRING: 'E-way expiring',
-  EWAY_EXPIRED: 'E-way expired',
-};
-
-const ALERT_TONE: Record<AlertKind, Tone> = {
-  OVERSPEED: 'red',
-  LONG_HALT: 'flag',
-  DARK_VEHICLE: 'flag',
-  EWAY_EXPIRING: 'flag',
-  EWAY_EXPIRED: 'red',
-};
 
 /**
  * Fleet board — `/telematics` (part 11 §1).

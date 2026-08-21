@@ -682,6 +682,8 @@ const routes: [string, RegExp, Handler][] = [
         quotes: [],
         failureCause: null,
         branchName: BRANCHES.find((b) => b.id === body.branchId)?.name ?? 'Nashik',
+        clientName: db.clients.find((c) => c.id === body.clientId)?.name ?? '—',
+        distanceKm: 0,
         ...body,
       };
       db.indents.unshift(indent);
@@ -1031,9 +1033,14 @@ const routes: [string, RegExp, Handler][] = [
   [
     'GET',
     /^\/pod\/pending$/,
-    ({ role }) => {
+    ({ role, query }) => {
+      const branch = (query.get('branch') ?? '').trim().toLowerCase();
+      const transporter = (query.get('transporter') ?? '').trim().toLowerCase();
+      const ageing = query.get('ageing');
       const rows = scopeBranch(db.trips, role)
         .filter((t) => t.deliveredAt && !['APPROVED', 'WAIVED'].includes(t.podStatus))
+        .filter((t) => !branch || t.branchName.toLowerCase().includes(branch))
+        .filter((t) => !transporter || t.vendorName.toLowerCase().includes(transporter))
         .map((t) => {
           const ageDays = Math.floor((Date.now() - new Date(t.deliveredAt).getTime()) / 86_400_000);
           return {
@@ -1052,6 +1059,13 @@ const routes: [string, RegExp, Handler][] = [
             balanceHeldPaise: t.buyRatePaise - t.advancePaidPaise,
             forfeited: ageDays > db.config.pod_forfeit_days,
           };
+        })
+        .filter((r) => {
+          if (!ageing) return true;
+          if (ageing === 'within') return r.daysLeft >= 0;
+          if (ageing === 'breached') return r.daysLeft < 0 && !r.forfeited;
+          if (ageing === 'forfeited') return r.forfeited;
+          return true;
         })
         .sort((a, b) => b.ageDays - a.ageDays);
       return ok({
@@ -1893,6 +1907,16 @@ export const mockAdapter: AxiosAdapter = async (config) => {
   const [rawPath, rawQuery] = (config.url ?? '').split('?');
   const path = rawPath.replace(/\/$/, '') || '/';
   const query = new URLSearchParams(rawQuery ?? '');
+  // Axios only serialises `config.params` into the URL inside its own
+  // built-in adapters (xhr/http) — a custom adapter like this one receives
+  // them as a separate object and must merge them in itself, or every list
+  // filter that uses the `params` option (as opposed to a hand-built query
+  // string) silently does nothing.
+  if (config.params && typeof config.params === 'object') {
+    Object.entries(config.params as Record<string, unknown>).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') query.set(key, String(value));
+    });
+  }
   const body = typeof config.data === 'string' ? safeParse(config.data) : config.data;
   const headers = normaliseHeaders(config.headers);
 

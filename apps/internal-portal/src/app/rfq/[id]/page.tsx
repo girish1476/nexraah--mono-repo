@@ -4,8 +4,9 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { errorMessage } from '@/apis';
-import { fmtDate, inr } from '@/lib/format';
+import { capitalizeWords, fmtDate, inr } from '@/lib/format';
 import {
+  CityField,
   Column,
   DataTable,
   ErrorState,
@@ -158,10 +159,20 @@ export default function RfqDetailPage() {
           <Panel title="Add a lane">
             <FormGrid>
               <Field label="Origin" required>
-                <input value={lane.origin} onChange={(e) => setLane({ ...lane, origin: e.target.value })} />
+                <CityField
+                  listId="cities-lane-origin"
+                  value={lane.origin}
+                  onChange={(e) => setLane({ ...lane, origin: e.target.value })}
+                  onBlur={(e) => setLane((l) => ({ ...l, origin: capitalizeWords(e.target.value) }))}
+                />
               </Field>
               <Field label="Destination" required>
-                <input value={lane.destination} onChange={(e) => setLane({ ...lane, destination: e.target.value })} />
+                <CityField
+                  listId="cities-lane-destination"
+                  value={lane.destination}
+                  onChange={(e) => setLane({ ...lane, destination: e.target.value })}
+                  onBlur={(e) => setLane((l) => ({ ...l, destination: capitalizeWords(e.target.value) }))}
+                />
               </Field>
               <Field label="Truck type" required>
                 <input value={lane.truckType} onChange={(e) => setLane({ ...lane, truckType: e.target.value })} />

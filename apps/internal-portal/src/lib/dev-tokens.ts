@@ -1,0 +1,43 @@
+import { RoleCode } from './permissions';
+
+/**
+ * Prototype-only signed tokens, one per seeded user — same footing as
+ * `/dev-login` and the `?devToken=` query param (`app/providers.tsx`), all
+ * three deleted together once Supabase Auth lands.
+ *
+ * Shared by `/dev-login` (the sign-in screen) and `RoleStrip`'s "Signed in
+ * as" switcher (`app/shell.tsx`) so both actually change who the server
+ * thinks you are, rather than only relabelling the sidebar.
+ */
+export const DEV_TOKENS: Record<RoleCode, { name: string; token: string }> = {
+  ADMIN: {
+    name: 'Dev Admin',
+    token:
+      'eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2V5LTEifQ.eyJlbWFpbCI6ImRldkBuZXhyYWFoLnRlc3QiLCJzdWIiOiIzMzEzYjhkZC01MTIzLTQ4Y2UtYjFhNS1iNGQyMWY2ODhkMTQiLCJpYXQiOjE3ODY5MDAwODksImlzcyI6Imh0dHA6Ly9sb2NhbGhvc3Q6NTQzMzAvYXV0aC92MSIsImV4cCI6MTc4NzUwNDg4OX0.dWEUxuYWjq360iTF1fLg1YYRF8HhVJjca16r52I6y55_utAbdPv0OPSDPhrwChuzlriKfIMJvkD2AQ6Dg6fdhGTjUfrc3WSUiwsxtcZoCWHPX5gRL1g-dueLWpM5NpENNefrag7T8Lp4ShhNMkTydjttvuMo-Zy-Oe6GJFd6KnkxjFi51sgsLC661C_WkPKz_5GaR1rupaRKvpnVvoxWEQXrKHmgBzL92emJoj2bMqhyRLDRgF0OFmxb4JDrGOcjPLkCOSYUu1GMXF-QZjOxVxx3N9pvZfrqaGSSV1oDE38a6LK8M2iOpRTGNx3RW45zBxw-wbxFeE7qR-H5tse0jQ',
+  },
+  OPS: {
+    name: 'Anita Desai',
+    token:
+      'eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2V5LTEifQ.eyJlbWFpbCI6ImFuaXRhQG5leHJhYWgudGVzdCIsInN1YiI6IjM5YzZhNGRkLWM1MmEtNDBjZS05NDI3LWE0Mjc3ZjUxMThmMiIsImlhdCI6MTc4NjkwMDA4OSwiaXNzIjoiaHR0cDovL2xvY2FsaG9zdDo1NDMzMC9hdXRoL3YxIiwiZXhwIjoxNzg3NTA0ODg5fQ.A4oXoh785TVJJsYCDVBpk7Qqzs_NYxgw3wj4kP2DzrxBzQVe5Ose_VN3MMydh9byzIxh8dylObCpyLg2LnDsvAS1y8ygyAoh5st0Ym0dniUyFOlJs7_DtZ0nMdlo_U_-9bRFapp7I8krXpE-PdmQM0_y4dAaVWM4HOo1k3y5XZmiZ0p2-qSPOOOhIT2sBCpBIf2SNizC-0jQOmrYNyRfoxTkXWWPjV2nlrZmYLT-3TqVgijV0bcOAS9vjSvzAJX0MkXMBEqaGJTIMjlahJfoTJQ9eluCI08QJVt-5ovgTpdISZIl0itKibbVsFoclstHolBGKh_RIH5h0WN_caJkDQ',
+  },
+  COMPLIANCE: {
+    name: 'Vikram Nair',
+    token:
+      'eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2V5LTEifQ.eyJlbWFpbCI6InZpa3JhbUBuZXhyYWFoLnRlc3QiLCJzdWIiOiJmM2UxOTgzOS1jMzM0LTQwOWYtOWZlYi1iNmQxY2Q3Yjk0N2UiLCJpYXQiOjE3ODY5MDAwODksImlzcyI6Imh0dHA6Ly9sb2NhbGhvc3Q6NTQzMzAvYXV0aC92MSIsImV4cCI6MTc4NzUwNDg4OX0.T2DoNdMK-hhgMw9UvreQdP7slBWoP2BP52-G1nNVoaPHtfsR1OB3XooZvZoqdmeqPhAsXvvnf9tWvO76K3RVq0CxZ7QlyDWgeBa66A63aSvsdgRUGIoKN-WAtI2UFe9csbRZGXKM6rSkcCX88yuDJmWQrloz1I5VCufLaSweA3JS9QefBLrfSUrTwiM1Zy3T0TbyGEAuX59Sqszxcf6L2K8w3BHZQW7CoI7Kpa6CPm77TYQ1jDS2X3ACbfP8sC5Olxg_WXExZDDtj0oltzx9z3wQMK-nspyU29BMi6prnrUL2nVjhumvvZ6R7QlIAqBgB0vJO38QOHyffQ5BWoWMnw',
+  },
+  FINANCE: {
+    name: 'Priya Menon',
+    token:
+      'eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2V5LTEifQ.eyJlbWFpbCI6InByaXlhQG5leHJhYWgudGVzdCIsInN1YiI6IjJmMDQ1MzdiLWYxYTctNDI0OS05Y2Q4LTU3ZDVlZWMyODk3ZCIsImlhdCI6MTc4NjkwMDA4OSwiaXNzIjoiaHR0cDovL2xvY2FsaG9zdDo1NDMzMC9hdXRoL3YxIiwiZXhwIjoxNzg3NTA0ODg5fQ.aohMlHaspzH4RXyEzv-LVtXv_bOIxDBuwFdbWbdQl8xS8XFl5ECbMC4LCuLXmP7q5R5GMX8_i3tNSY0UZuXY6FgnpUeqL7mUmrLkL3tLdPip5ENvnGNKCZYlVmTj5s8G4tc0ayAHTkinPWQVBi6k1XrB4tdnnSyMVH6yA5zd44ZRzqTJiBbcSnA04QxViZMoxoR33mFaPL1_w36Bp4ek1qqbVfD1OKHmjiVsDiGusL69XRfFVldo65clveWm9oJft0D8Gl706D8AHWmgWtRLy2qE-wOmm3y6Io-zbusjGUGv5O0h0Y0AAb26s47xAe6S8dN60NaHzClR9ySTEKKriw',
+  },
+  BRANCH_MGR: {
+    name: 'Sunita Rao',
+    token:
+      'eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2V5LTEifQ.eyJlbWFpbCI6InN1bml0YUBuZXhyYWFoLnRlc3QiLCJzdWIiOiJlM2QzOWVhMi1hMTdhLTQyMjYtOWUyNS01MDRhMjljMTgxMWMiLCJpYXQiOjE3ODY5MDAwODksImlzcyI6Imh0dHA6Ly9sb2NhbGhvc3Q6NTQzMzAvYXV0aC92MSIsImV4cCI6MTc4NzUwNDg4OX0.bUjvSw79iakj3BMKUTl1VjMMiWH8v6J_fUWphSnY1n0rlfkCzIsvCWcIjKMuGT8OgJleRIENiCp6ZdNsb6czYGfdu1o1aBK3NSS_odBVjBPTu14pyTmmIRCaR2xN9Ygyd2GvwJWtW__cpL9ossaPBik-K8oVGogekYahFl6G0GuRJ3y5gt150bK0U6WLtvMKTScJ50U2jlLqtyJqa4nPMga39vWwQpW_PDXBWvOyVYeSHBUu6WrguLyDhtGADQbxEDb76W1zpgIjUQ-EfrOzyCzT-xFMZS5NMW9E79wgPjj6nbqeWYYNNbPyvrMxW0pOu6QTOo-VNX9A5yUrOyyumQ',
+  },
+  LEADERSHIP: {
+    name: 'Arjun Kapoor',
+    token:
+      'eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2V5LTEifQ.eyJlbWFpbCI6ImFyanVuQG5leHJhYWgudGVzdCIsInN1YiI6IjhiNmZkNGZlLTZlNzgtNDVmYi1iYjIxLTAzNDQ1MDYzYjVlMCIsImlhdCI6MTc4NjkwMDA4OSwiaXNzIjoiaHR0cDovL2xvY2FsaG9zdDo1NDMzMC9hdXRoL3YxIiwiZXhwIjoxNzg3NTA0ODg5fQ.AzAQAMv35plpwm5D5AAqv9J-VSnAJRadiawC0R6cNszB7DjHFEXsNfqfrKpQBR7jmAKjPuL-7U68ifhMQTgCFrCylOAhUhMLMpUwqd6pr5ND0NV8GXnhOu5JQ9ts-kIHmErYCnixZgCPJBz9Bs0HjIxt3nMZfZYw5aRmYyLE4uDxOnky583HCkYhzBjMjzJwxfsx3uGWv_II3p-r5d8_hwdK2hGBZLiFW1_4NYvpO9621O929gPc1KZtBc9_TwwBob8sVaA9mIQaq7v5JYvzJha6fz2G62CtGHZG7hys8uPmIoZwtJXYjQSYTChGDVIQZC6Qe2IqQhWvEKUlojA6mw',
+  },
+};

@@ -1,13 +1,15 @@
-/* Design tokens ported from the transporter-portal prototype. */
+/* Design tokens for the transporter portal — phone-first, thumb-friendly. */
 :root {
   --font-heading: 'Source Serif 4', Georgia, serif;
   --font-body: 'Public Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Roboto Mono', ui-monospace, SFMono-Regular, monospace;
 
-  --color-bg: #f0f3f8;
+  --color-bg: #eef1f8;
   --color-surface: #ffffff;
   --color-text: #15202f;
-  --color-divider: #c6d0e0;
-  --color-accent: #173a75;
+  --color-divider: #d7deea;
+  --color-accent: #1a4184;
+  --color-accent-400: #5b77ac;
   --color-accent-700: #173a75;
   --color-accent-800: #102a57;
   --color-neutral-300: #d3dbe7;
@@ -15,19 +17,32 @@
   --color-neutral-700: #48566b;
 
   /* status tones: ink + tint */
-  --mint: #1d6a4c;
-  --mint-t: #e0ede7;
-  --flag: #8a6317;
-  --flag-t: #f4ebda;
-  --red: #9a3529;
-  --red-t: #f3e4e1;
+  --mint: #1a7a54;
+  --mint-t: #e4f2ea;
+  --flag: #966a13;
+  --flag-t: #faf1dc;
+  --red: #ae3b2c;
+  --red-t: #fbeae7;
   --blue: #1e5a93;
   --blue-t: #e6ecf8;
   --grey: #5d5d60;
-  --grey-t: #eef1f6;
+  --grey-t: #eef0f5;
 
   --tab-h: 64px;
   --bar-h: 76px;
+
+  --shadow-sm: 0 1px 2px rgba(15, 30, 60, 0.05), 0 1px 1px rgba(15, 30, 60, 0.04);
+  --shadow-md: 0 6px 16px rgba(15, 30, 60, 0.09), 0 1px 2px rgba(15, 30, 60, 0.05);
+  --shadow-lg: 0 -2px 16px rgba(15, 30, 60, 0.08);
+  --shadow-focus: 0 0 0 3px color-mix(in srgb, var(--color-accent-400) 35%, transparent);
+
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-pill: 999px;
+
+  --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+  --transition-fast: 120ms var(--ease);
+  --transition: 180ms var(--ease);
 }
 
 * {
@@ -45,6 +60,10 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+::selection {
+  background: color-mix(in srgb, var(--color-accent) 25%, transparent);
+}
+
 button,
 input,
 select {
@@ -54,6 +73,16 @@ select {
 
 button {
   cursor: pointer;
+  transition: background var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+  border-radius: var(--radius-sm);
 }
 
 /* Phone-first (NFR-06): one column, capped so a laptop is not broken. */
@@ -67,12 +96,26 @@ button {
 .card {
   background: var(--color-surface);
   border: 1px solid var(--color-divider);
-  border-radius: 12px;
-  padding: 14px;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  padding: 15px;
   margin-bottom: 10px;
   width: 100%;
   text-align: left;
   display: block;
+  color: inherit;
+  text-decoration: none;
+  transition: box-shadow var(--transition-fast), transform var(--transition-fast), border-color var(--transition-fast);
+}
+a.card:hover,
+button.card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+  border-color: var(--color-neutral-400);
+}
+a.card:active,
+button.card:active {
+  transform: translateY(0);
 }
 
 .card-title {
@@ -87,11 +130,13 @@ button {
 }
 
 .pill {
-  display: inline-block;
-  border-radius: 999px;
-  padding: 3px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: var(--radius-pill);
+  padding: 3.5px 11px;
   font-size: 11.5px;
-  font-weight: 600;
+  font-weight: 700;
   white-space: nowrap;
 }
 
@@ -105,7 +150,60 @@ button {
 .field {
   width: 100%;
   border: 1px solid var(--color-divider);
-  border-radius: 10px;
-  padding: 12px;
+  border-radius: var(--radius-sm);
+  padding: 13px;
   background: var(--color-surface);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.field:focus {
+  outline: none;
+  border-color: var(--color-accent-400);
+  box-shadow: var(--shadow-focus);
+}
+
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--color-accent);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-neutral-400);
+  border-radius: var(--radius-pill);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.skeleton {
+  background: linear-gradient(
+    100deg,
+    var(--grey-t) 30%,
+    color-mix(in srgb, var(--grey-t) 55%, white) 50%,
+    var(--grey-t) 70%
+  );
+  background-size: 220% 100%;
+  animation: skeleton-sheen 1.4s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+@keyframes skeleton-sheen {
+  0% {
+    background-position: 130% 0;
+  }
+  100% {
+    background-position: -30% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

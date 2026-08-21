@@ -8,7 +8,7 @@ Frontend: `src/app/invoices/apis.ts` · `src/app/receivables/page.tsx`
 
 ## No tax fields anywhere
 
-There is **no GST field, column or line** on the create screen, the ledger, the detail page, any of the four printed copies, or any shape in this document (`BR-15`, `D-06`, `D-26`). In their place:
+There is **no GST field, column or line** on the create screen, the ledger, the detail page, the printed invoice, or any shape in this document (`BR-15`, `D-06`, `D-26`). In their place:
 
 ```
 GST PAYABLE BY RECIPIENT UNDER REVERSE CHARGE
@@ -128,7 +128,9 @@ Freight is always billed. Loading, unloading, detention and other appear **only 
 
 ## Print
 
-`/print/invoice/[invoiceId]` renders **exactly four copies** labelled shipper · consignee · POD · POD duplicate (`BR-17`), each carrying the company block, the charge table across the six heads, the reverse-charge declaration, terms, a Code 39 barcode of the invoice number and an authorised-signature block.
+`/print/invoice/[invoiceId]` renders **a single copy** — the bill Finance sends to the client, not a document that travels with the goods, so there's no second party to countersign and keep a copy. It carries the company block, the charge table across the six heads, the reverse-charge declaration, terms, a Code 39 barcode of the invoice number and an authorised-signature block.
+
+The multi-copy, multi-signature print is the lorry receipt (`BR-17`, part 05 §5.1) — Operations' document, not Finance's. See `docs/api/04-trips-lr.md` §Print.
 
 ---
 
@@ -140,9 +142,9 @@ Nexraah produces invoices and receipts; it is **not the books of account** (FSD 
 
 ## Done when
 
-- [ ] No GST field, column or line exists on any screen or in any of the four printed copies (`BR-15`)
-- [ ] The reverse-charge declaration appears on screen and on every copy
-- [ ] Print produces exactly four labelled copies (`BR-17`)
+- [ ] No GST field, column or line exists on any screen or on the printed invoice (`BR-15`)
+- [ ] The reverse-charge declaration appears on screen and on the printed invoice
+- [ ] Print produces a single copy — the four-copy print is the lorry receipt's, not this screen's (`BR-17`, part 05)
 - [ ] A receipt equal to the balance marks `PAID`; a lesser one marks `PART_PAID` (`BR-16`)
 - [ ] Cancelling keeps the row and the number, with a reason
 - [ ] Charge heads carry the **billed** amount, not the cost

@@ -79,7 +79,13 @@ export default function LeadsPage() {
           <select
             value={r.stage}
             onChange={(e) => move(r, e.target.value as Lead['stage'])}
-            style={{ fontFamily: 'inherit', fontSize: 12, padding: '4px 6px', border: '1px solid var(--color-divider)' }}
+            style={{
+              fontFamily: 'inherit',
+              fontSize: 12,
+              padding: '4px 6px',
+              border: '1px solid var(--color-divider)',
+              borderRadius: 'var(--radius-sm)',
+            }}
           >
             {STAGES.map((s) => (
               <option key={s} value={s}>

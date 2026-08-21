@@ -50,7 +50,13 @@ export default function MarketGapPage() {
           <input
             type="number"
             defaultValue={r.target}
-            style={{ width: 64, padding: '4px 6px', border: '1px solid var(--color-divider)', fontFamily: 'inherit' }}
+            style={{
+              width: 64,
+              padding: '4px 6px',
+              border: '1px solid var(--color-divider)',
+              borderRadius: 'var(--radius-sm)',
+              fontFamily: 'inherit',
+            }}
             onBlur={async (e) => {
               const target = Number(e.target.value);
               if (target === r.target) return;

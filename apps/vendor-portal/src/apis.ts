@@ -11,7 +11,7 @@ import axios, {
  * handling here — page modules should never create their own instance.
  */
 export const api: AxiosInstance = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4001/api',
+  baseURL: process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4001/api/v1',
   timeout: 30_000,
   headers: { 'Content-Type': 'application/json' },
 });

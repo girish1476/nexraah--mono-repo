@@ -107,7 +107,7 @@ The first call every page makes. Nothing renders behind the shell until it resol
 ```json
 {
   "roles": ["OPS","COMPLIANCE","FINANCE","BRANCH_MGR","LEADERSHIP","ADMIN"],
-  "grants": { "OPS": ["indent.create","indent.view","document.verify","vendor.edit","rfq.edit"] },
+  "grants": { "OPS": ["indent.manage","indent.view","vendor.edit","rfq.edit"] },
   "matrix": { "OPS": { "pod.verify": "EDIT" } }
 }
 ```

@@ -64,3 +64,23 @@ export const POD_TONE: Record<string, 'mint' | 'flag' | 'red' | 'blue' | 'grey'>
 export function docLabel(kind: string): string {
   return DOC_LABELS[kind] ?? kind.replace(/_/g, ' ').toLowerCase();
 }
+
+/**
+ * The five telematics alert kinds of `BR-19` (part 11 §1), coloured once so
+ * the fleet board and a trip's own tracking panel agree.
+ */
+export const ALERT_LABEL: Record<string, string> = {
+  OVERSPEED: 'Overspeed',
+  LONG_HALT: 'Long halt',
+  DARK_VEHICLE: 'No signal',
+  EWAY_EXPIRING: 'E-way expiring',
+  EWAY_EXPIRED: 'E-way expired',
+};
+
+export const ALERT_TONE: Record<string, 'mint' | 'flag' | 'red' | 'blue' | 'grey'> = {
+  OVERSPEED: 'red',
+  LONG_HALT: 'flag',
+  DARK_VEHICLE: 'flag',
+  EWAY_EXPIRING: 'flag',
+  EWAY_EXPIRED: 'red',
+};

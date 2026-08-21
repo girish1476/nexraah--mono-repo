@@ -91,10 +91,10 @@ GET    /clients/:id/rate-card              read-only, from rate_card_lanes
 POST   /indents                            indent.create
 GET    /indents?stage=&branch=&client=
 GET    /indents/:id
-POST   /indents/:id/award                  → 202 ABOVE_BAND_PRICE when band_position = ABOVE_BAND
-POST   /indents/:id/placement              records vehicle, driver, reported_at
-POST   /indents/:id/trip                   → TRP-, creates the trip
-PATCH  /indents/:id/advance-pct            → 202 ADVANCE_POLICY_CHANGE (BR-57)
+POST   /indents/:id/award                  indent.manage · → 202 ABOVE_BAND_PRICE when band_position = ABOVE_BAND
+POST   /indents/:id/placement              indent.manage · records vehicle, driver, reported_at
+POST   /indents/:id/trip                   indent.manage · → TRP-, creates the trip
+PATCH  /indents/:id/advance-pct            indent.manage · → 202 ADVANCE_POLICY_CHANGE (BR-57)
 ```
 
 Quote submission is Spec 1's — transporters quote in the portal. This side reads `quotes` and awards.

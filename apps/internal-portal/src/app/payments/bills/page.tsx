@@ -123,11 +123,16 @@ export default function BillsPage() {
       label: 'Variance',
       align: 'right',
       render: (r) => {
-        const v = r.totalPaise - r.computedBalancePaise;
+        // BR-53's variance is the transporter's bill against what we billed
+        // ourselves (freight + captured charges) — `variancePaise` is that
+        // figure, precomputed server-side. `computedBalancePaise` is the net
+        // payable *after* the advance is deducted; diffing the bill total
+        // against it double-counts the advance as if it were a discrepancy.
+        const v = r.variancePaise;
         if (v === 0) return <span className="muted">—</span>;
         return (
           <span style={{ color: 'var(--flag)' }}>
-            {inr(v)} · {pct(r.computedBalancePaise ? (v / r.computedBalancePaise) * 100 : 0)}
+            {inr(v)} · {pct(r.totalPaise ? (v / r.totalPaise) * 100 : 0)}
           </span>
         );
       },
@@ -195,7 +200,7 @@ export default function BillsPage() {
                 ['Transporter', accepting.vendorName],
                 ['Their bill', inr(accepting.totalPaise)],
                 ['Computed balance', inr(accepting.computedBalancePaise)],
-                ['Variance', inr(accepting.totalPaise - accepting.computedBalancePaise)],
+                ['Variance', inr(accepting.variancePaise)],
               ]
             : []
         }

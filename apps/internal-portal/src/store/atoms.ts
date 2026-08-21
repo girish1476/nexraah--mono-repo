@@ -25,7 +25,15 @@ export interface Session {
   branch: Branch | null;
 }
 
-export const sessionAtom = atom<Session | null>(null);
+/**
+ * Three states, not two: `undefined` (the initial value) means `GET
+ * /auth/session` hasn't resolved yet; `null` means it resolved to a failure.
+ * Collapsing those into a single `null` is what let the sidebar sit on
+ * "Signing in…" forever with no way to tell "still loading" from "the call
+ * failed and nothing will change until something does" — the failure case
+ * needs its own UI (SessionBootstrap), not the loading copy.
+ */
+export const sessionAtom = atom<Session | null | undefined>(undefined);
 
 export const roleAtom = atom<RoleCode>((get) => get(sessionAtom)?.role ?? 'OPS');
 
@@ -35,7 +43,7 @@ export const permissionsAtom = atom<Permission[]>((get) => {
   return session.permissions?.length ? session.permissions : SEED_GRANTS[session.role];
 });
 
-export const isAuthenticatedAtom = atom((get) => get(sessionAtom) !== null);
+export const isAuthenticatedAtom = atom((get) => Boolean(get(sessionAtom)));
 
 /** Single transient toast. Written by `useToast()`. */
 export const toastAtom = atom<string>('');

@@ -165,7 +165,7 @@ export default function TripDocumentsPage() {
       align: 'right',
       render: (r) => {
         if (r.status === 'MISSING' || r.status === 'REJECTED')
-          return can('document.verify') || can('indent.create') ? (
+          return can('document.verify') || can('indent.manage') ? (
             <button className="btn btn-secondary btn-sm" onClick={() => upload(r)}>
               Upload
             </button>

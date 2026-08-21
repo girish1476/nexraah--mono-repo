@@ -8,9 +8,10 @@ import { z } from 'zod';
 import { errorMessage, request } from '@/apis';
 import { getRateCard, listClients } from '@/app/clients/apis';
 import { Client, RateCardLane } from '@/app/clients/types';
-import { inr, pct } from '@/lib/format';
+import { capitalizeWords, inr, pct } from '@/lib/format';
 import {
   Banner,
+  CityField,
   Field,
   FormGrid,
   ModuleGuard,
@@ -36,8 +37,8 @@ const schema = z
   .object({
     clientId: z.string().min(1, 'Required'),
     branchId: z.string().min(1, 'Required'),
-    fromCity: z.string().min(2, 'Required'),
-    toCity: z.string().min(2, 'Required'),
+    fromCity: z.string().min(2, 'Required').transform((v) => capitalizeWords(v)),
+    toCity: z.string().min(2, 'Required').transform((v) => capitalizeWords(v)),
     material: z.string().min(2, 'Required'),
     weightTn: z.number().min(0.5, 'Required'),
     truckType: z.string().min(2, 'Required'),
@@ -200,10 +201,18 @@ export default function NewIndentPage() {
               </select>
             </Field>
             <Field label="Pickup city" required error={form.formState.errors.fromCity?.message}>
-              <input {...form.register('fromCity')} />
+              <CityField
+                listId="cities-from-city"
+                {...form.register('fromCity')}
+                onBlur={(e) => form.setValue('fromCity', capitalizeWords(e.target.value))}
+              />
             </Field>
             <Field label="Delivery city" required error={form.formState.errors.toCity?.message}>
-              <input {...form.register('toCity')} />
+              <CityField
+                listId="cities-to-city"
+                {...form.register('toCity')}
+                onBlur={(e) => form.setValue('toCity', capitalizeWords(e.target.value))}
+              />
             </Field>
             <Field label="Material" required error={form.formState.errors.material?.message}>
               <input {...form.register('material')} />

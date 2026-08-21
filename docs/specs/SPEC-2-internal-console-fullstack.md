@@ -97,7 +97,7 @@ The third is the product. `🔒 Advance blocked — E-way bill uploaded but not 
 
 ### 2.3 Grantable functions
 
-`indent.create` and `document.verify` attach to any internal role (`D-17`, `BR-41`). Seeded to `OPS`; movable in the roles matrix without a deploy.
+`indent.create`, `indent.manage` and `document.verify` attach to any internal role (`D-17`, `BR-41`). `indent.create` is the intake step (`POST /indents`) and seeds to `COMPLIANCE`; `indent.manage` covers everything after intake — award, placement, trip creation, advance % — and seeds to `OPS` and `BRANCH_MGR`. Both movable in the roles matrix without a deploy.
 
 ### 2.4 Seed permission grants
 
@@ -106,8 +106,9 @@ The third is the product. `🔒 Advance blocked — E-way bill uploaded but not 
 | Permission | Seeded to | Movable |
 |---|---|---|
 | `payment.release` | `FINANCE` | **Fixed** (`BR-40`) — not grantable to any other role |
-| `indent.create` | `OPS` | Yes (`BR-41`) |
-| `document.verify` | `OPS` | Yes (`BR-41`) |
+| `indent.create` | `COMPLIANCE`, `BRANCH_MGR` | Yes (`BR-41`) |
+| `indent.manage` | `OPS`, `BRANCH_MGR` | Yes (`BR-41`) |
+| `document.verify` | `COMPLIANCE` | Yes (`BR-41`) |
 | `vendor.verify` · `vendor.activate` | `COMPLIANCE` | Yes |
 | `vendor.advance_policy` | `COMPLIANCE` | Yes — a change still needs approval (`BR-57`) |
 | `pod.receive` | `BRANCH_MGR`, `COMPLIANCE` | Yes |
@@ -612,7 +613,7 @@ Module toggles. Settings: KYC strict gate · **advance document set** (`BR-58`) 
 Roles down, permission groups across, three states: **None · View · Edit**. On screen:
 
 - `payment.release` is FINANCE only and not grantable elsewhere (`BR-40`)
-- `indent.create` and `document.verify` freely attachable (`D-17`, `BR-41`)
+- `indent.create`, `indent.manage` and `document.verify` freely attachable (`D-17`, `BR-41`)
 - `pod.approve` cannot be held by the same user who holds the verification on a given POD (`BR-50`)
 - `config.manage` is ADMIN only
 - Seed grants are §2.4

@@ -154,6 +154,8 @@ Branch is **derived from the pickup city** and carried unchanged to the trip and
 
 ## `POST /indents/:id/award`
 
+**Permission** — `indent.manage` (grantable to any internal role, `BR-41`) — everything from here on is execution, not intake, and is seeded to `OPS`/`BRANCH_MGR` rather than whoever holds `indent.create`.
+
 **Body** — `{ "quoteId": "q-1", "reason": "optional" }`
 
 | Outcome | Response |
@@ -169,6 +171,8 @@ Awarding also sets `advancePct` from the awarded vendor's standing policy (`BR-3
 ---
 
 ## `POST /indents/:id/placement`
+
+**Permission** — `indent.manage`.
 
 **Body**
 
@@ -191,6 +195,8 @@ The frontend computes `transitDelay` for display; **the server must recompute it
 
 ## `POST /indents/:id/trip`
 
+**Permission** — `indent.manage`.
+
 Consumes the `TRP-` series inside the creating transaction (`BR-21`, `BR-14`) and opens the trip record part 05 owns.
 
 **Response** — `{ "id": "t-TRP-120882", "code": "TRP-120882" }` (the full trip is fine too; the frontend uses `id` and `code`).
@@ -200,6 +206,8 @@ Consumes the `TRP-` series inside the creating transaction (`BR-21`, `BR-14`) an
 ---
 
 ## `PATCH /indents/:id/advance-pct`
+
+**Permission** — `indent.manage`.
 
 **Body** — `{ "advancePct": 70, "reason": "≥ 20 characters" }`
 **Always `202 ADVANCE_POLICY_CHANGE`** when it departs from the awarded vendor's standing policy (`BR-57`, `D-22`).

@@ -58,8 +58,8 @@ export function getFleet() {
 
 export function addVehicle(body: VehicleInput) {
   if (USE_MOCK) {
-    return mock<FleetVehicle>({
-      id: 'VH-NEW',
+    const vehicle: FleetVehicle = {
+      id: `VH-${Date.now().toString(36).toUpperCase()}`,
       registrationNo: body.registrationNo,
       truckType: body.truckType,
       capacityKg: body.capacityKg,
@@ -67,7 +67,9 @@ export function addVehicle(body: VehicleInput) {
       status: body.status,
       freeFrom: body.freeFrom ?? null,
       docsDue: null,
-    });
+    };
+    FIXTURES.push(vehicle);
+    return mock<FleetVehicle>(vehicle);
   }
   return request<ApiResponse<FleetVehicle>>({
     url: '/portal/fleet',
@@ -77,7 +79,11 @@ export function addVehicle(body: VehicleInput) {
 }
 
 export function updateVehicle(id: string, body: Partial<VehicleInput>) {
-  if (USE_MOCK) return mock<void>(undefined);
+  if (USE_MOCK) {
+    const vehicle = FIXTURES.find((v) => v.id === id);
+    if (vehicle) Object.assign(vehicle, body);
+    return mock<void>(undefined);
+  }
   return request<ApiResponse<FleetVehicle>>({
     url: `/portal/fleet/${id}`,
     method: 'PATCH',

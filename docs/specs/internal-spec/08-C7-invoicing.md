@@ -4,7 +4,7 @@
 |---|---|
 | **Wave** | C7 |
 | **Depends on** | 05 (billed charge amounts come from charge capture) |
-| **Rules owned** | `BR-15`, `BR-16`, `BR-17` |
+| **Rules owned** | `BR-15`, `BR-16` |
 | **Screens** | `/invoices`, `/invoices/new`, `/invoices/[id]`, `/receivables`, `/print/invoice/[invoiceId]` |
 | **Module** | `MOD-INV` · **Permission** `invoice.create`, `receipt.record` — seeded to `FINANCE` |
 
@@ -37,11 +37,13 @@ Freight is always billed. Loading, unloading, detention and other heads appear *
 
 Search by number, client, phone or date. Chips: today · this week · this month · paid · pending. Ageing stack 0–30 / 31–60 / 61–90 / 90+. **No GST columns anywhere.** Invoice numbers are links.
 
-Detail: value · received · balance · receipts. Print → **four copies** (`BR-17`). Cancel with reason; **never deleted** — a cancelled invoice keeps its number and its reason.
+Detail: value · received · balance · receipts. Print → **a single copy**. Cancel with reason; **never deleted** — a cancelled invoice keeps its number and its reason.
 
 ### 2.1 Print layout — `/print/invoice/[invoiceId]`
 
-FSD B6. A4, **four copies labelled shipper · consignee · POD · POD duplicate**, each carrying the company block (GSTIN, PAN, CIN from the control panel), the charge table across the six heads, the reverse-charge declaration above, terms, a barcode of the invoice number, and an authorised-signature block.
+A4, **a single copy** — this is Finance's bill to the client, not a document that travels with the goods, so there's no second party to countersign and keep a copy. Carries the company block (GSTIN, PAN, CIN from the control panel), the charge table across the six heads, the reverse-charge declaration above, terms, a barcode of the invoice number, and an authorised-signature block.
+
+The four-copy, multi-signature print is the lorry receipt's (`BR-17`, part 05 §5.1) — Operations' document, not this one. It was previously (incorrectly) specified here; moved to correct the confusion between the two print flows.
 
 ---
 
@@ -61,7 +63,7 @@ POST   /invoices/:id/generate        invoice.create      → NEX-INV-, ISSUED
 GET    /invoices?q=&status=&from=&to=
 GET    /invoices/:id
 POST   /invoices/:id/cancel          { reason }          never deletes
-GET    /invoices/:id/print           four copies
+GET    /invoices/:id/print           single copy
 POST   /receipts                     receipt.record      BR-16
 GET    /receivables?ageing=&client=
 ```
@@ -78,9 +80,9 @@ Nexraah produces invoices and receipts; it is **not the books of account** (FSD 
 
 ## 6 · Done when
 
-- [ ] No GST field, column or line exists on the create screen, the ledger, the detail page or any of the four printed copies (`BR-15`)
-- [ ] The reverse-charge declaration appears on screen and on every copy
-- [ ] Print produces exactly four labelled copies (`BR-17`)
+- [ ] No GST field, column or line exists on the create screen, the ledger, the detail page or the printed invoice (`BR-15`)
+- [ ] The reverse-charge declaration appears on screen and on the printed invoice
+- [ ] Print produces a single copy (the four-copy print belongs to the lorry receipt, part 05 — `BR-17`)
 - [ ] A receipt equal to the balance marks `PAID`; a lesser one marks `PART_PAID` and leaves the remainder in the ageing (`BR-16`)
 - [ ] Cancelling keeps the row and the number, with a reason
 - [ ] Charge heads carry the **billed** amount, not the cost

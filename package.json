@@ -4,11 +4,17 @@
   "private": true,
   "packageManager": "pnpm@9.15.3",
   "scripts": {
-    "dev:vendor": "pnpm --parallel --filter \"./apps/vendor-*\" dev",
+    "dev:vendor": "pnpm --parallel --filter \"./apps/vendor-*\" --filter \"!vendor-mobile\" dev",
     "dev:internal": "pnpm --parallel --filter \"./apps/internal-*\" dev",
-    "dev": "pnpm --parallel -r dev",
-    "build:vendor": "pnpm --filter \"./apps/vendor-*\" build",
+    "dev": "pnpm --parallel -r --filter \"!vendor-mobile\" dev",
+    "build:vendor": "pnpm --filter \"./apps/vendor-*\" --filter \"!vendor-mobile\" build",
     "build:internal": "pnpm --filter \"./apps/internal-*\" build",
-    "build": "pnpm -r build"
+    "build": "pnpm -r --filter \"!vendor-mobile\" build",
+    "dev:vendor-mobile": "pnpm --filter vendor-mobile start",
+    "test": "pnpm --filter internal-portal test && pnpm --filter vendor-portal test",
+    "test:e2e": "pnpm --filter internal-portal test:e2e && pnpm --filter vendor-portal test:e2e"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1"
   }
 }

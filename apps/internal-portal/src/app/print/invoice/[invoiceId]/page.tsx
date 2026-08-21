@@ -10,15 +10,16 @@ import { fmtDate, inr } from '@/lib/format';
 import { ErrorState, Loading } from '@/lib/ui';
 
 /**
- * Printed invoice — `/print/invoice/[invoiceId]` (part 08 §2.1, BR-17).
+ * Printed invoice — `/print/invoice/[invoiceId]` (part 08 §2.1).
  *
- * Exactly four copies, labelled shipper · consignee · POD · POD duplicate.
- * Each carries the company block, the charge table across the six heads, the
- * reverse-charge declaration, terms, a barcode of the invoice number and an
+ * A single copy — this is the bill Finance sends to the client, not a
+ * document that travels with the goods, so there's nothing for a second
+ * party to countersign and keep. (The lorry receipt is the multi-copy,
+ * multi-signature document — see `/print/lr/[tripId]`.) Carries the company
+ * block, the charge table across the six heads, the reverse-charge
+ * declaration, terms, a barcode of the invoice number and an
  * authorised-signature block. There is no tax line anywhere.
  */
-const COPIES = ['Shipper copy', 'Consignee copy', 'POD copy', 'POD duplicate'];
-
 export default function PrintInvoicePage() {
   const { invoiceId } = useParams<{ invoiceId: string }>();
   const [invoice, setInvoice] = useState<InvoiceDetail | null>(null);
@@ -38,18 +39,16 @@ export default function PrintInvoicePage() {
           Print
         </button>
         <span className="muted" style={{ fontSize: 12, alignSelf: 'center' }}>
-          Four copies · A4
+          A4
         </span>
       </div>
 
-      {COPIES.map((copy) => (
-        <Copy key={copy} label={copy} invoice={invoice} />
-      ))}
+      <Copy invoice={invoice} />
     </div>
   );
 }
 
-function Copy({ label, invoice }: { label: string; invoice: InvoiceDetail }) {
+function Copy({ invoice }: { invoice: InvoiceDetail }) {
   const heads: [string, number][] = [
     ['Freight', invoice.freightPaise],
     ['Loading', invoice.loadingPaise],
@@ -62,7 +61,7 @@ function Copy({ label, invoice }: { label: string; invoice: InvoiceDetail }) {
   return (
     <div
       className="sheet"
-      style={{ maxWidth: 780, margin: '0 auto 22px', border: '1px solid #000', padding: 16, fontFamily: 'var(--font-body)' }}
+      style={{ maxWidth: 780, margin: '0 auto', border: '1px solid #000', padding: 16, fontFamily: 'var(--font-body)' }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '2px solid #000', paddingBottom: 10 }}>
         <div>
@@ -73,7 +72,7 @@ function Copy({ label, invoice }: { label: string; invoice: InvoiceDetail }) {
           </div>
         </div>
         <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: 10, letterSpacing: '.14em', textTransform: 'uppercase' }}>Tax invoice · {label}</div>
+          <div style={{ fontSize: 10, letterSpacing: '.14em', textTransform: 'uppercase' }}>Tax invoice</div>
           <div className="mono" style={{ fontSize: 17 }}>
             {invoice.code ?? 'DRAFT'}
           </div>

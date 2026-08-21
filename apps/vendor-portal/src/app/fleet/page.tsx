@@ -12,6 +12,8 @@ import {
   TabBar,
 } from '@/components/shell';
 import { TRUCK_TYPES, TruckType } from '@/app/loads/types';
+import { capitalizeWords } from '@/lib/format';
+import { CITIES } from '@/lib/geo';
 import { VEHICLE_TONE } from '@/lib/status';
 import { addVehicle, getFleet, updateVehicle } from './apis';
 import { FleetVehicle, SETTABLE_STATUSES, VEHICLE_STATUS_LABEL } from './types';
@@ -158,11 +160,19 @@ export default function FleetPage() {
           </label>
           <input
             id="city"
+            list="cities-current-city"
+            autoComplete="off"
             className="field"
             style={{ marginTop: 6 }}
             value={currentCity}
             onChange={(e) => setCurrentCity(e.target.value)}
+            onBlur={(e) => setCurrentCity(capitalizeWords(e.target.value))}
           />
+          <datalist id="cities-current-city">
+            {CITIES.map((c) => (
+              <option key={c} value={c} />
+            ))}
+          </datalist>
 
           <p className="muted" style={{ marginTop: 12, marginBottom: 6 }}>
             Status

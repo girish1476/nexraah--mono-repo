@@ -9,7 +9,7 @@
 -- ─────────────────────────────────────────────────────────────
 
 insert into roles (code, name, is_system) values
-  ('OPERATIONS',   'Operations',    true),
+  ('OPS',          'Operations',    true),
   ('COMPLIANCE',   'Compliance',    true),
   ('FINANCE',      'Finance',       true),
   ('BRANCH_MGR',   'Branch manager',true),

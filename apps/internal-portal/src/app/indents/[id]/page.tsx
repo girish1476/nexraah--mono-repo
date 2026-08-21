@@ -122,7 +122,7 @@ export default function IndentDetailPage() {
   if (!indent) return <Loading what="Loading the indent" />;
 
   const stageIndex = PROGRESS.findIndex((p) => p.stage === indent.stage);
-  const canAward = can('indent.create') || can('indent.view');
+  const canAward = can('indent.manage') || can('indent.view');
 
   const columns: Column<Quote>[] = [
     {
@@ -303,12 +303,12 @@ export default function IndentDetailPage() {
             </p>
           )}
           <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-            {indent.stage === 'VENDOR_ASSIGNED' && can('indent.create') && (
+            {indent.stage === 'VENDOR_ASSIGNED' && can('indent.manage') && (
               <button className="btn" onClick={() => setPlacementOpen(true)}>
                 Record vehicle placed
               </button>
             )}
-            {indent.stage === 'VEHICLE_PLACED' && can('indent.create') && (
+            {indent.stage === 'VEHICLE_PLACED' && can('indent.manage') && (
               <button className="btn" onClick={onCreateTrip} disabled={busy}>
                 Create trip
               </button>

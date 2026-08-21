@@ -200,6 +200,7 @@ export default function PodVerifyPage() {
                   width: 150,
                   height: 200,
                   border: '1px solid var(--color-divider)',
+                  borderRadius: 'var(--radius-sm)',
                   background: '#fff',
                   display: 'flex',
                   alignItems: 'center',

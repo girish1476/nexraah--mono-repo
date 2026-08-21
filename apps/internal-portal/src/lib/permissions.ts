@@ -35,14 +35,14 @@ export const ROLES: Record<RoleCode, RoleDef> = {
     code: 'OPS',
     label: 'Operations desk',
     landsOn: '/today',
-    owns: 'Indents, awards, placement, LRs, transit',
+    owns: 'Awards, placement, trip creation, LRs, transit',
     branchScoped: false,
   },
   COMPLIANCE: {
     code: 'COMPLIANCE',
     label: 'Compliance',
     landsOn: '/compliance',
-    owns: 'Vendor clearance, document verification, contract approval, POD verify and approve',
+    owns: 'Indent intake, vendor clearance, document verification and cross-check, contract approval, POD verify and approve',
     branchScoped: false,
   },
   FINANCE: {
@@ -80,6 +80,7 @@ export const ROLES: Record<RoleCode, RoleDef> = {
 export const PERMISSIONS = [
   'payment.release',
   'indent.create',
+  'indent.manage',
   'indent.view',
   'document.verify',
   'vendor.edit',
@@ -114,11 +115,12 @@ export const FIXED_PERMISSIONS: Permission[] = [
 ];
 
 /** Freely attachable to any internal role (D-17, BR-41). */
-export const GRANTABLE_ANYWHERE: Permission[] = ['indent.create', 'document.verify'];
+export const GRANTABLE_ANYWHERE: Permission[] = ['indent.create', 'indent.manage', 'document.verify'];
 
 export const SEED_GRANTS: Record<RoleCode, Permission[]> = {
-  OPS: ['indent.create', 'indent.view', 'document.verify', 'vendor.edit', 'rfq.edit'],
+  OPS: ['indent.manage', 'indent.view', 'vendor.edit', 'rfq.edit'],
   COMPLIANCE: [
+    'indent.create',
     'indent.view',
     'document.verify',
     'vendor.verify',
@@ -134,6 +136,7 @@ export const SEED_GRANTS: Record<RoleCode, Permission[]> = {
   FINANCE: ['payment.release', 'invoice.create', 'receipt.record', 'pnl.view_all', 'indent.view'],
   BRANCH_MGR: [
     'indent.create',
+    'indent.manage',
     'indent.view',
     'rfq.edit',
     'pod.receive',
@@ -184,7 +187,7 @@ export const MODULE_ACCESS: Record<ModuleKey, Record<RoleCode, Level>> = {
   vendors: { OPS: V, COMPLIANCE: E, FINANCE: V, BRANCH_MGR: V, LEADERSHIP: V, ADMIN: V },
   compliance: { OPS: N, COMPLIANCE: E, FINANCE: V, BRANCH_MGR: N, LEADERSHIP: N, ADMIN: N },
   clients: { OPS: V, COMPLIANCE: V, FINANCE: E, BRANCH_MGR: V, LEADERSHIP: V, ADMIN: N },
-  indents: { OPS: E, COMPLIANCE: V, FINANCE: V, BRANCH_MGR: E, LEADERSHIP: V, ADMIN: N },
+  indents: { OPS: E, COMPLIANCE: E, FINANCE: V, BRANCH_MGR: E, LEADERSHIP: V, ADMIN: N },
   trips: { OPS: E, COMPLIANCE: E, FINANCE: V, BRANCH_MGR: E, LEADERSHIP: V, ADMIN: N },
   pod: { OPS: V, COMPLIANCE: E, FINANCE: V, BRANCH_MGR: E, LEADERSHIP: V, ADMIN: N },
   payments: { OPS: N, COMPLIANCE: N, FINANCE: E, BRANCH_MGR: V, LEADERSHIP: V, ADMIN: N },

@@ -58,7 +58,7 @@ Every rule in FSD B4 and B8 has an owning part. `MOD-PRT` rules belong to Spec 1
 | `BR-14` | Numbers from a series, consumed on issue | 01 |
 | `BR-15` | Reverse charge only, no GST | 08 |
 | `BR-16` | Full receipt closes, partial part-pays | 08 |
-| `BR-17` | Invoice prints four copies | 08 |
+| `BR-17` | LR prints four copies | 05 |
 | `BR-18` | Placement failure recorded with a cause | 10 · 13 |
 | `BR-19` | Telematics alerts | 11 |
 | `BR-20` | Branch derived from pickup, carried unchanged | 04 |
@@ -82,7 +82,7 @@ Every rule in FSD B4 and B8 has an owning part. `MOD-PRT` rules belong to Spec 1
 | `BR-38` | Spot never quoted below sourcing | 04 · 02 |
 | `BR-39` | Band never widened | 04 |
 | `BR-40` | Finance-only payment; above-band and exceptions approved | 01 · 07 |
-| `BR-41` | `indent.create` and `document.verify` grantable | 01 |
+| `BR-41` | `indent.create`, `indent.manage` and `document.verify` grantable | 01 |
 | `BR-42` | Late reporting is a transit delay | 04 |
 | `BR-43` | Waiver: compliance proposes, leadership approves | 06 |
 | `BR-44` | Failed cross-check rejected; override needs a reason | 05 |

@@ -5,6 +5,16 @@ export const inr = (paise: number) =>
 export const inrRange = (lowPaise: number, highPaise: number) =>
   `${inr(lowPaise)} – ${inr(highPaise)}`;
 
+/** "nashik" → "Nashik" — free-text names typed in any case. */
+export const capitalizeWords = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+
 export const dateTime = (iso: string) =>
   new Date(iso).toLocaleString('en-IN', {
     day: '2-digit',

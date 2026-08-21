@@ -88,7 +88,13 @@ export default function RfqAwardPage() {
         <select
           value={decisions[r.id]?.outcome ?? 'WON'}
           disabled={level !== 'EDIT'}
-          style={{ fontFamily: 'inherit', fontSize: 12, padding: '4px 6px', border: '1px solid var(--color-divider)' }}
+          style={{
+            fontFamily: 'inherit',
+            fontSize: 12,
+            padding: '4px 6px',
+            border: '1px solid var(--color-divider)',
+            borderRadius: 'var(--radius-sm)',
+          }}
           onChange={(e) =>
             setDecisions({ ...decisions, [r.id]: { ...decisions[r.id], outcome: e.target.value as LaneOutcome } })
           }
@@ -108,7 +114,13 @@ export default function RfqAwardPage() {
           type="number"
           disabled={level !== 'EDIT' || decisions[r.id]?.outcome !== 'WON'}
           value={decisions[r.id]?.awardedRupees ?? 0}
-          style={{ width: 110, padding: '4px 6px', border: '1px solid var(--color-divider)', fontFamily: 'inherit' }}
+          style={{
+            width: 110,
+            padding: '4px 6px',
+            border: '1px solid var(--color-divider)',
+            borderRadius: 'var(--radius-sm)',
+            fontFamily: 'inherit',
+          }}
           onChange={(e) =>
             setDecisions({ ...decisions, [r.id]: { ...decisions[r.id], awardedRupees: Number(e.target.value) } })
           }

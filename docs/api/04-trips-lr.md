@@ -90,7 +90,7 @@ Eleven documents in five groups:
 
 `gatesAdvance` must be computed from `config.advance_document_set`, **not hard-coded**. Removing a member there is an audited configuration change that releases money previously held.
 
-`status` ∈ `MISSING · PENDING · VERIFIED · REJECTED`. Verification is by whoever holds `document.verify` (`BR-41`), and every verify and reject writes a `DOC_VERIFY` audit row. A reject with no reason is `400`.
+`status` ∈ `MISSING · PENDING · VERIFIED · REJECTED`. Verification is by whoever holds `document.verify` (`BR-41`, seeded to `COMPLIANCE`), and every verify and reject writes a `DOC_VERIFY` audit row. A reject with no reason is `400`.
 
 `keyedValues` is what the uploader typed off the document. It feeds the cross-check until NIC and OCR are connected; once NIC is live the e-way side stops being keyed and the check becomes authoritative rather than typo-prone.
 
@@ -209,7 +209,9 @@ Sets `sharedAt`. **Optional, always** — sharing is used where the transporter 
 
 ## Print
 
-`/print/lr/[tripId]` is a portal route, not an API call. It reads `GET /trips/:id` and `GET /config` and renders A4 with the company GSTIN, PAN and CIN, a Code 39 barcode of the LR number and three signature blocks — consignor, carrier, consignee. **The printed copy is the primary form.**
+`/print/lr/[tripId]` is a portal route, not an API call. It reads `GET /trips/:id` and `GET /config` and renders **exactly four copies**, labelled consignor · consignee · carrier · office (`BR-17`) — the LR is the document of carriage, it travels with the goods, and each party keeps a countersigned copy. Each copy carries A4 with the company GSTIN, PAN and CIN, the goods table, vehicle and driver, the six charge heads, terms, a Code 39 barcode of the LR number and three signature blocks — consignor, carrier, consignee. **The printed copy is the primary form.**
+
+The invoice print (`docs/api/07-invoicing.md` §Print) is deliberately the opposite: a single copy, since it's a bill to the client, not a document travelling with goods.
 
 ---
 
@@ -222,3 +224,4 @@ Sets `sharedAt`. **Optional, always** — sharing is used where the transporter 
 - [ ] An open cross-check mismatch blocks LR generation until rejected or overridden (`BR-32`)
 - [ ] An override under 20 characters is refused; over 20 raises `DOC_OVERRIDE` and audits (`BR-44`)
 - [ ] Charge rows carry cost and billed separately (`BR-45`)
+- [ ] Print produces exactly four labelled copies — consignor, consignee, carrier, office (`BR-17`)

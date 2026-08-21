@@ -21,7 +21,7 @@ export function inrExact(paise: Paise | null | undefined): string {
   return `₹${inrGroup.format(paise / 100)}`;
 }
 
-/** 186400000000 → "₹1.86 Cr". Summary tiles only, never a payable figure. */
+/** 1860000000 → "₹1.86 Cr". Summary tiles only, never a payable figure. */
 export function inrCompact(paise: Paise | null | undefined): string {
   if (paise === null || paise === undefined) return '—';
   const rupees = paise / 100;
@@ -71,6 +71,17 @@ export function daysSince(iso: string | null | undefined): number | null {
 /** Input value for `<input type="date">`. */
 export function dateInput(iso: string | null | undefined): string {
   return iso ? new Date(iso).toISOString().slice(0, 10) : '';
+}
+
+/** "rathod  roadlines" → "Rathod Roadlines" — free-text names typed in any case. */
+export function capitalizeWords(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
 }
 
 export function titleCase(value: string): string {

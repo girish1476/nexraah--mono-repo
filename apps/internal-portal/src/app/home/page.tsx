@@ -76,7 +76,12 @@ export default function HomePage() {
             type="month"
             value={month}
             onChange={(e) => setMonth(e.target.value)}
-            style={{ padding: '7px 9px', border: '1px solid var(--color-divider)', fontFamily: 'inherit' }}
+            style={{
+              padding: '7px 9px',
+              border: '1px solid var(--color-divider)',
+              borderRadius: 'var(--radius-sm)',
+              fontFamily: 'inherit',
+            }}
           />
         }
       />

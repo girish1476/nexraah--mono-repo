@@ -55,7 +55,13 @@ export default function IssuesPage() {
         can('vendor.edit') ? (
           <select
             value={r.status}
-            style={{ fontFamily: 'inherit', fontSize: 12, padding: '4px 6px', border: '1px solid var(--color-divider)' }}
+            style={{
+              fontFamily: 'inherit',
+              fontSize: 12,
+              padding: '4px 6px',
+              border: '1px solid var(--color-divider)',
+              borderRadius: 'var(--radius-sm)',
+            }}
             onChange={async (e) => {
               try {
                 const updated = await updateIssue(r.id, { status: e.target.value as Issue['status'] });
@@ -91,7 +97,13 @@ export default function IssuesPage() {
           <select
             value={status}
             onChange={(e) => setStatus(e.target.value as Issue['status'] | '')}
-            style={{ fontFamily: 'inherit', fontSize: 13, padding: '7px 9px', border: '1px solid var(--color-divider)' }}
+            style={{
+              fontFamily: 'inherit',
+              fontSize: 13,
+              padding: '7px 9px',
+              border: '1px solid var(--color-divider)',
+              borderRadius: 'var(--radius-sm)',
+            }}
           >
             <option value="">All</option>
             {STATUSES.map((s) => (

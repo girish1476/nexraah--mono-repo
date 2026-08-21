@@ -4,7 +4,7 @@
 |---|---|
 | **Wave** | C4 |
 | **Depends on** | 04 (a trip is created from a placed indent) |
-| **Rules owned** | `BR-13`, `BR-22`, `BR-32`, `BR-44`, `BR-45`, `BR-58` (documents half), `BR-27`/`BR-28` (carried through) |
+| **Rules owned** | `BR-13`, `BR-17`, `BR-22`, `BR-32`, `BR-44`, `BR-45`, `BR-58` (documents half), `BR-27`/`BR-28` (carried through) |
 | **Screens** | `/trips`, `/trips/[id]`, `/trips/[id]/documents`, `/trips/[id]/charges`, `/trips/[id]/lr`, `/print/lr/[tripId]` |
 | **Module** | `MOD-TRP`, `MOD-LR` · **Primary actor** `ACT-OPS` |
 
@@ -42,7 +42,7 @@ Five groups, eleven documents. Each Upload → Verify → Verified, or Rejected 
 
 The set is read from `config.advance_document_set` (part 01 §4.2), seeded with those eight. Removing one is an audited configuration change (`NFR-03`).
 
-Verification is performed by whoever holds `document.verify` (`BR-41`) — seeded to `OPS`, movable — and appears in the compliance desk queue (part 03 §4). Every verify and every reject writes an `audit_events` row of class `DOC_VERIFY`.
+Verification is performed by whoever holds `document.verify` (`BR-41`) — seeded to `COMPLIANCE`, movable — and appears in the compliance desk queue (part 03 §4). Every verify and every reject writes an `audit_events` row of class `DOC_VERIFY`.
 
 ### 3.1 Cross-check — `BR-32`, `D-09`
 
@@ -90,7 +90,7 @@ One record on the trip (`BR-22`) — the LR and the E-LR are the same document, 
 
 ### 5.1 Print layout — `/print/lr/[tripId]`
 
-FSD B6. A4 letterhead carrying company **GSTIN, PAN and CIN** from the control panel, consignor and consignee blocks, goods table, vehicle and driver, charge breakdown across the six heads, terms, a **Code 39 barcode of the LR number**, and **three signature blocks** — consignor, carrier, consignee. The printed copy is the primary form.
+FSD B6. **Exactly four copies, labelled consignor · consignee · carrier · office** (`BR-17`) — the LR is the document of carriage, it travels with the goods, and each party keeps a countersigned copy of their own; contrast the invoice print (part 08 §2.1), which is deliberately a single copy since it's a bill, not a document that travels. Each copy is an A4 letterhead carrying company **GSTIN, PAN and CIN** from the control panel, consignor and consignee blocks, goods table, vehicle and driver, charge breakdown across the six heads, terms, a **Code 39 barcode of the LR number**, and **three signature blocks** — consignor, carrier, consignee. The printed copy is the primary form.
 
 Statuses: Booked → Released → In transit → Delivered.
 
@@ -124,5 +124,6 @@ POST   /trips/:id/lr/share                 optional, BR-22
 - [ ] Override under 20 characters is refused; over 20 raises `DOC_OVERRIDE` and audits (`BR-44`)
 - [ ] Charge rows carry cost and billed separately, and a billed figure below cost warns (`BR-45`)
 - [ ] Removing a document from `config.advance_document_set` writes a `CONFIG` audit row
+- [ ] Print produces exactly four labelled copies — consignor, consignee, carrier, office (`BR-17`)
 
 **Tests** (part 13 §23): 1, 2 (documents half), 15.

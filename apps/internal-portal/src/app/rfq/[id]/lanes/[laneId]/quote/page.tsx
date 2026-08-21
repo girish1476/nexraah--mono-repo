@@ -127,7 +127,16 @@ export default function QuoteBuildupPage() {
 
           <div style={{ marginTop: 18 }}>
             <div className="eyebrow">Proportions</div>
-            <div style={{ display: 'flex', height: 22, marginTop: 6, border: '1px solid var(--color-divider)' }}>
+            <div
+              style={{
+                display: 'flex',
+                height: 22,
+                marginTop: 6,
+                border: '1px solid var(--color-divider)',
+                borderRadius: 'var(--radius-sm)',
+                overflow: 'hidden',
+              }}
+            >
               {parts.map((p) => (
                 <div
                   key={p.label}

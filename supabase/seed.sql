@@ -20,7 +20,7 @@ on conflict (code) do nothing;
 insert into users (name, email, role_id, branch_id)
 select v.name, v.email, r.id, b.id
   from (values
-    ('Anita Desai',  'anita@nexraah.test',  'OPERATIONS', 'BLR'),
+    ('Anita Desai',  'anita@nexraah.test',  'OPS',        'BLR'),
     ('Vikram Nair',  'vikram@nexraah.test', 'COMPLIANCE', 'BLR'),
     ('Priya Menon',  'priya@nexraah.test',  'FINANCE',    'BLR'),
     ('Sunita Rao',   'sunita@nexraah.test', 'BRANCH_MGR', 'HYD'),
@@ -117,6 +117,23 @@ select 'TRP-00001', i.id, i.client_id, v.id, i.branch_id, 'KA01AB5678',
   from indents i, vendors v
  where i.code = 'IND-4472' and v.code = 'VND-0001'
 on conflict (code) do nothing;
+
+-- The fixture rows above hardcode their own codes rather than going through
+-- `NumberingService.issue()`, so the series a live `POST` would draw from
+-- next is left exactly where the migration seeded it — `VENDOR`/`CLIENT` at 1,
+-- `QUOTE` at 1 (width 5, so its very first issue is literally `BID-00001`,
+-- colliding with the fixture quote below). The first vendor, client or quote
+-- created through the running API would fail on `duplicate key value
+-- violates unique constraint` against a fixture row. Advancing past every
+-- code actually used above keeps the fixtures and the live app out of each
+-- other's way. `INDENT` already starts past 4471/4472 (4468 < both, but not
+-- by much) — bumped too so a short burst of real indents doesn't catch up to
+-- them either. `TRIP` is untouched: `TRP-00001` doesn't collide with the
+-- `TRP-100241`-format codes that series actually issues.
+update number_series set next_value = greatest(next_value, 4)    where key = 'VENDOR';
+update number_series set next_value = greatest(next_value, 3)    where key = 'CLIENT';
+update number_series set next_value = greatest(next_value, 4473) where key = 'INDENT';
+update number_series set next_value = greatest(next_value, 2)    where key = 'QUOTE';
 
 commit;
 

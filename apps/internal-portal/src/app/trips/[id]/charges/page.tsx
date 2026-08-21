@@ -137,7 +137,7 @@ export default function TripChargesPage() {
           )}
         </Panel>
 
-        {can('document.verify') || can('pod.verify') ? (
+        {can('document.verify') || can('pod.verify') || can('indent.manage') ? (
           <Panel title="Capture a charge">
             <FormGrid>
               <Field label="Charge type" required>

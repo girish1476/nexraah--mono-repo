@@ -1,22 +1,24 @@
 /* Nexraah internal console — design tokens.
-   Palette and type scale are taken from the approved prototype
-   (artifact 672876f9, "Internal console"). Retune here, nowhere else. */
+   Palette and type scale build on the approved prototype (artifact 672876f9,
+   "Internal console") with a softer, warmer surface treatment layered on
+   top: radius, elevation and motion tokens. Retune here, nowhere else. */
 
 :root {
   --font-heading: 'Source Serif 4', Georgia, serif;
   --font-body: 'Public Sans', system-ui, -apple-system, sans-serif;
   --font-mono: 'Roboto Mono', ui-monospace, SFMono-Regular, monospace;
 
-  --color-bg: #f0f3f8;
+  --color-bg: #eef1f8;
   --color-surface: #ffffff;
+  --color-surface-raised: #ffffff;
   --color-text: #15202f;
-  --color-divider: #c6d0e0;
+  --color-divider: #d7deea;
 
-  --color-accent: #173a75;
+  --color-accent: #1a4184;
   --color-accent-300: #93a9cc;
   --color-accent-400: #5b77ac;
-  --color-accent-500: #173a75;
-  --color-accent-600: #143165;
+  --color-accent-500: #1a4184;
+  --color-accent-600: #163667;
   --color-accent-700: #173a75;
   --color-accent-800: #102a57;
   --color-accent-900: #0b1d3d;
@@ -26,18 +28,35 @@
   --color-neutral-700: #48566b;
 
   /* Semantic tones. Every state pill, panel and figure uses a pair. */
-  --mint: #1d6a4c;
-  --mint-tint: #e4f0ea;
-  --flag: #8a6317;
-  --flag-tint: #f7efde;
-  --red: #9a3529;
-  --red-tint: #f6eae7;
+  --mint: #1a7a54;
+  --mint-tint: #e4f2ea;
+  --flag: #966a13;
+  --flag-tint: #faf1dc;
+  --red: #ae3b2c;
+  --red-tint: #fbeae7;
   --blue: #1e5a93;
   --blue-tint: #e6ecf8;
   --grey: #5d5d60;
-  --grey-tint: #eaeef5;
+  --grey-tint: #eef0f5;
 
-  --sidebar-w: 208px;
+  --sidebar-w: 224px;
+
+  /* Elevation. Two tiers: resting surfaces, and things that float above them
+     (dialogs, menus, the toast). Keep both subtle — this is a data console,
+     not a marketing page. */
+  --shadow-sm: 0 1px 2px rgba(15, 30, 60, 0.05), 0 1px 1px rgba(15, 30, 60, 0.04);
+  --shadow-md: 0 4px 10px rgba(15, 30, 60, 0.07), 0 1px 2px rgba(15, 30, 60, 0.05);
+  --shadow-lg: 0 16px 40px rgba(11, 29, 61, 0.16), 0 2px 8px rgba(11, 29, 61, 0.08);
+  --shadow-focus: 0 0 0 3px color-mix(in srgb, var(--color-accent-400) 35%, transparent);
+
+  --radius-sm: 7px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+
+  --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+  --transition-fast: 120ms var(--ease);
+  --transition: 180ms var(--ease);
 }
 
 * {
@@ -52,11 +71,36 @@ body {
 
 body {
   background: var(--color-bg);
+  background-image: radial-gradient(circle at 12% 0%, color-mix(in srgb, var(--color-accent) 5%, transparent), transparent 42%);
+  background-attachment: fixed;
   color: var(--color-text);
   font-family: var(--font-body);
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-accent) 25%, transparent);
+}
+
+/* Slim, unobtrusive scrollbars — data tables scroll horizontally a lot. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-neutral-400) transparent;
+}
+*::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-neutral-400);
+  border-radius: var(--radius-pill);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 h1,
@@ -70,21 +114,29 @@ h4 {
 }
 
 h1 {
-  font-size: 31px;
+  font-size: 30px;
+  letter-spacing: -0.02em;
 }
 h2 {
-  font-size: 19px;
+  font-size: 18px;
 }
 h3 {
-  font-size: 17px;
+  font-size: 16px;
 }
 
 a {
   color: var(--color-accent-700);
   text-underline-offset: 3px;
+  transition: color var(--transition-fast);
 }
 a:hover {
   color: var(--color-accent-800);
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+  border-radius: var(--radius-sm);
 }
 
 .mono {
@@ -96,6 +148,7 @@ a:hover {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--color-neutral-700);
+  font-weight: 600;
 }
 
 .muted {
@@ -105,35 +158,53 @@ a:hover {
 .surface {
   background: var(--color-surface);
   border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
 }
 
 /* ---- buttons ---------------------------------------------------------- */
 
 .btn {
   font-family: inherit;
+  font-weight: 600;
   font-size: 13px;
-  min-height: 36px;
-  padding: 0 14px;
+  min-height: 38px;
+  padding: 0 16px;
   border: 1px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  text-decoration: none;
   background: var(--color-accent);
-  color: #f0f3f8;
+  background-image: linear-gradient(180deg, color-mix(in srgb, white 8%, var(--color-accent)), var(--color-accent));
+  color: #ffffff;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 7px;
   white-space: nowrap;
+  box-shadow: var(--shadow-sm);
+  transition: background var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast),
+    transform var(--transition-fast);
 }
 .btn:hover:not(:disabled) {
   background: var(--color-accent-800);
+  background-image: linear-gradient(180deg, color-mix(in srgb, white 8%, var(--color-accent-800)), var(--color-accent-800));
   border-color: var(--color-accent-800);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+.btn:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: var(--shadow-sm);
 }
 .btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+  transform: none;
 }
 .btn-secondary {
   background: var(--color-surface);
+  background-image: none;
   color: var(--color-text);
   border-color: var(--color-divider);
 }
@@ -143,13 +214,19 @@ a:hover {
 }
 .btn-danger {
   background: var(--red);
+  background-image: linear-gradient(180deg, color-mix(in srgb, white 10%, var(--red)), var(--red));
   border-color: var(--red);
   color: #fff;
 }
+.btn-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, black 12%, var(--red));
+  background-image: none;
+  border-color: color-mix(in srgb, black 12%, var(--red));
+}
 .btn-sm {
-  min-height: 30px;
+  min-height: 31px;
   font-size: 12px;
-  padding: 0 10px;
+  padding: 0 11px;
 }
 
 /* ---- tag / pill ------------------------------------------------------- */
@@ -157,8 +234,10 @@ a:hover {
 .tag {
   display: inline-flex;
   align-items: center;
-  padding: 2px 7px;
+  padding: 2.5px 8px;
+  border-radius: var(--radius-pill);
   font-size: 10.5px;
+  font-weight: 600;
   letter-spacing: 0.02em;
   white-space: nowrap;
   background: var(--grey-tint);
@@ -170,10 +249,11 @@ a:hover {
 .field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
 }
 .field > label {
   font-size: 11.5px;
+  font-weight: 600;
   color: var(--color-neutral-700);
 }
 .field input,
@@ -181,18 +261,26 @@ a:hover {
 .field textarea {
   font-family: inherit;
   font-size: 13.5px;
-  padding: 8px 10px;
-  min-height: 36px;
+  padding: 8px 11px;
+  min-height: 38px;
   border: 1px solid var(--color-divider);
+  border-radius: var(--radius-sm);
   background: var(--color-surface);
   color: var(--color-text);
   width: 100%;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.field input:hover:not(:disabled, :focus),
+.field select:hover:not(:disabled, :focus),
+.field textarea:hover:not(:disabled, :focus) {
+  border-color: var(--color-neutral-400);
 }
 .field input:focus,
 .field select:focus,
 .field textarea:focus {
-  outline: 2px solid var(--color-accent-300);
-  outline-offset: -1px;
+  outline: none;
+  border-color: var(--color-accent-400);
+  box-shadow: var(--shadow-focus);
 }
 .field input:disabled,
 .field textarea:disabled {
@@ -208,6 +296,15 @@ a:hover {
 .field .err {
   font-size: 11.5px;
   color: var(--red);
+  font-weight: 500;
+}
+
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--color-accent);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
 }
 
 /* ---- table ------------------------------------------------------------ */
@@ -226,19 +323,30 @@ table.table th {
   letter-spacing: 0.11em;
   text-transform: uppercase;
   color: var(--color-neutral-700);
-  font-weight: 500;
+  font-weight: 600;
   text-align: left;
-  padding: 9px 12px;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--color-divider);
   white-space: nowrap;
+  background: color-mix(in srgb, var(--color-accent) 3%, var(--color-surface));
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 table.table td {
-  padding: 9px 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--color-text) 8%, transparent);
+  padding: 10px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-text) 7%, transparent);
   vertical-align: top;
+  transition: background var(--transition-fast);
+}
+table.table tbody tr {
+  transition: background var(--transition-fast);
 }
 table.table tbody tr:hover {
   background: color-mix(in srgb, var(--color-accent) 5%, transparent);
+}
+table.table tbody tr:last-child td {
+  border-bottom: 0;
 }
 .num {
   text-align: right;
@@ -285,6 +393,73 @@ table.table tbody tr:hover {
   }
 }
 
+/* ---- nav ---------------------------------------------------------------- */
+
+.nav-item {
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.nav-item:hover {
+  background: color-mix(in srgb, var(--color-accent) 6%, transparent) !important;
+}
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  align-self: stretch;
+}
+
+/* Below the console breakpoint the sidebar becomes an off-canvas drawer
+   behind a hamburger toggle (`.mobile-topbar`) — same nav, same permission
+   filtering, just reachable on a branch manager's phone (NFR-06). */
+.mobile-topbar {
+  display: none;
+}
+.nav-backdrop {
+  display: none;
+}
+.sidebar-close-btn {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .mobile-topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    padding: 12px 16px;
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-divider);
+  }
+  .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 60;
+    transform: translateX(-100%);
+    transition: transform var(--transition);
+    box-shadow: var(--shadow-lg);
+  }
+  .sidebar.open {
+    transform: translateX(0);
+  }
+  .sidebar-close-btn {
+    display: grid;
+  }
+  .nav-backdrop.open {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    background: color-mix(in srgb, #0b1d3d 45%, transparent);
+    animation: fade-in var(--transition-fast) both;
+  }
+  .app-main {
+    padding: 18px 16px 48px !important;
+  }
+}
+
 /* ---- misc ------------------------------------------------------------- */
 
 .row-tap {
@@ -297,29 +472,97 @@ table.table tbody tr:hover {
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   background: var(--color-surface);
   border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
 }
 .stat-strip > div {
-  padding: 12px 15px;
+  padding: 13px 16px;
   border-right: 1px solid var(--color-divider);
+  transition: background var(--transition-fast);
+}
+.stat-strip > div:hover {
+  background: color-mix(in srgb, var(--color-accent) 4%, transparent);
 }
 .stat-strip > div:last-child {
   border-right: 0;
 }
 .stat-value {
   font-family: var(--font-mono);
-  font-size: 23px;
-  margin-top: 2px;
+  font-size: 24px;
+  font-weight: 500;
+  margin-top: 3px;
 }
 
 .bar {
   height: 7px;
   background: var(--grey-tint);
+  border-radius: var(--radius-pill);
   overflow: hidden;
 }
 .bar > span {
   display: block;
   height: 100%;
   background: var(--color-accent);
+  border-radius: var(--radius-pill);
+  transition: width var(--transition);
+}
+
+/* ---- motion ------------------------------------------------------------- */
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---- skeleton loading --------------------------------------------------- */
+
+.skeleton {
+  background: linear-gradient(
+    100deg,
+    var(--grey-tint) 30%,
+    color-mix(in srgb, var(--grey-tint) 55%, white) 50%,
+    var(--grey-tint) 70%
+  );
+  background-size: 220% 100%;
+  animation: skeleton-sheen 1.4s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+@keyframes skeleton-sheen {
+  0% {
+    background-position: 130% 0;
+  }
+  100% {
+    background-position: -30% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
 }
 
 /* ---- print ------------------------------------------------------------ */
@@ -330,6 +573,7 @@ table.table tbody tr:hover {
   }
   body {
     background: #fff;
+    background-image: none;
   }
   .sheet {
     page-break-after: always;

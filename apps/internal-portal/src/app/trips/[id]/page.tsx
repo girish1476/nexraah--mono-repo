@@ -20,7 +20,9 @@ import {
   Tone,
 } from '@/lib/ui';
 import { getTrip } from '../apis';
-import { POD_TONE } from '@/lib/documents';
+import { getVehicleTracking } from '@/app/telematics/apis';
+import { VehicleRow } from '@/app/telematics/types';
+import { ALERT_LABEL, ALERT_TONE, POD_TONE } from '@/lib/documents';
 import { TripDetail } from '../types';
 import { TripTabs } from './tabs';
 
@@ -29,12 +31,40 @@ export default function TripDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [trip, setTrip] = useState<TripDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tracking, setTracking] = useState<VehicleRow | null>(null);
+  const [trackingChecked, setTrackingChecked] = useState(false);
 
   const load = () => {
     setError(null);
     getTrip(id).then(setTrip).catch((e) => setError(errorMessage(e)));
   };
   useEffect(load, [id]);
+
+  // Own effect, own vehicle number, own 30s refresh — same cadence as the
+  // fleet board (`telematics/page.tsx`) so the two never show a vehicle in
+  // different states. A vehicle with no open trip or no signal yet returns
+  // `null`, not an error — most trips most of the time.
+  useEffect(() => {
+    if (!trip?.vehicleNo) return;
+    let cancelled = false;
+    const poll = () => {
+      getVehicleTracking(trip.vehicleNo).then((row) => {
+        if (!cancelled) {
+          setTracking(row);
+          setTrackingChecked(true);
+        }
+      });
+      // Errors here are not surfaced as a page-level failure — the trip
+      // itself loaded fine; tracking is supplementary, so it degrades to
+      // "not tracked yet" rather than blocking the screen.
+    };
+    poll();
+    const timer = setInterval(poll, 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [trip?.vehicleNo]);
 
   if (error) return <ErrorState message={error} retry={load} />;
   if (!trip) return <Loading what="Loading the trip" />;
@@ -138,6 +168,65 @@ export default function TripDetailPage() {
           {trip.remarks && (
             <p className="muted" style={{ fontSize: 12.5, marginBottom: 0, marginTop: 12 }}>
               Remarks carried from the indent: {trip.remarks}
+            </p>
+          )}
+        </Panel>
+
+        <Panel title="Vehicle tracking">
+          {tracking ? (
+            <>
+              <div className="stat-strip" style={{ border: 0 }}>
+                <div>
+                  <div className="eyebrow">Speed</div>
+                  <div className="stat-value" style={{ color: tracking.alerts.includes('OVERSPEED') ? 'var(--red)' : undefined }}>
+                    {tracking.speedKmph} km/h
+                  </div>
+                </div>
+                <div>
+                  <div className="eyebrow">Fuel</div>
+                  <div className="stat-value">{tracking.fuelPct}%</div>
+                </div>
+                <div>
+                  <div className="eyebrow">Position</div>
+                  <div className="mono" style={{ fontSize: 13 }}>
+                    {tracking.lat.toFixed(4)}, {tracking.lng.toFixed(4)}
+                  </div>
+                </div>
+                <div>
+                  <div className="eyebrow">Last ping</div>
+                  <div style={{ fontSize: 13 }}>{fmtDateTime(tracking.lastPingAt)}</div>
+                </div>
+              </div>
+              <div style={{ padding: '0 14px 4px' }}>
+                <div className="bar">
+                  <span style={{ width: `${tracking.progressPct}%` }} />
+                </div>
+                <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
+                  {tracking.progressPct}% of expected transit time elapsed
+                </div>
+              </div>
+              {tracking.alerts.length > 0 && (
+                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', padding: '10px 14px 4px' }}>
+                  {tracking.alerts.map((a) => (
+                    <Tag key={a} tone={ALERT_TONE[a]}>
+                      {ALERT_LABEL[a]}
+                    </Tag>
+                  ))}
+                </div>
+              )}
+              <p className="muted" style={{ fontSize: 11.5, padding: '10px 14px 0', marginBottom: 0 }}>
+                <Link href="/telematics">See the full fleet board →</Link>
+              </p>
+            </>
+          ) : trackingChecked ? (
+            <p className="muted" style={{ fontSize: 12.5, marginBottom: 0 }}>
+              {trip.stage === 'CLOSED' || trip.stage === 'DELIVERED'
+                ? 'No tracking signal was received while this trip was open.'
+                : 'No tracking signal yet — nothing has pinged for this vehicle.'}
+            </p>
+          ) : (
+            <p className="muted" style={{ fontSize: 12.5, marginBottom: 0 }}>
+              Checking for a signal…
             </p>
           )}
         </Panel>

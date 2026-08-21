@@ -123,7 +123,7 @@ export default function LorryReceiptPage() {
 
   const mismatchOpen = !!crossCheck && crossCheck.mismatches.length > 0 && !crossCheck.overridden;
   const notPlaced = !trip.vehicleNo;
-  const canIssue = can('indent.create') && !lr.code && !mismatchOpen && !notPlaced;
+  const canIssue = can('indent.manage') && !lr.code && !mismatchOpen && !notPlaced;
 
   return (
     <ModuleGuard module="trips">
