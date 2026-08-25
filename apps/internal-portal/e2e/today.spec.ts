@@ -101,12 +101,15 @@ test.describe('today — stat strip and queues (OPS, unscoped)', () => {
       has: page.getByRole('heading', { name: 'Loads waiting for a transporter' }),
     });
     await panel.locator('tbody tr').filter({ hasText: 'IND-4471' }).getByRole('link', { name: 'Open' }).click();
-    // `waitForURL` with a long fuse, not `toHaveURL`: the first open of
-    // /indents/[id] in a run compiles the route, and with the suite running
-    // fullyParallel several workers queue behind that one dev-server
-    // compile. It is harness latency, not the console being slow — these
-    // two navigations pass comfortably when the file runs on its own.
-    await page.waitForURL(/\/indents\/i-4471$/, { timeout: 60_000 });
+    // Plain `waitForURL`, on the config's own timeout.
+    //
+    // This carried a 60s fuse because the first open of /indents/[id] in a
+    // run paid for a cold `next dev` compile — a timeout raised to outlast
+    // the problem rather than remove it. `e2e/warm-routes.ts` now fetches
+    // every route before the suite starts, so the problem is gone and the
+    // local override goes with it: one place decides how long a navigation
+    // may take, and it is `playwright.config.ts`.
+    await page.waitForURL(/\/indents\/i-4471$/);
     await expect(page.getByRole('heading', { name: 'IND-4471', exact: true })).toBeVisible();
   });
 
@@ -115,7 +118,7 @@ test.describe('today — stat strip and queues (OPS, unscoped)', () => {
       has: page.getByRole('heading', { name: 'still missing their signed paperwork' }),
     });
     await panel.locator('tbody tr').filter({ hasText: 'TRP-120881' }).getByRole('link', { name: 'Open' }).click();
-    await page.waitForURL(/\/trips\/t-120881$/, { timeout: 60_000 });
+    await page.waitForURL(/\/trips\/t-120881$/);
     await expect(page.getByRole('heading', { name: 'TRP-120881', exact: true })).toBeVisible();
   });
 });

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { ReactNode, useEffect, useState } from 'react';
-import { AreaKey, ROLES, RoleCode, navFor } from '@/lib/permissions';
+import { AreaKey, ROLES, RoleCode, SEED_GRANTS, navFor } from '@/lib/permissions';
 import { Session } from '@/store/atoms';
 import { request } from '@/apis';
 import { signOut } from '@/lib/auth';
@@ -47,7 +47,10 @@ export function Shell({ session, children }: { session: Session | null; children
     setNavOpen(false);
   }, [pathname]);
 
-  const groups = navFor(role);
+  // The grants the server issued, with the same fallback `permissionsAtom`
+  // uses — so a row gated on a permission shows exactly when the page's own
+  // button would.
+  const groups = navFor(role, session?.permissions?.length ? session.permissions : SEED_GRANTS[role]);
 
   return (
     <div>

@@ -13,6 +13,15 @@ export interface IndentListFilters {
 export class IndentsRepository {
   constructor(@Inject(DB) private readonly db: InternalDb) {}
 
+  /** Just the onboarding state — the indent guard needs nothing else. */
+  findClientStatus(clientId: string) {
+    return this.db
+      .selectFrom('clients')
+      .select(['id', 'status'])
+      .where('id', '=', clientId)
+      .executeTakeFirst();
+  }
+
   transaction() {
     return this.db.transaction();
   }

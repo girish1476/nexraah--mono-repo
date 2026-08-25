@@ -1,5 +1,24 @@
 import { test, expect, Locator } from '@playwright/test';
 import { setRole } from './helpers';
+import { db } from '../src/mocks/db';
+
+/**
+ * What belongs in each queue, derived from the fixture rather than written
+ * out as three numbers.
+ *
+ * The counts were hardcoded, so adding a client to `src/mocks/db.ts` — which
+ * happens whenever someone builds a screen that needs one — reddened this
+ * file for a reason that had nothing to do with the compliance desk. The
+ * invariant worth pinning is "one row per thing actually awaiting a
+ * decision", and the row-level assertions below still pin *which* things
+ * those are, so a filtering bug is caught either way.
+ */
+const EXPECTED = {
+  vendorFiles: () => db.vendors.filter((v) => v.status !== 'ACTIVE').length,
+  clientContracts: () => db.clients.filter((c) => c.engagement === 'CONTRACT').length,
+  tripDocuments: () =>
+    db.trips.filter((t) => t.documents.some((d: { status: string }) => d.status === 'PENDING')).length,
+};
 
 /**
  * Compliance desk — `/compliance` (`src/app/compliance/page.tsx`).
@@ -29,9 +48,9 @@ test.describe('Compliance desk — COMPLIANCE role', () => {
   test('renders all three queues with the seeded row counts', async ({ page }) => {
     const main = page.locator('main');
     await expect(main.getByRole('heading', { name: 'Document checks' })).toBeVisible();
-    await expect(panel(main, 'Vendor files').locator('table.table tbody tr')).toHaveCount(2);
-    await expect(panel(main, 'Client contracts').locator('table.table tbody tr')).toHaveCount(2);
-    await expect(panel(main, 'Trip documents awaiting verification').locator('table.table tbody tr')).toHaveCount(1);
+    await expect(panel(main, 'Vendor files').locator('table.table tbody tr')).toHaveCount(EXPECTED.vendorFiles());
+    await expect(panel(main, 'Client contracts').locator('table.table tbody tr')).toHaveCount(EXPECTED.clientContracts());
+    await expect(panel(main, 'Trip documents awaiting verification').locator('table.table tbody tr')).toHaveCount(EXPECTED.tripDocuments());
   });
 
   test('vendor files queue lists the two unverified vendor files, not the active one', async ({ page }) => {
@@ -105,9 +124,9 @@ test.describe('Compliance desk — FINANCE (VIEW) role', () => {
     // go act elsewhere — never an in-place mutating <button> — for any role.
     await expect(main.locator('button')).toHaveCount(0);
 
-    await expect(panel(main, 'Vendor files').locator('table.table tbody tr')).toHaveCount(2);
-    await expect(panel(main, 'Client contracts').locator('table.table tbody tr')).toHaveCount(2);
-    await expect(panel(main, 'Trip documents awaiting verification').locator('table.table tbody tr')).toHaveCount(1);
+    await expect(panel(main, 'Vendor files').locator('table.table tbody tr')).toHaveCount(EXPECTED.vendorFiles());
+    await expect(panel(main, 'Client contracts').locator('table.table tbody tr')).toHaveCount(EXPECTED.clientContracts());
+    await expect(panel(main, 'Trip documents awaiting verification').locator('table.table tbody tr')).toHaveCount(EXPECTED.tripDocuments());
 
     // Navigation links are still present — read-only means no mutation, not no access.
     await expect(main.getByRole('link', { name: 'Open file' }).first()).toBeVisible();

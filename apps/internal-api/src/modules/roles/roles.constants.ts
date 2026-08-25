@@ -22,6 +22,7 @@ export type InternalRoleCode = (typeof INTERNAL_ROLES)[number];
 export const SEED_GRANTS: Record<InternalRoleCode, string[]> = {
   OPS: ['indent.manage', 'indent.view', 'vendor.edit', 'rfq.edit'],
   COMPLIANCE: [
+    'client.onboard',
     'indent.create',
     'indent.view',
     'document.verify',

@@ -1,7 +1,10 @@
 node_modules
 dist
-.next
-.next-prod
+# Every Next build dir, however it is named. The demo host builds into
+# .next-build / .next-prod-stage via NEXT_DIST_DIR so a production build can
+# run while a dev server holds .next — each one is a few hundred generated
+# files, and they were landing in `git status` as if they were work.
+.next*
 .hosting
 build
 coverage

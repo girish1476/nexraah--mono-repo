@@ -194,9 +194,30 @@ class MockHttpError extends Error {
   }
 }
 
-const fail = (httpStatus: number, code: string, message: string, details?: unknown) => {
+/**
+ * Raise the fixture's version of an API error.
+ *
+ * Two things here are load-bearing, and the second is easy to get wrong.
+ *
+ * **`: never`.** Without it the return type infers as `void`, so
+ * `if (!row) fail(404, …)` does not narrow `row` and the next line is a type
+ * error — while `const row = find(…) ?? fail(404, …)` happens to narrow fine.
+ * Two forms, only one of which silently works, across 80-odd call sites: a
+ * trap that catches whoever reaches for the more readable one.
+ *
+ * **A `function` declaration, not `const fail = (…) => …`.** TypeScript only
+ * applies never-returning control-flow analysis when the callee is a function
+ * declaration or a name with an explicit type annotation. An arrow assigned to
+ * an un-annotated `const` does not qualify *even with* `: never` on the arrow
+ * — which was the state this file was in, and why annotating the return type
+ * alone did not fix anything. Verified both ways round rather than assumed.
+ *
+ * Same purpose as `assertNever` in the orders ladder: fix the mechanism so the
+ * mistake cannot be made, rather than each instance of it.
+ */
+function fail(httpStatus: number, code: string, message: string, details?: unknown): never {
   throw new MockHttpError(httpStatus, code, message, details);
-};
+}
 
 /* ---- helpers ------------------------------------------------------------ */
 
@@ -490,6 +511,74 @@ function orderEvents(row: any) {
     });
   }
   return events;
+}
+
+/* ---- client onboarding --------------------------------------------------
+   Mirrors `client-onboarding.ts` in internal-api. Same required-document
+   rule, same three unmet states, so `BlockedPanel` renders the fixture's
+   answer and the real one identically. */
+
+const CLIENT_DOCUMENT_LABEL: Record<string, string> = {
+  GST_CERTIFICATE: 'GST certificate',
+  PAN: 'PAN card',
+  SIGNED_AGREEMENT: 'Signed rate agreement',
+  CREDIT_CHECK: 'Credit and credibility check',
+};
+
+/** A spot client has no rate contract to sign, so it is not asked for one. */
+function requiredClientDocs(engagement: string): string[] {
+  const always = ['GST_CERTIFICATE', 'PAN', 'CREDIT_CHECK'];
+  return engagement === 'CONTRACT' ? [...always, 'SIGNED_AGREEMENT'] : always;
+}
+
+function clientOnboardingGate(client: any) {
+  const docs: any[] = client.documents ?? [];
+  const unmet: { key: string; label: string; state: string }[] = [];
+  const cleared: { key: string; label: string }[] = [];
+
+  for (const kind of requiredClientDocs(client.engagement)) {
+    const label = CLIENT_DOCUMENT_LABEL[kind] ?? kind;
+    const doc = docs.find((d) => d.kind === kind);
+    if (!doc) unmet.push({ key: kind, label: `${label} not uploaded`, state: 'MISSING' });
+    else if (doc.status === 'VERIFIED') cleared.push({ key: kind, label });
+    else if (doc.status === 'REJECTED')
+      unmet.push({ key: kind, label: `${label} rejected — a new one is needed`, state: 'REJECTED' });
+    else unmet.push({ key: kind, label: `${label} uploaded but not checked`, state: 'UNVERIFIED' });
+  }
+
+  return { unmet, cleared, canActivate: unmet.length === 0 };
+}
+
+function clientOnboardingDetail(client: any) {
+  const gate = clientOnboardingGate(client);
+  return {
+    id: client.id,
+    code: client.code,
+    name: client.name,
+    billingCity: client.billingCity,
+    gstin: client.gstin ?? null,
+    engagement: client.engagement,
+    status: client.status,
+    rejectionReason: client.rejectionReason ?? null,
+    // Built from what is required, not from what happens to be uploaded — a
+    // checklist has to show the gaps.
+    documents: requiredClientDocs(client.engagement).map((kind) => {
+      const d = (client.documents ?? []).find((x: any) => x.kind === kind);
+      return {
+        kind,
+        label: CLIENT_DOCUMENT_LABEL[kind] ?? kind,
+        status: d?.status ?? 'MISSING',
+        reference: d?.reference ?? null,
+        attachmentId: d?.attachmentId ?? null,
+        validFrom: d?.validFrom ?? null,
+        validTo: d?.validTo ?? null,
+        rejectReason: d?.rejectReason ?? null,
+        verifiedAt: d?.verifiedAt ?? null,
+        verifiedByName: d?.verifiedByName ?? null,
+      };
+    }),
+    gate,
+  };
 }
 
 /* ---- routes ------------------------------------------------------------- */
@@ -1062,6 +1151,128 @@ const routes: [string, RegExp, Handler][] = [
     /^\/clients\/([^/]+)\/rate-card$/,
     ({ params }) => ok(db.rateCards[params[0]] ?? []),
   ],
+
+  /* --------------------------------------------- client onboarding --- */
+  /*
+   * Declared before `/clients/:id` — the route table matches in order, and a
+   * bare `:id` pattern would otherwise treat "onboarding" as a client id.
+   */
+  [
+    'GET',
+    /^\/clients\/onboarding$/,
+    () =>
+      ok(
+        db.clients
+          .filter((c: any) => ['DRAFT', 'PENDING_VERIFICATION', 'REJECTED'].includes(c.status))
+          // Oldest first: a client waiting three weeks for a decision is a
+          // worse problem than one who arrived this morning.
+          .map((c: any) => {
+            const gate = clientOnboardingGate(c);
+            return {
+              id: c.id,
+              code: c.code,
+              name: c.name,
+              billingCity: c.billingCity,
+              engagement: c.engagement,
+              status: c.status,
+              createdAt: c.createdAt ?? null,
+              required: requiredClientDocs(c.engagement).length,
+              cleared: gate.cleared.length,
+              unmetCount: gate.unmet.length,
+              canActivate: gate.canActivate,
+            };
+          }),
+      ),
+  ],
+  [
+    'GET',
+    /^\/clients\/([^/]+)\/onboarding$/,
+    ({ params }) => ok(clientOnboardingDetail((db.clients.find((c: any) => c.id === params[0] || c.code === params[0]) ?? fail(404, 'NOT_FOUND', 'Client not found')))),
+  ],
+  [
+    'POST',
+    /^\/clients\/([^/]+)\/onboarding\/documents$/,
+    ({ params, body }) => {
+      const client = (db.clients.find((c: any) => c.id === params[0] || c.code === params[0]) ?? fail(404, 'NOT_FOUND', 'Client not found'));
+      if (!requiredClientDocs(client.engagement).includes(body.kind)) {
+        fail(
+          400,
+          'DOCUMENT_NOT_REQUIRED',
+          `${CLIENT_DOCUMENT_LABEL[body.kind] ?? body.kind} is not required for a ${String(
+            client.engagement,
+          ).toLowerCase()} client.`,
+        );
+      }
+      client.documents = client.documents ?? [];
+      const existing = client.documents.find((d: any) => d.kind === body.kind);
+      // Re-submitting replaces and resets the decision — a fresh paper has
+      // not been checked, so it must not inherit the previous VERIFIED.
+      const next = {
+        kind: body.kind,
+        status: 'PENDING',
+        reference: body.reference ?? null,
+        attachmentId: body.attachmentId ?? null,
+        validFrom: body.validFrom ?? null,
+        validTo: body.validTo ?? null,
+        rejectReason: null,
+        verifiedAt: null,
+        verifiedByName: null,
+      };
+      if (existing) Object.assign(existing, next);
+      else client.documents.push(next);
+
+      if (client.status === 'DRAFT') client.status = 'PENDING_VERIFICATION';
+      return ok(clientOnboardingDetail(client));
+    },
+  ],
+  [
+    'POST',
+    /^\/clients\/([^/]+)\/onboarding\/documents\/([^/]+)\/decide$/,
+    ({ params, body }) => {
+      const client = (db.clients.find((c: any) => c.id === params[0] || c.code === params[0]) ?? fail(404, 'NOT_FOUND', 'Client not found'));
+      const doc = (client.documents ?? []).find((d: any) => d.kind === params[1]);
+      if (!doc) fail(404, 'NOT_FOUND', 'That document has not been uploaded yet');
+      if (body.status === 'REJECTED' && !String(body.reason ?? '').trim()) {
+        fail(400, 'REASON_REQUIRED', 'Say why the document was rejected — the client has to be told what to fix.');
+      }
+      doc.status = body.status;
+      doc.rejectReason = body.status === 'REJECTED' ? body.reason : null;
+      doc.verifiedAt = helpers.now();
+      doc.verifiedByName = 'You';
+      return ok(clientOnboardingDetail(client));
+    },
+  ],
+  [
+    'POST',
+    /^\/clients\/([^/]+)\/onboarding\/activate$/,
+    ({ params }) => {
+      const client = (db.clients.find((c: any) => c.id === params[0] || c.code === params[0]) ?? fail(404, 'NOT_FOUND', 'Client not found'));
+      const gate = clientOnboardingGate(client);
+      // Refusing is the point — an activation that could be forced past its
+      // own checklist would make the checklist decoration.
+      if (!gate.canActivate) {
+        fail(400, 'ONBOARDING_INCOMPLETE', 'This client cannot be cleared yet — some papers are still outstanding.', {
+          unmet: gate.unmet,
+        });
+      }
+      client.status = 'ACTIVE';
+      client.rejectionReason = null;
+      return ok(clientOnboardingDetail(client));
+    },
+  ],
+  [
+    'POST',
+    /^\/clients\/([^/]+)\/onboarding\/reject$/,
+    ({ params, body }) => {
+      const client = (db.clients.find((c: any) => c.id === params[0] || c.code === params[0]) ?? fail(404, 'NOT_FOUND', 'Client not found'));
+      if (!String(body.reason ?? '').trim()) {
+        fail(400, 'REASON_REQUIRED', 'Say why the client was declined — it is recorded against them.');
+      }
+      client.status = 'REJECTED';
+      client.rejectionReason = body.reason;
+      return ok(clientOnboardingDetail(client));
+    },
+  ],
   ['GET', /^\/clients$/, ({ query }) => {
     const q = (query.get('q') ?? '').toLowerCase();
     return ok(db.clients.filter((c) => !q || c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q)));
@@ -1070,7 +1281,9 @@ const routes: [string, RegExp, Handler][] = [
     'POST',
     /^\/clients$/,
     ({ body }) => {
-      const client = { id: `c-${db.clients.length + 1}`, code: nextNumber('CLIENT'), status: 'ACTIVE', outstandingPaise: 0, ...body };
+      // Matches the migration's new default: creating a client is no longer
+      // the same act as approving one. It lands in Compliance's queue.
+      const client = { id: `c-${db.clients.length + 1}`, code: nextNumber('CLIENT'), status: 'DRAFT', documents: [], outstandingPaise: 0, ...body };
       db.clients.unshift(client);
       return ok(client);
     },
@@ -1122,6 +1335,28 @@ const routes: [string, RegExp, Handler][] = [
     'POST',
     /^\/indents$/,
     ({ body }) => {
+      /*
+       * The client has to have been cleared by Compliance first — the gate
+       * that makes client onboarding mean something rather than being a form
+       * somebody fills in while work carries on regardless. Mirrors
+       * `indentBlockReason` in internal-api so the fixture refuses what the
+       * real API refuses, and says the same thing about why.
+       */
+      const forClient = db.clients.find((c: any) => c.id === body.clientId);
+      // Reads as a guard because it is one. This form only compiles because
+      // `fail` is declared `: never` — before that it inferred `void`, did
+      // not narrow, and the next line was a type error.
+      if (!forClient) fail(404, 'CLIENT_NOT_FOUND', 'That client does not exist.');
+      if (forClient.status !== 'ACTIVE') {
+        const why: Record<string, string> = {
+          DRAFT: 'This client has not been submitted for checks yet. Compliance has to clear them before we can carry for them.',
+          PENDING_VERIFICATION: 'Compliance is still checking this client’s papers. The load can be raised once they are cleared.',
+          REJECTED: 'Compliance declined this client, so no work can be booked against them.',
+          INACTIVE: 'This client has been stood down. Reactivate them before booking new work.',
+        };
+        fail(422, 'CLIENT_NOT_CLEARED', why[forClient.status] ?? 'This client has not been cleared for work.');
+      }
+
       if (body.rateSource === 'SPOT' && !body.spotConfirmationAttachmentId)
         fail(400, 'SPOT_CONFIRMATION_REQUIRED', 'A spot indent needs the client’s written rate confirmation (BR-26).');
       if (body.rateSource === 'SPOT' && body.sellRatePaise <= body.sourcingRatePaise)

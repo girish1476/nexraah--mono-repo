@@ -289,7 +289,58 @@ export interface ClientsTable {
   agreement_attachment_id: string | null;
   credit_days: Generated<number>;
   service_level: string | null;
-  status: Generated<string>;
+  status: Generated<ClientStatus>;
+  /** Why Compliance declined. Non-null exactly when status is REJECTED. */
+  rejection_reason: string | null;
+  verified_by: string | null;
+  verified_at: Date | null;
+  created_at: Generated<string>;
+  updated_at: Generated<string>;
+}
+
+/**
+ * A client's onboarding state — the same shape as `vendors.status`, on
+ * purpose. Both mean "we have not agreed to do business with this party yet",
+ * and one vocabulary is easier to learn than two.
+ */
+export const CLIENT_STATUSES = [
+  'DRAFT',
+  'PENDING_VERIFICATION',
+  'ACTIVE',
+  'REJECTED',
+  'INACTIVE',
+] as const;
+
+export type ClientStatus = (typeof CLIENT_STATUSES)[number];
+
+/**
+ * The papers a client is onboarded against.
+ *
+ * `SIGNED_AGREEMENT` is required only of CONTRACT clients — a spot client has
+ * no rate contract to sign — which is why the mandatory set is computed per
+ * client in `ClientsService` rather than being a constant.
+ */
+export const CLIENT_DOCUMENT_KINDS = [
+  'GST_CERTIFICATE',
+  'PAN',
+  'SIGNED_AGREEMENT',
+  'CREDIT_CHECK',
+] as const;
+
+export type ClientDocumentKind = (typeof CLIENT_DOCUMENT_KINDS)[number];
+
+export interface ClientDocumentsTable {
+  id: Generated<string>;
+  client_id: string;
+  kind: ClientDocumentKind;
+  attachment_id: string | null;
+  reference: string | null;
+  valid_from: string | null;
+  valid_to: string | null;
+  status: Generated<'PENDING' | 'VERIFIED' | 'REJECTED'>;
+  reject_reason: string | null;
+  verified_by: string | null;
+  verified_at: Date | null;
   created_at: Generated<string>;
   updated_at: Generated<string>;
 }
@@ -746,4 +797,5 @@ export interface Database {
   portal_idempotency_keys: PortalIdempotencyKeysTable;
   orders: OrdersTable;
   order_events: OrderEventsTable;
+  client_documents: ClientDocumentsTable;
 }

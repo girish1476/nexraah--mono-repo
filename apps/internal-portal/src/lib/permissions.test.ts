@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   FIXED_PERMISSIONS,
   GRANTABLE_ANYWHERE,
@@ -81,6 +83,79 @@ describe('navFor', () => {
     expect(hrefs).toEqual(expect.arrayContaining(['/today', '/indents', '/trips', '/rfq']));
     expect(hrefs).not.toContain('/payments/advance');
     expect(hrefs).not.toContain('/admin');
+  });
+  /*
+   * The "start something" rows follow the permission the page behind them
+   * checks, not just the module level — Compliance can open Transporters to
+   * verify and activate, but has no `vendor.edit`, so the onboarding wizard
+   * must not be offered to them.
+   */
+  it('offers the onboarding wizard to the roles that hold vendor.edit and nobody else', () => {
+    const sees = (role: (typeof ROLE_CODES)[number]) =>
+      navFor(role).some((g) => g.items.some((i) => i.href === '/vendors/new'));
+    expect(sees('OPS')).toBe(true);
+    expect(sees('BRANCH_MGR')).toBe(true);
+    expect(sees('ADMIN')).toBe(true);
+    expect(sees('COMPLIANCE')).toBe(false);
+    expect(sees('FINANCE')).toBe(false);
+    expect(sees('LEADERSHIP')).toBe(false);
+  });
+  it('gates creation rows on the permission of each page, per role', () => {
+    const hrefs = (role: (typeof ROLE_CODES)[number]) =>
+      navFor(role).flatMap((g) => g.items.map((i) => i.href));
+    expect(hrefs('FINANCE')).toEqual(expect.arrayContaining(['/clients/new', '/invoices/new']));
+    expect(hrefs('OPS')).not.toContain('/clients/new');
+    expect(hrefs('COMPLIANCE')).toEqual(expect.arrayContaining(['/indents/new', '/vendors/leads']));
+    expect(hrefs('OPS')).not.toContain('/indents/new');
+    expect(hrefs('BRANCH_MGR')).toContain('/indents/new');
+  });
+  it('uses the grants the session actually carries over the role seed', () => {
+    const withGrant = navFor('COMPLIANCE', ['vendor.edit']).flatMap((g) => g.items.map((i) => i.href));
+    expect(withGrant).toContain('/vendors/new');
+    const withoutGrant = navFor('OPS', []).flatMap((g) => g.items.map((i) => i.href));
+    expect(withoutGrant).not.toContain('/vendors/new');
+    expect(withoutGrant).toContain('/vendors');
+  });
+  /*
+   * This used to assert `/clients/onboarding` was ABSENT, because the row was
+   * added before the page behind it existed and the sidebar briefly offered a
+   * dead link. The page exists now (`app/clients/onboarding/page.tsx`), so the
+   * premise is gone — and asserting the absence of a screen we have since
+   * built would pin the console shut against its own feature.
+   *
+   * What it checks instead is the rule that actually matters for this row:
+   * onboarding is Compliance's queue, so it follows `client.onboard` rather
+   * than the `clients` module level. Finance holds EDIT on the module — they
+   * own the commercial record and the "Add a client" row — but not the
+   * clearance decision, and offering them a queue of decisions they cannot
+   * make is exactly what the permission filter exists to prevent.
+   */
+  it('offers client onboarding to the desk that can actually clear a client', () => {
+    const compliance = navFor('COMPLIANCE').flatMap((g) => g.items.map((i) => i.href));
+    expect(compliance).toContain('/clients/onboarding');
+
+    const finance = navFor('FINANCE').flatMap((g) => g.items.map((i) => i.href));
+    expect(finance).not.toContain('/clients/onboarding');
+    // Finance keeps its own half of the split.
+    expect(finance).toContain('/clients/new');
+  });
+
+  it('every nav row points at a page that exists', () => {
+    // The guard the assertion above started life as, generalised: a row whose
+    // route has no page is a dead link in the sidebar, and that is worth
+    // catching for every row rather than for one remembered case.
+    const dir = join(__dirname, '..', 'app');
+    for (const role of ROLE_CODES) {
+      for (const group of navFor(role)) {
+        for (const item of group.items) {
+          const segments = item.href.replace(/^\//, '').split('/');
+          expect(
+            existsSync(join(dir, ...segments, 'page.tsx')),
+            `${item.href} (${item.label}) has no page.tsx`,
+          ).toBe(true);
+        }
+      }
+    }
   });
 });
 

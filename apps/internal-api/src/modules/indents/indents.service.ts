@@ -8,6 +8,7 @@ import { ApprovalsService } from '../approvals/approvals.service';
 import { ApprovalsRegistry } from '../approvals/approvals.registry';
 import { OrdersService } from '../orders/orders.service';
 import { VendorsRepository } from '../vendors/vendors.repository';
+import { canRaiseIndent, indentBlockReason } from '../clients/client-onboarding';
 import { IndentsRepository, type IndentListFilters } from './indents.repository';
 import type { CreateIndentDto } from './dto/create-indent.dto';
 import type { PlacementDto } from './dto/placement.dto';
@@ -177,6 +178,32 @@ export class IndentsService implements OnModuleInit {
     }
     if (dto.bidMinPaise && dto.bidMaxPaise && dto.bidMaxPaise < dto.bidMinPaise) {
       throw new DomainException(400, 'VALIDATION_ERROR', 'bidMaxPaise must be ≥ bidMinPaise.');
+    }
+
+    /*
+     * The client has to have been cleared by Compliance first.
+     *
+     * This is what makes client onboarding mean something. Without it the
+     * pipeline would be a form somebody fills in while work carries on
+     * regardless — which is exactly what happened before it existed: a client
+     * was created straight to ACTIVE and nothing ever checked. It mirrors the
+     * rule on the supply side, where a transporter cannot be given loads
+     * until their documents are cleared.
+     *
+     * The reason comes from `indentBlockReason`, so the operator is told
+     * which of the four not-active states they have hit and what would move
+     * it — "not active" on its own is a dead end.
+     */
+    const client = await this.indentsRepository.findClientStatus(dto.clientId);
+    if (!client) {
+      throw new DomainException(404, 'CLIENT_NOT_FOUND', 'That client does not exist.');
+    }
+    if (!canRaiseIndent(client.status)) {
+      throw new DomainException(
+        422,
+        'CLIENT_NOT_CLEARED',
+        indentBlockReason(client.status) ?? 'This client has not been cleared for work.',
+      );
     }
 
     // BR-20: branch derived from the pickup city, carried unchanged to the

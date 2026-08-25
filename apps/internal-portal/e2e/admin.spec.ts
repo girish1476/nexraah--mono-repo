@@ -146,7 +146,18 @@ test.describe('approvals inbox', () => {
     await setRole(page, 'ADMIN');
     await page.goto('/admin/approvals');
 
+    // Wait for the queue to actually render before counting it. `count()` is
+    // a single instantaneous read with no auto-retry, so calling it straight
+    // after `goto` samples the page mid-load and reports 0 — which sends this
+    // test down the "nothing is waiting" branch and fails it against a queue
+    // that was merely still arriving.
+    await expect(page.getByRole('heading', { name: 'Approvals' })).toBeVisible();
     const itemRows = page.locator('div.surface').filter({ has: page.locator('span.tag') });
+    await expect
+      .poll(() => itemRows.count(), { timeout: 15_000 })
+      .not.toBe(0)
+      .catch(() => undefined); // genuinely empty is a valid state — asserted below
+
     const count = await itemRows.count();
     if (count === 0) {
       await expect(page.getByText('Nothing is waiting on a decision.')).toBeVisible();

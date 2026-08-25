@@ -88,6 +88,7 @@ export const PERMISSIONS = [
   'vendor.activate',
   'vendor.advance_policy',
   'client.manage',
+  'client.onboard',
   'pod.receive',
   'pod.verify',
   'pod.approve',
@@ -121,6 +122,7 @@ export const GRANTABLE_ANYWHERE: Permission[] = ['indent.create', 'indent.manage
 export const SEED_GRANTS: Record<RoleCode, Permission[]> = {
   OPS: ['indent.manage', 'indent.view', 'vendor.edit', 'rfq.edit'],
   COMPLIANCE: [
+    'client.onboard',
     'indent.create',
     'indent.view',
     'document.verify',
@@ -174,6 +176,7 @@ export const SEED_GRANTS: Record<RoleCode, Permission[]> = {
     'vendor.activate',
     'vendor.advance_policy',
     'client.manage',
+    'client.onboard',
     'pod.receive',
     'pod.verify',
     'pod.approve',
@@ -239,7 +242,14 @@ export const MODULE_ACCESS: Record<ModuleKey, Record<RoleCode, Level>> = {
    */
   vendors: { OPS: E, COMPLIANCE: E, FINANCE: V, BRANCH_MGR: E, LEADERSHIP: V, ADMIN: E },
   compliance: { OPS: N, COMPLIANCE: E, FINANCE: V, BRANCH_MGR: N, LEADERSHIP: N, ADMIN: E },
-  clients: { OPS: V, COMPLIANCE: V, FINANCE: E, BRANCH_MGR: V, LEADERSHIP: V, ADMIN: E },
+  /**
+   * Compliance runs client onboarding — bringing a client in, collecting
+   * their papers and clearing them — so `clients` is EDIT for them, the same
+   * way `vendors` is EDIT for the desk that onboards transporters. Finance
+   * keeps `client.manage` and with it the commercial record; the two
+   * permissions divide the module rather than competing for it.
+   */
+  clients: { OPS: V, COMPLIANCE: E, FINANCE: E, BRANCH_MGR: V, LEADERSHIP: V, ADMIN: E },
   indents: { OPS: E, COMPLIANCE: E, FINANCE: V, BRANCH_MGR: E, LEADERSHIP: V, ADMIN: E },
   trips: { OPS: E, COMPLIANCE: E, FINANCE: V, BRANCH_MGR: E, LEADERSHIP: V, ADMIN: E },
   pod: { OPS: V, COMPLIANCE: E, FINANCE: V, BRANCH_MGR: E, LEADERSHIP: V, ADMIN: E },
@@ -324,6 +334,7 @@ export const PERMISSION_LABEL: Record<Permission, string> = {
   'vendor.activate': 'Activate vendors',
   'vendor.advance_policy': 'Set vendor advance policy',
   'client.manage': 'Create and edit client records',
+  'client.onboard': 'Onboard and clear clients',
   'pod.receive': 'Receive proof of delivery',
   'pod.verify': 'Verify proof of delivery',
   'pod.approve': 'Approve proof of delivery',
@@ -400,6 +411,17 @@ export interface NavItem {
   emoji?: string;
   /** One plain-language line for the quick-link cards on the desk. */
   note?: string;
+  /**
+   * A row that starts something — "Add a transporter", "Raise a load
+   * request" — is only useful to a person who holds the permission the page
+   * behind it checks. Module level alone can't say that: Compliance holds
+   * EDIT on Transporters (to verify and activate) but not `vendor.edit`, so
+   * the wizard would be a dead end for them. When set, `navFor` drops the
+   * row for anyone without this permission — the same rule the page's own
+   * button applies, so the sidebar never advertises a screen that will only
+   * refuse.
+   */
+  permission?: Permission;
 }
 
 export interface NavGroup {
@@ -456,6 +478,14 @@ export const NAV: NavGroup[] = [
         note: 'What clients have asked us to move',
       },
       {
+        label: 'Raise a load request',
+        href: '/indents/new',
+        module: 'indents',
+        emoji: '➕',
+        note: 'Log a new load a client wants moved',
+        permission: 'indent.create',
+      },
+      {
         label: 'Trips on the road',
         href: '/trips',
         module: 'trips',
@@ -498,6 +528,33 @@ export const NAV: NavGroup[] = [
         note: 'Who we move goods for',
       },
       {
+        label: 'Add a client',
+        href: '/clients/new',
+        module: 'clients',
+        emoji: '🪪',
+        note: 'Sign up a new client — company, agreement, credit terms',
+        permission: 'client.manage',
+      },
+      {
+        label: 'Client onboarding',
+        href: '/clients/onboarding',
+        module: 'clients',
+        emoji: '📋',
+        note: 'Check a new client’s papers before we carry for them',
+        /*
+         * Named, so the row follows the permission rather than the module.
+         * `clients` is EDIT for Finance too — they own the commercial record
+         * and the row above — but clearing a client is Compliance's decision,
+         * and offering Finance a queue of decisions they cannot make is the
+         * "menu of screens you can look at but not touch" this filter exists
+         * to prevent.
+         *
+         * The two rows together are the whole division: Finance signs a
+         * client up, Compliance decides whether we carry for them.
+         */
+        permission: 'client.onboard',
+      },
+      {
         label: 'Rate requests',
         href: '/rfq',
         module: 'rfq',
@@ -505,11 +562,47 @@ export const NAV: NavGroup[] = [
         note: 'Pricing a client has asked us to quote',
       },
       {
+        label: 'New rate request',
+        href: '/rfq/new',
+        module: 'rfq',
+        emoji: '📣',
+        note: 'Start pricing a client’s lanes for a new period',
+      },
+      {
         label: 'Transporters',
         href: '/vendors',
         module: 'vendors',
         emoji: '🚛',
         note: 'The fleet owners who carry the loads',
+      },
+      {
+        label: 'Add a transporter',
+        href: '/vendors/new',
+        module: 'vendors',
+        emoji: '➕',
+        note: 'Bring a new fleet owner on — papers, fleet, bank details',
+        permission: 'vendor.edit',
+      },
+      {
+        label: 'Transporter leads',
+        href: '/vendors/leads',
+        module: 'vendors',
+        emoji: '📇',
+        note: 'Fleet owners we have met but not signed up yet',
+      },
+      {
+        label: 'Lanes short of trucks',
+        href: '/vendors/market-gap',
+        module: 'vendors',
+        emoji: '🧭',
+        note: 'Routes where nobody quoted — recruit here',
+      },
+      {
+        label: 'Problems with transporters',
+        href: '/vendors/issues',
+        module: 'vendors',
+        emoji: '🛠️',
+        note: 'Complaints and incidents logged against a transporter',
       },
       {
         label: 'Document checks',
@@ -540,11 +633,26 @@ export const NAV: NavGroup[] = [
         note: 'The rest, once delivery is proven',
       },
       {
+        label: 'Transporter bills',
+        href: '/payments/bills',
+        module: 'payments',
+        emoji: '📋',
+        note: 'Match what a transporter billed against what the trip earned',
+      },
+      {
         label: 'Client bills',
         href: '/invoices',
         module: 'invoices',
         emoji: '🧾',
         note: 'What we have invoiced clients for',
+      },
+      {
+        label: 'Raise a client bill',
+        href: '/invoices/new',
+        module: 'invoices',
+        emoji: '➕',
+        note: 'Bill a client for trips that have been delivered',
+        permission: 'invoice.create',
       },
       {
         label: 'Money to collect',
@@ -601,9 +709,18 @@ export function areaFor(module: ModuleKey): AreaKey {
   return NAV.find((g) => g.items.some((i) => i.module === module))?.area ?? 'desk';
 }
 
-export function navFor(role: RoleCode): NavGroup[] {
+/**
+ * `permissions` is what the server actually granted this session; it falls
+ * back to the role's seed grants so a caller that only knows the role still
+ * gets the right answer. Both filters apply: the module must be EDIT for the
+ * role, and a row that names a permission is kept only when it is held.
+ */
+export function navFor(role: RoleCode, permissions: readonly Permission[] = SEED_GRANTS[role]): NavGroup[] {
   return NAV.map((group) => ({
     ...group,
-    items: group.items.filter((item) => levelFor(item.module, role) === 'EDIT'),
+    items: group.items.filter(
+      (item) =>
+        levelFor(item.module, role) === 'EDIT' && (!item.permission || permissions.includes(item.permission)),
+    ),
   })).filter((group) => group.items.length > 0);
 }

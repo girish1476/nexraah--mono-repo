@@ -453,7 +453,10 @@ test.describe('Vendor issues — /vendors/issues', () => {
 
     const is41 = rows.filter({ hasText: 'IS-0041' });
     await expect(is41).toContainText('Rathod Roadlines');
-    await expect(is41).toContainText('pod delay');
+    // The category is a named choice now, not the stored code lower-cased:
+    // POD_DELAY reads as what actually went wrong. `issues/page.tsx` holds the
+    // wording, next to the same list the raise-an-issue form offers.
+    await expect(is41).toContainText('Delivery paperwork never came back');
     await expect(is41).toContainText('HIGH');
     await expect(is41).toContainText('TRP-120881');
 

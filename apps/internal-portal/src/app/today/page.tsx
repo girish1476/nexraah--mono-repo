@@ -6,7 +6,7 @@ import { useAtomValue } from 'jotai';
 import { errorMessage } from '@/apis';
 import { fmtDate, inr, inrCompact } from '@/lib/format';
 import { navFor } from '@/lib/permissions';
-import { sessionAtom } from '@/store/atoms';
+import { permissionsAtom, sessionAtom } from '@/store/atoms';
 import {
   ActionCard,
   AllClear,
@@ -69,6 +69,7 @@ function greeting(hour: number): string {
 export default function TodayPage() {
   const session = useAtomValue(sessionAtom);
   const role = useRole();
+  const permissions = useAtomValue(permissionsAtom);
   const [data, setData] = useState<TodayResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Rendered on the client only. Reading the clock during a server render and
@@ -110,7 +111,7 @@ export default function TodayPage() {
 
   // The same NAV the sidebar is built from, filtered the same way, so these
   // shortcuts can never offer a role a screen it is not allowed to open.
-  const shortcuts = navFor(role)
+  const shortcuts = navFor(role, permissions)
     .flatMap((group) => group.items.map((item) => ({ ...item, area: group.area ?? 'desk' })))
     .filter((item) => item.note && item.href !== '/today')
     .slice(0, 6)

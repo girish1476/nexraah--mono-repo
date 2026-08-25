@@ -88,7 +88,16 @@ function Start-Hidden([string]$workDir, [string]$cmd, [string]$log) {
 # have to be node, the tunnels don't.
 $cfExe = Get-ChildItem "$env:LOCALAPPDATA\npm-cache\_npx" -Recurse -Filter 'cloudflared.exe' -ErrorAction SilentlyContinue |
   Select-Object -First 1 -ExpandProperty FullName
-$tunnelCmd = if ($cfExe) { "`"$cfExe`" tunnel" } else { 'npx --yes cloudflared tunnel' }
+# Run it under a different file name. Other sessions on this laptop clear
+# every cloudflared.exe when they start their own tunnel (seen 2026-08-25:
+# a tunnel for port 3002 took ours down with it and the public links died).
+# A name-based kill cannot find nexraah-tunnel.exe.
+if ($cfExe) {
+  $renamed = Join-Path $logs 'nexraah-tunnel.exe'
+  Copy-Item $cfExe $renamed -Force -ErrorAction SilentlyContinue
+  if (Test-Path $renamed) { $cfExe = $renamed }
+}
+$tunnelCmd = if ($cfExe) { "`"$cfExe`" tunnel --no-autoupdate" } else { 'npx --yes cloudflared tunnel' }
 
 $pids += Start-Hidden (Join-Path $repo 'apps\internal-portal') "set NEXT_DIST_DIR=.next-prod&& npx next start -p $INTERNAL_PORT" (Join-Path $logs 'internal-portal.log')
 $pids += Start-Hidden (Join-Path $repo 'apps\vendor-portal')   "npx next start -p $VENDOR_PORT"                                     (Join-Path $logs 'vendor-portal.log')
