@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { ApiError, ApprovalRequiredError, errorMessage } from '@/apis';
 import { fmtDate, inr, inrCompact, pct } from '@/lib/format';
+import { ROLES, RoleCode } from '@/lib/permissions';
 import {
   Banner,
   BlockedPanel,
@@ -25,7 +26,15 @@ import {
   useToast,
 } from '@/lib/ui';
 import { UnmetCondition } from '@/apis';
-import { activateVendor, changeAdvancePolicy, getVendor, verifyKyc } from '../apis';
+import {
+  activateVendor,
+  changeAdvancePolicy,
+  getVendor,
+  rejectDocument,
+  rejectKyc,
+  verifyDocument,
+  verifyKyc,
+} from '../apis';
 import { CheckStatus, FleetRow, KycItem, VendorDetail, VendorDocument } from '../types';
 
 const CHECK_TONE: Record<CheckStatus, Tone> = {
@@ -57,6 +66,8 @@ export default function VendorDetailPage() {
   const [policyReason, setPolicyReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [awaitingApproval, setAwaitingApproval] = useState(false);
+  const [rejecting, setRejecting] = useState<{ table: 'kyc' | 'document'; kind: string } | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
 
   const load = () => {
     setError(null);
@@ -70,14 +81,21 @@ export default function VendorDetailPage() {
   };
   useEffect(load, [id]);
 
+  // The server answers with a narrow `{ id, status, portalAccountProvisioned }`,
+  // not the vendor — re-fetch for the full record, and let the real
+  // `portalAccountProvisioned` flag (not a fixed claim) decide what the toast says.
   const onActivate = async () => {
     setBusy(true);
     try {
-      const updated = await activateVendor(id);
-      setVendor(updated);
+      const result = await activateVendor(id);
+      load();
       setUnmet([]);
       setConfirmActivate(false);
-      toast('Vendor activated · awardable across every branch · portal login created');
+      toast(
+        result.portalAccountProvisioned
+          ? 'Vendor activated · awardable across every branch · portal login created'
+          : 'Vendor activated · awardable across every branch · portal login not yet set up',
+      );
     } catch (e) {
       if (e instanceof ApiError && e.code === 'VENDOR_INCOMPLETE') {
         setUnmet(e.unmet);
@@ -91,14 +109,45 @@ export default function VendorDetailPage() {
     }
   };
 
+  // Both verify calls answer with `{ kind, status }`, not the vendor — re-fetch
+  // so the unmet list and the activate button reflect the new state.
   const onVerifyKyc = async (kind: string) => {
     try {
-      const updated = await verifyKyc(id, kind);
-      setVendor(updated);
-      setUnmet(pendingItems(updated));
+      await verifyKyc(id, kind);
+      load();
       toast(`Verified · ${kind}`);
     } catch (e) {
       toast(errorMessage(e));
+    }
+  };
+
+  const onVerifyDocument = async (kind: string) => {
+    try {
+      await verifyDocument(id, kind);
+      load();
+      toast(`Verified · ${kind.replace(/_/g, ' ')}`);
+    } catch (e) {
+      toast(errorMessage(e));
+    }
+  };
+
+  const onRejectSubmit = async () => {
+    if (!rejecting) return;
+    setBusy(true);
+    try {
+      if (rejecting.table === 'kyc') {
+        await rejectKyc(id, rejecting.kind, rejectReason);
+      } else {
+        await rejectDocument(id, rejecting.kind, rejectReason);
+      }
+      load();
+      toast(`Rejected · ${rejecting.kind.replace(/_/g, ' ')}`);
+      setRejecting(null);
+      setRejectReason('');
+    } catch (e) {
+      toast(errorMessage(e));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -112,7 +161,8 @@ export default function VendorDetailPage() {
         setAwaitingApproval(true);
         setPolicyOpen(false);
         setPolicyReason('');
-        toast(`Sent to ${e.approval.approverRole} · not applied until approved (BR-57)`);
+        const approver = ROLES[e.approval.approverRole as RoleCode]?.label ?? e.approval.approverRole;
+        toast(`Sent to ${approver} · not applied until they approve it`);
       } else {
         toast(errorMessage(e));
       }
@@ -140,9 +190,14 @@ export default function VendorDetailPage() {
       align: 'right',
       render: (r) =>
         can('vendor.verify') && r.status === 'PENDING' ? (
-          <button className="btn btn-secondary btn-sm" onClick={() => onVerifyKyc(r.kind)}>
-            Verify
-          </button>
+          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+            <button className="btn btn-secondary btn-sm" onClick={() => onVerifyKyc(r.kind)}>
+              Verify
+            </button>
+            <button className="btn btn-secondary btn-sm" onClick={() => setRejecting({ table: 'kyc', kind: r.kind })}>
+              Reject
+            </button>
+          </div>
         ) : (
           <span className="muted" style={{ fontSize: 11.5 }}>
             {r.status === 'VERIFIED' ? '' : 'COMPLIANCE verifies'}
@@ -156,6 +211,35 @@ export default function VendorDetailPage() {
     { key: 'ref', label: 'Reference', mono: true, render: (r) => r.reference ?? '—' },
     { key: 'valid', label: 'Valid to', render: (r) => fmtDate(r.validTo) },
     { key: 'status', label: 'State', render: (r) => <Tag tone={CHECK_TONE[r.status]}>{r.status}</Tag> },
+    {
+      key: 'act',
+      label: '',
+      align: 'right',
+      render: (r) =>
+        can('vendor.verify') && r.status === 'PENDING' ? (
+          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+            <button className="btn btn-secondary btn-sm" onClick={() => onVerifyDocument(r.kind)}>
+              Verify
+            </button>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => setRejecting({ table: 'document', kind: r.kind })}
+            >
+              Reject
+            </button>
+          </div>
+        ) : (
+          <span className="muted" style={{ fontSize: 11.5 }}>
+            {r.status === 'VERIFIED'
+              ? ''
+              : r.status === 'MISSING'
+                ? 'Not uploaded yet'
+                : r.status === 'REJECTED'
+                  ? 'Needs a fresh upload'
+                  : 'COMPLIANCE verifies'}
+          </span>
+        ),
+    },
   ];
 
   const fleetColumns: Column<FleetRow>[] = [
@@ -179,7 +263,7 @@ export default function VendorDetailPage() {
       <PageHeader
         path={`/vendors/${vendor.code}`}
         title={vendor.legalName}
-        sub={`${vendor.code} · ${vendor.baseCity} · ${vendor.constitution.toLowerCase()}`}
+        sub={`${vendor.code} · ${vendor.baseCity}${vendor.constitution ? ` · ${vendor.constitution.toLowerCase()}` : ''}`}
         module="vendors"
       />
 
@@ -195,6 +279,7 @@ export default function VendorDetailPage() {
                   ['Party type', vendor.partyType],
                   ['Branch', vendor.branchName],
                   ['Fleet', `${vendor.fleetCount} trucks`],
+                  ['Truck types', vendor.truckTypes?.length ? vendor.truckTypes.join(', ') : '—'],
                   ['Operating', vendor.operatingStates.join(', ')],
                   ['On panel since', fmtDate(vendor.panelDate)],
                   ['Bank', `${vendor.bankAccount} · ${vendor.ifsc}`],
@@ -216,7 +301,7 @@ export default function VendorDetailPage() {
               </div>
               <p className="muted" style={{ fontSize: 11.5, lineHeight: 1.45, marginBottom: 0 }}>
                 {can('vendor.advance_policy')
-                  ? 'Set by compliance and capped on every advance this vendor requests. A change is not applied until it is approved (BR-57).'
+                  ? 'Set by compliance and capped on every advance this vendor requests. A change is not applied until it is approved.'
                   : 'Set by compliance. Read-only here.'}
               </p>
               {vendor.advanceHistory.length > 0 && (
@@ -255,7 +340,7 @@ export default function VendorDetailPage() {
             subtitle={
               can('vendor.activate')
                 ? 'Activation is yours to grant once every item below clears.'
-                : 'Compliance clears vendors. Until they do, this vendor cannot be awarded an indent (BR-01).'
+                : 'Compliance clears vendors. Until they do, this vendor cannot be awarded an indent.'
             }
             unmet={unmet}
             action={
@@ -269,7 +354,7 @@ export default function VendorDetailPage() {
                 </button>
               )
             }
-            note="Activating creates the transporter's portal login and sends the first-login SMS."
+            note="Activating makes the vendor awardable across every branch. Portal login setup follows separately."
           />
         )}
 
@@ -318,8 +403,8 @@ export default function VendorDetailPage() {
         <Panel title="Identity checks" pad={false}>
           <DataTable columns={kycColumns} rows={vendor.kyc} rowKey={(r) => r.kind} />
           <div className="muted" style={{ fontSize: 11.5, padding: '10px 14px' }}>
-            Aadhaar is held as the last four digits only (BR-04). Identity images are encrypted at rest, visible
-            to compliance, and served on 15-minute signed URLs (NFR-04).
+            Only the last 4 digits of Aadhaar are stored, to protect the transporter&apos;s privacy. Photos are
+            stored securely and only Compliance staff can open them.
           </div>
         </Panel>
 
@@ -335,7 +420,7 @@ export default function VendorDetailPage() {
       <Dialog
         open={confirmActivate}
         title="Clear and activate vendor"
-        body="Activating makes this vendor awardable across every branch, creates their portal login and sends the first-login SMS. Compliance is the only role that can do this."
+        body="Activating makes this vendor awardable across every branch. Compliance is the only role that can do this. Portal login setup happens separately."
         facts={[
           ['Vendor', vendor.legalName],
           ['GSTIN', vendor.gstin ?? '—'],
@@ -351,7 +436,7 @@ export default function VendorDetailPage() {
       <Dialog
         open={policyOpen}
         title="Change the advance policy"
-        body="This is not applied when you submit it. It raises an ADVANCE_POLICY_CHANGE approval and takes effect only once a role senior to operations approves (BR-57)."
+        body="This is not applied when you submit it. It goes out for approval and takes effect only once a role senior to operations approves it."
         confirmLabel="Request change"
         confirmDisabled={policyReason.trim().length < 20}
         busy={busy}
@@ -369,6 +454,24 @@ export default function VendorDetailPage() {
         </Field>
         <Field label="Reason" required hint="At least 20 characters — it is stored on the approval and audited.">
           <textarea rows={3} value={policyReason} onChange={(e) => setPolicyReason(e.target.value)} />
+        </Field>
+      </Dialog>
+
+      <Dialog
+        open={rejecting !== null}
+        title={rejecting ? `Reject · ${rejecting.kind.replace(/_/g, ' ')}` : ''}
+        body="This is sent back to Operations to fix and resubmit. The vendor cannot be activated until it is corrected and verified."
+        confirmLabel="Reject"
+        confirmDisabled={rejectReason.trim().length < 20}
+        busy={busy}
+        onConfirm={onRejectSubmit}
+        onClose={() => {
+          setRejecting(null);
+          setRejectReason('');
+        }}
+      >
+        <Field label="Reason" required hint="At least 20 characters — it is stored on the audit trail.">
+          <textarea rows={3} value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} />
         </Field>
       </Dialog>
     </ModuleGuard>

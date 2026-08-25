@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { setRole } from './helpers';
 
 // This drawer only renders below the 900px breakpoint — skip on desktop
 // projects instead of forcing a viewport here (that would fight the
@@ -9,6 +10,7 @@ test.describe('mobile nav drawer', () => {
   });
 
   test('sidebar is off-canvas by default and the hamburger opens it', async ({ page }) => {
+    await setRole(page, 'OPS');
     await page.goto('/today');
     const sidebar = page.locator('aside.sidebar');
     await expect(sidebar).not.toHaveClass(/open/);
@@ -19,6 +21,7 @@ test.describe('mobile nav drawer', () => {
   });
 
   test('tapping the backdrop closes the drawer', async ({ page }) => {
+    await setRole(page, 'OPS');
     await page.goto('/today');
     await page.getByRole('button', { name: 'Open menu' }).click();
     await expect(page.locator('aside.sidebar')).toHaveClass(/open/);
@@ -28,6 +31,7 @@ test.describe('mobile nav drawer', () => {
   });
 
   test('the close (X) button closes the drawer', async ({ page }) => {
+    await setRole(page, 'OPS');
     await page.goto('/today');
     await page.getByRole('button', { name: 'Open menu' }).click();
     await page.getByRole('button', { name: 'Close menu' }).click();
@@ -35,14 +39,18 @@ test.describe('mobile nav drawer', () => {
   });
 
   test('navigating via a drawer link closes the drawer on arrival', async ({ page }) => {
+    await setRole(page, 'OPS');
     await page.goto('/today');
     await page.getByRole('button', { name: 'Open menu' }).click();
-    await page.getByRole('link', { name: /^Vendors/ }).click();
-    await expect(page).toHaveURL(/\/vendors$/);
+    // Vendors is VIEW-only for OPS, so it's not in the drawer — Trips is one
+    // of the modules OPS actually holds EDIT on.
+    await page.getByRole('link', { name: /^Trips/ }).click();
+    await expect(page).toHaveURL(/\/trips$/);
     await expect(page.locator('aside.sidebar')).not.toHaveClass(/open/);
   });
 
   test('data tables collapse to stacked cards on a phone viewport', async ({ page }) => {
+    await setRole(page, 'OPS');
     await page.goto('/trips');
     // NFR-06: the table head hides and each row becomes a bordered card;
     // data-label on every td drives the mobile pseudo-label.

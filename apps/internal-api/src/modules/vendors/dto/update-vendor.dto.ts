@@ -12,6 +12,13 @@ export class UpdateVendorDto {
   @IsOptional() @IsInt() @Min(0) fleetBase?: number;
   @IsOptional() @IsArray() @IsString({ each: true }) operatingStates?: string[];
 
+  // Onboarding wizard step 3 (part 03 §1) — self-reported, stored on
+  // `declared_fleet_count`/`truck_types`/`fleet_body_type`, distinct from
+  // `vendor_fleet`'s actual registered-truck rows.
+  @IsOptional() @IsInt() @Min(0) fleetCount?: number;
+  @IsOptional() @IsArray() @IsString({ each: true }) truckTypes?: string[];
+  @IsOptional() @IsString() bodyType?: string;
+
   @IsOptional() @IsString() bankAccount?: string;
   @IsOptional() @IsString() ifsc?: string;
   @IsOptional() @IsString() accountHolder?: string;

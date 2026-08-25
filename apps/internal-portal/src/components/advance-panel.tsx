@@ -1,10 +1,12 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { ApiError, errorMessage, newIdempotencyKey } from '@/apis';
 import { getAdvance, releaseAdvance } from '@/app/payments/apis';
 import { AdvanceDetail, PaymentCapture } from '@/app/payments/types';
 import { inr } from '@/lib/format';
+import { ROLES } from '@/lib/permissions';
 import { Banner, BlockedPanel, Loading, useCan, useToast } from '@/lib/ui';
 import { ReleaseDialog } from './release-dialog';
 
@@ -60,19 +62,30 @@ export function AdvancePanel({ indentId, onReleased }: { indentId: string; onRel
   if (error) return <Banner tone="grey" title="Advance">{error}</Banner>;
   if (!detail) return <Loading what="Checking the advance gate" />;
 
+  const orderLink = (
+    <div style={{ marginBottom: 10 }}>
+      <Link href={`/orders/${detail.indentCode}`} className="btn btn-secondary btn-sm">
+        View order
+      </Link>
+    </div>
+  );
+
   if (detail.alreadyReleased) {
     return (
-      <Banner
-        tone="mint"
-        title="Advance released"
-        right={
-          <div className="mono" style={{ fontSize: 23, color: 'var(--mint)' }}>
-            {inr(detail.grossPaise)}
-          </div>
-        }
-      >
-        {detail.advancePct}% of {inr(detail.buyRatePaise)} · released to {detail.beneficiary.account}
-      </Banner>
+      <>
+        {orderLink}
+        <Banner
+          tone="mint"
+          title="Advance released"
+          right={
+            <div className="mono" style={{ fontSize: 23, color: 'var(--mint)' }}>
+              {inr(detail.grossPaise)}
+            </div>
+          }
+        >
+          {detail.advancePct}% of {inr(detail.buyRatePaise)} · released to {detail.beneficiary.account}
+        </Banner>
+      </>
     );
   }
 
@@ -80,6 +93,7 @@ export function AdvancePanel({ indentId, onReleased }: { indentId: string; onRel
 
   return (
     <>
+      {orderLink}
       <BlockedPanel
         title={detail.unmet.length ? 'Advance blocked' : 'Advance ready to release'}
         subtitle={
@@ -104,7 +118,7 @@ export function AdvancePanel({ indentId, onReleased }: { indentId: string; onRel
               ? 'Release stays disabled until every item above is verified. The endpoint refuses it too.'
               : 'Every check has cleared. Release is yours to make.'
             : detail.unmet.length
-              ? 'Release is a FINANCE action. You can see what is held and why, and clear what is yours to clear.'
+              ? `Release is a ${ROLES.FINANCE.label} action. You can see what is held and why, and clear what is yours to clear.`
               : 'Everything is cleared. Finance releases the money — no other role can, including you.'
         }
       />
@@ -117,7 +131,7 @@ export function AdvancePanel({ indentId, onReleased }: { indentId: string; onRel
           ['Vendor', detail.vendorName],
           ['Account', `${detail.beneficiary.account} · ${detail.beneficiary.ifsc}`],
           ['Amount', inr(detail.grossPaise)],
-          ['TDS', inr(detail.tdsPaise)],
+          ['TDS (not deducted in this release)', inr(detail.tdsPaise)],
           ['Against', detail.tripCode ?? detail.indentCode],
         ]}
         confirmLabel="Confirm release"

@@ -14,31 +14,63 @@ import {
   Loading,
   ModuleGuard,
   PageHeader,
+  PageIntro,
   Panel,
   Split,
   Tag,
   Tone,
+  useCan,
+  useToast,
 } from '@/lib/ui';
-import { getTrip } from '../apis';
+import { deliverTrip, departTrip, getTrip } from '../apis';
 import { getVehicleTracking } from '@/app/telematics/apis';
 import { VehicleRow } from '@/app/telematics/types';
-import { ALERT_LABEL, ALERT_TONE, POD_TONE } from '@/lib/documents';
+import { ALERT_LABEL, ALERT_TONE, POD_STATUS_LABEL, POD_TONE } from '@/lib/documents';
 import { TripDetail } from '../types';
 import { TripTabs } from './tabs';
 
 /** Trip detail — `/trips/[id]` (part 05 §2). */
 export default function TripDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const can = useCan();
+  const toast = useToast();
   const [trip, setTrip] = useState<TripDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tracking, setTracking] = useState<VehicleRow | null>(null);
   const [trackingChecked, setTrackingChecked] = useState(false);
+  const [stageBusy, setStageBusy] = useState(false);
 
   const load = () => {
     setError(null);
     getTrip(id).then(setTrip).catch((e) => setError(errorMessage(e)));
   };
   useEffect(load, [id]);
+
+  const submitDepart = async () => {
+    setStageBusy(true);
+    try {
+      await departTrip(id);
+      toast('Trip started — tracking begins now.');
+      load();
+    } catch (e) {
+      toast(errorMessage(e));
+    } finally {
+      setStageBusy(false);
+    }
+  };
+
+  const submitDeliver = async () => {
+    setStageBusy(true);
+    try {
+      await deliverTrip(id);
+      toast('Marked delivered — the proof-of-delivery clock starts now.');
+      load();
+    } catch (e) {
+      toast(errorMessage(e));
+    } finally {
+      setStageBusy(false);
+    }
+  };
 
   // Own effect, own vehicle number, own 30s refresh — same cadence as the
   // fleet board (`telematics/page.tsx`) so the two never show a vehicle in
@@ -80,6 +112,15 @@ export default function TripDetailPage() {
         title={trip.code}
         sub={`${trip.lane} · ${trip.distanceKm} km · ${trip.vendorName}`}
         module="trips"
+        right={
+          <Link href={`/orders/${trip.indentCode}`} className="btn btn-secondary">
+            View order
+          </Link>
+        }
+      />
+      <PageIntro
+        what="Everything about one trip in one place — the truck and driver assigned, live tracking while it's on the road, the money moved so far, and the documents, cross-check and lorry receipt needed to close it out."
+        who="Operations runs the trip from here; finance releases the advance and balance payments shown below."
       />
       <TripTabs tripId={trip.id} />
 
@@ -89,6 +130,7 @@ export default function TripDetailPage() {
             <Panel title="Identifiers" pad={false}>
               <FactList
                 facts={[
+                  ['Stage', <Tag key="stage" tone="grey">{trip.stage.replace(/_/g, ' ')}</Tag>],
                   ['Trip', trip.code],
                   ['Lorry receipt', trip.lrCode ?? 'not issued'],
                   ['Indent', <Link key="i" href={`/indents/${trip.indentId}`}>{trip.indentCode}</Link>],
@@ -153,15 +195,15 @@ export default function TripDetailPage() {
             <div>
               <div className="eyebrow">Proof of delivery</div>
               <div style={{ marginTop: 6 }}>
-                <Tag tone={POD_TONE[trip.podStatus] as Tone}>{trip.podStatus}</Tag>
+                <Tag tone={POD_TONE[trip.podStatus] as Tone}>{POD_STATUS_LABEL[trip.podStatus] ?? trip.podStatus}</Tag>
               </div>
             </div>
           </div>
           {trip.transitDelay && (
             <div style={{ marginTop: 12 }}>
               <Banner tone="flag" title="Transit delay">
-                Reporting was later than the client’s requirement. Under BR-42 that is the delay, not merely a
-                risk of one.
+                Reporting was later than the client’s requirement — that on its own counts as the delay, not
+                merely a risk of one.
               </Banner>
             </div>
           )}
@@ -169,6 +211,26 @@ export default function TripDetailPage() {
             <p className="muted" style={{ fontSize: 12.5, marginBottom: 0, marginTop: 12 }}>
               Remarks carried from the indent: {trip.remarks}
             </p>
+          )}
+          {can('indent.manage') && trip.stage === 'OPEN' && (
+            <div style={{ marginTop: 12 }}>
+              {trip.lr?.status === 'RELEASED' ? (
+                <button className="btn" onClick={submitDepart} disabled={stageBusy}>
+                  Start trip — mark departed
+                </button>
+              ) : (
+                <p className="muted" style={{ fontSize: 12.5, marginBottom: 0 }}>
+                  Generate the lorry receipt before this trip can start.
+                </p>
+              )}
+            </div>
+          )}
+          {can('indent.manage') && trip.stage === 'IN_TRANSIT' && (
+            <div style={{ marginTop: 12 }}>
+              <button className="btn" onClick={submitDeliver} disabled={stageBusy}>
+                Mark delivered
+              </button>
+            </div>
           )}
         </Panel>
 

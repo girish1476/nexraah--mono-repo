@@ -73,6 +73,18 @@ export class TelematicsRepository {
       .execute();
   }
 
+  /**
+   * Manual board update — the e-way validity Ops was read over the phone
+   * lives on the trip, which is where `openTripsWithVehicle()` reads it from.
+   */
+  updateTripEwayValidTill(tripId: string, ewayValidTill: string | null) {
+    return this.db
+      .updateTable('trips')
+      .set({ eway_valid_till: ewayValidTill })
+      .where('id', '=', tripId)
+      .execute();
+  }
+
   activeAlerts(vehicleNo: string) {
     return this.db
       .selectFrom('telematics_alerts')

@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { DomainException, assertReason } from '../../common/domain-exception';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
 import type { ApprovalRequiredResponse } from '../../common/approval-required.response';
@@ -6,6 +6,7 @@ import { AuditService } from '../audit/audit.service';
 import { NumberingService } from '../numbering/numbering.service';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { ApprovalsRegistry } from '../approvals/approvals.registry';
+import { OrdersService } from '../orders/orders.service';
 import { VendorsRepository } from '../vendors/vendors.repository';
 import { IndentsRepository, type IndentListFilters } from './indents.repository';
 import type { CreateIndentDto } from './dto/create-indent.dto';
@@ -30,7 +31,44 @@ export class IndentsService implements OnModuleInit {
     private readonly numberingService: NumberingService,
     private readonly approvalsService: ApprovalsService,
     private readonly approvalsRegistry: ApprovalsRegistry,
+    private readonly ordersService: OrdersService,
   ) {}
+
+  private readonly logger = new Logger('IndentsService');
+
+  /**
+   * Opens the order for a freshly created indent — step 1 of the ten.
+   *
+   * After commit, not inside the transaction: `createForIndent` opens its own
+   * transaction internally, so nesting it here would not behave. The upside of
+   * that ordering is that the ORD- number is only consumed once the indent is
+   * genuinely real, so a rolled-back creation burns nothing.
+   *
+   * The risk runs the other way — an indent that commits and then fails to get
+   * an order — which `OrdersService.reconcile()` repairs. Non-fatal for the
+   * same reason: the indent exists, and refusing the request over a missing
+   * derived row would be the worse bug.
+   */
+  private async openOrder(indentId: string, actor: AuthenticatedUser | null) {
+    try {
+      await this.ordersService.createForIndent(indentId, actor);
+    } catch (e) {
+      this.logger.error(
+        `Order creation failed for indent ${indentId}: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }
+
+  /** Moves the ladder after an indent transition has COMMITTED. */
+  private async syncOrder(indentId: string, actor: AuthenticatedUser | null, note: string | null = null) {
+    try {
+      await this.ordersService.recompute(indentId, actor, note);
+    } catch (e) {
+      this.logger.error(
+        `Order recompute failed for indent ${indentId}: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }
 
   onModuleInit() {
     // D-39: above-band quotes are kept and shown, never refused — this is
@@ -162,7 +200,7 @@ export class IndentsService implements OnModuleInit {
         from_city: dto.fromCity,
         to_city: dto.toCity,
         material: dto.material,
-        weight_kg: dto.weightKg,
+        weight_kg: Math.round(dto.weightTn * 1000),
         truck_type: dto.truckType,
         pickup_date: dto.pickupDate,
         transit_days: dto.transitDays ?? null,
@@ -190,6 +228,8 @@ export class IndentsService implements OnModuleInit {
       return inserted;
     });
 
+    // Step 1, "Indent created" — opens the order and issues its ORD- number.
+    await this.openOrder(row.id, actor);
     return this.getById(row.id);
   }
 
@@ -222,10 +262,10 @@ export class IndentsService implements OnModuleInit {
       );
     }
 
-    return this.indentsRepository.transaction().execute(async (trx) => {
+    await this.indentsRepository.transaction().execute(async (trx) => {
       await this.applyAward(trx, indentId, quoteId, actor);
-      return this.getById(indentId);
     });
+    return this.getById(indentId);
   }
 
   /**
@@ -319,7 +359,7 @@ export class IndentsService implements OnModuleInit {
   }
 
   async createTrip(indentId: string, actor: AuthenticatedUser) {
-    return this.indentsRepository.transaction().execute(async (trx) => {
+    const trip = await this.indentsRepository.transaction().execute(async (trx) => {
       const indent = await this.indentsRepository.findByIdForUpdate(trx, indentId);
       if (!indent) throw new DomainException(404, 'NOT_FOUND', `Unknown indent: ${indentId}`);
       if (indent.stage !== 'VEHICLE_PLACED') {
@@ -361,6 +401,10 @@ export class IndentsService implements OnModuleInit {
       });
       return { id: trip.id, code: trip.code };
     });
+    // Step 2, "Trip generated". `recompute` also opens the order if the indent
+    // somehow never got one, so this doubles as a repair point.
+    await this.syncOrder(indentId, actor);
+    return trip;
   }
 
   async patchAdvancePct(indentId: string, advancePct: number, reason: string, actor: AuthenticatedUser) {

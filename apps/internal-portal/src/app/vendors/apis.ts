@@ -1,5 +1,7 @@
 import { request } from '@/apis';
+import type { Branch } from '@/app/admin/branches/types';
 import {
+  CheckStatus,
   ComplianceQueue,
   Issue,
   Lead,
@@ -9,6 +11,11 @@ import {
   VendorListRow,
   VendorStatus,
 } from './types';
+
+/** GET /branches — the branch selector on step 1 of the onboarding wizard. */
+export function listBranches() {
+  return request<Branch[]>({ url: '/branches', method: 'GET' });
+}
 
 /* ---- search and detail -------------------------------------------------- */
 
@@ -47,9 +54,41 @@ export function submitKyc(
   return request<VendorDetail>({ url: `/vendors/${id}/kyc/${kind}`, method: 'POST', data: body });
 }
 
-/** POST /vendors/:id/kyc/:kind/verify · `vendor.verify` */
+/** POST /vendors/:id/kyc/:kind/verify · `vendor.verify` — approve is the default when no body is sent. */
 export function verifyKyc(id: string, kind: string) {
-  return request<VendorDetail>({ url: `/vendors/${id}/kyc/${kind}/verify`, method: 'POST' });
+  return request<{ kind: string; status: CheckStatus }>({ url: `/vendors/${id}/kyc/${kind}/verify`, method: 'POST' });
+}
+
+/** Same route as `verifyKyc`, `approve: false` — a rejection needs a reason of at least 20 characters. */
+export function rejectKyc(id: string, kind: string, reason: string) {
+  return request<{ kind: string; status: CheckStatus }>({
+    url: `/vendors/${id}/kyc/${kind}/verify`,
+    method: 'POST',
+    data: { approve: false, reason },
+  });
+}
+
+/**
+ * POST /vendors/:id/documents/:kind/verify · `vendor.verify`
+ * The legal-file counterpart of `verifyKyc`. `activate` refuses until every
+ * mandatory document is VERIFIED, so without this call no vendor can go
+ * ACTIVE through the console. Returns `{ kind, status }` — callers re-fetch
+ * the vendor rather than patching it in from the response.
+ */
+export function verifyDocument(id: string, kind: string) {
+  return request<{ kind: string; status: CheckStatus }>({
+    url: `/vendors/${id}/documents/${kind}/verify`,
+    method: 'POST',
+  });
+}
+
+/** Same route as `verifyDocument`, `approve: false` — a rejection needs a reason of at least 20 characters. */
+export function rejectDocument(id: string, kind: string, reason: string) {
+  return request<{ kind: string; status: CheckStatus }>({
+    url: `/vendors/${id}/documents/${kind}/verify`,
+    method: 'POST',
+    data: { approve: false, reason },
+  });
 }
 
 /** POST /vendors/:id/documents/:kind */
@@ -71,11 +110,21 @@ export function submitVendor(id: string) {
 
 /**
  * POST /vendors/:id/activate · `vendor.activate` → ACTIVE
- * Creates the transporter's portal login and sends the first-login SMS.
  * 409 VENDOR_INCOMPLETE with the unmet list when the file is incomplete (BR-01).
+ *
+ * The response is deliberately narrow, not a full `VendorDetail` — the
+ * caller re-fetches for that (`getVendor`), the same pattern as
+ * `verifyKyc`/`verifyDocument`. `portalAccountProvisioned` is the honest
+ * answer to whether this activation actually created the transporter's
+ * portal login: until Supabase Auth Admin provisioning is wired up, it is
+ * always `false`, and the caller should say so rather than claim a login
+ * was created.
  */
 export function activateVendor(id: string) {
-  return request<VendorDetail>({ url: `/vendors/${id}/activate`, method: 'POST' });
+  return request<{ id: string; status: VendorStatus; portalAccountProvisioned: boolean }>({
+    url: `/vendors/${id}/activate`,
+    method: 'POST',
+  });
 }
 
 /**

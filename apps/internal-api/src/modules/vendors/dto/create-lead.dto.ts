@@ -7,4 +7,5 @@ export class CreateLeadDto {
   @IsOptional() @IsIn(['OWNER', 'VENDOR']) partyType?: 'OWNER' | 'VENDOR';
   @IsOptional() @IsInt() @Min(0) trucksClaimed?: number;
   @IsOptional() @IsString() phone?: string;
+  @IsOptional() @IsString() notes?: string;
 }

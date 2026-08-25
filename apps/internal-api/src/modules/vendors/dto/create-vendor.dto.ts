@@ -19,4 +19,9 @@ export class CreateVendorDto {
   // then requires `branchOverrideReason` if it disagrees with the derivation.
   @IsOptional() @IsString() branchId?: string;
   @IsOptional() @IsString() @MinLength(20) branchOverrideReason?: string;
+
+  // When set, this vendor is created from that lead: the lead's `source`
+  // carries over and the lead flips to CONVERTED, linked to this vendor, in
+  // the same transaction as the insert.
+  @IsOptional() @IsString() leadId?: string;
 }

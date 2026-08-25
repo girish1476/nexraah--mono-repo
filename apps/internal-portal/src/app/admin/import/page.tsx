@@ -12,6 +12,7 @@ import {
   Loading,
   ModuleGuard,
   PageHeader,
+  PageIntro,
   Panel,
   Stack,
   Tag,
@@ -25,12 +26,12 @@ const SETS: { key: ImportSet; label: string; note: string }[] = [
   {
     key: 'clients',
     label: '1 · Client master',
-    note: 'Clients, agreements, credit terms and rate card lanes. Lanes import against a synthetic closed RFQ so BR-37 provenance holds.',
+    note: 'Clients, agreements, credit terms and rate card lanes. Lanes are recorded against a placeholder, already-closed RFQ, so they show the same rate-card history as every other lane.',
   },
   {
     key: 'vendors',
     label: '2 · Transporter panel',
-    note: 'Vendor master with KYC state, advance policy, bank details and fleet. Every row lands at PENDING_VERIFICATION at most — an import can never set ACTIVE (BR-01).',
+    note: 'Vendor master with KYC state, advance policy, bank details and fleet. Every imported vendor starts as Pending verification — someone still has to verify them by hand afterwards.',
   },
   {
     key: 'opening-balances',
@@ -111,12 +112,14 @@ export default function ImportPage() {
 
   return (
     <ModuleGuard module="admin">
-      <PageHeader
-        path="/admin/import"
-        title="Go-live import"
-        sub="upload → dry-run report → confirm → commit"
-        module="admin"
-      />
+      <PageHeader path="/admin/import" title="Bulk upload" module="admin" />
+      <PageIntro
+        what="Load your existing vendors, clients and lanes in bulk from a spreadsheet, instead of keying them in one at a time."
+        who="Administrators, usually once when going live."
+      >
+        Nothing is saved until you confirm. Upload the file first and you get a report of what would
+        be created and what would be rejected — check that before committing.
+      </PageIntro>
 
       <Stack>
         <Banner tone="blue" title="The sets are dependent and import in this order">

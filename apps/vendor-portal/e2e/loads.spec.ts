@@ -177,8 +177,8 @@ test.describe('quote form (BR-05 band enforcement)', () => {
 
     await expect(page.getByText('Within the band')).toBeVisible();
 
-    // Wait for the vehicle list (mocked, async) to populate before submitting.
-    await expect(page.locator('#vehicle option').first()).toBeAttached();
+    await page.locator('#vehicle').fill('MH 04 KL 9034');
+    await page.locator('#driver-mobile').fill('9822041234');
 
     const submit = page.getByRole('button', { name: /Submit quote ₹40,000/ });
     await expect(submit).toBeEnabled();
@@ -194,6 +194,8 @@ test.describe('quote form (BR-05 band enforcement)', () => {
     await amount.fill('43000'); // above the 42,500 ceiling
 
     await expect(page.getByText('Above the band')).toBeVisible();
+    await page.locator('#vehicle').fill('MH 04 KL 9034');
+    await page.locator('#driver-mobile').fill('9822041234');
     const submit = page.getByRole('button', { name: /Submit quote ₹43,000/ });
     await expect(submit).toBeEnabled();
     await expect(page.getByText('Will be sent for approval before award')).toBeVisible();

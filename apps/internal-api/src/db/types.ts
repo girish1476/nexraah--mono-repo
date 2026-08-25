@@ -10,6 +10,27 @@ import type { Generated, GeneratedAlways } from 'kysely';
  */
 export type Json = Record<string, unknown> | unknown[] | string | number | boolean | null;
 
+export type SupplySource = 'UNION' | 'MARKET' | 'BOTH' | 'DIRECT_OWNER';
+
+/**
+ * The ten steps of an order, plus the exception branch — FLOWS.md §6/§11, in
+ * the user's own wording. Fixed vocabulary: an eleventh step is a business
+ * decision, not a schema one.
+ */
+export type OrderStatus =
+  | 'FAILED'
+  | 'POD_FORFEITED'
+  | 'INDENT_CREATED'
+  | 'TRIP_GENERATED'
+  | 'LR_ISSUED'
+  | 'ADVANCE_DOCS_UPLOADED'
+  | 'ADVANCE_PAID'
+  | 'TRACKING'
+  | 'UNLOADED'
+  | 'POD_UPLOADED'
+  | 'POD_VERIFIED'
+  | 'BALANCE_RELEASED';
+
 export interface BranchesTable {
   id: Generated<string>;
   code: string;
@@ -18,6 +39,8 @@ export interface BranchesTable {
   lat: string | null;
   lng: string | null;
   catchment_km: Generated<number>;
+  supply_source: SupplySource | null;
+  supply_remarks: string | null;
   created_at: Generated<string>;
   updated_at: Generated<string>;
 }
@@ -142,6 +165,12 @@ export interface VendorsTable {
   alt_phone: string | null;
   fleet_base: Generated<number>;
   operating_states: Generated<string[]>;
+  // Self-reported at onboarding (part 03 §1 step 3), distinct from
+  // `vendor_fleet`'s row count — that table tracks actually-registered
+  // trucks with plate numbers, a separate, not-yet-built intake path.
+  declared_fleet_count: Generated<number>;
+  truck_types: Generated<string[]>;
+  fleet_body_type: string | null;
   advance_pct: Generated<number>;
   bank_account: string | null;
   ifsc: string | null;
@@ -227,6 +256,7 @@ export interface LeadsTable {
   owner_id: string | null;
   stage: string;
   notes: string | null;
+  converted_vendor_id: string | null;
   created_at: Generated<string>;
   updated_at: Generated<string>;
 }
@@ -294,6 +324,8 @@ export interface RfqLanesTable {
   quoted_rate: number | null;
   outcome: string | null;
   awarded_rate: number | null;
+  supply_source: SupplySource | null;
+  supply_remarks: string | null;
   created_at: Generated<string>;
   updated_at: Generated<string>;
 }
@@ -319,6 +351,8 @@ export interface RateCardLanesTable {
   reporting_rule: string | null;
   valid_from: string;
   valid_to: string | null;
+  supply_source: SupplySource | null;
+  supply_remarks: string | null;
   created_at: Generated<string>;
   updated_at: Generated<string>;
 }
@@ -372,6 +406,43 @@ export interface QuotesTable {
   submitted_at: Generated<string>;
   created_at: Generated<string>;
   updated_at: Generated<string>;
+}
+
+/**
+ * One row per indent — the indent is the request, the order is its journey.
+ *
+ * `status`/`step_no` are a materialised view of facts that live in `indents`
+ * and `trips`, not a second source of truth: `OrdersService.recompute()` is
+ * the only writer, and it derives them the same way for every caller. That
+ * single copy is the point — the browser-side ladder this replaced ran twice
+ * with different inputs, so a list row and its own detail page could disagree
+ * about which step an order was on.
+ */
+export interface OrdersTable {
+  id: Generated<string>;
+  order_no: string;
+  indent_id: string;
+  trip_id: string | null;
+  invoice_id: string | null;
+  client_id: string;
+  branch_id: string;
+  status: Generated<OrderStatus>;
+  step_no: Generated<number>;
+  closed_at: Date | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+/** Append-only step history. Nothing updates or deletes a row here. */
+export interface OrderEventsTable {
+  id: Generated<string>;
+  order_id: string;
+  status: OrderStatus;
+  step_no: number;
+  /** Null means the system did it — a nightly sweep, a tracking ping. */
+  actor_user_id: string | null;
+  note: string | null;
+  at: Generated<Date>;
 }
 
 export interface TripsTable {
@@ -539,6 +610,7 @@ export interface InvoicesTable {
   igst: Generated<number>;
   status: Generated<string>;
   cancel_reason: string | null;
+  notes: string | null;
   created_at: Generated<string>;
   updated_at: Generated<string>;
 }
@@ -600,6 +672,21 @@ export interface NotificationsTable {
   updated_at: Generated<string>;
 }
 
+/**
+ * `docs/api/11-portal.md` §3 — the replay ledger every portal write goes
+ * through. `20260824090000_c_portal_idempotency.sql`. Scoped
+ * (vendor_id, endpoint, idempotency_key): never a global key space, so one
+ * vendor cannot probe another's keys.
+ */
+export interface PortalIdempotencyKeysTable {
+  id: Generated<string>;
+  vendor_id: string;
+  endpoint: string;
+  idempotency_key: string;
+  response: Json;
+  created_at: Generated<string>;
+}
+
 export interface IssuesTable {
   id: Generated<string>;
   code: string;
@@ -656,4 +743,7 @@ export interface Database {
   telematics_alerts: TelematicsAlertsTable;
   notifications: NotificationsTable;
   issues: IssuesTable;
+  portal_idempotency_keys: PortalIdempotencyKeysTable;
+  orders: OrdersTable;
+  order_events: OrderEventsTable;
 }

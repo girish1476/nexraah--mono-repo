@@ -1,0 +1,12 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "installCommand": "pnpm install --no-frozen-lockfile",
+  "buildCommand": "pnpm --filter internal-portal build",
+  "outputDirectory": "apps/internal-portal/.next",
+  "build": {
+    "env": {
+      "NEXT_PUBLIC_USE_MOCKS": "1"
+    }
+  }
+}

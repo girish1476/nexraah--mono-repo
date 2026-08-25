@@ -1,5 +1,5 @@
 import { test, expect, Page, Locator } from '@playwright/test';
-import { setRole } from './helpers';
+import { setRole, statValue } from './helpers';
 
 /**
  * POD — `/pod/pending`, `/pod/receiving`, `/pod/[id]/verify` (part 06).
@@ -24,9 +24,6 @@ import { setRole } from './helpers';
  * all four ages sit comfortably clear of both boundaries.
  */
 
-function statValue(page: Page, label: string) {
-  return page.locator('.stat-strip > div').filter({ hasText: label }).locator('.stat-value');
-}
 
 function row(page: Page, tripCode: string) {
   return page.locator('table.table tbody tr').filter({ hasText: tripCode });
@@ -47,20 +44,20 @@ test.describe('POD pending list', () => {
     await setRole(page, 'COMPLIANCE');
     await page.goto('/pod/pending');
 
-    await expect(statValue(page, 'Pending')).toHaveText('3');
-    await expect(statValue(page, 'Breached')).toHaveText('2');
-    // Balance held is buyRate minus advance paid — static fixture fields,
-    // not derived from the clock, so this total is safe to pin exactly.
-    await expect(statValue(page, 'Balance held')).toHaveText('₹81,920');
+    await expect(statValue(page, 'podpending-waiting')).toHaveText('3');
+    await expect(statValue(page, 'podpending-overdue')).toHaveText('2');
+    // The money we hold is buyRate minus advance paid — static fixture
+    // fields, not derived from the clock, so this total is safe to pin.
+    await expect(statValue(page, 'podpending-money-held')).toHaveText('₹81,920');
 
-    const codes = await page.locator('table.table tbody tr td[data-label="Trip"] a').allTextContents();
+    const codes = await page.locator('table.table tbody tr td[data-label="Trip number"] a').allTextContents();
     expect(codes).toEqual(['TRP-120874', 'TRP-120881', 'TRP-120869']);
 
     await expect(row(page, 'TRP-120874').getByText(/\+\d+d over/)).toBeVisible();
     await expect(row(page, 'TRP-120881').getByText(/\+\d+d over/)).toBeVisible();
     await expect(row(page, 'TRP-120869').getByText(/\d+ days left/)).toBeVisible();
 
-    await expect(row(page, 'TRP-120881').locator('td[data-label="Balance held"]')).toHaveText('₹58,400');
+    await expect(row(page, 'TRP-120881').locator('td[data-label="Their money we hold"]')).toHaveText('₹58,400');
   });
 
   test('branch and transporter filters narrow the list', async ({ page }) => {
@@ -88,7 +85,7 @@ test.describe('POD pending list', () => {
 
     await field(page, 'Ageing').locator('select').selectOption('');
     await field(page, 'Branch').locator('input').fill('Not A Real Branch');
-    await expect(page.getByText('Every proof of delivery is in.')).toBeVisible();
+    await expect(page.getByText('No trips match these filters')).toBeVisible();
     await expect(page.locator('table.table')).toHaveCount(0);
   });
 
@@ -112,14 +109,14 @@ test.describe('POD pending list', () => {
     await expect(row(page, 'TRP-120881')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Propose waiver' })).toHaveCount(0);
     // EDIT-level role: no read-only badge.
-    await expect(page.getByText('Read-only for BRANCH_MGR')).toHaveCount(0);
+    await expect(page.getByTestId('view-only')).toHaveCount(0);
   });
 
   test('OPS (VIEW) sees the read-only badge and no waiver button on any row', async ({ page }) => {
     await setRole(page, 'OPS');
     await page.goto('/pod/pending');
 
-    await expect(page.getByText('Read-only for OPS')).toBeVisible();
+    await expect(page.getByTestId('view-only')).toBeVisible();
     await expect(page.locator('table.table tbody tr')).toHaveCount(3);
     await expect(page.getByRole('button', { name: 'Propose waiver' })).toHaveCount(0);
   });
@@ -152,12 +149,12 @@ test.describe('POD receiving register', () => {
     await setRole(page, 'COMPLIANCE');
     await page.goto('/pod/receiving');
 
-    await expect(statValue(page, 'Attached in transit')).toHaveText('1');
-    await expect(statValue(page, 'Received today')).toHaveText('0');
-    await expect(statValue(page, 'Awaiting verification')).toHaveText('1');
-    await expect(statValue(page, 'Awaiting approval')).toHaveText('0');
-    await expect(statValue(page, 'Balance held')).toHaveText('₹81,920');
-    await expect(statValue(page, 'Past 20 days')).toHaveText('2');
+    await expect(statValue(page, 'podrecv-in-transit')).toHaveText('1');
+    await expect(statValue(page, 'podrecv-logged-today')).toHaveText('0');
+    await expect(statValue(page, 'podrecv-to-check')).toHaveText('1');
+    await expect(statValue(page, 'podrecv-to-approve')).toHaveText('0');
+    await expect(statValue(page, 'podrecv-money-held')).toHaveText('₹81,920');
+    await expect(statValue(page, 'podrecv-over-20-days')).toHaveText('2');
 
     await expect(page.locator('table.table tbody tr')).toHaveCount(4);
     await expect(row(page, 'TRP-120881').getByRole('button', { name: 'Log a receipt' })).toBeVisible();
@@ -170,7 +167,7 @@ test.describe('POD receiving register', () => {
     await setRole(page, 'FINANCE');
     await page.goto('/pod/receiving');
 
-    await expect(page.getByText('Read-only for FINANCE')).toBeVisible();
+    await expect(page.getByTestId('view-only')).toBeVisible();
     await expect(row(page, 'TRP-120881').getByText('Branch logs receipts')).toBeVisible();
     await expect(row(page, 'TRP-120881').getByRole('button', { name: 'Log a receipt' })).toHaveCount(0);
     // The verify page itself is still viewable — the "Open" link isn't permission-gated.
@@ -202,7 +199,7 @@ test.describe('POD verify and approve', () => {
     await page.goto('/pod/t-120869/verify');
 
     await expect(page.getByRole('heading', { name: /Proof of delivery · TRP-120869/ })).toBeVisible();
-    await expect(page.getByText('RECEIVED', { exact: true })).toBeVisible();
+    await expect(page.getByText('Received, not yet checked', { exact: true })).toBeVisible();
     await expect(page.getByText('LR-88201')).toBeVisible();
     // The page header's subtitle also mentions the transporter's name — this
     // one is the exact match in the fact list.
@@ -245,9 +242,9 @@ test.describe('POD verify and approve', () => {
     await page.goto('/pod/t-120869/verify');
 
     await page.getByRole('button', { name: 'Verify' }).click();
-    await expect(page.getByText('Verified · a second person must approve it (BR-50)')).toBeVisible();
+    await expect(page.getByText('Verified · a second person needs to approve it before the balance is released.')).toBeVisible();
 
-    await expect(page.getByText('VERIFIED', { exact: true })).toBeVisible();
+    await expect(page.getByText('Checked, awaiting approval', { exact: true })).toBeVisible();
     await expect(page.getByText('You verified this proof of delivery')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Approve' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Verify' })).toHaveCount(0);
@@ -265,7 +262,7 @@ test.describe('POD verify and approve', () => {
     await expect(confirm).toBeEnabled();
     await confirm.click();
 
-    await expect(page.getByText('Rejected · returned to the transporter and the clock resumes (BR-52)')).toBeVisible();
+    await expect(page.getByText('Rejected · sent back to the transporter, and the penalty clock keeps running.')).toBeVisible();
     await expect(page.getByText('The physical copy has not been logged')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Verify' })).toHaveCount(0);
   });
@@ -274,7 +271,7 @@ test.describe('POD verify and approve', () => {
     await setRole(page, 'FINANCE');
     await page.goto('/pod/t-120869/verify');
 
-    await expect(page.getByText('Read-only for FINANCE')).toBeVisible();
+    await expect(page.getByTestId('view-only')).toBeVisible();
     await expect(page.getByText('Page 1')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Verify' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Reject and request a replacement' })).toHaveCount(0);
@@ -285,7 +282,7 @@ test.describe('POD verify and approve', () => {
     await setRole(page, 'COMPLIANCE');
     await page.goto('/pod/t-120855/verify');
 
-    await expect(page.getByText('APPROVED', { exact: true })).toBeVisible();
+    await expect(page.getByText('Approved', { exact: true }).first()).toBeVisible();
     await expect(page.getByText('The balance is unblocked. Finance still releases it')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Verify' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Approve' })).toHaveCount(0);

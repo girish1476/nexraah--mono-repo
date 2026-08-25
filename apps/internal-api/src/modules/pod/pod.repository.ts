@@ -23,6 +23,23 @@ export class PodRepository {
     return db.updateTable('trips').set(patch).where('id', '=', id).returningAll().executeTakeFirstOrThrow();
   }
 
+  /**
+   * Lean candidate set for the nightly `pod-ageing` sweep — just the columns
+   * `effectivePenalty` needs, no display joins. `pod_status` never holds
+   * `'WAIVED'` (only `pod_closure_basis` does — the desk waives the penalty,
+   * not the delivery status), so that half of the filter is a separate
+   * `where` on `pod_closure_basis`, not part of the `pod_status` list.
+   */
+  dueForPenaltySweep() {
+    return this.db
+      .selectFrom('trips')
+      .select(['id', 'delivered_at', 'pod_received_at', 'pod_closure_basis', 'pod_penalty'])
+      .where('delivered_at', 'is not', null) // effectivePenalty is a no-op before delivery — no point sweeping it
+      .where('pod_status', 'not in', ['APPROVED', 'FORFEITED'])
+      .where((eb) => eb.or([eb('pod_closure_basis', 'is', null), eb('pod_closure_basis', '!=', 'WAIVED')]))
+      .execute();
+  }
+
   /** The receiving register — trips delivered but not yet RECEIVED/beyond. */
   receiving(branchId?: string) {
     let query = this.db

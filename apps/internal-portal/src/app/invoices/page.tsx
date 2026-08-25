@@ -8,11 +8,13 @@ import { fmtDate, inr } from '@/lib/format';
 import {
   Column,
   DataTable,
+  EmptyState,
   ErrorState,
   Field,
   Loading,
   ModuleGuard,
   PageHeader,
+  PageIntro,
   Panel,
   Stack,
   StatStrip,
@@ -53,7 +55,7 @@ export default function InvoicesPage() {
   const columns: Column<Invoice>[] = [
     {
       key: 'code',
-      label: 'Invoice',
+      label: 'Bill',
       render: (r) => (
         <Link href={`/invoices/${r.id}`} className="mono" style={{ fontSize: 12 }}>
           {r.code ?? 'draft'}
@@ -61,12 +63,12 @@ export default function InvoicesPage() {
       ),
     },
     { key: 'client', label: 'Client', render: (r) => r.clientName },
-    { key: 'date', label: 'Invoice date', render: (r) => fmtDate(r.invoiceDate) },
-    { key: 'due', label: 'Due', render: (r) => fmtDate(r.dueDate) },
-    { key: 'trips', label: 'Consignments', align: 'right', render: (r) => r.tripIds.length },
-    { key: 'total', label: 'Value', align: 'right', render: (r) => inr(r.totalPaise) },
-    { key: 'received', label: 'Received', align: 'right', render: (r) => inr(r.receivedPaise) },
-    { key: 'balance', label: 'Balance', align: 'right', render: (r) => inr(r.totalPaise - r.receivedPaise) },
+    { key: 'date', label: 'Raised on', render: (r) => fmtDate(r.invoiceDate) },
+    { key: 'due', label: 'Due by', render: (r) => fmtDate(r.dueDate) },
+    { key: 'trips', label: 'Loads on this bill', align: 'right', render: (r) => r.tripIds.length },
+    { key: 'total', label: 'Bill amount', align: 'right', render: (r) => inr(r.totalPaise) },
+    { key: 'received', label: 'Paid so far', align: 'right', render: (r) => inr(r.receivedPaise) },
+    { key: 'balance', label: 'Still owed', align: 'right', render: (r) => inr(r.totalPaise - r.receivedPaise) },
     { key: 'status', label: 'Status', render: (r) => <Tag tone={TONE[r.status]}>{r.status.replace(/_/g, ' ')}</Tag> },
   ];
 
@@ -79,8 +81,8 @@ export default function InvoicesPage() {
     <ModuleGuard module="invoices">
       <PageHeader
         path="/invoices"
-        title="Invoices"
-        sub="Reverse charge throughout — no tax is charged on any invoice this entity raises (BR-15)."
+        title="Client bills"
+        sub="No tax is added to these invoices — the client is responsible for reporting and paying GST themselves."
         module="invoices"
         right={
           can('invoice.create') && (
@@ -91,13 +93,18 @@ export default function InvoicesPage() {
         }
       />
 
+      <PageIntro
+        what="Every invoice raised to a client, what's been received against it, and what's still outstanding — search or filter by status to find one."
+        who="Finance runs the invoice ledger here; only finance can raise a new invoice."
+      />
+
       <Stack>
         <StatStrip
           stats={[
-            { k: 'Open invoices', v: open.length },
-            { k: 'Open value', v: inr(open.reduce((a, r) => a + (r.totalPaise - r.receivedPaise), 0)), tone: 'flag' },
-            { k: 'Paid this period', v: rows.filter((r) => r.status === 'PAID').length, tone: 'mint' },
-            { k: 'Cancelled', v: rows.filter((r) => r.status === 'CANCELLED').length },
+            { k: 'Bills not yet paid', id: 'bills-open', emoji: '🧾', v: open.length },
+            { k: 'Money owed to us', id: 'bills-open-value', emoji: '💰', v: inr(open.reduce((a, r) => a + (r.totalPaise - r.receivedPaise), 0)), tone: 'flag' },
+            { k: 'Collected this period', id: 'bills-collected', emoji: '✅', v: rows.filter((r) => r.status === 'PAID').length, tone: 'mint' },
+            { k: 'Cancelled bills', id: 'bills-cancelled', emoji: '⛔', v: rows.filter((r) => r.status === 'CANCELLED').length },
           ]}
         />
 
@@ -133,6 +140,23 @@ export default function InvoicesPage() {
             rows={rows}
             rowKey={(r) => r.id}
             onRowClick={(r) => router.push(`/invoices/${r.id}`)}
+            empty={
+              q || status ? (
+                'No invoices match this search or status.'
+              ) : (
+                <EmptyState
+                  title="No invoices raised yet"
+                  hint="An invoice bills a client for one or more consignments that have been delivered. Raise the first one from a delivered, unbilled consignment."
+                  action={
+                    can('invoice.create') && (
+                      <Link href="/invoices/new" className="btn">
+                        New invoice
+                      </Link>
+                    )
+                  }
+                />
+              )
+            }
           />
         </Panel>
       </Stack>

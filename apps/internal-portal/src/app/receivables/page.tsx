@@ -17,6 +17,7 @@ import {
   Loading,
   ModuleGuard,
   PageHeader,
+  PageIntro,
   Panel,
   Stack,
   StatStrip,
@@ -103,7 +104,7 @@ export default function ReceivablesPage() {
   const columns: Column<ReceivablesRow>[] = [
     {
       key: 'invoice',
-      label: 'Invoice',
+      label: 'Bill',
       render: (r) => (
         <Link href={`/invoices/${r.invoiceId}`} className="mono" style={{ fontSize: 12 }}>
           {r.invoiceCode ?? 'draft'}
@@ -111,12 +112,12 @@ export default function ReceivablesPage() {
       ),
     },
     { key: 'client', label: 'Client', render: (r) => r.clientName },
-    { key: 'date', label: 'Invoice date', render: (r) => fmtDate(r.invoiceDate) },
-    { key: 'due', label: 'Due', render: (r) => fmtDate(r.dueDate) },
-    { key: 'total', label: 'Value', align: 'right', render: (r) => inr(r.totalPaise) },
-    { key: 'received', label: 'Received', align: 'right', render: (r) => inr(r.receivedPaise) },
-    { key: 'balance', label: 'Balance', align: 'right', render: (r) => inr(r.balancePaise) },
-    { key: 'bucket', label: 'Ageing', render: (r) => <Tag tone={BUCKET_TONE[r.bucket]}>{BUCKET_LABEL[r.bucket]}</Tag> },
+    { key: 'date', label: 'Raised on', render: (r) => fmtDate(r.invoiceDate) },
+    { key: 'due', label: 'Due by', render: (r) => fmtDate(r.dueDate) },
+    { key: 'total', label: 'Bill amount', align: 'right', render: (r) => inr(r.totalPaise) },
+    { key: 'received', label: 'Paid so far', align: 'right', render: (r) => inr(r.receivedPaise) },
+    { key: 'balance', label: 'Still owed', align: 'right', render: (r) => inr(r.balancePaise) },
+    { key: 'bucket', label: 'How overdue', render: (r) => <Tag tone={BUCKET_TONE[r.bucket]}>{BUCKET_LABEL[r.bucket]}</Tag> },
     {
       key: 'act',
       label: '',
@@ -132,7 +133,14 @@ export default function ReceivablesPage() {
 
   return (
     <ModuleGuard module="receivables">
-      <PageHeader path="/receivables" title="Receivables" sub="Ageing and collections" module="receivables" />
+      <PageHeader path="/receivables" title="Money to collect" module="receivables" />
+      <PageIntro
+        what="Money your clients still owe you, grouped by how overdue it is."
+        who="Finance chases these and records the payments as they come in."
+      >
+        The oldest buckets are the ones at real risk. When a client pays, record the receipt against
+        their invoice so the balance here comes down.
+      </PageIntro>
 
       <Stack>
         <StatStrip
@@ -152,11 +160,11 @@ export default function ReceivablesPage() {
           <DataTable
             columns={[
               { key: 'code', label: 'Receipt', mono: true, render: (r) => r.code },
-              { key: 'invoice', label: 'Invoice', mono: true, render: (r) => r.invoiceCode ?? '—' },
+              { key: 'invoice', label: 'Bill', mono: true, render: (r) => r.invoiceCode ?? '—' },
               { key: 'client', label: 'Client', render: (r) => r.clientName },
-              { key: 'when', label: 'Received', render: (r) => fmtDate(r.receivedOn) },
-              { key: 'mode', label: 'Mode', render: (r) => r.mode },
-              { key: 'ref', label: 'UTR / cheque', mono: true, render: (r) => r.reference },
+              { key: 'when', label: 'Paid so far', render: (r) => fmtDate(r.receivedOn) },
+              { key: 'mode', label: 'Paid by', render: (r) => r.mode },
+              { key: 'ref', label: 'Reference number', mono: true, render: (r) => r.reference },
               { key: 'amount', label: 'Amount', align: 'right', render: (r) => inr(r.amountPaise) },
             ]}
             rows={data.receipts}

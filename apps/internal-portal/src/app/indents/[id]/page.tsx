@@ -6,11 +6,13 @@ import { useParams, useRouter } from 'next/navigation';
 import { ApiError, ApprovalRequiredError, errorMessage } from '@/apis';
 import { AdvancePanel } from '@/components/advance-panel';
 import { fmtDate, fmtDateTime, inr } from '@/lib/format';
+import { ROLES } from '@/lib/permissions';
 import {
   Banner,
   Column,
   DataTable,
   Dialog,
+  EmptyState,
   ErrorState,
   FactList,
   Field,
@@ -18,6 +20,7 @@ import {
   Loading,
   ModuleGuard,
   PageHeader,
+  PageIntro,
   Panel,
   Split,
   Stack,
@@ -28,13 +31,8 @@ import {
 import { awardQuote, createTrip, getIndent, recordPlacement } from '../apis';
 import { IndentDetail, Quote } from '../types';
 
-const PROGRESS: { stage: string; label: string }[] = [
-  { stage: 'OPEN', label: 'Raised' },
-  { stage: 'OPEN', label: 'Quotes in' },
-  { stage: 'VENDOR_ASSIGNED', label: 'Awarded' },
-  { stage: 'VEHICLE_PLACED', label: 'Placed' },
-  { stage: 'TRIP_CREATED', label: 'Trip created' },
-];
+/** Stage order for the progress stepper — position, not identity, is what "complete" means. */
+const STAGE_ORDER = ['OPEN', 'VENDOR_ASSIGNED', 'VEHICLE_PLACED', 'TRIP_CREATED'];
 
 /**
  * Indent detail — `/indents/[id]` (part 04 §3).
@@ -97,7 +95,7 @@ export default function IndentDetailPage() {
       const updated = await recordPlacement(id, { ...placement, transitDelay: late });
       setIndent(updated);
       setPlacementOpen(false);
-      toast(late ? 'Placement recorded · flagged as a transit delay (BR-42)' : 'Placement recorded');
+      toast(late ? 'Placement recorded · flagged as a transit delay' : 'Placement recorded');
     } catch (e) {
       toast(errorMessage(e));
     } finally {
@@ -121,7 +119,18 @@ export default function IndentDetailPage() {
   if (error) return <ErrorState message={error} retry={load} />;
   if (!indent) return <Loading what="Loading the indent" />;
 
-  const stageIndex = PROGRESS.findIndex((p) => p.stage === indent.stage);
+  // Each step's completion comes from the data it actually represents, not
+  // from matching the indent's single `stage` against a lookup entry — two
+  // steps ("Raised" and "Quotes in") both fall under stage OPEN, so a shared
+  // stage key can never tell them apart.
+  const stagePosition = STAGE_ORDER.indexOf(indent.stage);
+  const progress = [
+    { label: 'Raised', done: true },
+    { label: 'Quotes in', done: indent.quotes.length > 0 },
+    { label: 'Awarded', done: stagePosition >= STAGE_ORDER.indexOf('VENDOR_ASSIGNED') },
+    { label: 'Placed', done: stagePosition >= STAGE_ORDER.indexOf('VEHICLE_PLACED') },
+    { label: 'Trip created', done: stagePosition >= STAGE_ORDER.indexOf('TRIP_CREATED') },
+  ];
   const canAward = can('indent.manage') || can('indent.view');
 
   const columns: Column<Quote>[] = [
@@ -175,13 +184,13 @@ export default function IndentDetailPage() {
         if (r.vendorStatus !== 'ACTIVE')
           return (
             <span className="muted" style={{ fontSize: 11.5 }}>
-              Vendor not cleared (BR-01)
+              This transporter hasn’t been cleared by Compliance yet.
             </span>
           );
         if (!canAward)
           return (
             <span className="muted" style={{ fontSize: 11.5 }}>
-              Award is OPS or BRANCH_MGR
+              Award is {ROLES.OPS.label} or {ROLES.BRANCH_MGR.label}
             </span>
           );
         return (
@@ -200,6 +209,15 @@ export default function IndentDetailPage() {
         title={indent.code}
         sub={`${indent.fromCity} → ${indent.toCity} · ${indent.truckType} · ${indent.weightTn} MT`}
         module="indents"
+        right={
+          <Link href={`/orders/${indent.id}`} className="btn btn-secondary">
+            View order
+          </Link>
+        }
+      />
+      <PageIntro
+        what="Everything about one indent in one place — the transporter quotes with their band position, the buy rate locked in the moment one is awarded, and the vehicle placement and trip that follow."
+        who="Operations and branch managers award quotes and record placement; everyone else with indent access can see the full record."
       />
 
       <Split
@@ -233,9 +251,8 @@ export default function IndentDetailPage() {
                 ]}
               />
               <div className="muted" style={{ fontSize: 11.5, padding: '10px 14px', lineHeight: 1.45 }}>
-                The sell rate is internal. It is never present on any transporter-facing response — the vendor
-                database role holds no grant on the column at all (BR-55).
-                {indent.bandLocked && ' The band is locked and cannot be widened (BR-39).'}
+                The rate you’re charging the client is internal — transporters never see it.
+                {indent.bandLocked && ' The band is locked and cannot be widened.'}
               </div>
             </Panel>
           </>
@@ -243,8 +260,8 @@ export default function IndentDetailPage() {
       >
         <Panel title="Progress">
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {PROGRESS.map((p, i) => (
-              <Tag key={p.label} tone={i <= stageIndex ? 'mint' : 'grey'}>
+            {progress.map((p) => (
+              <Tag key={p.label} tone={p.done ? 'mint' : 'grey'}>
                 {p.label}
               </Tag>
             ))}
@@ -272,12 +289,17 @@ export default function IndentDetailPage() {
             columns={columns}
             rows={[...indent.quotes].sort((a, b) => a.amountPaise - b.amountPaise)}
             rowKey={(r) => r.id}
-            empty="No quotes yet. Transporters quote in their own portal; this side reads them and awards."
+            empty={
+              <EmptyState
+                title="No quotes yet"
+                hint="Transporters quote against this indent from their own portal. Once quotes come in, they’re ranked cheapest first with their band position, ready to award."
+              />
+            }
           />
           <div className="muted" style={{ fontSize: 11.5, padding: '10px 14px', lineHeight: 1.45 }}>
             A quote below the floor never reaches this desk — it is refused at entry in the transporter portal
             and never persisted. An above-band quote is kept and shown, because it is the honest market rate on
-            that lane (D-39).
+            that lane.
           </div>
         </Panel>
 
@@ -299,7 +321,7 @@ export default function IndentDetailPage() {
             <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }}>
               Recording the placed vehicle captures registration, driver, licence and the reported-at time. Where
               reporting is later than the client’s requirement, the trip is flagged as a transit delay in its own
-              right (BR-42).
+              right.
             </p>
           )}
           <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>

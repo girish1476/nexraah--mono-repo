@@ -3,17 +3,20 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { ApprovalRequiredError, errorMessage } from '@/apis';
-import { POD_TONE } from '@/lib/documents';
+import { POD_STATUS_LABEL, POD_TONE } from '@/lib/documents';
 import { fmtDate, inr } from '@/lib/format';
+import { ROLES } from '@/lib/permissions';
 import {
   Column,
   DataTable,
   Dialog,
+  EmptyState,
   ErrorState,
   Field,
   Loading,
   ModuleGuard,
   PageHeader,
+  PageIntro,
   Panel,
   Stack,
   StatStrip,
@@ -61,7 +64,7 @@ export default function PodPendingPage() {
       toast('Waiver requested');
     } catch (e) {
       if (e instanceof ApprovalRequiredError) {
-        toast('Sent to LEADERSHIP · the penalty keeps accruing until it is approved');
+        toast(`Sent to ${ROLES.LEADERSHIP.label} · the penalty keeps accruing until it is approved`);
         setWaiving(null);
         setReason('');
       } else {
@@ -78,7 +81,7 @@ export default function PodPendingPage() {
   const columns: Column<PendingRow>[] = [
     {
       key: 'trip',
-      label: 'Trip',
+      label: 'Trip number',
       render: (r) => (
         <div>
           <Link href={`/trips/${r.tripId}`} className="mono" style={{ fontSize: 12 }}>
@@ -91,29 +94,33 @@ export default function PodPendingPage() {
       ),
     },
     { key: 'vendor', label: 'Transporter', render: (r) => r.vendorName },
-    { key: 'lane', label: 'Lane', render: (r) => r.lane },
+    { key: 'lane', label: 'Route', render: (r) => r.lane },
     { key: 'branch', label: 'Branch', render: (r) => r.branchName },
     { key: 'delivered', label: 'Delivered', render: (r) => fmtDate(r.deliveredAt) },
     {
       key: 'tat',
-      label: 'Turnaround',
+      label: 'Days allowed',
       render: (r) =>
         r.forfeited ? (
-          <Tag tone="red">FORFEITED</Tag>
+          <Tag tone="red">Forfeited</Tag>
         ) : r.daysLeft >= 0 ? (
           <Tag tone="mint">{r.daysLeft} days left</Tag>
         ) : (
           <Tag tone="red">+{Math.abs(r.daysLeft)}d over</Tag>
         ),
     },
-    { key: 'state', label: 'Chain', render: (r) => <Tag tone={POD_TONE[r.podStatus] as Tone}>{r.podStatus}</Tag> },
+    {
+      key: 'state',
+      label: 'Delivery proof',
+      render: (r) => <Tag tone={POD_TONE[r.podStatus] as Tone}>{POD_STATUS_LABEL[r.podStatus] ?? r.podStatus}</Tag>,
+    },
     {
       key: 'penalty',
-      label: 'Penalty accrued',
+      label: 'Late penalty',
       align: 'right',
       render: (r) => <span style={{ color: r.penaltyPaise ? 'var(--red)' : undefined }}>{inr(r.penaltyPaise)}</span>,
     },
-    { key: 'held', label: 'Balance held', align: 'right', render: (r) => inr(r.balanceHeldPaise) },
+    { key: 'held', label: 'Their money we hold', align: 'right', render: (r) => inr(r.balanceHeldPaise) },
     {
       key: 'act',
       label: '',
@@ -131,7 +138,7 @@ export default function PodPendingPage() {
     <ModuleGuard module="pod">
       <PageHeader
         path="/pod/pending"
-        title="POD pending"
+        title="Check delivery proof"
         sub="Balances held against undelivered proof. ₹100 per day accrues from day 21; past 40 days nothing is payable."
         module="pod"
         right={
@@ -140,14 +147,18 @@ export default function PodPendingPage() {
           </a>
         }
       />
+      <PageIntro
+        what="Every trip still missing its proof of delivery, oldest first, with the balance being held and the penalty accruing against each one."
+        who="Compliance can propose a penalty waiver here; leadership has to approve it before it actually applies."
+      />
 
       <Stack>
         <StatStrip
           stats={[
-            { k: 'Pending', v: data.stats.pending },
-            { k: 'Breached', v: data.stats.breached, tone: 'red' },
-            { k: 'Penalty accrued', v: inr(data.stats.penaltyAccruedPaise), tone: 'red' },
-            { k: 'Balance held', v: inr(data.stats.balanceHeldPaise), tone: 'flag' },
+            { k: 'Waiting for proof', id: 'podpending-waiting', emoji: '⏳', v: data.stats.pending },
+            { k: 'Past the deadline', id: 'podpending-overdue', emoji: '⏰', v: data.stats.breached, tone: 'red' },
+            { k: 'Penalties we can charge', id: 'podpending-penalty', emoji: '⚖️', v: inr(data.stats.penaltyAccruedPaise), tone: 'red' },
+            { k: 'Transporter money held', id: 'podpending-money-held', emoji: '🔒', v: inr(data.stats.balanceHeldPaise), tone: 'flag' },
           ]}
         />
 
@@ -177,7 +188,36 @@ export default function PodPendingPage() {
         </Panel>
 
         <Panel pad={false}>
-          <DataTable columns={columns} rows={data.rows} rowKey={(r) => r.tripId} empty="Every proof of delivery is in." />
+          <DataTable
+            columns={columns}
+            rows={data.rows}
+            rowKey={(r) => r.tripId}
+            empty={
+              branch || transporter || ageing ? (
+                <EmptyState
+                  title="No trips match these filters"
+                  hint="Try clearing the branch, transporter or ageing filter — there may still be proofs pending elsewhere."
+                  action={
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => {
+                        setBranch('');
+                        setTransporter('');
+                        setAgeing('');
+                      }}
+                    >
+                      Clear filters
+                    </button>
+                  }
+                />
+              ) : (
+                <EmptyState
+                  title="Every proof of delivery is in"
+                  hint="No trip is currently missing its proof of delivery, so no balance is being held for one."
+                />
+              )
+            }
+          />
         </Panel>
       </Stack>
 
@@ -201,7 +241,11 @@ export default function PodPendingPage() {
         onConfirm={submitWaiver}
         onClose={() => setWaiving(null)}
       >
-        <Field label="Reason" required hint="At least 30 characters (BR-43).">
+        <Field
+          label="Reason"
+          required
+          hint="At least 30 characters — this goes to leadership for approval, so explain the situation fully."
+        >
           <textarea rows={4} value={reason} onChange={(e) => setReason(e.target.value)} />
         </Field>
       </Dialog>

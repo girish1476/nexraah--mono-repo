@@ -94,8 +94,8 @@ export default function QuoteBuildupPage() {
       <Stack>
         {belowMinimum && quoted > 0 && (
           <Banner tone="flag" title={`Margin is ${pct(marginPct)} — below the configured minimum of ${minimumMarginPct}%`}>
-            The warning is dismissible, and it is recorded. Winning a lane you cannot serve profitably is a
-            placement failure every week for the life of the contract.
+            You can still save this build-up below margin — it will be recorded for review. Winning a lane you
+            cannot serve profitably is a placement failure every week for the life of the contract.
           </Banner>
         )}
 
@@ -120,7 +120,7 @@ export default function QuoteBuildupPage() {
                 onChange={(e) => setMargin(Number(e.target.value) * 100)}
               />
             </Field>
-            <Field label="Quoted rate (₹)" hint="Derived. It is never keyed (BR-36).">
+            <Field label="Quoted rate (₹)" hint="Worked out from the figures above — you don't type this.">
               <input value={quoted / 100} disabled />
             </Field>
           </FormGrid>

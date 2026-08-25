@@ -58,6 +58,10 @@ export function getFleet() {
 
 export function addVehicle(body: VehicleInput) {
   if (USE_MOCK) {
+    // Static mock, same contract as every other apis.ts (e.g.
+    // loads/apis.ts's placeQuote): resolves a synthetic result without
+    // mutating FIXTURES, so a refetch always comes back looking like the
+    // seeded table (see e2e/fleet.spec.ts's header comment).
     const vehicle: FleetVehicle = {
       id: `VH-${Date.now().toString(36).toUpperCase()}`,
       registrationNo: body.registrationNo,
@@ -68,7 +72,6 @@ export function addVehicle(body: VehicleInput) {
       freeFrom: body.freeFrom ?? null,
       docsDue: null,
     };
-    FIXTURES.push(vehicle);
     return mock<FleetVehicle>(vehicle);
   }
   return request<ApiResponse<FleetVehicle>>({
@@ -80,8 +83,6 @@ export function addVehicle(body: VehicleInput) {
 
 export function updateVehicle(id: string, body: Partial<VehicleInput>) {
   if (USE_MOCK) {
-    const vehicle = FIXTURES.find((v) => v.id === id);
-    if (vehicle) Object.assign(vehicle, body);
     return mock<void>(undefined);
   }
   return request<ApiResponse<FleetVehicle>>({

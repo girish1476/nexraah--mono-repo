@@ -10,6 +10,7 @@ import { RejectTripDocumentDto } from './dto/reject-document.dto';
 import { CreateChargeDto } from './dto/create-charge.dto';
 import { PatchLrDto } from './dto/patch-lr.dto';
 import { CrossCheckOverrideDto } from './dto/cross-check-override.dto';
+import { DeliverTripDto } from './dto/deliver-trip.dto';
 
 @Controller('trips')
 @UseGuards(SupabaseJwtGuard, PermissionsGuard)
@@ -31,6 +32,11 @@ export class TripsController {
   @Get(':id')
   getById(@Param('id') id: string) {
     return this.tripsService.getById(id);
+  }
+
+  @Get(':id/documents')
+  listDocuments(@Param('id') id: string) {
+    return this.tripsService.listDocuments(id);
   }
 
   @Post(':id/documents/:kind')
@@ -98,5 +104,17 @@ export class TripsController {
   @Post(':id/lr/share')
   shareLr(@Param('id') id: string) {
     return this.tripsService.shareLr(id);
+  }
+
+  @Post(':id/depart')
+  @RequirePermission('indent.manage')
+  depart(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.tripsService.depart(id, user);
+  }
+
+  @Post(':id/deliver')
+  @RequirePermission('indent.manage')
+  deliver(@Param('id') id: string, @Body() dto: DeliverTripDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.tripsService.deliver(id, dto, user);
   }
 }

@@ -37,6 +37,10 @@ export class IssuesRepository {
     return this.db.selectFrom('issues').selectAll().where('id', '=', id).executeTakeFirst();
   }
 
+  findTripIdByCode(code: string) {
+    return this.db.selectFrom('trips').select('id').where('code', '=', code).executeTakeFirst();
+  }
+
   insert(
     db: DbExecutor,
     row: {

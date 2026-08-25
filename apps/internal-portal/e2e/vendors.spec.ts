@@ -12,7 +12,7 @@ import { setRole } from './helpers';
  *
  * Role note (BR-29 vs SEED_GRANTS, `src/lib/permissions.ts`): the *module*
  * level for `vendors` gives COMPLIANCE `EDIT` and OPS `VIEW` — that governs
- * the "Read-only for ROLE" badge. But the onboarding action itself is gated
+ * the view-only badge. But the onboarding action itself is gated
  * by the named permission `vendor.edit`, which SEED_GRANTS hands only to
  * OPS (mirrored in internal-api's `roles.constants.ts` and
  * `docs/specs/internal-spec/03-C2-vendors-compliance.md` §1). So OPS — not
@@ -36,31 +36,31 @@ test.describe('Vendors — list', () => {
 
     const rathod = rows.filter({ hasText: 'VND-2214' });
     await expect(rathod).toContainText('Rathod Roadlines');
-    await expect(rathod).toContainText('Nashik · Nashik');
+    await expect(rathod).toContainText('Nashik');
     await expect(rathod).toContainText('9822014471');
     await expect(rathod).toContainText('14'); // fleet count
     await expect(rathod).toContainText('41'); // trips
     await expect(rathod).toContainText('₹2.4 L'); // margin, inrCompact(24100000)
     await expect(rathod).toContainText('40%');
-    await expect(rathod).toContainText('PENDING VERIFICATION');
+    await expect(rathod).toContainText('Papers being checked');
 
     const saiKripa = rows.filter({ hasText: 'VND-2287' });
     await expect(saiKripa).toContainText('Sai Kripa Carriers');
-    await expect(saiKripa).toContainText('Pune · Pune');
+    await expect(saiKripa).toContainText('Pune');
     await expect(saiKripa).toContainText('₹41,000'); // inrCompact(4100000)
 
     const bhagwati = rows.filter({ hasText: 'VND-2301' });
     await expect(bhagwati).toContainText('Bhagwati Logistics');
-    await expect(bhagwati).toContainText('Hosur · Hosur');
+    await expect(bhagwati).toContainText('Hosur');
     await expect(bhagwati).toContainText('70%');
-    await expect(bhagwati).toContainText('ACTIVE');
+    await expect(bhagwati).toContainText('Cleared for loads');
   });
 
   test('search narrows to a matching vendor by name', async ({ page }) => {
     await setRole(page, 'OPS');
     await page.goto('/vendors');
     const main = page.locator('main');
-    const search = main.getByPlaceholder('Name or vendor code');
+    const search = main.getByPlaceholder('Transporter name or code');
     await search.fill('Bhagwati');
     await search.press('Enter');
 
@@ -73,7 +73,7 @@ test.describe('Vendors — list', () => {
     await setRole(page, 'OPS');
     await page.goto('/vendors');
     const main = page.locator('main');
-    const search = main.getByPlaceholder('Name or vendor code');
+    const search = main.getByPlaceholder('Transporter name or code');
     await search.fill('vnd-2287');
     await search.press('Enter');
 
@@ -86,11 +86,11 @@ test.describe('Vendors — list', () => {
     await setRole(page, 'OPS');
     await page.goto('/vendors');
     const main = page.locator('main');
-    const search = main.getByPlaceholder('Name or vendor code');
+    const search = main.getByPlaceholder('Transporter name or code');
     await search.fill('zzz-no-such-vendor');
     await search.press('Enter');
 
-    await expect(main.getByText('No vendor matches this search.')).toBeVisible();
+    await expect(main.getByText('No transporter matches this search.')).toBeVisible();
     await expect(main.locator('table.table')).toHaveCount(0);
   });
 
@@ -110,28 +110,30 @@ test.describe('Vendors — list', () => {
     await page.goto('/vendors');
     const main = page.locator('main');
     await expect(main.getByRole('link', { name: 'Leads' })).toHaveAttribute('href', '/vendors/leads');
-    await expect(main.getByRole('link', { name: 'Market gap' })).toHaveAttribute('href', '/vendors/market-gap');
-    await expect(main.getByRole('link', { name: 'Issues' })).toHaveAttribute('href', '/vendors/issues');
+    await expect(main.getByRole('link', { name: 'Where we are short of trucks' })).toHaveAttribute('href', '/vendors/market-gap');
+    await expect(main.getByRole('link', { name: 'Problems' })).toHaveAttribute('href', '/vendors/issues');
   });
 });
 
 test.describe('Vendors — role gating on the list', () => {
-  test('OPS (has vendor.edit) sees Onboard a vendor, and the VIEW read-only badge', async ({ page }) => {
+  test('OPS holds vendor.edit and module EDIT, so it gets the create link and no view-only badge', async ({ page }) => {
     await setRole(page, 'OPS');
     await page.goto('/vendors');
     const main = page.locator('main');
-    await expect(main.getByRole('link', { name: 'Onboard a vendor' })).toBeVisible();
-    // Module level for `vendors` is VIEW for OPS (BR-29) even though the
-    // `vendor.edit` permission still grants the onboarding action itself.
-    await expect(main.getByText('Read-only for OPS')).toBeVisible();
+    await expect(main.getByRole('link', { name: 'Add a transporter' })).toBeVisible();
+    // Operations owns vendor onboarding, so `vendors` is EDIT for OPS in
+    // BR-29 — no view-only badge. The *clearance* decision is still
+    // Compliance's: `vendor.verify`/`vendor.activate` are not in
+    // SEED_GRANTS.OPS, which vendors/[id] covers separately.
+    await expect(main.getByTestId('view-only')).toHaveCount(0);
   });
 
   test('COMPLIANCE (module EDIT, but lacks vendor.edit) does not see Onboard a vendor', async ({ page }) => {
     await setRole(page, 'COMPLIANCE');
     await page.goto('/vendors');
     const main = page.locator('main');
-    await expect(main.getByRole('link', { name: 'Onboard a vendor' })).toHaveCount(0);
-    await expect(main.getByText('Read-only for COMPLIANCE')).toHaveCount(0);
+    await expect(main.getByRole('link', { name: 'Add a transporter' })).toHaveCount(0);
+    await expect(main.getByTestId('view-only')).toHaveCount(0);
   });
 });
 
@@ -189,7 +191,7 @@ test.describe('Vendor onboarding wizard — /vendors/new', () => {
     await expect(main.getByText('3 · Fleet')).toBeVisible();
 
     await main.getByRole('button', { name: 'Save and continue' }).click();
-    await expect(field(main, 'Fleet base').locator('.err')).toHaveText('Required');
+    await expect(field(main, 'Truck types').locator('.err')).toHaveText('Add at least one truck type');
     await expect(field(main, 'Operating states').locator('.err')).toHaveText('At least one state');
     await expect(field(main, 'Trucks').locator('.err')).toBeVisible();
     await expect(main.getByText('3 · Fleet')).toBeVisible();
@@ -207,7 +209,7 @@ test.describe('Vendor onboarding wizard — /vendors/new', () => {
     await main.getByRole('button', { name: 'Continue' }).click();
 
     await field(main, 'Trucks').locator('input').fill('5');
-    await field(main, 'Fleet base').locator('input').fill('Nashik');
+    await field(main, 'Truck types').getByRole('button', { name: 'Add' }).click();
     await field(main, 'Operating states').locator('select').selectOption('MH');
     await main.getByRole('button', { name: 'Save and continue' }).click();
     await expect(main.getByText('4 · Payment')).toBeVisible();
@@ -230,7 +232,7 @@ test.describe('Vendor onboarding wizard — /vendors/new', () => {
     await main.getByRole('button', { name: 'Save and continue' }).click();
     await main.getByRole('button', { name: 'Continue' }).click();
     await field(main, 'Trucks').locator('input').fill('5');
-    await field(main, 'Fleet base').locator('input').fill('Nashik');
+    await field(main, 'Truck types').getByRole('button', { name: 'Add' }).click();
     await field(main, 'Operating states').locator('select').selectOption('MH');
     await main.getByRole('button', { name: 'Save and continue' }).click();
 
@@ -260,7 +262,7 @@ test.describe('Vendor onboarding wizard — /vendors/new', () => {
     await main.getByRole('button', { name: 'Save and continue' }).click();
     await main.getByRole('button', { name: 'Continue' }).click();
     await field(main, 'Trucks').locator('input').fill('5');
-    await field(main, 'Fleet base').locator('input').fill('Nashik');
+    await field(main, 'Truck types').getByRole('button', { name: 'Add' }).click();
     await field(main, 'Operating states').locator('select').selectOption('MH');
     await main.getByRole('button', { name: 'Save and continue' }).click();
 
@@ -289,7 +291,7 @@ test.describe('Vendor onboarding wizard — /vendors/new', () => {
     await main.getByRole('button', { name: 'Save and continue' }).click();
     await main.getByRole('button', { name: 'Continue' }).click();
     await field(main, 'Trucks').locator('input').fill('5');
-    await field(main, 'Fleet base').locator('input').fill('Nashik');
+    await field(main, 'Truck types').getByRole('button', { name: 'Add' }).click();
     await field(main, 'Operating states').locator('select').selectOption('MH');
     await main.getByRole('button', { name: 'Save and continue' }).click();
     await field(main, 'Account number').locator('input').fill('123456789012');

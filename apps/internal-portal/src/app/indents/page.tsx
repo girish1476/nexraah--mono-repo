@@ -13,6 +13,7 @@ import {
   Loading,
   ModuleGuard,
   PageHeader,
+  PageIntro,
   Panel,
   Stack,
   Tag,
@@ -50,7 +51,7 @@ export default function IndentsPage() {
   const columns: Column<IndentListRow>[] = [
     {
       key: 'code',
-      label: 'Indent',
+      label: 'Load request',
       render: (r) => (
         <Link href={`/indents/${r.id}`} className="mono" style={{ fontSize: 12 }}>
           {r.code}
@@ -60,7 +61,7 @@ export default function IndentsPage() {
     { key: 'client', label: 'Client', render: (r) => r.clientName },
     {
       key: 'lane',
-      label: 'Lane',
+      label: 'Route',
       render: (r) => (
         <div>
           <div>{r.lane}</div>
@@ -70,19 +71,19 @@ export default function IndentsPage() {
         </div>
       ),
     },
-    { key: 'pickup', label: 'Pickup', render: (r) => fmtDate(r.pickupDate) },
-    { key: 'sell', label: 'Freight', align: 'right', render: (r) => inr(r.sellRatePaise) },
+    { key: 'pickup', label: 'Pick up on', render: (r) => fmtDate(r.pickupDate) },
+    { key: 'sell', label: 'What we charge', align: 'right', render: (r) => inr(r.sellRatePaise) },
     {
       key: 'buy',
-      label: 'Buy rate',
+      label: 'What the vehicle costs us',
       align: 'right',
       render: (r) => (r.buyRatePaise ? inr(r.buyRatePaise) : <span className="muted">—</span>),
     },
-    { key: 'quotes', label: 'Quotes', align: 'right', render: (r) => r.quoteCount },
+    { key: 'quotes', label: 'Transporter quotes', align: 'right', render: (r) => r.quoteCount },
     { key: 'branch', label: 'Branch', render: (r) => r.branchName },
     {
       key: 'stage',
-      label: 'Stage',
+      label: 'How far along',
       render: (r) => (
         <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
           <Tag tone={STAGE_TONE[r.stage]}>{r.stage.replace(/_/g, ' ')}</Tag>
@@ -96,7 +97,7 @@ export default function IndentsPage() {
     <ModuleGuard module="indents">
       <PageHeader
         path="/indents"
-        title="Indents"
+        title="Load requests"
         sub="Demand recorded, priced and placed"
         module="indents"
         right={
@@ -106,6 +107,10 @@ export default function IndentsPage() {
             </Link>
           )
         }
+      />
+      <PageIntro
+        what="An indent is a shipment request — a client's freight, priced and ready to place with a transporter."
+        who="Operations raises and places them; Compliance and Finance can see every one."
       />
       <Stack>
         <Panel>

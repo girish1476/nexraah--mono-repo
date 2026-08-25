@@ -3,6 +3,7 @@ import { DomainException } from '../../common/domain-exception';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
 import { AuditService } from '../audit/audit.service';
 import { NumberingService } from '../numbering/numbering.service';
+import { SUPPLY_SOURCE_LABEL } from '../branches/branches.constants';
 import { ClientsRepository } from './clients.repository';
 import type { CreateClientDto } from './dto/create-client.dto';
 import type { UpdateClientDto } from './dto/update-client.dto';
@@ -92,6 +93,12 @@ export class ClientsService {
 
   // Part 03 §1: read-only here — these rows are what RFQ award wrote (BR-37).
   // A SPOT client has none; the frontend renders the fixed copy for that case.
+  //
+  // `supplySource` is carried over from the winning RFQ lane at award, so the
+  // sheet shows the supply basis the rate was actually built on. A null is a
+  // real state (nobody recorded it during sourcing) and is returned as null
+  // with a null label rather than being defaulted — the console renders it as
+  // "Not recorded" so an operator can see the gap.
   async rateCard(id: string) {
     const client = await this.clientsRepository.findById(id);
     if (!client) throw new DomainException(404, 'NOT_FOUND', `Unknown client: ${id}`);
@@ -107,6 +114,9 @@ export class ClientsService {
       reportingRule: r.reporting_rule,
       validFrom: r.valid_from,
       validTo: r.valid_to,
+      supplySource: r.supply_source,
+      supplySourceLabel: r.supply_source ? SUPPLY_SOURCE_LABEL[r.supply_source] : null,
+      supplyRemarks: r.supply_remarks,
     }));
   }
 

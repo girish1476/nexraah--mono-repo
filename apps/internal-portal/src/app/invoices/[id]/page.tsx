@@ -5,17 +5,20 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { errorMessage } from '@/apis';
 import { fmtDate, inr } from '@/lib/format';
+import { downloadInvoicePdf } from '@/lib/invoice-pdf';
 import {
   Banner,
   Column,
   DataTable,
   Dialog,
+  EmptyState,
   ErrorState,
   FactList,
   Field,
   Loading,
   ModuleGuard,
   PageHeader,
+  PageIntro,
   Panel,
   Split,
   Tag,
@@ -93,9 +96,9 @@ export default function InvoiceDetailPage() {
         right={
           <div style={{ display: 'flex', gap: 8 }}>
             {invoice.code && (
-              <Link href={`/print/invoice/${invoice.id}`} className="btn btn-secondary" target="_blank">
-                Print four copies
-              </Link>
+              <button className="btn btn-secondary" onClick={() => downloadInvoicePdf(invoice)}>
+                Download PDF
+              </button>
             )}
             {!invoice.code && can('invoice.create') && (
               <button className="btn" onClick={issue} disabled={busy}>
@@ -111,6 +114,11 @@ export default function InvoiceDetailPage() {
         }
       />
 
+      <PageIntro
+        what="One invoice in full — the consignments it bills, how the total is made up, and every payment received against it so far."
+        who="Finance issues, cancels and downloads invoices here; other roles can only view."
+      />
+
       <Split
         aside={
           <>
@@ -121,7 +129,7 @@ export default function InvoiceDetailPage() {
                   ['Client', invoice.clientName],
                   ['Invoice date', fmtDate(invoice.invoiceDate)],
                   ['Due date', fmtDate(invoice.dueDate)],
-                  ['Status', <Tag key="s" tone={invoice.status === 'PAID' ? 'mint' : 'grey'}>{invoice.status}</Tag>],
+                  ['Status', <Tag key="s" tone={invoice.status === 'PAID' ? 'mint' : 'grey'}>{invoice.status.replace(/_/g, ' ')}</Tag>],
                   ['Value', inr(invoice.totalPaise)],
                   ['Received', inr(invoice.receivedPaise)],
                   ['Balance', inr(balance)],
@@ -132,6 +140,10 @@ export default function InvoiceDetailPage() {
               <div style={{ fontSize: 12.5, lineHeight: 1.5 }}>
                 <strong>GST payable by recipient under reverse charge</strong>
                 <div className="muted">Section 9(3), CGST Act 2017. No tax has been charged on this invoice.</div>
+                <div className="muted">
+                  In practice: you don’t add or collect GST on this invoice — the client accounts for it and pays
+                  it directly to the tax authority.
+                </div>
               </div>
             </Panel>
           </>
@@ -177,6 +189,16 @@ export default function InvoiceDetailPage() {
               { key: 'lane', label: 'Lane', render: (t) => t.lane },
               { key: 'delivered', label: 'Delivered', render: (t) => fmtDate(t.deliveredAt) },
               { key: 'freight', label: 'Freight', align: 'right', render: (t) => inr(t.sellRatePaise) },
+              {
+                key: 'order',
+                label: '',
+                align: 'right',
+                render: (t) => (
+                  <Link href={`/orders/${t.indentCode}`} className="btn btn-secondary btn-sm">
+                    Order
+                  </Link>
+                ),
+              },
             ]}
             rows={invoice.trips}
             rowKey={(t) => t.id}
@@ -184,7 +206,25 @@ export default function InvoiceDetailPage() {
         </Panel>
 
         <Panel title="Receipts" pad={false}>
-          <DataTable columns={receiptColumns} rows={invoice.receipts} rowKey={(r) => r.id} empty="Nothing received yet." />
+          <DataTable
+            columns={receiptColumns}
+            rows={invoice.receipts}
+            rowKey={(r) => r.id}
+            empty={
+              <EmptyState
+                title="Nothing received yet"
+                hint="A receipt lands here once a payment against this invoice is recorded on the Receivables page."
+                action={
+                  invoice.code &&
+                  can('receipt.record') && (
+                    <Link href="/receivables" className="btn btn-secondary">
+                      Go to Receivables
+                    </Link>
+                  )
+                }
+              />
+            }
+          />
         </Panel>
       </Split>
 

@@ -1,5 +1,5 @@
 import { test, expect, Page, Locator } from '@playwright/test';
-import { setRole } from './helpers';
+import { setRole, statValue } from './helpers';
 
 /**
  * Billing surfaces — `/invoices`, `/invoices/new`, `/invoices/[id]`,
@@ -46,10 +46,10 @@ test.describe('invoices list', () => {
       page.locator('.stat-strip > div').filter({ has: page.getByText(label, { exact: true }) });
     // open = ISSUED + PART_PAID = both seeded invoices, regardless of any
     // DRAFT rows other test runs may have appended.
-    await expect(stat('Open invoices').locator('.stat-value')).toHaveText('2');
-    await expect(stat('Open value').locator('.stat-value')).toHaveText('₹48,950');
-    await expect(stat('Paid this period').locator('.stat-value')).toHaveText('0');
-    await expect(stat('Cancelled').locator('.stat-value')).toHaveText('0');
+    await expect(statValue(page, 'bills-open')).toHaveText('2');
+    await expect(statValue(page, 'bills-open-value')).toHaveText('₹48,950');
+    await expect(statValue(page, 'bills-collected')).toHaveText('0');
+    await expect(statValue(page, 'bills-cancelled')).toHaveText('0');
   });
 
   test('status filter isolates a single invoice', async ({ page }) => {
@@ -83,7 +83,7 @@ test.describe('invoices list', () => {
     await setRole(page, 'BRANCH_MGR');
     await page.goto('/invoices');
 
-    await expect(page.getByText('Read-only for BRANCH_MGR')).toBeVisible();
+    await expect(page.getByTestId('view-only')).toBeVisible();
     await expect(page.getByRole('link', { name: 'New invoice' })).toHaveCount(0);
     await expect(page.locator('table.table tbody tr').first()).toBeVisible();
   });
@@ -151,10 +151,10 @@ test.describe('new invoice form', () => {
     await expect(page).toHaveURL(/\/invoices\/inv-/);
 
     await expect(page.getByRole('heading', { name: 'Draft invoice' })).toBeVisible();
-    // Not yet issued: Generate is offered, Cancel and Print are not.
+    // Not yet issued: Generate is offered, Cancel and the PDF are not.
     await expect(page.getByRole('button', { name: 'Generate invoice' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Cancel' })).toHaveCount(0);
-    await expect(page.getByRole('link', { name: 'Print four copies' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Download PDF' })).toHaveCount(0);
     const consignmentRows = page.locator('table.table tbody tr');
     await expect(consignmentRows.filter({ hasText: 'TRP-120881' })).toBeVisible();
     await expect(consignmentRows.filter({ hasText: 'TRP-120874' })).toBeVisible();
@@ -188,7 +188,7 @@ test.describe('invoice detail', () => {
     // test (and every rerun) in this file.
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
     await expect(dialog).toBeHidden();
-    await expect(page.getByText('PART_PAID')).toBeVisible();
+    await expect(page.getByText('PART PAID')).toBeVisible();
   });
 
   test('BRANCH_MGR (VIEW) can read an issued invoice but gets no mutating controls', async ({ page }) => {
@@ -196,7 +196,7 @@ test.describe('invoice detail', () => {
     await page.goto('/invoices/inv-410');
 
     await expect(page.getByRole('heading', { name: 'NEX-INV-000410' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Print four copies' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Download PDF' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Cancel' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Generate invoice' })).toHaveCount(0);
   });
@@ -266,7 +266,7 @@ test.describe('P&L', () => {
 
     // "All branches" also appears in the sidebar's branch-scope indicator —
     // scope to the page body to avoid that match.
-    await expect(page.locator('main').getByText('All branches')).toBeVisible();
+    await expect(page.locator('main').getByText('All branches', { exact: true })).toBeVisible();
     // The branch rows are the first table; a second table (exceptions)
     // renders further down the page, so scope to avoid double-counting.
     const rows = page.locator('table.table').nth(0).locator('tbody tr');
@@ -304,8 +304,8 @@ test.describe('P&L', () => {
     await setRole(page, 'BRANCH_MGR');
     await page.goto('/pnl');
 
-    await expect(page.getByText('Read-only for BRANCH_MGR')).toBeVisible();
-    await expect(page.getByText('Nashik only · pnl.view_all not granted')).toBeVisible();
+    await expect(page.getByTestId('view-only')).toBeVisible();
+    await expect(page.getByText('Nashik only · pnl.view_all not granted', { exact: true })).toBeVisible();
 
     const rows = page.locator('table.table tbody tr');
     await expect(rows).toHaveCount(1);

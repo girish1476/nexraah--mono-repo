@@ -1,5 +1,7 @@
 /** RFQ and rate management — part 09. */
 
+import type { SupplySource } from '@/app/admin/branches/types';
+
 export type RfqStatus = 'DRAFT' | 'SOURCING' | 'QUOTED' | 'SUBMITTED' | 'AWARDED' | 'LOST' | 'CLOSED';
 export type SourcingMode = 'MONTHLY' | 'HIGH_LOW';
 export type LaneOutcome = 'WON' | 'LOST' | 'WITHDRAWN';
@@ -27,6 +29,14 @@ export interface RfqLane {
   quotedRatePaise: number;
   outcome: LaneOutcome | null;
   awardedRatePaise: number | null;
+  /**
+   * Where this lane's vehicles come from. Recorded at sourcing, because that
+   * is when the operator finds out, and carried onto the rate card at award.
+   * Null is a real state ("Not recorded") an operator must be able to fix.
+   */
+  supplySource: SupplySource | null;
+  supplySourceLabel: string | null;
+  supplyRemarks: string | null;
 }
 
 export interface Rfq {
@@ -84,5 +94,8 @@ export interface AwardResult {
     ratePaise: number;
     validFrom: string;
     validTo: string;
+    supplySource: SupplySource | null;
+    supplySourceLabel: string | null;
+    supplyRemarks: string | null;
   }[];
 }

@@ -4,32 +4,35 @@
   --font-body: 'Public Sans', system-ui, -apple-system, sans-serif;
   --font-mono: 'Roboto Mono', ui-monospace, SFMono-Regular, monospace;
 
-  --color-bg: #eef1f8;
+  --color-bg: #eceff7;
   --color-surface: #ffffff;
-  --color-text: #15202f;
-  --color-divider: #d7deea;
+  --color-text: #101a28;
+  --color-divider: #c7d1e0;
   --color-accent: #1a4184;
   --color-accent-400: #5b77ac;
-  --color-accent-700: #173a75;
+  --color-accent-700: #14346a;
   --color-accent-800: #102a57;
   --color-neutral-300: #d3dbe7;
-  --color-neutral-400: #b2bece;
-  --color-neutral-700: #48566b;
+  --color-neutral-400: #a7b4c6;
+  /* Secondary text. Darkened from #48566b to clear 7:1 on white — this is the
+     colour of nearly every explanatory line, read outdoors at arm's length. */
+  --color-neutral-700: #3a4759;
 
-  /* status tones: ink + tint */
-  --mint: #1a7a54;
-  --mint-t: #e4f2ea;
-  --flag: #966a13;
-  --flag-t: #faf1dc;
-  --red: #ae3b2c;
-  --red-t: #fbeae7;
-  --blue: #1e5a93;
-  --blue-t: #e6ecf8;
-  --grey: #5d5d60;
-  --grey-t: #eef0f5;
+  /* Status tones: ink + tint. Same five names, same meanings — the inks are
+     darkened only so bold small text clears ~4.5:1 on its own tint in glare. */
+  --mint: #12664a;
+  --mint-t: #e2f1e9;
+  --flag: #7a5409;
+  --flag-t: #faefd6;
+  --red: #9c2f21;
+  --red-t: #fbe8e5;
+  --blue: #17497b;
+  --blue-t: #e4ebf7;
+  --grey: #4c4c52;
+  --grey-t: #ebeef4;
 
-  --tab-h: 64px;
-  --bar-h: 76px;
+  --tab-h: 68px;
+  --bar-h: 80px;
 
   --shadow-sm: 0 1px 2px rgba(15, 30, 60, 0.05), 0 1px 1px rgba(15, 30, 60, 0.04);
   --shadow-md: 0 6px 16px rgba(15, 30, 60, 0.09), 0 1px 2px rgba(15, 30, 60, 0.05);
@@ -56,8 +59,13 @@ body {
   font-family: var(--font-body);
   background: var(--color-bg);
   color: var(--color-text);
-  line-height: 1.5;
+  /* 16.5px base: the smallest size still comfortable at arm's length on a
+     phone in daylight. Line height is generous for second-language reading. */
+  font-size: 16.5px;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
+  overflow-wrap: break-word;
 }
 
 ::selection {
@@ -66,21 +74,42 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
   color: inherit;
 }
 
+/* 16px floor on anything typed into: below this, iOS Safari zooms the page on
+   focus and the user loses their place mid-form. */
+input,
+select,
+textarea {
+  font-size: 16px;
+}
+
 button {
   cursor: pointer;
+  /* 44px is the tap-target floor — a gloved thumb at a loading dock, not a
+     mouse. Native buttons centre their own content, so height alone is safe
+     for every existing caller. */
+  min-height: 44px;
   transition: background var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
 }
 button:active:not(:disabled) {
   transform: scale(0.98);
 }
 
+/* Opt-in tap floor for links and non-button controls. */
+.tap {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+
 :focus-visible {
-  outline: none;
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
   box-shadow: var(--shadow-focus);
   border-radius: var(--radius-sm);
 }
@@ -98,8 +127,8 @@ button:active:not(:disabled) {
   border: 1px solid var(--color-divider);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
-  padding: 15px;
-  margin-bottom: 10px;
+  padding: 17px 16px;
+  margin-bottom: 13px;
   width: 100%;
   text-align: left;
   display: block;
@@ -120,13 +149,16 @@ button.card:active {
 
 .card-title {
   font-family: var(--font-heading);
-  font-weight: 600;
-  font-size: 17px;
+  font-weight: 700;
+  font-size: 19.5px;
+  line-height: 1.25;
+  letter-spacing: -0.005em;
 }
 
 .muted {
   color: var(--color-neutral-700);
-  font-size: 13px;
+  font-size: 14.5px;
+  line-height: 1.45;
 }
 
 .pill {
@@ -134,24 +166,82 @@ button.card:active {
   align-items: center;
   gap: 5px;
   border-radius: var(--radius-pill);
-  padding: 3.5px 11px;
-  font-size: 11.5px;
+  padding: 5px 12px;
+  font-size: 12.5px;
   font-weight: 700;
+  letter-spacing: 0.015em;
   white-space: nowrap;
 }
 
+/* Pill + its reason. All inline-level so a Pill stays legal inside a <p>. */
+.pill-stack {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  max-width: 100%;
+  text-align: left;
+}
+.pill-reason {
+  font-size: 14px;
+  line-height: 1.4;
+  font-weight: 500;
+  color: var(--color-neutral-700);
+  white-space: normal;
+  max-width: 34ch;
+}
+
+/* Nothing here yet — never an error, always a next step. */
+.empty {
+  background: var(--color-surface);
+  border: 1px dashed var(--color-neutral-400);
+  border-radius: var(--radius-md);
+  padding: 26px 20px 24px;
+  margin-bottom: 13px;
+  text-align: left;
+}
+.empty-mark {
+  color: var(--color-accent-400);
+  margin-bottom: 12px;
+}
+.empty-title {
+  font-family: var(--font-heading);
+  font-size: 19.5px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.empty-line {
+  margin-top: 7px;
+  font-size: 15.5px;
+  line-height: 1.5;
+  max-width: 40ch;
+}
+.empty-next {
+  margin-top: 10px;
+  font-size: 15.5px;
+  line-height: 1.5;
+  font-weight: 600;
+  color: var(--color-accent-700);
+  max-width: 40ch;
+}
+
+/* Wraps rather than squeezing a title to one word per line when the
+   right-hand side has grown (e.g. a Pill carrying a reason). */
 .row-between {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
 .field {
   width: 100%;
-  border: 1px solid var(--color-divider);
+  border: 1.5px solid var(--color-neutral-400);
   border-radius: var(--radius-sm);
-  padding: 13px;
+  padding: 14px 13px;
+  min-height: 50px;
+  font-size: 16px;
   background: var(--color-surface);
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
@@ -164,8 +254,9 @@ button.card:active {
 input[type='checkbox'],
 input[type='radio'] {
   accent-color: var(--color-accent);
-  width: 16px;
-  height: 16px;
+  width: 22px;
+  height: 22px;
+  flex: none;
   cursor: pointer;
 }
 

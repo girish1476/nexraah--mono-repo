@@ -1,6 +1,16 @@
 import { AxiosAdapter, AxiosError, AxiosRequestConfig, AxiosResponse } from 'axios';
 import { RoleCode, SEED_GRANTS } from '@/lib/permissions';
-import { ADVANCE_DOCUMENT_SET, BRANCHES, DOC_LABEL, USERS, db, helpers } from './db';
+import {
+  ADVANCE_DOCUMENT_SET,
+  BRANCHES,
+  CREDENTIALS,
+  DEMO_PASSWORD,
+  DOC_LABEL,
+  SUPPLY_SOURCE_LABEL,
+  USERS,
+  db,
+  helpers,
+} from './db';
 
 /**
  * Fixture adapter — stands in for `internal-api` until it exists.
@@ -17,6 +27,147 @@ import { ADVANCE_DOCUMENT_SET, BRANCHES, DOC_LABEL, USERS, db, helpers } from '.
 
 export const MOCKS_ENABLED =
   (process.env.NEXT_PUBLIC_USE_MOCKS ?? '1') !== '0';
+
+/* ---- sign-in: the stand-in for Supabase Auth ---------------------------- */
+
+/**
+ * With mocks off, `lib/auth.ts` posts to Supabase's `/auth/v1/token` and gets
+ * back a real RS256 JWT that internal-api verifies against JWKS. Nothing in
+ * this file is reachable on that path. What follows is the same exchange
+ * against fixture accounts, for the default local mode where no Supabase
+ * instance is running.
+ *
+ * The tokens are JWT-*shaped* — three base64url segments, `sub`/`email`/
+ * `exp` claims, decoded by the same "read the bearer, resolve a principal"
+ * step the real guard performs — but the header says `"alg":"none"` and the
+ * third segment is the literal word `mock`, so a token that ever escaped
+ * into a real deployment would be rejected by `jose` on sight rather than
+ * quietly resembling a credential.
+ *
+ * This replaces six hand-signed JWTs that used to be pasted into
+ * `lib/dev-tokens.ts`. Those carried a fixed `exp` and had silently expired,
+ * which took every non-mock sign-in down with them; a token minted at
+ * sign-in cannot go stale on the shelf.
+ */
+
+const ACCESS_TTL_MS = 3_600_000; // One hour — Supabase's own default.
+const REFRESH_TTL_MS = 30 * 86_400_000;
+
+interface MockClaims {
+  sub: string;
+  email: string;
+  role: RoleCode;
+  typ: 'access' | 'refresh';
+  exp: number;
+  /**
+   * Makes every minted token distinct. Without it the claims are derived
+   * purely from the clock, so a refresh landing in the same millisecond as
+   * the sign-in it replaces returns a byte-identical string — which is not
+   * how any real token endpoint behaves, and quietly turns "did this
+   * rotate?" into a question the tests can only answer by sleeping.
+   */
+  jti: number;
+}
+
+let minted = 0;
+
+const b64url = (value: string) =>
+  btoa(value).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+const unb64url = (value: string) =>
+  atob(value.replace(/-/g, '+').replace(/_/g, '/'));
+
+function mint(role: RoleCode, typ: 'access' | 'refresh'): string {
+  const user = USERS[role];
+  const claims: MockClaims = {
+    sub: user.userId,
+    email: user.email,
+    role,
+    typ,
+    exp: Date.now() + (typ === 'access' ? ACCESS_TTL_MS : REFRESH_TTL_MS),
+    jti: (minted += 1),
+  };
+  return [
+    b64url(JSON.stringify({ alg: 'none', typ: 'JWT', kid: 'mock' })),
+    b64url(JSON.stringify(claims)),
+    'mock',
+  ].join('.');
+}
+
+/**
+ * `EXPIRED` is kept apart from `INVALID` because the two want different
+ * handling: a token that merely aged out is refreshable and the caller should
+ * retry, while a malformed or tampered one never will be and the session is
+ * simply over.
+ */
+type TokenResult =
+  | { ok: true; claims: MockClaims }
+  | { ok: false; reason: 'INVALID' | 'EXPIRED' };
+
+function readToken(token: string | null | undefined, typ: 'access' | 'refresh'): TokenResult {
+  const invalid = { ok: false, reason: 'INVALID' } as const;
+  if (!token) return invalid;
+  const segments = token.split('.');
+  if (segments.length !== 3 || segments[2] !== 'mock') return invalid;
+  try {
+    const claims = JSON.parse(unb64url(segments[1])) as MockClaims;
+    if (claims.typ !== typ || !(claims.role in USERS)) return invalid;
+    if (!claims.exp) return invalid;
+    if (claims.exp <= Date.now()) return { ok: false, reason: 'EXPIRED' };
+    return { ok: true, claims };
+  } catch {
+    return invalid;
+  }
+}
+
+function issue(role: RoleCode) {
+  return {
+    accessToken: mint(role, 'access'),
+    refreshToken: mint(role, 'refresh'),
+    expiresAt: Date.now() + ACCESS_TTL_MS,
+  };
+}
+
+/**
+ * A deliberate pause, and a deliberately vague failure. "No such account" and
+ * "wrong password" are the same sentence here for the same reason they are on
+ * any sign-in form — telling them apart hands an attacker a way to enumerate
+ * who works here.
+ */
+export async function mockSignIn(email: string, password: string) {
+  await new Promise((r) => setTimeout(r, 260));
+  const role = CREDENTIALS[email.trim().toLowerCase()];
+  if (!role || password !== DEMO_PASSWORD) {
+    throw new Error('That email and password do not match an account.');
+  }
+  return issue(role);
+}
+
+export async function mockRefresh(refreshToken: string) {
+  const result = readToken(refreshToken, 'refresh');
+  if (!result.ok) throw new Error('This session has expired. Sign in again.');
+  return issue(result.claims.role);
+}
+
+/**
+ * Test seam. `e2e/helpers.ts` seeds `localStorage.token` before first
+ * navigation so a spec can start as a given role without driving the sign-in
+ * form fifteen times over. It mints through this rather than hardcoding a
+ * token, so the format can never drift out from under the suite — which is
+ * precisely how the checked-in dev tokens managed to expire unnoticed.
+ */
+export function mintAccessToken(role: RoleCode): string {
+  return mint(role, 'access');
+}
+
+/** The six fixture accounts, for the sign-in screen's demo list. */
+export function mockAccounts(): { email: string; name: string; role: RoleCode }[] {
+  return (Object.keys(USERS) as RoleCode[]).map((role) => ({
+    email: USERS[role].email,
+    name: USERS[role].name,
+    role,
+  }));
+}
 
 interface Ctx {
   params: string[];
@@ -193,6 +344,7 @@ function tripSummary(t: any) {
     buyRatePaise: t.buyRatePaise,
     sellRatePaise: t.sellRatePaise,
     advancePaidPaise: t.advancePaidPaise,
+    balancePaidPaise: t.balancePaidPaise,
     podPenaltyPaise: t.podPenaltyPaise,
   };
 }
@@ -202,6 +354,144 @@ function scopeBranch(rows: any[], role: RoleCode) {
   return rows.filter((r) => r.branchId === 'br-nsk' || r.branchName === 'Nashik');
 }
 
+/* ---- orders — the ten-step spine ----------------------------------------
+   One copy of the ladder, mirroring `OrdersService.ladder()` in internal-api.
+
+   The point of the orders endpoint is that the list and the detail cannot
+   disagree, so the fixture adapter has to honour that too: both routes below
+   call this one function. The old browser-side version ran the ladder twice
+   with different inputs, which is exactly the bug being removed. */
+
+const ORDER_LADDER = [
+  'INDENT_CREATED',
+  'TRIP_GENERATED',
+  'LR_ISSUED',
+  'ADVANCE_DOCS_UPLOADED',
+  'ADVANCE_PAID',
+  'TRACKING',
+  'UNLOADED',
+  'POD_UPLOADED',
+  'POD_VERIFIED',
+  'BALANCE_RELEASED',
+] as const;
+
+type MockOrderStatus = (typeof ORDER_LADDER)[number] | 'FAILED' | 'POD_FORFEITED';
+
+const orderStepNo = (status: MockOrderStatus) =>
+  status === 'FAILED' ? 1 : status === 'POD_FORFEITED' ? 9 : ORDER_LADDER.indexOf(status as never) + 1;
+
+/**
+ * Which configured advance documents are in — present and not rejected.
+ *
+ * "In" deliberately does not mean verified: step 4 is "advance papers in",
+ * and checking them is the advance gate's own job. But a REJECTED paper is
+ * one somebody has to send again, so it does not count — otherwise rejecting
+ * a document would move nothing, and the ladder would disagree with the
+ * advance gate, which already treats REJECTED as unmet.
+ */
+export function advanceDocsUploaded(trip: any): boolean {
+  const set: string[] = db.config.advance_document_set ?? [];
+  if (set.length === 0) return true;
+  return set.every((kind) => {
+    const doc = (trip.documents ?? []).find((d: any) => d.kind === kind);
+    return Boolean(doc) && doc.status !== 'MISSING' && doc.status !== 'REJECTED';
+  });
+}
+
+export function orderLadder(indent: any, trip: any): MockOrderStatus {
+  if (indent.failureCause && indent.stage === 'OPEN') return 'FAILED';
+  if (indent.stage !== 'TRIP_CREATED') return 'INDENT_CREATED';
+  if (!trip) return 'TRIP_GENERATED';
+
+  const docsIn = advanceDocsUploaded(trip);
+  // Step 3 is conditional — FLOWS.md §6 marks the lorry receipt "if needed".
+  if (!trip.lrCode && trip.advancePaidPaise <= 0 && !docsIn) return 'TRIP_GENERATED';
+  if (trip.advancePaidPaise <= 0) return docsIn ? 'ADVANCE_DOCS_UPLOADED' : 'LR_ISSUED';
+  if (trip.stage === 'OPEN') return 'ADVANCE_PAID';
+  if (trip.stage === 'IN_TRANSIT') return 'TRACKING';
+  // Forfeiture first — see `order-ladder.ts`. A closing line that caught
+  // "everything else" is what let a forfeited order read as POD_VERIFIED.
+  if (trip.podStatus === 'FORFEITED') return 'POD_FORFEITED';
+  if (trip.podStatus === 'PENDING') return 'UNLOADED';
+  // A rejected proof has to be sent again, so it goes back to waiting.
+  if (trip.podStatus === 'REJECTED') return 'UNLOADED';
+  if (trip.podStatus === 'ATTACHED' || trip.podStatus === 'RECEIVED') return 'POD_UPLOADED';
+  if (trip.podStatus === 'VERIFIED' || trip.podStatus === 'APPROVED') {
+    return trip.balancePaidPaise > 0 ? 'BALANCE_RELEASED' : 'POD_VERIFIED';
+  }
+  // No closing "everything else". The API's ladder makes this a build error
+  // via an exhaustive switch; this side can only fail loudly at runtime, but
+  // that still beats silently calling an unknown status "proof checked" —
+  // which is exactly how FORFEITED went unnoticed.
+  throw new Error(`orderLadder: unhandled pod_status ${JSON.stringify(trip.podStatus)}`);
+}
+
+/** The order number is stable per indent, the way the real ORD- series is. */
+function orderNoFor(indent: any): string {
+  const i = db.indents.findIndex((x: any) => x.id === indent.id);
+  return `ORD-${String((i < 0 ? db.indents.length : db.indents.length - i)).padStart(5, '0')}`;
+}
+
+function orderRow(indent: any) {
+  const trip = db.trips.find((t: any) => t.indentCode === indent.code) ?? null;
+  const invoice = trip
+    ? (db.invoices.find((inv: any) => (inv.tripIds ?? []).includes(trip.id)) ?? null)
+    : null;
+  const status = orderLadder(indent, trip);
+  return {
+    id: indent.id,
+    orderNo: orderNoFor(indent),
+    indentId: indent.id,
+    indentCode: indent.code,
+    clientName: indent.clientName,
+    lane: `${indent.fromCity} → ${indent.toCity}`,
+    pickupDate: indent.pickupDate,
+    sellRatePaise: indent.sellRatePaise,
+    branchName: indent.branchName,
+    status,
+    stepNo: orderStepNo(status),
+    tripId: trip?.id ?? null,
+    tripCode: trip?.code ?? null,
+    invoiceCode: invoice?.code ?? null,
+    failureCause: indent.failureCause ?? null,
+    closedAt:
+      status === 'BALANCE_RELEASED' || status === 'POD_FORFEITED' ? (trip?.deliveredAt ?? null) : null,
+  };
+}
+
+/**
+ * A plausible history for the fixture.
+ *
+ * The real table appends a row as each step is entered; the fixtures have no
+ * event log, so this reconstructs the steps an order must already have passed
+ * through to be where it is. Timestamps are spaced backwards from the pickup
+ * date so the timeline reads in order — they are illustrative, and the real
+ * endpoint returns recorded ones.
+ */
+function orderEvents(row: any) {
+  const upto = row.status === 'FAILED' ? 1 : row.stepNo;
+  const base = new Date(row.pickupDate).getTime();
+  const events = ORDER_LADDER.slice(0, upto).map((status, i) => ({
+    id: `oe-${row.id}-${i}`,
+    status,
+    stepNo: i + 1,
+    actorName: null,
+    note: null,
+    at: new Date(base + i * 86_400_000).toISOString(),
+  }));
+  if (row.status === 'FAILED') {
+    events.push({
+      id: `oe-${row.id}-failed`,
+      status: 'FAILED' as never,
+      stepNo: 1,
+      actorName: null,
+      note: row.failureCause,
+      at: new Date(base + 86_400_000).toISOString(),
+    });
+  }
+  return events;
+}
+
 /* ---- routes ------------------------------------------------------------- */
 
 const routes: [string, RegExp, Handler][] = [
@@ -209,7 +499,25 @@ const routes: [string, RegExp, Handler][] = [
   [
     'GET',
     /^\/auth\/session$/,
-    ({ role }) => {
+    ({ headers }) => {
+      // The real backend's SupabaseJwtGuard rejects a missing or unrecognised
+      // bearer token outright — `currentRole()`'s OPS fallback exists for
+      // every *other* route (reached only once a session already resolved),
+      // not this one. Reusing that fallback here made the session gate
+      // fail-open: any visitor, signed in or not, was silently admitted as
+      // OPS, so the sign-in redirect never actually triggered and an
+      // unreadable token quietly became an OPS session instead of a failure.
+      const authHeader = String(headers['authorization'] ?? '');
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+      const result = readToken(token, 'access');
+      // An expired access token is its own answer, not a generic rejection:
+      // `apis.ts` refreshes and retries once on this, and only sends someone
+      // back to the sign-in screen if that also fails.
+      if (!result.ok && result.reason === 'EXPIRED')
+        fail(401, 'TOKEN_EXPIRED', 'This session has expired.');
+      const role = result.ok
+        ? result.claims.role
+        : fail(401, 'UNAUTHORIZED', 'Missing or invalid bearer token.');
       const user = USERS[role];
       return ok({
         userId: user.userId,
@@ -222,6 +530,48 @@ const routes: [string, RegExp, Handler][] = [
     },
   ],
   ['GET', /^\/branches$/, () => ok(BRANCHES)],
+  [
+    'POST',
+    /^\/branches$/,
+    ({ body }) => {
+      if (!body?.name || !String(body.name).trim())
+        fail(400, 'VALIDATION', 'Branch name is required.');
+      const name = String(body.name).trim();
+      const code =
+        (body.code ? String(body.code) : name.replace(/[^A-Za-z]/g, '').slice(0, 3)).toUpperCase() ||
+        `BR${BRANCHES.length + 1}`;
+      const supplySource = body.supplySource ? String(body.supplySource) : null;
+      const branch = {
+        id: `br-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || BRANCHES.length + 1}`,
+        code,
+        name,
+        city: body.city ? String(body.city).trim() : name,
+        catchmentKm: Number(body.catchmentKm) || 150,
+        supplySource,
+        supplySourceLabel: supplySource ? (SUPPLY_SOURCE_LABEL[supplySource] ?? null) : null,
+        supplyRemarks: body.supplyRemarks ? String(body.supplyRemarks) : null,
+      };
+      BRANCHES.push(branch);
+      return ok(branch);
+    },
+  ],
+  [
+    'PATCH',
+    /^\/branches\/([^/]+)$/,
+    ({ body, params }) => {
+      const branch =
+        BRANCHES.find((b) => b.id === params[0]) ?? fail(404, 'NOT_FOUND', 'Branch not found.');
+      if (body?.supplySource !== undefined) {
+        const next = body.supplySource ? String(body.supplySource) : null;
+        branch.supplySource = next;
+        branch.supplySourceLabel = next ? (SUPPLY_SOURCE_LABEL[next] ?? null) : null;
+      }
+      if (body?.supplyRemarks !== undefined) {
+        branch.supplyRemarks = body.supplyRemarks ? String(body.supplyRemarks) : null;
+      }
+      return ok(branch);
+    },
+  ],
   ['GET', /^\/health$/, () => ok({ service: 'internal-api', status: 'ok', timestamp: helpers.now() })],
 
   /* ------------------------------------------------------------- C1 ----- */
@@ -305,7 +655,43 @@ const routes: [string, RegExp, Handler][] = [
   [
     'POST',
     /^\/attachments$/,
-    () => ok({ id: `att-${Date.now()}`, sha256: 'e3b0c44298fc1c149afbf4c8996fb924', uploadedAt: helpers.now() }),
+    ({ body }) => {
+      /*
+       * Reject an upload with no file, exactly as the real endpoint does.
+       *
+       * This handler used to be `() => ok({...})` — it ignored the body
+       * entirely and accepted anything. That is why a file-less upload
+       * survived for months in two places: the console POSTed JSON with no
+       * file part, the fixture said yes, and the bug could only ever appear
+       * against the real multipart API. A fixture that is more permissive
+       * than the thing it mirrors is worse than no fixture, because it
+       * converts a development-time failure into a production one.
+       */
+      const hasFile =
+        typeof FormData !== 'undefined' && body instanceof FormData
+          ? body.get('file') instanceof Blob
+          : Boolean(body?.file);
+
+      if (!hasFile) {
+        fail(
+          400,
+          'FILE_REQUIRED',
+          'POST /attachments is multipart/form-data and needs a `file` part. Send a FormData with the chosen file, not a JSON body.',
+        );
+      }
+
+      const file: any =
+        typeof FormData !== 'undefined' && body instanceof FormData ? body.get('file') : body.file;
+
+      return ok({
+        id: `att-${Date.now()}`,
+        filename: file?.name ?? 'upload.bin',
+        contentType: file?.type ?? 'application/octet-stream',
+        bytes: file?.size ?? 0,
+        sha256: 'e3b0c44298fc1c149afbf4c8996fb924',
+        uploadedAt: helpers.now(),
+      });
+    },
   ],
   [
     'GET',
@@ -318,13 +704,31 @@ const routes: [string, RegExp, Handler][] = [
   [
     'GET',
     /^\/vendors\/leads$/,
-    () => ok(db.leads),
+    // The three `converted*` fields are always present (null until the lead
+    // becomes a transporter), same as `LeadsRepository.list()`'s join.
+    () =>
+      ok(
+        db.leads.map((l) => ({
+          convertedVendorId: null,
+          convertedVendorCode: null,
+          convertedVendorName: null,
+          ...l,
+        })),
+      ),
   ],
   [
     'POST',
     /^\/vendors\/leads$/,
     ({ body }) => {
-      const lead = { id: `l-${db.leads.length + 1}`, code: nextNumber('LEAD'), stage: 'NEW', ...body };
+      const lead = {
+        id: `l-${db.leads.length + 1}`,
+        code: nextNumber('LEAD'),
+        stage: 'NEW',
+        convertedVendorId: null,
+        convertedVendorCode: null,
+        convertedVendorName: null,
+        ...body,
+      };
       db.leads.unshift(lead);
       return ok(lead);
     },
@@ -366,13 +770,20 @@ const routes: [string, RegExp, Handler][] = [
   [
     'POST',
     /^\/vendors\/issues$/,
-    ({ body }) => {
+    ({ body, role }) => {
+      // `raisedBy` is the actor and `vendorName` is derived from `vendorId`,
+      // as `IssuesService.create()` / `IssuesRepository.list()` do — the
+      // form does not get to assert either.
+      const vendor = body?.vendorId ? db.vendors.find((v) => v.id === body.vendorId || v.code === body.vendorId) : undefined;
       const issue = {
         id: `is-${db.issues.length + 1}`,
         code: nextNumber('ISSUE'),
         status: 'OPEN',
         raisedAt: helpers.now(),
+        tripCode: null,
         ...body,
+        raisedBy: USERS[role].name,
+        vendorName: vendor?.legalName ?? body?.vendorName ?? '—',
       };
       db.issues.unshift(issue);
       return ok(issue);
@@ -419,6 +830,17 @@ const routes: [string, RegExp, Handler][] = [
     'POST',
     /^\/vendors$/,
     ({ body }) => {
+      // Lead → transporter conversion rides in the same call as the vendor,
+      // mirroring `VendorsService.create()`: the lead is looked up first (so
+      // a bad `leadId` creates nothing), the vendor takes the lead's source,
+      // and the lead is flipped to CONVERTED pointing back at the vendor.
+      const { leadId, ...draft } = body ?? {};
+      let lead: Record<string, any> | undefined;
+      if (leadId) {
+        lead = db.leads.find((l) => l.id === leadId) ?? fail(404, 'NOT_FOUND', `Unknown lead: ${leadId}`);
+        if (lead.stage === 'CONVERTED' || lead.convertedVendorId)
+          fail(409, 'LEAD_ALREADY_CONVERTED', 'This lead has already been converted to a vendor.');
+      }
       const vendor = {
         id: `v-${db.vendors.length + 1}`,
         code: nextNumber('VENDOR'),
@@ -427,11 +849,21 @@ const routes: [string, RegExp, Handler][] = [
         documents: [],
         advanceHistory: [],
         fleet: [],
+        truckTypes: [],
         business: { trips: 0, revenuePaise: 0, marginPaise: 0, advanceOutstandingPaise: 0, balancePendingPaise: 0, penaltiesAccruedPaise: 0, topLanes: [] },
-        branchName: BRANCHES.find((b) => b.id === body.branchId)?.name ?? 'Nashik',
-        ...body,
+        branchName: BRANCHES.find((b) => b.id === draft.branchId)?.name ?? 'Nashik',
+        // Not asked at onboarding — defaulted so the detail page always has a value to render.
+        constitution: draft.constitution ?? 'Not specified',
+        ...(lead ? { source: lead.source } : {}),
+        ...draft,
       };
       db.vendors.unshift(vendor);
+      if (lead) {
+        lead.stage = 'CONVERTED';
+        lead.convertedVendorId = vendor.id;
+        lead.convertedVendorCode = vendor.code;
+        lead.convertedVendorName = vendor.legalName;
+      }
       return ok(vendor);
     },
   ],
@@ -471,6 +903,20 @@ const routes: [string, RegExp, Handler][] = [
   ],
   [
     'POST',
+    /^\/vendors\/([^/]+)\/documents\/([^/]+)\/verify$/,
+    ({ params, body }) => {
+      const vendor = findVendor(params[0]);
+      const doc = vendor.documents.find((d: any) => d.kind === params[1] && d.status !== 'MISSING');
+      if (!doc) fail(404, 'NOT_FOUND', `${DOC_LABEL[params[1]] ?? params[1]} has not been uploaded for this vendor.`);
+      if (body?.approve === false && (!body?.reason || body.reason.trim().length < 20))
+        fail(400, 'REASON_TOO_SHORT', 'A reason of at least 20 characters is required.');
+      doc.status = body?.approve === false ? 'REJECTED' : 'VERIFIED';
+      // Same shape as internal-api's `verifyDocument` — not the vendor.
+      return ok({ kind: doc.kind, status: doc.status });
+    },
+  ],
+  [
+    'POST',
     /^\/vendors\/([^/]+)\/documents\/([^/]+)$/,
     ({ params, body }) => {
       const vendor = findVendor(params[0]);
@@ -487,8 +933,17 @@ const routes: [string, RegExp, Handler][] = [
     ({ params }) => {
       const vendor = findVendor(params[0]);
       const missing: any[] = [];
-      if (!vendor.documents.some((d: any) => d.kind === 'TDS_DECLARATION' && d.status !== 'MISSING'))
+      const hasDoc = (kind: string) => vendor.documents.some((d: any) => d.kind === kind && d.status !== 'MISSING');
+      const hasKyc = (kind: string) => vendor.kyc.some((k: any) => k.kind === kind && k.status !== 'MISSING');
+      if (!hasDoc('TDS_DECLARATION'))
         missing.push({ key: 'TDS_DECLARATION', label: 'TDS declaration not on file', state: 'MISSING' });
+      if (!hasDoc('BANK_STATEMENT'))
+        missing.push({ key: 'BANK_STATEMENT', label: 'Bank statement or cancelled cheque not on file', state: 'MISSING' });
+      if (!['TRADE_LICENCE', 'LABOUR_LICENCE', 'UDYAM'].some(hasDoc))
+        missing.push({ key: 'GOVERNMENT_CERTIFICATE', label: 'Government certificate not on file', state: 'MISSING' });
+      if (!hasKyc('PAN')) missing.push({ key: 'PAN', label: 'PAN not captured', state: 'MISSING' });
+      if (!hasKyc('AADHAAR')) missing.push({ key: 'AADHAAR', label: 'Aadhaar not captured', state: 'MISSING' });
+      if (!hasKyc('SELFIE')) missing.push({ key: 'SELFIE', label: 'Geo-stamped selfie not captured', state: 'MISSING' });
       if (vendor.partyType === 'OWNER' && !vendor.documents.some((d: any) => d.kind === 'RC'))
         missing.push({ key: 'RC', label: 'Registration certificate mandatory for an Owner', state: 'MISSING' });
       if (missing.length) fail(409, 'VENDOR_INCOMPLETE', 'The vendor file is incomplete.', { unmet: missing });
@@ -691,6 +1146,78 @@ const routes: [string, RegExp, Handler][] = [
     },
   ],
   ['GET', /^\/indents\/([^/]+)$/, ({ params }) => ok(findIndent(params[0]))],
+
+  /* ------------------------------------------------------------- orders --- */
+  [
+    'GET',
+    /^\/orders$/,
+    ({ query, role }) => {
+      const status = query.get('status');
+      const client = query.get('client');
+      const openOnly = query.get('open') === '1' || query.get('open') === 'true';
+      const q = (query.get('q') ?? '').trim().toLowerCase();
+      // Capped the same way the real controller caps it — the screen this
+      // replaces had no paging at all and pulled every row.
+      const limit = Math.min(Math.max(Number(query.get('limit')) || 50, 1), 200);
+      const offset = Math.max(Number(query.get('offset')) || 0, 0);
+
+      const all = scopeBranch(db.indents, role)
+        .map(orderRow)
+        .filter((r) => !status || r.status === status)
+        .filter((r) => !client || db.indents.find((i: any) => i.id === r.indentId)?.clientId === client)
+        .filter((r) => !openOnly || r.status !== 'BALANCE_RELEASED')
+        .filter(
+          (r) =>
+            !q ||
+            r.orderNo.toLowerCase().includes(q) ||
+            r.indentCode.toLowerCase().includes(q) ||
+            r.clientName.toLowerCase().includes(q) ||
+            r.lane.toLowerCase().includes(q),
+        );
+
+      return ok({ rows: all.slice(offset, offset + limit), total: all.length, limit, offset });
+    },
+  ],
+  [
+    'GET',
+    /^\/orders\/counts$/,
+    ({ role }) => {
+      const counts: Record<string, number> = {};
+      for (const row of scopeBranch(db.indents, role).map(orderRow)) {
+        counts[row.status] = (counts[row.status] ?? 0) + 1;
+      }
+      return ok(counts);
+    },
+  ],
+  [
+    'GET',
+    /^\/orders\/([^/]+)$/,
+    ({ params }) => {
+      const indent = findIndent(params[0]);
+      const row = orderRow(indent);
+      const trip = row.tripId ? db.trips.find((t: any) => t.id === row.tripId) : null;
+      return ok({
+        ...row,
+        fromCity: indent.fromCity,
+        toCity: indent.toCity,
+        material: indent.material,
+        weightTn: indent.weightTn,
+        truckType: indent.truckType,
+        vendorName: trip?.vendorName ?? null,
+        vehicleNo: trip?.vehicleNo ?? null,
+        driverName: trip?.driverName ?? null,
+        buyRatePaise: indent.buyRatePaise ?? null,
+        advancePaidPaise: trip?.advancePaidPaise ?? 0,
+        balancePaidPaise: trip?.balancePaidPaise ?? 0,
+        events: orderEvents(row),
+      });
+    },
+  ],
+  [
+    'POST',
+    /^\/orders\/([^/]+)\/recompute$/,
+    ({ params }) => ok(orderRow(findIndent(params[0]))),
+  ],
   [
     'POST',
     /^\/indents\/([^/]+)\/award$/,
@@ -1090,6 +1617,7 @@ const routes: [string, RegExp, Handler][] = [
       return ok({
         tripId: trip.id,
         tripCode: trip.code,
+        indentCode: trip.indentCode,
         lrCode: trip.lrCode,
         vendorName: trip.vendorName,
         clientName: trip.clientName,
@@ -1322,6 +1850,7 @@ const routes: [string, RegExp, Handler][] = [
       return ok({
         tripId: trip.id,
         tripCode: trip.code,
+        indentCode: trip.indentCode,
         vendorName: trip.vendorName,
         lane: trip.lane,
         beneficiary: { accountHolder: trip.vendorName, account: '••4471', ifsc: 'HDFC0000188' },
@@ -1835,6 +2364,20 @@ const routes: [string, RegExp, Handler][] = [
 
   /* ------------------------------------------------------------ C10 ----- */
   ['GET', /^\/telematics$/, () => ok({ config: { overspeedKmph: db.config.overspeed_kmph, haltMinutes: db.config.halt_minutes, darkVehicleIntervalMinutes: db.config.dark_vehicle_interval_minutes }, vehicles: db.telematics })],
+  [
+    'PATCH',
+    /^\/telematics\/vehicles\/([^/]+)$/,
+    ({ params, body, role }) => {
+      const vehicleNo = decodeURIComponent(params[0]);
+      const row = db.telematics.find((v: any) => v.vehicleNo === vehicleNo) ??
+        fail(404, 'NOT_FOUND', 'Vehicle not tracked.');
+      Object.assign(row, body, {
+        lastPingAt: helpers.now(),
+        lastUpdatedBy: `${USERS[role].name} · manual`,
+      });
+      return ok(row);
+    },
+  ],
 
   /* ------------------------------------------------------------ C11 ----- */
   ['GET', /^\/admin\/import\/history$/, () => ok(db.importBatches)],
@@ -1889,7 +2432,13 @@ const routes: [string, RegExp, Handler][] = [
 
 function currentRole(): RoleCode {
   if (typeof window === 'undefined') return 'OPS';
-  return (localStorage.getItem('role') as RoleCode) ?? 'OPS';
+  // Mirrors the real backend: the role is a claim on the signed-in token and
+  // nothing else — there is no `localStorage.role` to consult any more, and
+  // no `X-Debug-Role` header either. The OPS fallback is only ever reached on
+  // routes downstream of a session that already resolved; `/auth/session`
+  // itself rejects an unreadable token outright rather than falling back.
+  const result = readToken(localStorage.getItem('token'), 'access');
+  return result.ok ? result.claims.role : 'OPS';
 }
 
 function envelope(config: AxiosRequestConfig, httpStatus: number, data: any): AxiosResponse {

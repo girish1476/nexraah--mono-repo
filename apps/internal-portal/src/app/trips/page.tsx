@@ -8,18 +8,20 @@ import { fmtDate, inr } from '@/lib/format';
 import {
   Column,
   DataTable,
+  EmptyState,
   ErrorState,
   Field,
   Loading,
   ModuleGuard,
   PageHeader,
+  PageIntro,
   Panel,
   Stack,
   Tag,
   Tone,
 } from '@/lib/ui';
 import { listTrips } from './apis';
-import { POD_TONE } from '@/lib/documents';
+import { POD_STATUS_LABEL, POD_TONE } from '@/lib/documents';
 import { PodStatus, TripListRow, TripStage } from './types';
 
 const STAGES: TripStage[] = ['OPEN', 'IN_TRANSIT', 'DELIVERED', 'CLOSED'];
@@ -46,7 +48,7 @@ export default function TripsPage() {
   const columns: Column<TripListRow>[] = [
     {
       key: 'code',
-      label: 'Trip',
+      label: 'Trip number',
       render: (r) => (
         <div>
           <Link href={`/trips/${r.id}`} className="mono" style={{ fontSize: 12 }}>
@@ -60,17 +62,25 @@ export default function TripsPage() {
     },
     { key: 'client', label: 'Client', render: (r) => r.clientName },
     { key: 'vendor', label: 'Transporter', render: (r) => r.vendorName },
-    { key: 'lane', label: 'Lane', render: (r) => r.lane },
-    { key: 'vehicle', label: 'Truck', mono: true, render: (r) => r.vehicleNo },
+    { key: 'lane', label: 'Route', render: (r) => r.lane },
+    { key: 'vehicle', label: 'Vehicle', mono: true, render: (r) => r.vehicleNo },
     { key: 'delivered', label: 'Delivered', render: (r) => fmtDate(r.deliveredAt) },
-    { key: 'buy', label: 'Buy rate', align: 'right', render: (r) => inr(r.buyRatePaise) },
-    { key: 'stage', label: 'Stage', render: (r) => <Tag tone="grey">{r.stage.replace(/_/g, ' ')}</Tag> },
-    { key: 'pod', label: 'POD', render: (r) => <Tag tone={POD_TONE[r.podStatus] as Tone}>{r.podStatus}</Tag> },
+    { key: 'buy', label: 'Transporter cost', align: 'right', render: (r) => inr(r.buyRatePaise) },
+    { key: 'stage', label: 'How far along', render: (r) => <Tag tone="grey">{r.stage.replace(/_/g, ' ')}</Tag> },
+    {
+      key: 'pod',
+      label: 'Delivery proof',
+      render: (r) => <Tag tone={POD_TONE[r.podStatus] as Tone}>{POD_STATUS_LABEL[r.podStatus] ?? r.podStatus}</Tag>,
+    },
   ];
 
   return (
     <ModuleGuard module="trips">
-      <PageHeader path="/trips" title="Trips" sub="The operational and financial record of a consignment in motion" module="trips" />
+      <PageHeader path="/trips" title="Trips on the road" sub="The operational and financial record of a consignment in motion" module="trips" />
+      <PageIntro
+        what="Search every trip — on the road or already delivered — by LR, trip, indent, truck, transporter, client or branch, and see its stage and POD status at a glance."
+        who="Operations and branch managers live in this list day to day; everyone else can look a trip up here too."
+      />
       <Stack>
         <Panel>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
@@ -114,7 +124,29 @@ export default function TripsPage() {
         {!rows && !error && <Loading what="Loading trips" />}
         {rows && (
           <Panel pad={false}>
-            <DataTable columns={columns} rows={rows} rowKey={(r) => r.id} onRowClick={(r) => router.push(`/trips/${r.id}`)} />
+            <DataTable
+              columns={columns}
+              rows={rows}
+              rowKey={(r) => r.id}
+              onRowClick={(r) => router.push(`/trips/${r.id}`)}
+              empty={
+                <EmptyState
+                  title={q || stage || podStatus ? 'No trip matches this search' : 'No trips yet'}
+                  hint={
+                    q || stage || podStatus
+                      ? 'Try a different LR, trip, indent, truck, transporter or client, or clear the stage and POD status filters.'
+                      : 'A trip is created once a vehicle is placed against an indent. Place one there and it will show up here.'
+                  }
+                  action={
+                    !(q || stage || podStatus) ? (
+                      <Link href="/indents" className="btn">
+                        Go to indents
+                      </Link>
+                    ) : undefined
+                  }
+                />
+              }
+            />
           </Panel>
         )}
       </Stack>

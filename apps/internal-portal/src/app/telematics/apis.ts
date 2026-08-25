@@ -19,3 +19,16 @@ export function getTelematics() {
 export function getVehicleTracking(vehicleNo: string) {
   return request<VehicleRow | null>({ url: `/telematics/vehicles/${encodeURIComponent(vehicleNo)}`, method: 'GET' });
 }
+
+/**
+ * PATCH /telematics/vehicles/:vehicleNo — Ops keys in what they were told
+ * over the phone. There is no GPS provider wired up; this is the only way a
+ * row on the fleet board changes.
+ */
+export function updateVehicleTelematics(vehicleNo: string, patch: Partial<VehicleRow>) {
+  return request<VehicleRow>({
+    url: `/telematics/vehicles/${encodeURIComponent(vehicleNo)}`,
+    method: 'PATCH',
+    data: patch,
+  });
+}

@@ -21,6 +21,13 @@ export class IssuesService {
   }
 
   async create(dto: CreateIssueDto, actor: AuthenticatedUser) {
+    let tripId: string | null = null;
+    if (dto.tripCode) {
+      const trip = await this.issuesRepository.findTripIdByCode(dto.tripCode);
+      if (!trip) throw new DomainException(404, 'NOT_FOUND', `Unknown trip: ${dto.tripCode}`);
+      tripId = trip.id;
+    }
+
     const row = await this.issuesRepository.transaction().execute(async (trx) => {
       const code = await this.numberingService.issue(trx, 'ISSUE');
       return this.issuesRepository.insert(trx, {
@@ -29,7 +36,7 @@ export class IssuesService {
         category: dto.category,
         severity: dto.severity,
         raisedBy: actor.userId,
-        tripId: dto.tripId ?? null,
+        tripId,
         note: dto.note ?? null,
       });
     });

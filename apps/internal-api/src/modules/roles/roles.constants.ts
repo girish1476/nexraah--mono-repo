@@ -35,11 +35,12 @@ export const SEED_GRANTS: Record<InternalRoleCode, string[]> = {
     'approve.contract',
     'approve.exception',
   ],
-  FINANCE: ['payment.release', 'invoice.create', 'receipt.record', 'pnl.view_all', 'indent.view'],
+  FINANCE: ['payment.release', 'invoice.create', 'receipt.record', 'client.manage', 'pnl.view_all', 'indent.view'],
   BRANCH_MGR: [
     'indent.create',
     'indent.manage',
     'indent.view',
+    'vendor.edit',
     'rfq.edit',
     'pod.receive',
     'pod.verify',

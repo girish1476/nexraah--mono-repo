@@ -7,10 +7,12 @@ import { inr } from '@/lib/format';
 import {
   Column,
   DataTable,
+  EmptyState,
   ErrorState,
   Loading,
   ModuleGuard,
   PageHeader,
+  PageIntro,
   Panel,
   Stack,
   StatStrip,
@@ -38,16 +40,16 @@ export default function AdvanceQueuePage() {
   useEffect(load, []);
 
   const columns: Column<AdvanceQueueRow>[] = [
-    { key: 'trip', label: 'Trip', mono: true, render: (r) => r.tripCode },
-    { key: 'indent', label: 'Indent', mono: true, render: (r) => r.indentCode },
+    { key: 'trip', label: 'Trip number', mono: true, render: (r) => r.tripCode },
+    { key: 'indent', label: 'Load request', mono: true, render: (r) => r.indentCode },
     { key: 'vendor', label: 'Transporter', render: (r) => r.vendorName },
-    { key: 'lane', label: 'Lane', render: (r) => r.lane },
+    { key: 'lane', label: 'Route', render: (r) => r.lane },
     { key: 'branch', label: 'Branch', render: (r) => r.branchName },
-    { key: 'pct', label: 'Advance', align: 'right', render: (r) => `${r.advancePct}%` },
+    { key: 'pct', label: 'Advance amount', align: 'right', render: (r) => `${r.advancePct}%` },
     { key: 'gross', label: 'Amount', align: 'right', render: (r) => inr(r.grossPaise) },
     {
       key: 'state',
-      label: 'Gate',
+      label: 'Can we pay yet?',
       render: (r) =>
         r.blocked ? (
           <Tag tone="red">{r.unmetCount} unmet</Tag>
@@ -76,18 +78,22 @@ export default function AdvanceQueuePage() {
     <ModuleGuard module="payments">
       <PageHeader
         path="/payments/advance"
-        title="Advance"
-        sub="Gated on document verification. The blocked panel names what is missing (BR-07, BR-58)."
+        title="Advance payments"
+        sub="Money released to the transporter before delivery is complete, once their paperwork is verified. Anything still missing is listed below."
         module="payments"
+      />
+      <PageIntro
+        what="A worklist of trips whose transporter is due an advance — see which are ready to release now, which are still blocked, and open one to check exactly what's missing."
+        who="Finance releases the payment; anyone with Payments access can see the queue."
       />
 
       <Stack>
         <StatStrip
           stats={[
-            { k: 'Waiting', v: rows.length },
-            { k: 'Releasable now', v: releasable.length, tone: 'mint' },
-            { k: 'Blocked', v: rows.length - releasable.length, tone: 'red' },
-            { k: 'Releasable value', v: inr(releasable.reduce((a, r) => a + r.grossPaise, 0)), tone: 'mint' },
+            { k: 'Waiting to be paid', id: 'advance-waiting', emoji: '⏳', v: rows.length },
+            { k: 'Ready to pay now', id: 'advance-ready', emoji: '✅', v: releasable.length, tone: 'mint' },
+            { k: 'Held until papers are in', id: 'advance-held', emoji: '🔒', v: rows.length - releasable.length, tone: 'red' },
+            { k: 'Money ready to go out', id: 'advance-ready-value', emoji: '💰', v: inr(releasable.reduce((a, r) => a + r.grossPaise, 0)), tone: 'mint' },
           ]}
         />
 
@@ -97,7 +103,12 @@ export default function AdvanceQueuePage() {
             rows={rows}
             rowKey={(r) => r.tripId}
             onRowClick={setSelected}
-            empty="Nothing is waiting on an advance."
+            empty={
+              <EmptyState
+                title="No advances waiting"
+                hint="A trip lands here once it is dispatched and eligible for an advance. An empty queue means Finance is caught up, not that something is missing."
+              />
+            }
           />
         </Panel>
 

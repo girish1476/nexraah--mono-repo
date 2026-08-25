@@ -1,4 +1,5 @@
 import { request } from '@/apis';
+import type { SupplySource } from '@/app/admin/branches/types';
 import { AwardDecision, AwardResult, Rfq, RfqLane, RfqListResponse, RfqStatus, SourcingMode, SourcingRow } from './types';
 
 /** GET /rfqs?status=&client= */
@@ -35,8 +36,22 @@ export function addLane(
  * PATCH /rfqs/:id/lanes/:laneId/sourcing
  * MONTHLY sends a row per month; HIGH_LOW sends two rows and the server takes
  * the midpoint. The average is computed server-side, never in the browser.
+ *
+ * Where the lane's vehicles come from rides along here rather than in a call
+ * of its own — sourcing is when the operator finds out. Omit either supply
+ * field to leave the lane as it is; send explicit null to clear it back to
+ * "not recorded".
  */
-export function setSourcing(id: string, laneId: string, body: { sourcingMode: SourcingMode; sourcingRows: SourcingRow[] }) {
+export function setSourcing(
+  id: string,
+  laneId: string,
+  body: {
+    sourcingMode: SourcingMode;
+    sourcingRows: SourcingRow[];
+    supplySource?: SupplySource | null;
+    supplyRemarks?: string | null;
+  },
+) {
   return request<RfqLane>({ url: `/rfqs/${id}/lanes/${laneId}/sourcing`, method: 'PATCH', data: body });
 }
 

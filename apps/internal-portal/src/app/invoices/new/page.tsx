@@ -18,6 +18,7 @@ import {
   Loading,
   ModuleGuard,
   PageHeader,
+  PageIntro,
   Panel,
   Stack,
   useCan,
@@ -111,7 +112,11 @@ export default function NewInvoicePage() {
   if (!can('invoice.create')) {
     return (
       <ModuleGuard module="invoices">
-        <PageHeader path="/invoices/new" title="New invoice" module="invoices" />
+        <PageHeader path="/invoices/new" title="New client bill" module="invoices" />
+        <PageIntro
+          what="Build a new invoice by picking one or more delivered consignments for a client that haven't been billed yet, adding any extra charges, and saving it as a draft or generating the invoice number right away."
+          who="Only finance can raise invoices."
+        />
         <Panel>Invoicing is a finance action.</Panel>
       </ModuleGuard>
     );
@@ -141,12 +146,18 @@ export default function NewInvoicePage() {
 
   return (
     <ModuleGuard module="invoices">
-      <PageHeader path="/invoices/new" title="New invoice" sub="One invoice, one or many delivered consignments" module="invoices" />
+      <PageHeader path="/invoices/new" title="New client bill" sub="One invoice, one or many delivered consignments" module="invoices" />
+
+      <PageIntro
+        what="Build a new invoice by picking one or more delivered consignments for a client that haven't been billed yet, adding any extra charges, and saving it as a draft or generating the invoice number right away."
+        who="Only finance can raise invoices."
+      />
 
       <Stack>
         <Banner tone="blue" title="GST payable by recipient under reverse charge">
           Section 9(3), CGST Act 2017. No tax has been charged on this invoice — there is no tax field on this
-          screen, in the ledger, on the detail page or on any of the four printed copies.
+          screen, in the ledger, on the detail page or on any of the four printed copies. In practice: you don’t
+          add or collect GST on this invoice — the client accounts for it and pays it directly to the tax authority.
         </Banner>
 
         <Panel title="Client and dates">

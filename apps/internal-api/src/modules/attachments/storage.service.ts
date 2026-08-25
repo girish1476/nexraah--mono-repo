@@ -36,6 +36,14 @@ export class StorageService {
     }
   }
 
+  /** `attachment-retention` (modules/jobs) is the one caller — everywhere else only ever uploads or signs. */
+  async remove(path: string): Promise<void> {
+    const { error } = await this.client.storage.from(this.bucket).remove([path]);
+    if (error) {
+      throw new DomainException(502, 'STORAGE_DELETE_FAILED', error.message);
+    }
+  }
+
   async createSignedUrl(path: string): Promise<{ url: string; expiresAt: string }> {
     const { data, error } = await this.client.storage
       .from(this.bucket)

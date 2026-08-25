@@ -16,6 +16,7 @@ import {
   FormGrid,
   ModuleGuard,
   PageHeader,
+  PageIntro,
   Panel,
   Stack,
   Tag,
@@ -62,7 +63,7 @@ const schema = z
     path: ['sourcingRupees'],
   })
   .refine((v) => v.rateSource !== 'SPOT' || v.sellRupees > (v.sourcingRupees ?? 0), {
-    message: 'A spot load is never quoted at a loss — the freight must exceed the sourcing rate (BR-38)',
+    message: 'A spot load is never quoted at a loss — the freight must exceed the sourcing rate',
     path: ['sellRupees'],
   });
 
@@ -84,6 +85,7 @@ export default function NewIndentPage() {
   const [clients, setClients] = useState<Client[]>([]);
   const [lanes, setLanes] = useState<RateCardLane[]>([]);
   const [confirmationId, setConfirmationId] = useState<string | null>(null);
+  const [confirmationFile, setConfirmationFile] = useState<File | null>(null);
 
   const form = useForm<Form>({
     resolver: zodResolver(schema),
@@ -123,8 +125,17 @@ export default function NewIndentPage() {
     toast(`Freight filled from the won RFQ lane · ${inr(lane.ratePaise)}`);
   };
 
+  /**
+   * `POST /attachments` is `multipart/form-data` with field `file` — axios
+   * sets the boundary itself once it sees a FormData body, so the request
+   * must not force a JSON Content-Type (see vendors/new/page.tsx's `attach`).
+   */
   const attachConfirmation = async () => {
-    const { id } = await request<{ id: string }>({ url: '/attachments', method: 'POST', data: { kind: 'SPOT_CONFIRMATION' } });
+    if (!confirmationFile) return;
+    const formData = new FormData();
+    formData.append('file', confirmationFile);
+    formData.append('kind', 'SPOT_CONFIRMATION');
+    const { id } = await request<{ id: string }>({ url: '/attachments', method: 'POST', data: formData });
     setConfirmationId(id);
     toast('Client rate approval attached');
   };
@@ -151,7 +162,7 @@ export default function NewIndentPage() {
         bidMaxPaise: Math.round(v.bidMaxRupees * 100),
         advancePct: v.advancePct,
       });
-      toast(`${indent.code} raised · band is now locked (BR-39)`);
+      toast(`${indent.code} raised · band is now locked`);
       router.push(`/indents/${indent.id}`);
     } catch (e) {
       toast(errorMessage(e));
@@ -161,8 +172,15 @@ export default function NewIndentPage() {
   if (!can('indent.create')) {
     return (
       <ModuleGuard module="indents">
-        <PageHeader path="/indents/new" title="Raise an indent" module="indents" />
-        <Panel>`indent.create` is not held by your role. It is grantable to any internal role (BR-41).</Panel>
+        <PageHeader path="/indents/new" title="New load request" module="indents" />
+        <PageIntro
+          what="Raise an indent — turn a client's shipment need into a priced request for a truck, ready to place with a transporter once it's published."
+          who="Whoever holds indent creation access — usually compliance staff or a branch manager."
+        />
+        <Panel>
+          You don’t have permission to raise indents. Ask an admin to grant you indent creation access, or have
+          Operations raise this one for you.
+        </Panel>
       </ModuleGuard>
     );
   }
@@ -173,10 +191,17 @@ export default function NewIndentPage() {
     <ModuleGuard module="indents">
       <PageHeader
         path="/indents/new"
-        title="Raise an indent"
-        sub="Branch is derived from the pickup city and carried unchanged to the trip and the LR (BR-20)."
+        title="New load request"
+        sub="Branch is derived from the pickup city and carried unchanged to the trip and the LR."
         module="indents"
       />
+      <PageIntro
+        what="Raise an indent — turn a client's shipment need into a priced request for a truck, ready to place with a transporter once it's published."
+        who="Whoever holds indent creation access — usually compliance staff or a branch manager."
+      >
+        Contract clients are priced straight from their agreed rate card lanes; a spot load needs a sourcing
+        rate and the client’s written price approval attached before it can be raised.
+      </PageIntro>
 
       <Stack>
         <Panel title="Requirement">
@@ -191,7 +216,7 @@ export default function NewIndentPage() {
                 ))}
               </select>
             </Field>
-            <Field label="Branch" required hint="Derived from the pickup city; carried unchanged (BR-20).">
+            <Field label="Branch" required hint="Derived from the pickup city; carried unchanged.">
               <select {...form.register('branchId')}>
                 {BRANCHES.map((b) => (
                   <option key={b.id} value={b.id}>
@@ -226,17 +251,17 @@ export default function NewIndentPage() {
             <Field label="Pickup date" required error={form.formState.errors.pickupDate?.message}>
               <input type="date" {...form.register('pickupDate')} />
             </Field>
-            <Field label="Transit days" hint="Actual delivery is measured against this (BR-27).">
+            <Field label="Transit days" hint="Actual delivery is measured against this.">
               <input type="number" {...form.register('transitDays', { valueAsNumber: true })} />
             </Field>
-            <Field label="Reporting rule" hint="Late reporting is a transit delay in its own right (BR-42).">
+            <Field label="Reporting rule" hint="Late reporting is a transit delay in its own right.">
               <select {...form.register('reportingRule')}>
                 <option value="SAME_DAY">Same day</option>
                 <option value="NEXT_DAY">Next day</option>
                 <option value="SCHEDULED">Scheduled</option>
               </select>
             </Field>
-            <Field label="Remarks" hint="Carried to the trip and the lorry receipt (BR-28).">
+            <Field label="Remarks" hint="Carried to the trip and the lorry receipt.">
               <input {...form.register('remarks')} />
             </Field>
           </FormGrid>
@@ -281,15 +306,27 @@ export default function NewIndentPage() {
                   confirmationId ? (
                     <Tag tone="mint">Rate approval attached</Tag>
                   ) : (
-                    <button className="btn btn-secondary btn-sm" onClick={attachConfirmation}>
-                      Attach client rate approval
-                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <input
+                        type="file"
+                        accept="image/*,application/pdf"
+                        style={{ fontSize: 11.5, maxWidth: 170 }}
+                        onChange={(e) => setConfirmationFile(e.target.files?.[0] ?? null)}
+                      />
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={attachConfirmation}
+                        disabled={!confirmationFile}
+                      >
+                        Attach client rate approval
+                      </button>
+                    </div>
                   )
                 }
               >
                 {margin > 0 && sourcing > 0
-                  ? `${pct((margin / sell) * 100)} over the sourcing rate. The client’s written rate approval is mandatory (BR-26).`
-                  : 'The freight must exceed the sourcing rate — the database refuses the row otherwise (BR-38).'}
+                  ? `${pct((margin / sell) * 100)} over the sourcing rate. The client’s written rate approval is mandatory.`
+                  : 'This load would be booked at a loss — raise the freight above the sourcing rate.'}
               </Banner>
             </div>
           )}
@@ -302,18 +339,18 @@ export default function NewIndentPage() {
             </Field>
             <Field
               label="Bid maximum (₹)"
-              hint="Above this a quote is kept and flagged; awarding it needs leadership (D-39)."
+              hint="Above this a quote is kept and flagged; awarding it needs leadership."
               error={form.formState.errors.bidMaxRupees?.message}
             >
               <input type="number" {...form.register('bidMaxRupees', { valueAsNumber: true })} />
             </Field>
-            <Field label="Advance %" hint="Defaults from the awarded vendor's standing policy (BR-30).">
+            <Field label="Advance %" hint="Defaults from the awarded vendor's standing policy.">
               <input type="number" {...form.register('advancePct', { valueAsNumber: true })} />
             </Field>
           </FormGrid>
           <p className="muted" style={{ fontSize: 12, marginBottom: 0 }}>
-            The band becomes read-only the moment this indent is published, before the first quote and after
-            (BR-39). A lane that draws no in-band quote is a market gap, and the fix is recruitment.
+            The band becomes read-only the moment this indent is published, before the first quote and after.
+            A lane that draws no in-band quote is a market gap, and the fix is recruitment.
           </p>
           <div style={{ marginTop: 16 }}>
             <button

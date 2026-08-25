@@ -1,10 +1,12 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { ApiError, errorMessage, newIdempotencyKey } from '@/apis';
 import { getBalance, releaseBalance } from '@/app/payments/apis';
 import { BalanceDetail, PaymentCapture } from '@/app/payments/types';
 import { inr } from '@/lib/format';
+import { ROLES } from '@/lib/permissions';
 import { Banner, BlockedPanel, Loading, Panel, useCan, useToast } from '@/lib/ui';
 import { ReleaseDialog } from './release-dialog';
 
@@ -69,6 +71,14 @@ export function BalancePanel({ tripId, onReleased }: { tripId: string; onRelease
   const b = detail.breakdown;
   const isFinance = can('payment.release');
 
+  const orderLink = (
+    <div style={{ marginBottom: 10 }}>
+      <Link href={`/orders/${detail.indentCode}`} className="btn btn-secondary btn-sm">
+        View order
+      </Link>
+    </div>
+  );
+
   const workings = (
     <Panel title="What reaches the transporter" pad={false}>
       <div style={{ padding: '10px 15px' }}>
@@ -102,6 +112,7 @@ export function BalancePanel({ tripId, onReleased }: { tripId: string; onRelease
   if (detail.alreadyReleased) {
     return (
       <>
+        {orderLink}
         <Banner tone="mint" title="Balance released">
           {inr(b.netPaise)} released against {detail.tripCode}
         </Banner>
@@ -112,15 +123,19 @@ export function BalancePanel({ tripId, onReleased }: { tripId: string; onRelease
 
   if (forfeited) {
     return (
-      <Banner tone="red" title="Balance forfeited">
-        The proof of delivery is past forty days. The trip closes with nothing payable (BR-25), and the
-        forfeiture is reported against the transporter's file.
-      </Banner>
+      <>
+        {orderLink}
+        <Banner tone="red" title="Balance forfeited">
+          The proof of delivery wasn't approved within 40 days, so this trip closes with nothing payable to the
+          transporter. This forfeiture is recorded on the transporter's record.
+        </Banner>
+      </>
     );
   }
 
   return (
     <>
+      {orderLink}
       <BlockedPanel
         title={detail.unmet.length ? 'Balance blocked' : 'Balance ready to release'}
         subtitle={
@@ -142,7 +157,7 @@ export function BalancePanel({ tripId, onReleased }: { tripId: string; onRelease
             ? detail.unmet.length
               ? 'Only an approved proof of delivery unblocks this. Approval is compliance or the branch; release is yours.'
               : 'The proof of delivery is approved and the penalty is computed. Release is yours to make.'
-            : 'Release is a FINANCE action. Approving the proof of delivery is what unblocks it.'
+            : `Release is a ${ROLES.FINANCE.label} action. Approving the proof of delivery is what unblocks it.`
         }
       />
       {workings}

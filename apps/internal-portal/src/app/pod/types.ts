@@ -61,6 +61,7 @@ export interface PendingResponse {
 export interface PodDetail {
   tripId: string;
   tripCode: string;
+  indentCode: string;
   lrCode: string | null;
   vendorName: string;
   clientName: string;

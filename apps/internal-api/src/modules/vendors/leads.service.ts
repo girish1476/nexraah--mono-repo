@@ -17,7 +17,12 @@ export class LeadsService {
 
   async list() {
     const rows = await this.leadsRepository.list();
-    return rows.map(this.toDto);
+    return rows.map((row) => ({
+      ...this.toDto(row),
+      convertedVendorId: row.converted_vendor_id,
+      convertedVendorCode: row.converted_vendor_code,
+      convertedVendorName: row.converted_vendor_name,
+    }));
   }
 
   async create(dto: CreateLeadDto, actor: AuthenticatedUser) {
@@ -33,6 +38,7 @@ export class LeadsService {
         trucksClaimed: dto.trucksClaimed ?? null,
         phone: dto.phone ?? null,
         ownerId: actor.userId,
+        notes: dto.notes ?? null,
       });
     });
     return this.toDto(row);

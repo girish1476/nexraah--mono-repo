@@ -1,24 +1,20 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { DomainException } from '../../common/domain-exception';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
 import type { ApprovalRequiredResponse } from '../../common/approval-required.response';
+import { computePenalty, effectivePenalty, type PenaltyConfig } from '../../common/pod-penalty';
 import { AuditService } from '../audit/audit.service';
 import { NumberingService } from '../numbering/numbering.service';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { ApprovalsRegistry } from '../approvals/approvals.registry';
 import { ConfigRepository } from '../config/config.repository';
+import { OrdersService } from '../orders/orders.service';
 import { PodRepository } from './pod.repository';
 import type { ReceivePodDto } from './dto/receive-pod.dto';
 import type { VerifyPodDto } from './dto/verify-pod.dto';
 
 interface PenaltyWaiverAction {
   tripId: string;
-}
-
-interface PenaltyConfig {
-  tatDays: number;
-  penaltyPerDayPaise: number;
-  forfeitDays: number;
 }
 
 @Injectable()
@@ -30,7 +26,30 @@ export class PodService implements OnModuleInit {
     private readonly numberingService: NumberingService,
     private readonly approvalsService: ApprovalsService,
     private readonly approvalsRegistry: ApprovalsRegistry,
+    private readonly ordersService: OrdersService,
   ) {}
+
+  private readonly logger = new Logger('PodService');
+
+  /**
+   * Moves the ten-step order ladder after a POD transition has COMMITTED.
+   * See `TripsService.syncOrder` for why this must not run inside the
+   * transaction, and why a failure here is logged rather than thrown.
+   */
+  private async syncOrder(
+    indentId: string | null | undefined,
+    actor: AuthenticatedUser | null,
+    note: string | null = null,
+  ) {
+    if (!indentId) return;
+    try {
+      await this.ordersService.recompute(indentId, actor, note);
+    } catch (e) {
+      this.logger.error(
+        `Order recompute failed for indent ${indentId}: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }
 
   onModuleInit() {
     // BR-43: never waived at the desk — only this replay, fired by LEADERSHIP
@@ -59,7 +78,7 @@ export class PodService implements OnModuleInit {
     let pastTwentyDays = 0;
     const today = new Date().toDateString();
     const mappedRows = rows.map((r) => {
-      const { ageDays } = this.computePenalty(r.deliveredAt, null, config);
+      const { ageDays } = computePenalty(r.deliveredAt, null, config);
       if (ageDays > config.tatDays) pastTwentyDays += 1;
       if (r.podStatus === 'RECEIVED' && r.deliveredAt && new Date(r.deliveredAt).toDateString() === today) {
         receivedToday += 1;
@@ -93,9 +112,11 @@ export class PodService implements OnModuleInit {
   }
 
   async receive(tripId: string, dto: ReceivePodDto, actor: AuthenticatedUser) {
-    return this.podRepository.transaction().execute(async (trx) => {
+    let indentId: string | null = null;
+    const receipt = await this.podRepository.transaction().execute(async (trx) => {
       const trip = await this.podRepository.findTripForUpdate(trx, tripId);
       if (!trip) throw new DomainException(404, 'NOT_FOUND', `Unknown trip: ${tripId}`);
+      indentId = trip.indent_id;
       if (!dto.courierDocket) {
         throw new DomainException(400, 'VALIDATION_ERROR', 'courierDocket is required.');
       }
@@ -139,6 +160,9 @@ export class PodService implements OnModuleInit {
         condition: receipt.condition,
       };
     });
+    // Step 8, "POD uploaded".
+    await this.syncOrder(indentId, actor);
+    return receipt;
   }
 
   async getById(tripId: string) {
@@ -151,7 +175,7 @@ export class PodService implements OnModuleInit {
       this.penaltyConfig(),
     ]);
 
-    const { ageDays, penaltyPaise } = this.effectivePenalty(trip, config);
+    const { ageDays, penaltyPaise } = effectivePenalty(trip, config);
 
     return {
       tripId: trip.id,
@@ -191,9 +215,11 @@ export class PodService implements OnModuleInit {
       throw new DomainException(400, 'REMARKS_REQUIRED', 'Remarks are required when any checklist item fails.');
     }
 
-    return this.podRepository.transaction().execute(async (trx) => {
+    let indentId: string | null = null;
+    const result = await this.podRepository.transaction().execute(async (trx) => {
       const trip = await this.podRepository.findTripForUpdate(trx, tripId);
       if (!trip) throw new DomainException(404, 'NOT_FOUND', `Unknown trip: ${tripId}`);
+      indentId = trip.indent_id;
       if (trip.pod_status !== 'RECEIVED') {
         throw new DomainException(409, 'NOT_RECEIVED', 'The physical POD must be logged (received) before it can be verified.');
       }
@@ -227,14 +253,20 @@ export class PodService implements OnModuleInit {
 
       return { tripId, podStatus: 'VERIFIED' };
     });
+    // Step 9, "POD verified". Note the ladder stops here until the balance is
+    // released — approval is a separate gate the ten steps don't name.
+    await this.syncOrder(indentId, actor);
+    return result;
   }
 
   async reject(tripId: string, reason: string, actor: AuthenticatedUser) {
     if (!reason) throw new DomainException(400, 'VALIDATION_ERROR', 'A reason is required to reject a POD.');
 
-    return this.podRepository.transaction().execute(async (trx) => {
+    let indentId: string | null = null;
+    const result = await this.podRepository.transaction().execute(async (trx) => {
       const trip = await this.podRepository.findTripForUpdate(trx, tripId);
       if (!trip) throw new DomainException(404, 'NOT_FOUND', `Unknown trip: ${tripId}`);
+      indentId = trip.indent_id;
 
       const receipt = await this.podRepository.findReceiptForUpdate(trx, tripId);
       // BR-52: rejection does not stop the clock — pod_received_at is
@@ -262,12 +294,18 @@ export class PodService implements OnModuleInit {
 
       return { tripId, podStatus: nextStatus };
     });
+    // Rejection moves the ladder BACKWARDS off "POD verified" — correct, and
+    // why order_events is append-only rather than a diff of two states.
+    await this.syncOrder(indentId, actor, `POD rejected: ${reason}`);
+    return result;
   }
 
   async approve(tripId: string, actor: AuthenticatedUser) {
-    return this.podRepository.transaction().execute(async (trx) => {
+    let indentId: string | null = null;
+    const result = await this.podRepository.transaction().execute(async (trx) => {
       const trip = await this.podRepository.findTripForUpdate(trx, tripId);
       if (!trip) throw new DomainException(404, 'NOT_FOUND', `Unknown trip: ${tripId}`);
+      indentId = trip.indent_id;
       if (trip.pod_status !== 'VERIFIED') {
         throw new DomainException(409, 'NOT_VERIFIED', 'The POD must be verified before it can be approved.');
       }
@@ -299,6 +337,11 @@ export class PodService implements OnModuleInit {
       // BR-10/BR-40: approving unblocks the balance; finance still releases it.
       return { tripId, podStatus: updated.pod_status };
     });
+    // Approval keeps the ladder at step 9 — it is what unblocks step 10 rather
+    // than a step of its own. Recomputed anyway so `orders` never lags the
+    // POD status it derives from.
+    await this.syncOrder(indentId, actor);
+    return result;
   }
 
   async pending(filters: { branchId?: string; vendorId?: string; ageing?: string }) {
@@ -306,7 +349,7 @@ export class PodService implements OnModuleInit {
 
     const mapped = rows
       .map((r) => {
-        const { ageDays, penaltyPaise, forfeited } = this.effectivePenalty(
+        const { ageDays, penaltyPaise, forfeited } = effectivePenalty(
           { delivered_at: r.deliveredAt, pod_received_at: r.podReceivedAt, pod_closure_basis: r.podClosureBasis },
           config,
         );
@@ -377,33 +420,5 @@ export class PodService implements OnModuleInit {
       penaltyPerDayPaise: Number(config.get('pod_penalty_per_day_paise') ?? 10000),
       forfeitDays: Number(config.get('pod_forfeit_days') ?? 40),
     };
-  }
-
-  /** BR-12/BR-24/BR-25. Clock runs from delivery until receipt, then freezes. */
-  private computePenalty(
-    deliveredAt: string | null,
-    receivedAt: string | null,
-    config: PenaltyConfig,
-  ): { ageDays: number; penaltyPaise: number; forfeited: boolean } {
-    if (!deliveredAt) return { ageDays: 0, penaltyPaise: 0, forfeited: false };
-    const delivered = new Date(deliveredAt).getTime();
-    const clockEnd = receivedAt ? new Date(receivedAt).getTime() : Date.now();
-    const ageDays = Math.max(0, Math.floor((clockEnd - delivered) / 86_400_000));
-    const penaltyDays = Math.max(0, Math.min(ageDays, config.forfeitDays) - config.tatDays);
-    return {
-      ageDays,
-      penaltyPaise: penaltyDays * config.penaltyPerDayPaise,
-      forfeited: ageDays > config.forfeitDays,
-    };
-  }
-
-  /** Zero once waived (BR-43) — a waived penalty must never still read as accruing. */
-  private effectivePenalty(
-    trip: { delivered_at: string | null; pod_received_at: string | null; pod_closure_basis: string | null },
-    config: PenaltyConfig,
-  ) {
-    const computed = this.computePenalty(trip.delivered_at, trip.pod_received_at, config);
-    if (trip.pod_closure_basis === 'WAIVED') return { ...computed, penaltyPaise: 0 };
-    return computed;
   }
 }

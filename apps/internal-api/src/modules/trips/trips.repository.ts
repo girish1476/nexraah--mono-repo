@@ -206,27 +206,55 @@ export class TripsRepository {
   }
 
   /**
-   * `patch` is only the fields this call is actually changing. On insert it
-   * is layered over defaults (so a first-ever save can omit fields the DB
-   * still requires); on conflict only `patch` itself is written — using the
-   * defaults-plus-patch object for both would reset every previously-saved
-   * field to its blank default on each 3-second autosave.
+   * `patch` is only the fields this call is actually changing — writing
+   * defaults-plus-patch on an existing row would reset every previously-saved
+   * field to blank on each 3-second autosave.
+   *
+   * **Update-first, insert-only-if-missing, deliberately not INSERT … ON
+   * CONFLICT.** Postgres evaluates NOT NULL and CHECK constraints against the
+   * *proposed* tuple before it arbitrates the conflict, so an upsert has to
+   * offer a tuple that is valid on its own even when the update branch is the
+   * one that will win. This table makes that impossible to do honestly:
+   * `vehicle` and `driver` are NOT NULL, and `lr_consignor_named` /
+   * `lr_consignee_named` require a `name` key. A second autosave carrying only
+   * `{remarks}` therefore died on the insert tuple it was never going to use —
+   * every save after the first raised, on a form that saves every 3 seconds.
+   *
+   * The defaults below are only ever reached on a genuine first save, and are
+   * shaped to satisfy those CHECKs rather than to look empty.
    */
-  upsertLrDraft(db: DbExecutor, tripId: string, branchId: string, patch: Record<string, unknown>) {
+  async upsertLrDraft(
+    db: DbExecutor,
+    tripId: string,
+    branchId: string,
+    patch: Record<string, unknown>,
+  ) {
+    const updated = await db
+      .updateTable('lorry_receipts')
+      .set(patch as never)
+      .where('trip_id', '=', tripId)
+      .returningAll()
+      .executeTakeFirst();
+    if (updated) return updated;
+
     const insertValues = {
       trip_id: tripId,
       branch_id: branchId,
       lr_date: new Date().toISOString().slice(0, 10),
       code: `DRAFT-${tripId}`, // replaced by the real LR- code at generate()
-      consignor: '{}',
-      consignee: '{}',
+      consignor: JSON.stringify({ name: '' }),
+      consignee: JSON.stringify({ name: '' }),
       goods: '{}',
+      vehicle: '{}',
+      driver: '{}',
       status: 'BOOKED',
       ...patch,
     };
     return db
       .insertInto('lorry_receipts')
       .values(insertValues as never)
+      // Backstop for two first-saves racing: the loser updates instead of
+      // raising a unique violation. Safe here because this tuple is complete.
       .onConflict((oc) => oc.column('trip_id').doUpdateSet(patch as never))
       .returningAll()
       .executeTakeFirstOrThrow();
@@ -239,6 +267,10 @@ export class TripsRepository {
       .where('trip_id', '=', tripId)
       .returningAll()
       .executeTakeFirstOrThrow();
+  }
+
+  updateLrStatus(db: DbExecutor, tripId: string, status: string) {
+    return db.updateTable('lorry_receipts').set({ status }).where('trip_id', '=', tripId).executeTakeFirst();
   }
 
   shareLr(tripId: string) {

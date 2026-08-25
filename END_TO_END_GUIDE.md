@@ -6,6 +6,10 @@ transporter getting paid. For the API contracts, database setup, and formal
 business-rule references (`BR-xx`, `NFR-xx`, `D-xx`), see `docs/`. This guide is
 about *using* the app, not the wire format behind it.
 
+For the **flows** — every handoff, which desk picks a record up next, what unblocks a
+gate, and what moves on its own — see [`FLOWS.md`](FLOWS.md), the flow companion to
+this guide.
+
 ## 1. What Nexraah is
 
 Nexraah is a freight brokerage platform. A client needs goods moved; Nexraah
@@ -46,11 +50,17 @@ pnpm dev
 |---|---|---|
 | `internal-portal` | http://localhost:3002 | ops console |
 | `vendor-portal` | http://localhost:3001 | transporter portal |
-| `internal-api` | http://localhost:4002/api/v1 | not built out yet — see README |
+| `internal-api` | http://localhost:4002/api/v1 | 21 modules live; transporter surface is read-only so far |
 | `vendor-api` | http://localhost:4001/api/v1 | proxies `/portal/*` to internal-api only |
 
-**`internal-api` doesn't exist yet as a working backend**, so both frontends run
-against fixture data by default:
+`internal-api` is a working backend now — every internal module is implemented,
+and the transporter surface serves its eight read routes (loads, quotes, trips,
+lorry receipt, fleet, profile). What it does *not* yet serve is the transporter
+**writes**: submitting or withdrawing a quote, uploading proof of delivery,
+raising a bill, changing fleet, uploading a document.
+
+So both frontends still run against fixture data by default, and will until
+those writes land:
 
 - `internal-portal`: `NEXT_PUBLIC_USE_MOCKS` — defaults **on**. Copy
   `apps/internal-portal/.env.local.example` to `.env.local` to make that explicit.
@@ -76,8 +86,8 @@ this the module matrix, `BR-29`):
 
 | Role | Lands on | Owns |
 |---|---|---|
-| **OPS** (Operations desk) | `/today` | Indents, awards, placement, LRs, transit |
-| **COMPLIANCE** | `/compliance` | Vendor clearance, document verification, contract approval, POD verify/approve |
+| **OPS** (Operations desk) | `/today` | Vendor onboarding, indents, awards, placement, LRs, transit |
+| **COMPLIANCE** | `/compliance` | Vendor clearance, document verification, advance-document checks, contract approval, POD verify/approve |
 | **FINANCE** | `/payments/balance` | All payment release, invoicing, receipts, collections |
 | **BRANCH_MGR** (Branch manager) | `/today` | Branch placement performance, margin, RFQ sourcing, POD receive/verify/approve — scoped to their own branch |
 | **LEADERSHIP** | `/home` | Approvals, RFQ submission, reporting — sees everything, edits little |
@@ -89,6 +99,18 @@ bug. A module you can *see but not edit* still shows in the sidebar (tagged
 "Read") and the page itself renders every control, disabled, with a
 "Read-only for OPS" badge — the point is you can see state without being
 tempted to think a hidden control means broken UI.
+
+Two divisions of labour are worth spelling out, because they look like
+duplication until you see the seam:
+
+- **Operations onboards a vendor; Compliance clears them.** Ops can open a
+  vendor record and fill in everything about them. Only Compliance can mark the
+  documents verified and activate the vendor. The desk that recruits a
+  transporter is not the desk that vouches for them.
+- **Compliance checks the advance documents; Finance releases the money.** Both
+  see the payment screens. Only Finance holds `payment.release`, and that
+  permission never moves to a second role — so Compliance can clear a document
+  checklist without ever being able to pay against it.
 
 Vendor-portal has no roles — you're always "the vendor," full stop.
 
@@ -110,6 +132,27 @@ The sidebar groups mirror the natural order goods move through the business:
   vendor's record).
 - **Telematics** (`/telematics`) — live vehicle tracking signal: overspeed,
   long halts, vehicles that have gone dark.
+
+**Where vehicles come from — "supply source".** A branch does not source trucks
+one way. Some lanes are served by the local **transport union**, some off the
+**open market**, some by **direct owners** we contract with, and most branches
+are a mix of the first two. That answer changes how a lane is priced, who to
+call when placement fails, and whether a market gap is a recruitment problem or
+a rate problem — and until recently it lived only in people's heads.
+
+It is now recorded in three places, because it is decided at three moments:
+
+| Where | When it's set | Why there |
+|---|---|---|
+| **Branch** (`/admin/branches`) | The branch's overall posture | What a branch manager sees at a glance for their region |
+| **RFQ lane** (sourcing screen) | While sourcing a lane | Sourcing is the moment you actually learn whether a lane is union or market |
+| **Rate card lane** (client rate sheet) | Carried across on award | The agreed basis for the price on the sheet |
+
+Every one of them also takes free-text **remarks**, and neither field is ever
+required. "Not recorded" is a real, visible state — an operator has to be able
+to see that nobody has answered the question yet. And the four values cannot
+express something like *"union only during cane season"*, so forcing a wrong
+choice would lose more than an empty column does.
 
 ### Demand
 - **Clients** (`/clients`) — who's shipping with us: contacts, credit terms,
@@ -163,6 +206,11 @@ The sidebar groups mirror the natural order goods move through the business:
   invoice/indent codes.
 - **Roles matrix** (`/admin/roles`) — the module-access table in §3, as a
   real screen.
+- **Branches** (`/admin/branches`) — your offices, their catchment radius, and
+  where each one actually finds trucks (see the supply-source note above).
+  Every branch selector in the console — vendor onboarding, indent intake —
+  reads this list, so opening a branch here makes it available everywhere
+  immediately.
 - **Import** (`/admin/import`) — bulk data import.
 
 **Today** (`/today`) and **Home** (`/home`) are the two landing dashboards,

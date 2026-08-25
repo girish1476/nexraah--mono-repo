@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { DomainException, assertReason } from '../../common/domain-exception';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
 import type { ApprovalRequiredResponse } from '../../common/approval-required.response';
@@ -7,11 +7,13 @@ import { NumberingService } from '../numbering/numbering.service';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { ApprovalsRegistry } from '../approvals/approvals.registry';
 import { ConfigRepository } from '../config/config.repository';
+import { OrdersService } from '../orders/orders.service';
 import { TRIP_DOCUMENT_KINDS } from './trips.constants';
 import { TripsRepository, type TripListFilters } from './trips.repository';
 import type { SubmitTripDocumentDto } from './dto/submit-document.dto';
 import type { CreateChargeDto } from './dto/create-charge.dto';
 import type { PatchLrDto } from './dto/patch-lr.dto';
+import type { DeliverTripDto } from './dto/deliver-trip.dto';
 
 interface CrossCheckOverrideAction {
   tripId: string;
@@ -32,7 +34,38 @@ export class TripsService implements OnModuleInit {
     private readonly numberingService: NumberingService,
     private readonly approvalsService: ApprovalsService,
     private readonly approvalsRegistry: ApprovalsRegistry,
+    private readonly ordersService: OrdersService,
   ) {}
+
+  private readonly logger = new Logger('TripsService');
+
+  /**
+   * Moves the ten-step order ladder after a trip transition has COMMITTED.
+   *
+   * Never call this inside the transaction that produced the change.
+   * `recompute()` reads through `OrdersRepository`'s own executor rather than
+   * any transaction passed to it, so running it inside `trx` reads pre-commit
+   * state and records the *previous* step — silently, with nothing thrown.
+   *
+   * Non-fatal on purpose: the trip really did depart. Failing the request
+   * because a derived status could not be refreshed would be a worse bug than
+   * a stale status, and `OrdersService.reconcile()` repairs anything missed
+   * here. It is logged at error level so it is never silent.
+   */
+  private async syncOrder(
+    indentId: string | null | undefined,
+    actor: AuthenticatedUser | null,
+    note: string | null = null,
+  ) {
+    if (!indentId) return;
+    try {
+      await this.ordersService.recompute(indentId, actor, note);
+    } catch (e) {
+      this.logger.error(
+        `Order recompute failed for indent ${indentId}: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }
 
   onModuleInit() {
     // BR-44: leadership-adjacent override of an open cross-check mismatch.
@@ -115,6 +148,11 @@ export class TripsService implements OnModuleInit {
 
   // ---- Documents ----------------------------------------------------
 
+  async listDocuments(tripId: string) {
+    await this.assertTripExists(tripId);
+    return this.documentsFor(tripId);
+  }
+
   private async documentsFor(tripId: string) {
     const [rows, advanceDocumentSet] = await Promise.all([
       this.tripsRepository.findDocuments(tripId),
@@ -151,9 +189,9 @@ export class TripsService implements OnModuleInit {
 
   async submitDocument(tripId: string, kind: string, dto: SubmitTripDocumentDto, actor: AuthenticatedUser) {
     this.assertKnownKind(kind);
-    await this.assertTripExists(tripId);
+    const trip = await this.assertTripExists(tripId);
 
-    return this.tripsRepository.transaction().execute(async (trx) => {
+    const result = await this.tripsRepository.transaction().execute(async (trx) => {
       const row = await this.tripsRepository.upsertDocument(trx, {
         tripId,
         kind,
@@ -168,11 +206,15 @@ export class TripsService implements OnModuleInit {
       });
       return { kind: row.kind, status: row.status };
     });
+    // Step 4, "Advance docs uploaded" — only the configured advance-gating
+    // kinds actually move the ladder, and `recompute` decides which those are.
+    await this.syncOrder(trip.indent_id, actor);
+    return result;
   }
 
   async verifyDocument(tripId: string, kind: string, actor: AuthenticatedUser) {
     this.assertKnownKind(kind);
-    return this.tripsRepository.transaction().execute(async (trx) => {
+    const result = await this.tripsRepository.transaction().execute(async (trx) => {
       const existing = await this.tripsRepository.findDocumentOne(trx, tripId, kind);
       if (!existing) throw new DomainException(404, 'NOT_FOUND', `${kind} has not been uploaded for trip ${tripId}.`);
 
@@ -186,6 +228,8 @@ export class TripsService implements OnModuleInit {
       });
       return { kind: row.kind, status: row.status };
     });
+    await this.syncOrder(await this.indentIdForTrip(tripId), actor);
+    return result;
   }
 
   async rejectDocument(tripId: string, kind: string, reason: string, actor: AuthenticatedUser) {
@@ -194,7 +238,7 @@ export class TripsService implements OnModuleInit {
       throw new DomainException(400, 'VALIDATION_ERROR', 'A reason is required to reject a document.');
     }
 
-    return this.tripsRepository.transaction().execute(async (trx) => {
+    const result = await this.tripsRepository.transaction().execute(async (trx) => {
       const existing = await this.tripsRepository.findDocumentOne(trx, tripId, kind);
       if (!existing) throw new DomainException(404, 'NOT_FOUND', `${kind} has not been uploaded for trip ${tripId}.`);
 
@@ -208,6 +252,10 @@ export class TripsService implements OnModuleInit {
       });
       return { kind: row.kind, status: row.status };
     });
+    // A rejection can move the ladder BACKWARDS off "Advance docs uploaded" —
+    // which is correct, and is why the history table is append-only.
+    await this.syncOrder(await this.indentIdForTrip(tripId), actor, `Document rejected: ${kind}`);
+    return result;
   }
 
   // ---- Cross-check --------------------------------------------------
@@ -355,6 +403,10 @@ export class TripsService implements OnModuleInit {
       if (!dto.consignor) patch.consignor = JSON.stringify({ name: '' });
       if (!dto.consignee) patch.consignee = JSON.stringify({ name: '' });
       if (!dto.goods) patch.goods = JSON.stringify({});
+      // vehicle/driver are NOT NULL too — same reasoning as above, seeded
+      // from the trip's own placement data rather than left for the caller.
+      if (!dto.vehicle) patch.vehicle = JSON.stringify({ registration: trip.vehicle_no, type: trip.vehicle_type ?? '' });
+      if (!dto.driver) patch.driver = JSON.stringify({ name: trip.driver_name ?? '', licence: trip.driver_licence ?? '' });
     }
 
     const row = await this.tripsRepository
@@ -364,7 +416,8 @@ export class TripsService implements OnModuleInit {
   }
 
   async generateLr(tripId: string, actor: AuthenticatedUser) {
-    return this.tripsRepository.transaction().execute(async (trx) => {
+    let indentId: string | null = null;
+    const lr = await this.tripsRepository.transaction().execute(async (trx) => {
       const trip = await this.tripsRepository.findByIdForUpdate(trx, tripId);
       if (!trip) throw new DomainException(404, 'NOT_FOUND', `Unknown trip: ${tripId}`);
 
@@ -374,6 +427,7 @@ export class TripsService implements OnModuleInit {
       if (!trip.vehicle_no) {
         throw new DomainException(409, 'NOT_PLACED', 'No vehicle is placed on this trip yet.');
       }
+      indentId = trip.indent_id;
 
       const existingLr = await this.tripsRepository.findLrForUpdate(trx, tripId);
       if (existingLr?.status && existingLr.status !== 'BOOKED') {
@@ -403,6 +457,9 @@ export class TripsService implements OnModuleInit {
       });
       return this.lrToDto(row);
     });
+    // Step 3, "LR issued".
+    await this.syncOrder(indentId, actor);
+    return lr;
   }
 
   async shareLr(tripId: string) {
@@ -412,12 +469,87 @@ export class TripsService implements OnModuleInit {
     return this.lrToDto(row);
   }
 
+  // ---- Stage transitions ---------------------------------------------
+  //
+  // Nothing previously moved a trip from OPEN through IN_TRANSIT to
+  // DELIVERED — no endpoint, no spec. `payments.service.ts` already sets
+  // stage: 'CLOSED' directly at balance release/forfeiture, so that
+  // transition exists; these two are the missing middle of the ladder.
+
+  async depart(tripId: string, actor: AuthenticatedUser) {
+    let indentId: string | null = null;
+    await this.tripsRepository.transaction().execute(async (trx) => {
+      const trip = await this.tripsRepository.findByIdForUpdate(trx, tripId);
+      if (!trip) throw new DomainException(404, 'NOT_FOUND', `Unknown trip: ${tripId}`);
+      indentId = trip.indent_id;
+      if (trip.stage !== 'OPEN') {
+        throw new DomainException(409, 'NOT_OPEN', `Trip ${trip.code} is not OPEN (currently ${trip.stage}).`);
+      }
+      const lr = await this.tripsRepository.findLrForUpdate(trx, tripId);
+      if (!lr || lr.status !== 'RELEASED') {
+        throw new DomainException(409, 'LR_NOT_GENERATED', 'The lorry receipt must be generated before departure.');
+      }
+
+      await this.tripsRepository.update(trx, tripId, { stage: 'IN_TRANSIT' });
+      await this.tripsRepository.updateLrStatus(trx, tripId, 'IN_TRANSIT');
+      await this.auditService.record(trx, actor, {
+        action: 'STATUS_CHANGE',
+        entityType: 'trips',
+        entityId: tripId,
+        before: { stage: trip.stage },
+        after: { stage: 'IN_TRANSIT' },
+      });
+    });
+    // Step 6, "Tracking" — after commit, so the ladder reads the new stage.
+    await this.syncOrder(indentId, actor);
+    return this.getById(tripId);
+  }
+
+  async deliver(tripId: string, dto: DeliverTripDto, actor: AuthenticatedUser) {
+    let indentId: string | null = null;
+    await this.tripsRepository.transaction().execute(async (trx) => {
+      const trip = await this.tripsRepository.findByIdForUpdate(trx, tripId);
+      if (!trip) throw new DomainException(404, 'NOT_FOUND', `Unknown trip: ${tripId}`);
+      indentId = trip.indent_id;
+      if (trip.stage !== 'IN_TRANSIT') {
+        throw new DomainException(409, 'NOT_IN_TRANSIT', `Trip ${trip.code} is not IN_TRANSIT (currently ${trip.stage}).`);
+      }
+
+      const deliveredAt = dto.deliveredAt ?? new Date().toISOString();
+      // docs/api/05-pod.md: "PENDING | System, on delivery" — the one hard
+      // rule the spec states about this transition.
+      await this.tripsRepository.update(trx, tripId, {
+        stage: 'DELIVERED',
+        delivered_at: deliveredAt,
+        pod_status: 'PENDING',
+      });
+      await this.tripsRepository.updateLrStatus(trx, tripId, 'DELIVERED');
+      await this.auditService.record(trx, actor, {
+        action: 'STATUS_CHANGE',
+        entityType: 'trips',
+        entityId: tripId,
+        before: { stage: trip.stage },
+        after: { stage: 'DELIVERED', deliveredAt, podStatus: 'PENDING' },
+      });
+    });
+    // Step 7, "Unloaded" — delivery also opens the POD clock, so the ladder
+    // moves to UNLOADED here and waits for a receipt to reach step 8.
+    await this.syncOrder(indentId, actor);
+    return this.getById(tripId);
+  }
+
   // ---- Helpers ------------------------------------------------------
 
   private assertKnownKind(kind: string) {
     if (!TRIP_DOCUMENT_KINDS.some((k) => k.kind === kind)) {
       throw new DomainException(400, 'VALIDATION_ERROR', `Unknown document kind: ${kind}.`);
     }
+  }
+
+  /** `orders.indent_id` is the ladder's key — a trip is only one thing that moves it. */
+  private async indentIdForTrip(tripId: string): Promise<string | null> {
+    const trip = await this.tripsRepository.findById(tripId);
+    return trip?.indent_id ?? null;
   }
 
   private async assertTripExists(tripId: string) {

@@ -70,4 +70,31 @@ export class AuditService {
       })
       .execute();
   }
+
+  /**
+   * For the other writer with no human behind it: an unattended background
+   * job (`modules/jobs`). `jobName` (e.g. `POD_AGEING_JOB`) fills the same
+   * `actor_role` slot `recordPortalEvent` gives `'PORTAL'` — the audit trail
+   * still needs to say *what* changed a row even when nobody was signed in.
+   */
+  async recordSystemEvent(
+    db: DbExecutor,
+    jobName: string,
+    event: AuditEventInput,
+  ): Promise<void> {
+    await db
+      .insertInto('audit_events')
+      .values({
+        actor_id: null,
+        actor_role: jobName,
+        actor_vendor_id: null,
+        action: event.action,
+        entity_type: event.entityType,
+        entity_id: event.entityId ?? null,
+        before: event.before === undefined ? null : (event.before as never),
+        after: event.after === undefined ? null : (event.after as never),
+        request_id: event.requestId ?? null,
+      })
+      .execute();
+  }
 }

@@ -49,8 +49,11 @@ export interface Vehicle {
 
 export interface PlaceQuoteRequest {
   amountPaise: number;
-  vehicleId: string;
+  vehicleRegistrationNo: string;
+  driverMobile: string;
   reportingRule: ReportingRule;
+  /** Only meaningful when `reportingRule` is `SCHEDULED` — optional, never blocks submission. */
+  scheduledDate?: string;
 }
 
 export interface PlaceQuoteResult {

@@ -4,10 +4,11 @@
 -- every screen: a vendor in each of the three states that change what the UI
 -- does, and trips at the stages the money gates care about.
 --
--- Auth users are not created here — `supabase start` has no session to create
--- them from. Create one in Studio, then link it:
---   insert into vendor_users (user_id, vendor_id)
---   select u.id, v.id from users u, vendors v
+-- Internal sign-in accounts ARE created here — see the block at the foot of
+-- this file. Transporter logins still are not; create one in Studio, then
+-- link it:
+--   insert into vendor_users (auth_user_id, vendor_id)
+--   select u.id, v.id from auth.users u, vendors v
 --    where u.email = 'raj@sharma-transport.test' and v.code = 'VND-0001';
 
 begin;
@@ -140,3 +141,83 @@ commit;
 -- Delivered 22 days ago with pod_status PENDING puts TRP-00001 two days past the
 -- BR-24 threshold, so the penalty accrual and the blocked balance gate both have
 -- something real to render on first load.
+
+
+-- ---------------------------------------------------------------- sign-in --
+-- A Supabase Auth account per seeded internal user, so `internal-portal` can
+-- actually be signed into with `NEXT_PUBLIC_USE_MOCKS=0`. Password for all
+-- six: `nexraah`.
+--
+-- Local only, like the rest of this file. It writes directly into `auth`
+-- rather than going through the Auth admin API because that API needs the
+-- service-role key, and part 14 §4 is categorical that nothing in this system
+-- holds one. Staging and production create these accounts through Studio or
+-- an invite flow; neither ever runs this file.
+--
+-- `users.auth_user_id` is what actually matters downstream — it is the join
+-- `SupabaseJwtGuard` makes from the token's `sub` to find an internal
+-- principal (part 14 §4.1). A row without it verifies as a valid Supabase
+-- login and is then rejected `403 WRONG_AUDIENCE`, which is the correct
+-- answer for a transporter and a confusing one for staff, so the link below
+-- is the half to check first if a real-mode sign-in gets that far and stops.
+--
+-- The `auth.users`/`auth.identities` column sets move between GoTrue
+-- versions. The insert is written for current local Supabase and skips itself
+-- rather than failing the whole seed if the shape has moved on again.
+do $$
+declare
+  seat    record;
+  auth_id uuid;
+  has_provider_id boolean;
+begin
+  if to_regclass('auth.users') is null then
+    raise notice 'seed: no auth schema — skipping sign-in accounts';
+    return;
+  end if;
+
+  select exists (
+    select 1 from information_schema.columns
+     where table_schema = 'auth' and table_name = 'identities' and column_name = 'provider_id'
+  ) into has_provider_id;
+
+  for seat in select id, email, name from users where auth_user_id is null loop
+    select u.id into auth_id from auth.users u where u.email = seat.email;
+
+    if auth_id is null then
+      auth_id := gen_random_uuid();
+
+      insert into auth.users (
+        instance_id, id, aud, role, email, encrypted_password,
+        email_confirmed_at, created_at, updated_at,
+        raw_app_meta_data, raw_user_meta_data,
+        confirmation_token, recovery_token, email_change, email_change_token_new
+      ) values (
+        '00000000-0000-0000-0000-000000000000', auth_id, 'authenticated', 'authenticated',
+        seat.email, crypt('nexraah', gen_salt('bf')),
+        now(), now(), now(),
+        '{"provider":"email","providers":["email"]}'::jsonb,
+        jsonb_build_object('name', seat.name),
+        '', '', '', ''
+      );
+
+      if has_provider_id then
+        insert into auth.identities (id, user_id, provider_id, identity_data, provider, created_at, updated_at)
+        values (gen_random_uuid(), auth_id, auth_id::text,
+                jsonb_build_object('sub', auth_id::text, 'email', seat.email),
+                'email', now(), now());
+      else
+        insert into auth.identities (id, user_id, identity_data, provider, created_at, updated_at)
+        values (gen_random_uuid(), auth_id,
+                jsonb_build_object('sub', auth_id::text, 'email', seat.email),
+                'email', now(), now());
+      end if;
+    end if;
+
+    -- The half that matters, and the half that is version-proof: run it on
+    -- its own against accounts made in Studio, and sign-in works the same.
+    update users set auth_user_id = auth_id where id = seat.id;
+  end loop;
+exception
+  when others then
+    raise notice 'seed: could not create sign-in accounts (%) — create them in Studio, then: update users u set auth_user_id = a.id from auth.users a where a.email = u.email;', sqlerrm;
+end $$;

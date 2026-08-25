@@ -15,8 +15,11 @@ const MIME_EXTENSIONS: Record<string, string> = {
   'application/pdf': 'pdf',
 };
 
-// vendor_kyc.kind (part 02) — NFR-04: identity images are COMPLIANCE-only.
-const IDENTITY_KINDS = new Set(['PAN', 'AADHAAR', 'ADDRESS', 'SELFIE']);
+// vendor_kyc.kind (part 02) — NFR-04: identity images are COMPLIANCE-only,
+// and (modules/jobs's attachment-retention) held longer than the general
+// retention window. Exported so the job reuses this exact set rather than
+// re-declaring a second copy that could quietly drift from this one.
+export const IDENTITY_KINDS = new Set(['PAN', 'AADHAAR', 'ADDRESS', 'SELFIE']);
 
 export interface UploadInput {
   buffer: Buffer;
@@ -78,8 +81,14 @@ export class AttachmentsService {
     if (!row) {
       throw new DomainException(404, 'NOT_FOUND', `Unknown attachment: ${id}`);
     }
+    // NFR-04. The message reaches an operator's screen verbatim, so it says
+    // who can open the file rather than citing the rule that says so.
     if (IDENTITY_KINDS.has(row.kind) && actor.role !== 'COMPLIANCE') {
-      throw new DomainException(403, 'PERMISSION_DENIED', 'Identity images are COMPLIANCE-only (NFR-04).');
+      throw new DomainException(
+        403,
+        'PERMISSION_DENIED',
+        'Only Compliance can open identity documents.',
+      );
     }
 
     return this.storageService.createSignedUrl(row.storage_path);

@@ -1,5 +1,5 @@
 import { Page, test, expect } from '@playwright/test';
-import { setRole } from './helpers';
+import { setRole, statValue } from './helpers';
 
 /**
  * Demand · RFQ — `/rfq`, `/rfq/[id]`, lane sourcing/build-up, and the award
@@ -22,9 +22,6 @@ function fieldControl(page: Page, label: string) {
 }
 
 /** `StatStrip` renders `[eyebrow div][value div]` as flex siblings. */
-function statValue(page: Page, label: string) {
-  return page.getByText(label, { exact: true }).locator('xpath=following-sibling::div[1]');
-}
 
 /** A `Panel` with a heading — scopes queries to just that card. */
 function panelByHeading(page: Page, heading: string) {
@@ -36,21 +33,21 @@ test.describe('RFQ list', () => {
     await setRole(page, 'OPS');
     await page.goto('/rfq');
 
-    await expect(statValue(page, 'Open RFQs')).toHaveText('2');
-    await expect(statValue(page, 'Lanes out to bid')).toHaveText('3');
-    await expect(statValue(page, 'Lanes won')).toHaveText('0');
-    await expect(statValue(page, 'Lanes lost')).toHaveText('0');
-    await expect(statValue(page, 'Win rate')).toHaveText('0.0%');
-    await expect(statValue(page, 'Value won')).toHaveText('₹0');
+    await expect(statValue(page, 'rfq-live')).toHaveText('2');
+    await expect(statValue(page, 'rfq-pricing')).toHaveText('3');
+    await expect(statValue(page, 'rfq-won')).toHaveText('0');
+    await expect(statValue(page, 'rfq-lost')).toHaveText('0');
+    await expect(statValue(page, 'rfq-win-rate')).toHaveText('0.0%');
+    await expect(statValue(page, 'rfq-value-won')).toHaveText('₹0');
 
     const row1 = page.locator('tr', { has: page.getByText('BRG/RFQ/27') });
     await expect(row1.locator('td[data-label="Client"]')).toHaveText('Berger Paints');
-    await expect(row1.locator('td[data-label="Lanes"]')).toHaveText('2');
+    await expect(row1.locator('td[data-label="Routes"]')).toHaveText('2');
     await expect(row1.getByText('SOURCING')).toBeVisible();
 
     const row2 = page.locator('tr', { has: page.getByText('APX/RFQ/H1') });
     await expect(row2.locator('td[data-label="Client"]')).toHaveText('Apex Ceramics');
-    await expect(row2.locator('td[data-label="Lanes"]')).toHaveText('1');
+    await expect(row2.locator('td[data-label="Routes"]')).toHaveText('1');
     await expect(row2.getByText('SUBMITTED')).toBeVisible();
 
     await expect(page.getByRole('link', { name: 'New RFQ' })).toBeVisible();

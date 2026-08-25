@@ -17,6 +17,7 @@ import {
   useLevel,
   useToast,
 } from '@/lib/ui';
+import { SUPPLY_SOURCE_LABEL, SUPPLY_SOURCES, SupplySource } from '@/app/admin/branches/types';
 import { getRfq, setSourcing } from '../../../../apis';
 import { RfqLane, SourcingMode, SourcingRow } from '../../../../types';
 
@@ -39,6 +40,10 @@ export default function SourcingPage() {
   const [mode, setMode] = useState<SourcingMode>('MONTHLY');
   const [rows, setRows] = useState<SourcingRow[]>([]);
   const [busy, setBusy] = useState(false);
+  // '' is "Not recorded" — a real answer on a lane nobody has worked out yet,
+  // not a missing value to hide.
+  const [supplySource, setSupplySource] = useState<SupplySource | ''>('');
+  const [supplyRemarks, setSupplyRemarks] = useState('');
 
   useEffect(() => {
     getRfq(id)
@@ -48,6 +53,8 @@ export default function SourcingPage() {
         setLane(found);
         setPeriodFrom(rfq.periodFrom);
         setMode(found.sourcingMode);
+        setSupplySource(found.supplySource ?? '');
+        setSupplyRemarks(found.supplyRemarks ?? '');
         setRows(
           found.sourcingRows.length
             ? found.sourcingRows
@@ -77,7 +84,12 @@ export default function SourcingPage() {
   const save = async () => {
     setBusy(true);
     try {
-      const updated = await setSourcing(id, laneId, { sourcingMode: mode, sourcingRows: rows });
+      const updated = await setSourcing(id, laneId, {
+        sourcingMode: mode,
+        sourcingRows: rows,
+        supplySource: supplySource || null,
+        supplyRemarks: supplyRemarks.trim() || null,
+      });
       setLane(updated);
       toast(`Sourcing average ${inr(updated.sourcingAvgPaise)}`);
       router.push(`/rfq/${id}/lanes/${laneId}/quote`);
@@ -118,6 +130,52 @@ export default function SourcingPage() {
               </button>
             ))}
           </div>
+        </Panel>
+
+        {/* Recorded here because sourcing is when the operator finds out. It
+            saves with the rates below — the same PATCH carries both — and is
+            copied onto the client's rate card when the lane is won. */}
+        <Panel title="Where vehicles come from">
+          <FormGrid>
+            <Field
+              label="On this lane"
+              hint="Leave as Not recorded if it isn't settled yet — you can come back to it."
+            >
+              {level === 'EDIT' ? (
+                <select
+                  value={supplySource}
+                  aria-label="Where vehicles come from on this lane"
+                  onChange={(e) => setSupplySource(e.target.value as SupplySource | '')}
+                >
+                  <option value="">Not recorded</option>
+                  {SUPPLY_SOURCES.map((s) => (
+                    <option key={s} value={s}>
+                      {SUPPLY_SOURCE_LABEL[s]}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span>{lane.supplySourceLabel ?? 'Not recorded'}</span>
+              )}
+            </Field>
+            <Field label="Remarks" hint="Anything that changes the answer — a season, a strike, one owner.">
+              {level === 'EDIT' ? (
+                <input
+                  value={supplyRemarks}
+                  placeholder="e.g. union only in cane season"
+                  aria-label="Supply remarks for this lane"
+                  onChange={(e) => setSupplyRemarks(e.target.value)}
+                />
+              ) : (
+                <span>{lane.supplyRemarks ?? '—'}</span>
+              )}
+            </Field>
+          </FormGrid>
+          {level === 'EDIT' && (
+            <div className="muted" style={{ fontSize: 11, marginTop: 10 }}>
+              Saved together with the sourcing rates below.
+            </div>
+          )}
         </Panel>
 
         <Panel title={mode === 'MONTHLY' ? 'Rate per month' : 'High and low'}>

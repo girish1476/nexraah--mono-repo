@@ -104,3 +104,19 @@ export function generateLr(id: string) {
 export function shareLr(id: string) {
   return request<LorryReceipt>({ url: `/trips/${id}/lr/share`, method: 'POST' });
 }
+
+/* ---- stage transitions ---------------------------------------------------- */
+
+/** POST /trips/:id/depart · `indent.manage` — OPEN → IN_TRANSIT. 409 unless the LR is RELEASED. */
+export function departTrip(id: string) {
+  return request<TripDetail>({ url: `/trips/${id}/depart`, method: 'POST' });
+}
+
+/** POST /trips/:id/deliver · `indent.manage` — IN_TRANSIT → DELIVERED, opens the POD clock. */
+export function deliverTrip(id: string, deliveredAt?: string) {
+  return request<TripDetail>({
+    url: `/trips/${id}/deliver`,
+    method: 'POST',
+    data: deliveredAt ? { deliveredAt } : {},
+  });
+}

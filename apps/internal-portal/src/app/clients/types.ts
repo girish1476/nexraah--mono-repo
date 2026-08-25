@@ -1,5 +1,7 @@
 /** Clients and rate cards — part 04 §1. */
 
+import type { SupplySource } from '@/app/admin/branches/types';
+
 export type Engagement = 'SPOT' | 'CONTRACT';
 
 export interface Client {
@@ -37,6 +39,14 @@ export interface RateCardLane {
   reportingRule: 'SAME_DAY' | 'NEXT_DAY' | 'SCHEDULED';
   validFrom: string;
   validTo: string;
+  /**
+   * Where this lane's vehicles come from, copied off the RFQ lane at award —
+   * copied, not linked, so the sheet still reads "union" after the quote lane
+   * is re-worked. Null is a real state ("Not recorded"), never hidden.
+   */
+  supplySource: SupplySource | null;
+  supplySourceLabel: string | null;
+  supplyRemarks: string | null;
 }
 
 export type ClientDraft = Omit<Client, 'id' | 'code' | 'status' | 'outstandingPaise'>;

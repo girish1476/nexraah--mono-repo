@@ -9,5 +9,6 @@ import { TelematicsRepository } from './telematics.repository';
   imports: [ControlPanelModule],
   controllers: [TelematicsController, TelematicsPingController],
   providers: [TelematicsService, TelematicsRepository],
+  exports: [TelematicsService],
 })
 export class TelematicsModule {}

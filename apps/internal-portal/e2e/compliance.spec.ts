@@ -28,7 +28,7 @@ test.describe('Compliance desk — COMPLIANCE role', () => {
 
   test('renders all three queues with the seeded row counts', async ({ page }) => {
     const main = page.locator('main');
-    await expect(main.getByRole('heading', { name: 'Compliance desk' })).toBeVisible();
+    await expect(main.getByRole('heading', { name: 'Document checks' })).toBeVisible();
     await expect(panel(main, 'Vendor files').locator('table.table tbody tr')).toHaveCount(2);
     await expect(panel(main, 'Client contracts').locator('table.table tbody tr')).toHaveCount(2);
     await expect(panel(main, 'Trip documents awaiting verification').locator('table.table tbody tr')).toHaveCount(1);
@@ -41,7 +41,7 @@ test.describe('Compliance desk — COMPLIANCE role', () => {
     const rathod = queue.locator('tr').filter({ hasText: 'VND-2214' });
     await expect(rathod).toContainText('Rathod Roadlines');
     await expect(rathod).toContainText('4 of 4 identity checks verified · 3 of 5 documents verified');
-    await expect(rathod).toContainText('4d');
+    await expect(rathod).toContainText('4 days');
     await expect(rathod).toContainText('Blocked');
     await expect(rathod.getByRole('link', { name: 'Open file' })).toHaveAttribute('href', '/vendors/v-2214');
 
@@ -79,7 +79,7 @@ test.describe('Compliance desk — COMPLIANCE role', () => {
     const row = queue.locator('tr').filter({ hasText: 'TRP-120881' });
     await expect(row).toContainText('Nashik → Kolkata');
     await expect(row).toContainText('1 document(s) uploaded and waiting · blocking the advance');
-    await expect(row).toContainText('1d');
+    await expect(row).toContainText('1 day');
     await expect(row).toContainText('Blocking money');
     await expect(row.getByRole('link', { name: 'Verify' })).toHaveAttribute('href', '/trips/t-120881/documents');
 
@@ -89,7 +89,7 @@ test.describe('Compliance desk — COMPLIANCE role', () => {
 
   test('COMPLIANCE has EDIT on this module — no read-only badge', async ({ page }) => {
     const main = page.locator('main');
-    await expect(main.getByText('Read-only for COMPLIANCE')).toHaveCount(0);
+    await expect(main.getByTestId('view-only')).toHaveCount(0);
   });
 });
 
@@ -99,7 +99,7 @@ test.describe('Compliance desk — FINANCE (VIEW) role', () => {
     await page.goto('/compliance');
     const main = page.locator('main');
 
-    await expect(main.getByText('Read-only for FINANCE')).toBeVisible();
+    await expect(main.getByTestId('view-only')).toBeVisible();
 
     // The desk only ever offers navigation (`<Link>`s styled as buttons) to
     // go act elsewhere — never an in-place mutating <button> — for any role.

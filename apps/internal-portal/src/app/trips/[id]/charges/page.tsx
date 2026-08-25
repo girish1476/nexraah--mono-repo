@@ -15,6 +15,7 @@ import {
   Loading,
   ModuleGuard,
   PageHeader,
+  PageIntro,
   Panel,
   Stack,
   useCan,
@@ -102,8 +103,12 @@ export default function TripChargesPage() {
       <PageHeader
         path={`/trips/${id}/charges`}
         title="Charges"
-        sub="Cost and billed value held separately — the mark-up is the margin (BR-45)."
+        sub="Cost and billed value are held separately — the difference between them is the margin on this trip."
         module="trips"
+      />
+      <PageIntro
+        what="Record what this trip cost against what's billed to the client — the gap between them is the margin on this trip."
+        who="Captured by operations, branch managers or compliance, usually during POD verification."
       />
       <TripTabs tripId={id} />
 

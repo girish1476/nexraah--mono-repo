@@ -11,11 +11,34 @@ export class LeadsRepository {
   }
 
   list() {
-    return this.db.selectFrom('leads').selectAll().orderBy('created_at', 'desc').execute();
+    return this.db
+      .selectFrom('leads')
+      .leftJoin('vendors', 'vendors.id', 'leads.converted_vendor_id')
+      .select([
+        'leads.id as id',
+        'leads.code as code',
+        'leads.name as name',
+        'leads.city as city',
+        'leads.source as source',
+        'leads.party_type as party_type',
+        'leads.trucks_claimed as trucks_claimed',
+        'leads.phone as phone',
+        'leads.stage as stage',
+        'leads.notes as notes',
+        'leads.converted_vendor_id as converted_vendor_id',
+        'vendors.code as converted_vendor_code',
+        'vendors.legal_name as converted_vendor_name',
+      ])
+      .orderBy('leads.created_at', 'desc')
+      .execute();
   }
 
   findById(id: string) {
     return this.db.selectFrom('leads').selectAll().where('id', '=', id).executeTakeFirst();
+  }
+
+  findByIdForUpdate(db: DbExecutor, id: string) {
+    return db.selectFrom('leads').selectAll().where('id', '=', id).forUpdate().executeTakeFirst();
   }
 
   insert(
@@ -29,6 +52,7 @@ export class LeadsRepository {
       trucksClaimed: number | null;
       phone: string | null;
       ownerId: string;
+      notes: string | null;
     },
   ) {
     return db
@@ -42,6 +66,7 @@ export class LeadsRepository {
         trucks_claimed: row.trucksClaimed,
         phone: row.phone,
         owner_id: row.ownerId,
+        notes: row.notes,
         stage: 'NEW',
       })
       .returningAll()
@@ -50,5 +75,9 @@ export class LeadsRepository {
 
   update(id: string, patch: Record<string, unknown>) {
     return this.db.updateTable('leads').set(patch).where('id', '=', id).returningAll().executeTakeFirstOrThrow();
+  }
+
+  updateInTransaction(db: DbExecutor, id: string, patch: Record<string, unknown>) {
+    return db.updateTable('leads').set(patch).where('id', '=', id).returningAll().executeTakeFirstOrThrow();
   }
 }

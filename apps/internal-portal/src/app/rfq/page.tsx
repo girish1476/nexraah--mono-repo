@@ -12,6 +12,7 @@ import {
   Loading,
   ModuleGuard,
   PageHeader,
+  PageIntro,
   Panel,
   Stack,
   StatStrip,
@@ -57,8 +58,8 @@ export default function RfqPage() {
     { key: 'ref', label: 'Reference', mono: true, render: (r) => r.reference },
     { key: 'cycle', label: 'Cycle', align: 'right', render: (r) => `${r.cycleMonths} months` },
     { key: 'period', label: 'Period', render: (r) => `${fmtDate(r.periodFrom)} – ${fmtDate(r.periodTo)}` },
-    { key: 'due', label: 'Submission due', render: (r) => fmtDate(r.dueAt) },
-    { key: 'lanes', label: 'Lanes', align: 'right', render: (r) => r.laneCount },
+    { key: 'due', label: 'Quote due by', render: (r) => fmtDate(r.dueAt) },
+    { key: 'lanes', label: 'Routes', align: 'right', render: (r) => r.laneCount },
     { key: 'status', label: 'Status', render: (r) => <Tag tone={TONE[r.status]}>{r.status}</Tag> },
   ];
 
@@ -66,8 +67,7 @@ export default function RfqPage() {
     <ModuleGuard module="rfq">
       <PageHeader
         path="/rfq"
-        title="RFQ"
-        sub="Draft → Sourcing → Quoted → Submitted → Awarded"
+        title="Rate requests"
         module="rfq"
         right={
           level === 'EDIT' && (
@@ -77,16 +77,24 @@ export default function RfqPage() {
           )
         }
       />
+      <PageIntro
+        what="Winning a lane — a route you'll run for a client again and again — at a price that still works once a transporter is paid."
+        who="Operations and branch managers build these; leadership submits them to the client."
+      >
+        This happens before any single load. A lane won here is what an indent can then be raised
+        against. Each request moves through: draft, sourcing (finding what transporters would carry
+        it for), quoted, submitted to the client, then won or lost.
+      </PageIntro>
 
       <Stack>
         <StatStrip
           stats={[
-            { k: 'Open RFQs', v: data.stats.open },
-            { k: 'Lanes out to bid', v: data.stats.lanesOut },
-            { k: 'Lanes won', v: data.stats.lanesWon, tone: 'mint' },
-            { k: 'Lanes lost', v: data.stats.lanesLost, tone: 'red' },
-            { k: 'Win rate', v: pct(winRate) },
-            { k: 'Value won', v: inrCompact(data.stats.valueWonPaise), tone: 'mint' },
+            { k: 'Live rate requests', id: 'rfq-live', emoji: '💬', v: data.stats.open },
+            { k: 'Routes we are pricing', id: 'rfq-pricing', emoji: '🔎', v: data.stats.lanesOut },
+            { k: 'Routes we won', id: 'rfq-won', emoji: '🏆', v: data.stats.lanesWon, tone: 'mint' },
+            { k: 'Routes we lost', id: 'rfq-lost', emoji: '❌', v: data.stats.lanesLost, tone: 'red' },
+            { k: 'Share we win', id: 'rfq-win-rate', emoji: '📊', v: pct(winRate) },
+            { k: 'Business won', id: 'rfq-value-won', emoji: '💰', v: inrCompact(data.stats.valueWonPaise), tone: 'mint' },
           ]}
         />
         <Panel pad={false}>

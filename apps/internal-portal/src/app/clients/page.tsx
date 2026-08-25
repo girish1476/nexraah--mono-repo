@@ -8,10 +8,12 @@ import { fmtDate, inrCompact } from '@/lib/format';
 import {
   Column,
   DataTable,
+  EmptyState,
   ErrorState,
   Loading,
   ModuleGuard,
   PageHeader,
+  PageIntro,
   Panel,
   Tag,
   useLevel,
@@ -19,6 +21,13 @@ import {
 import { listClients } from './apis';
 import { Client } from './types';
 
+/**
+ * Clients — `/clients`.
+ *
+ * Rate cards are read-only on this side: every lane price is what an RFQ award
+ * wrote (BR-37). The intro says that in words a new joiner can act on; the
+ * traceability lives here.
+ */
 export default function ClientsPage() {
   const router = useRouter();
   const level = useLevel('clients');
@@ -45,15 +54,50 @@ export default function ClientsPage() {
       ),
     },
     { key: 'city', label: 'Billing city', render: (r) => r.billingCity },
-    { key: 'gstin', label: 'GSTIN', mono: true, render: (r) => r.gstin ?? '—' },
+    {
+      key: 'gstin',
+      label: 'GSTIN (tax number)',
+      mono: true,
+      render: (r) => r.gstin ?? <span className="muted">Not on file</span>,
+    },
     {
       key: 'engagement',
-      label: 'Engagement',
-      render: (r) => <Tag tone={r.engagement === 'CONTRACT' ? 'blue' : 'grey'}>{r.engagement}</Tag>,
+      label: 'How we price them',
+      render: (r) =>
+        r.engagement === 'CONTRACT' ? (
+          <Tag
+            tone="blue"
+            reason={
+              r.validTo
+                ? `Agreed lane prices, valid to ${fmtDate(r.validTo)}`
+                : 'Agreed lane prices under a signed agreement'
+            }
+          >
+            Contract
+          </Tag>
+        ) : (
+          <Tag tone="grey" reason="Priced load by load — no standing rate card">
+            Spot
+          </Tag>
+        ),
     },
-    { key: 'valid', label: 'Agreement to', render: (r) => fmtDate(r.validTo) },
-    { key: 'credit', label: 'Credit', align: 'right', render: (r) => `${r.creditDays} days` },
-    { key: 'out', label: 'Outstanding', align: 'right', render: (r) => inrCompact(r.outstandingPaise) },
+    {
+      key: 'valid',
+      label: 'Agreement valid to',
+      render: (r) =>
+        r.engagement === 'CONTRACT' ? (
+          fmtDate(r.validTo)
+        ) : (
+          <span className="muted">No agreement — priced per load</span>
+        ),
+    },
+    { key: 'credit', label: 'Payment terms', align: 'right', render: (r) => `${r.creditDays} days to pay` },
+    {
+      key: 'out',
+      label: 'Unpaid with client',
+      align: 'right',
+      render: (r) => inrCompact(r.outstandingPaise),
+    },
   ];
 
   return (
@@ -61,7 +105,6 @@ export default function ClientsPage() {
       <PageHeader
         path="/clients"
         title="Clients"
-        sub="Rate cards are read-only here — they are the lanes won at RFQ (BR-37)."
         module="clients"
         right={
           level === 'EDIT' && (
@@ -71,6 +114,13 @@ export default function ClientsPage() {
           )
         }
       />
+      <PageIntro
+        what="Every company that ships with us — who to call, how long they get to pay, what they still owe, and the lane prices we agreed with them."
+        who="Finance keeps this list. Everyone else can look, not change."
+      >
+        Open a client to see their rate card — the list of lanes (a from-city to to-city route) and the
+        price agreed for each. Prices are set when we win a quote (RFQ), never typed in here.
+      </PageIntro>
       {error && <ErrorState message={error} retry={load} />}
       {!rows && !error && <Loading what="Loading clients" />}
       {rows && (
@@ -80,6 +130,19 @@ export default function ClientsPage() {
             rows={rows}
             rowKey={(r) => r.id}
             onRowClick={(r) => router.push(`/clients/${r.id}`)}
+            empty={
+              <EmptyState
+                title="No clients on file yet"
+                hint="A client is any company that books freight with us. Add the first one and it becomes selectable when an indent — a client's request for a truck — is raised, and when you invoice them."
+                action={
+                  level === 'EDIT' ? (
+                    <Link href="/clients/new" className="btn">
+                      New client
+                    </Link>
+                  ) : undefined
+                }
+              />
+            }
           />
         </Panel>
       )}

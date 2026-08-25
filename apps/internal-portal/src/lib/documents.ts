@@ -27,21 +27,50 @@ export const DOC_GROUPS: { key: DocGroup; label: string; kinds: string[] }[] = [
   { key: 'POD', label: 'Proof of delivery', kinds: ['POD'] },
 ];
 
-export const VENDOR_KYC_KINDS: { kind: string; label: string }[] = [
-  { kind: 'PAN', label: 'PAN number and card photograph' },
-  { kind: 'AADHAAR', label: 'Aadhaar OTP and card photograph' },
-  { kind: 'ADDRESS', label: 'Address proof' },
-  { kind: 'SELFIE', label: 'Geo-stamped selfie at the yard' },
+/**
+ * `needsReference` defaults to `true`. Where it's `false` the onboarding
+ * wizard captures a photo only — no typed reference/number field.
+ */
+export const VENDOR_KYC_KINDS: { kind: string; label: string; note?: string; needsReference?: boolean }[] = [
+  { kind: 'PAN', label: 'PAN card', needsReference: false },
+  { kind: 'AADHAAR', label: 'Aadhaar card', needsReference: false },
+  {
+    kind: 'ADDRESS',
+    label: 'Address proof',
+    note: 'Rent agreement, electricity bill, loading advice, or a photo of the yard name-board',
+  },
+  { kind: 'SELFIE', label: 'Geo-stamped selfie at the yard', needsReference: false },
 ];
 
-export const VENDOR_DOC_KINDS: { kind: string; label: string; note?: string }[] = [
-  { kind: 'RC', label: 'Registration certificate', note: 'Mandatory for an Owner (BR-02)' },
+export const VENDOR_DOC_KINDS: { kind: string; label: string; note?: string; needsReference?: boolean }[] = [
+  { kind: 'RC', label: 'Registration certificate', note: 'Required for an Owner' },
   { kind: 'TRADE_LICENCE', label: 'Trade licence' },
   { kind: 'LABOUR_LICENCE', label: 'Labour licence' },
   { kind: 'UDYAM', label: 'Udyam / MSME certificate' },
-  { kind: 'TDS_DECLARATION', label: 'TDS declaration', note: 'Mandatory for every party type (BR-03)' },
-  { kind: 'BANK_STATEMENT', label: 'Bank statement or cancelled cheque' },
+  {
+    kind: 'TDS_DECLARATION',
+    label: 'TDS declaration',
+    note: 'Required for every transporter',
+    needsReference: false,
+  },
+  {
+    kind: 'BANK_STATEMENT',
+    label: 'Bank statement or cancelled cheque',
+    note: 'Mandatory',
+    needsReference: false,
+  },
   { kind: 'TRANSPORTER_AGREEMENT', label: 'Signed transporter agreement' },
+];
+
+/**
+ * Onboarding presents these three as one "Government certificate" row with a
+ * dropdown — the vendor holds whichever one applies, never all three, and
+ * the wizard still stores the upload under its specific `kind`.
+ */
+export const GOVERNMENT_CERTIFICATE_KINDS: { kind: string; label: string }[] = [
+  { kind: 'TRADE_LICENCE', label: 'Trade licence' },
+  { kind: 'LABOUR_LICENCE', label: 'Labour licence' },
+  { kind: 'UDYAM', label: 'Udyam / MSME certificate' },
 ];
 
 export const CHARGE_TYPES = ['LOADING', 'UNLOADING', 'LABOUR', 'HALT', 'DETENTION', 'OTHER'] as const;
@@ -50,7 +79,7 @@ export type ChargeType = (typeof CHARGE_TYPES)[number];
 export const PAYMENT_MODES = ['NEFT', 'RTGS', 'IMPS', 'UPI', 'CHEQUE', 'CASH'] as const;
 export const TRANSFER_TYPES = ['VENDOR_ACCOUNT', 'DRIVER_ACCOUNT', 'FUEL_CARD', 'CASH_AT_BRANCH'] as const;
 
-/** The POD chain of BR-48, coloured once so every screen agrees. */
+/** The POD chain, coloured once so every screen agrees. */
 export const POD_TONE: Record<string, 'mint' | 'flag' | 'red' | 'blue' | 'grey'> = {
   PENDING: 'red',
   ATTACHED: 'flag',
@@ -59,6 +88,17 @@ export const POD_TONE: Record<string, 'mint' | 'flag' | 'red' | 'blue' | 'grey'>
   APPROVED: 'mint',
   WAIVED: 'mint',
   FORFEITED: 'red',
+};
+
+/** Plain-language read of the same POD chain, worded once so every screen agrees. */
+export const POD_STATUS_LABEL: Record<string, string> = {
+  PENDING: 'Waiting on the transporter',
+  ATTACHED: 'Attached by the transporter',
+  RECEIVED: 'Received, not yet checked',
+  VERIFIED: 'Checked, awaiting approval',
+  APPROVED: 'Approved',
+  WAIVED: 'Penalty waived',
+  FORFEITED: 'Not received in time — balance forfeited',
 };
 
 export function docLabel(kind: string): string {

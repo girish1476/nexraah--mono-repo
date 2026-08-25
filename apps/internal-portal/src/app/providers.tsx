@@ -5,30 +5,15 @@ import { ReactNode, useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { sessionAtom, Session } from '@/store/atoms';
 import { request, errorMessage } from '@/apis';
-import { Toast, ErrorState, Field } from '@/lib/ui';
+import { ensureFreshToken, isSignedIn, signOut } from '@/lib/auth';
+import { Toast, ErrorState } from '@/lib/ui';
 import { Shell } from './shell';
 
-/**
- * Prototype-only, same footing as the `X-Debug-Role` switcher this app
- * already ships (`shell.tsx`) — there is no Supabase Auth login screen yet,
- * so `apis.ts` just reads `localStorage.token`. Getting that token into
- * localStorage by hand (open devtools, paste, reload) is easy to get subtly
- * wrong with no feedback — a stray space, the wrong tab's origin, a paste
- * that silently didn't take. `?devToken=…` sets it from a single link
- * instead: read once on mount, stored, then stripped from the URL so it
- * doesn't linger in browser history. Delete this whole block along with the
- * role switcher when real Supabase Auth lands.
- */
-function useDevTokenFromUrl() {
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const url = new URL(window.location.href);
-    const devToken = url.searchParams.get('devToken');
-    if (!devToken) return;
-    localStorage.setItem('token', devToken);
-    url.searchParams.delete('devToken');
-    window.history.replaceState({}, '', url.pathname + url.search + url.hash);
-  }, []);
+/** Screens that must render before a session exists, or without one at all. */
+const PUBLIC_PATHS = ['/signin'];
+
+function isPublic(pathname: string | null): boolean {
+  return Boolean(pathname && (pathname.startsWith('/print') || PUBLIC_PATHS.includes(pathname)));
 }
 
 /**
@@ -50,32 +35,70 @@ function SessionBootstrap({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
 
-  useDevTokenFromUrl();
-
   useEffect(() => {
+    if (isPublic(pathname)) return;
     let cancelled = false;
     setError(null);
-    request<Session>({ url: '/auth/session', method: 'GET' })
+
+    // No token at all (first visit, signed out, cleared storage) is the
+    // common case, not a failure — send straight to the sign-in screen
+    // instead of firing a request that can only 401 and land on the "could
+    // not load this screen" error state. A token that's present but rejected
+    // (expired past refresh, account disabled, key rotated) is the genuine
+    // anomaly and still gets the error + retry below.
+    if (!isSignedIn()) {
+      setSession(null);
+      router.replace('/signin');
+      return;
+    }
+
+    // Renew a token that is about to age out *before* the first call of the
+    // session rather than letting it 401 and lean on the retry in `apis.ts`.
+    // A tab left open overnight is the ordinary case for this console.
+    ensureFreshToken()
+      .then(() => request<Session>({ url: '/auth/session', method: 'GET' }))
       .then((s) => {
         if (cancelled) return;
         setSession(s);
-        if (pathname === '/') router.replace(s.role === 'ADMIN' ? '/admin' : sessionLanding(s));
       })
       .catch((e) => {
         if (cancelled) return;
         setSession(null);
+        // A refresh that could not save the session leaves nothing to retry
+        // with — go to sign-in rather than showing a retry button that can
+        // only fail the same way.
+        if (!isSignedIn()) {
+          router.replace('/signin');
+          return;
+        }
         setError(errorMessage(e));
       });
     return () => {
       cancelled = true;
     };
-    // Re-runs when the prototype role switcher writes localStorage and reloads,
-    // or when the retry button below bumps `attempt`.
+    // Re-runs on navigation, and when the retry button below bumps `attempt`.
   }, [pathname, router, setSession, attempt]);
 
-  // /dev-login has its own tokens and does its own redirect — it must never
-  // be gated behind the session it exists to establish in the first place.
-  if (pathname?.startsWith('/print') || pathname === '/dev-login') return <>{children}</>;
+  /**
+   * `/` is a signpost, not a screen: which desk you land on depends on the
+   * role, and the role is only known once the session above resolves.
+   *
+   * This is its own effect rather than a line inside that `.then` because a
+   * `router.replace()` issued while the navigation *to* `/` is still in
+   * flight gets swallowed, and the app then sits on `/` — signed in, shell
+   * rendered, going nowhere. Sign-in makes that race easy to hit: it is one
+   * navigation followed immediately by a session fetch. As an effect keyed on
+   * the session, a redirect that does not take is simply reissued on the next
+   * render instead of being lost.
+   */
+  useEffect(() => {
+    if (!session || pathname !== '/') return;
+    router.replace(session.role === 'ADMIN' ? '/admin' : sessionLanding(session));
+  }, [session, pathname, router]);
+
+  // The sign-in screen must never be gated behind the session it exists to
+  // establish in the first place.
+  if (isPublic(pathname)) return <>{children}</>;
 
   if (session === null) {
     return <SignInError message={error} onRetry={() => setAttempt((n) => n + 1)} />;
@@ -85,22 +108,26 @@ function SessionBootstrap({ children }: { children: ReactNode }) {
 }
 
 /**
- * The `?devToken=` link (above) is a full JWT in the URL — several hundred
- * characters, and a link that long silently truncates or gets stripped by
- * some chat apps and link previewers before it ever reaches the browser.
- * When that happens the visible symptom is identical to a real auth
- * failure ("Missing bearer token"), so this paste box is the fallback: copy
- * just the raw token — not a whole URL — into a plain field. Nothing about
- * copying a short-ish string into an input has the same failure mode.
+ * A token is present but the server would not accept it, and a refresh could
+ * not rescue it — a disabled account, a principal holding no internal role,
+ * a rotated signing key, or internal-api being briefly unreachable.
+ *
+ * Retry is offered first because the last of those cases is transient and
+ * common, and signing out to fix a network blip loses nothing but costs a
+ * password. The paste-a-raw-JWT box this replaces existed only to work
+ * around `?devToken=` links being truncated in chat apps; with a real sign-in
+ * screen there is nothing left for a person to paste.
  */
 function SignInError({ message, onRetry }: { message: string | null; onRetry: () => void }) {
-  const [pasted, setPasted] = useState('');
+  const router = useRouter();
 
-  const signIn = () => {
-    const token = pasted.trim();
-    if (!token) return;
-    localStorage.setItem('token', token);
-    onRetry();
+  // Discards the session on the way out, rather than linking to /signin —
+  // that screen turns signed-in visitors around at the door, and a token
+  // rejected by the server still counts as one, so a plain link would
+  // bounce between the two forever.
+  const startOver = () => {
+    signOut();
+    router.replace('/signin');
   };
 
   return (
@@ -108,25 +135,11 @@ function SignInError({ message, onRetry }: { message: string | null; onRetry: ()
       <div style={{ maxWidth: 420, width: '100%', display: 'flex', flexDirection: 'column', gap: 16 }}>
         <ErrorState message={message ?? 'The session could not be verified.'} retry={onRetry} />
         <div className="surface" style={{ padding: 16, textAlign: 'center' }}>
-          <a href="/dev-login" className="btn" style={{ display: 'inline-block' }}>
+          <p className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>
+            If this keeps happening, sign in again.
+          </p>
+          <button className="btn" onClick={startOver}>
             Go to sign in
-          </a>
-        </div>
-        <div className="surface" style={{ padding: 16 }}>
-          <Field
-            label="Or paste a sign-in token directly"
-            hint="Prototype only — this stands in for real sign-in until Supabase Auth lands."
-          >
-            <textarea
-              rows={3}
-              value={pasted}
-              onChange={(e) => setPasted(e.target.value)}
-              placeholder="eyJhbGciOi…"
-              style={{ fontFamily: 'monospace', fontSize: 11.5, resize: 'vertical' }}
-            />
-          </Field>
-          <button className="btn" style={{ marginTop: 10 }} onClick={signIn} disabled={!pasted.trim()}>
-            Sign in
           </button>
         </div>
       </div>

@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useAtomValue } from 'jotai';
 import { ApiError, errorMessage } from '@/apis';
-import { CHARGE_TYPES, POD_TONE } from '@/lib/documents';
+import { CHARGE_TYPES, POD_STATUS_LABEL, POD_TONE } from '@/lib/documents';
 import { fmtDate, inr } from '@/lib/format';
 import { sessionAtom } from '@/store/atoms';
 import {
@@ -18,6 +18,7 @@ import {
   Loading,
   ModuleGuard,
   PageHeader,
+  PageIntro,
   Panel,
   Split,
   Stack,
@@ -92,7 +93,7 @@ export default function PodVerifyPage() {
           billedAmountPaise: Math.round(c.billedRupees * 100),
         })),
       });
-      toast('Verified · a second person must approve it (BR-50)');
+      toast('Verified · a second person needs to approve it before the balance is released.');
       setCharges([]);
       load();
     } catch (e) {
@@ -120,7 +121,7 @@ export default function PodVerifyPage() {
     setBusy(true);
     try {
       await rejectPod(id, rejectReason);
-      toast('Rejected · returned to the transporter and the clock resumes (BR-52)');
+      toast('Rejected · sent back to the transporter, and the penalty clock keeps running.');
       setRejectOpen(false);
       setRejectReason('');
       load();
@@ -145,7 +146,18 @@ export default function PodVerifyPage() {
         title={`Proof of delivery · ${pod.tripCode}`}
         sub={`${pod.lane} · ${pod.vendorName} · delivered ${fmtDate(pod.deliveredAt)}`}
         module="pod"
-        right={<Tag tone={POD_TONE[pod.podStatus] as Tone}>{pod.podStatus}</Tag>}
+        right={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Link href={`/orders/${pod.indentCode}`} className="btn btn-secondary">
+              View order
+            </Link>
+            <Tag tone={POD_TONE[pod.podStatus] as Tone}>{POD_STATUS_LABEL[pod.podStatus] ?? pod.podStatus}</Tag>
+          </div>
+        }
+      />
+      <PageIntro
+        what="The photograph pages for this delivery, a checklist to confirm they're valid, and any charges written on the document — verify it here, or reject it and send it back for a replacement."
+        who="Verification and approval are two different people: whoever verifies the document can't be the one who approves it, and only an approval unblocks the balance."
       />
 
       <Split
@@ -221,7 +233,7 @@ export default function PodVerifyPage() {
         {pod.podStatus === 'PENDING' || pod.podStatus === 'ATTACHED' ? (
           <Banner tone="flag" title="The physical copy has not been logged">
             Verification begins once the branch logs the paper against its courier docket. A photograph does not
-            stop the clock (BR-49).
+            stop the clock.
           </Banner>
         ) : null}
 
@@ -250,7 +262,7 @@ export default function PodVerifyPage() {
             </div>
 
             <div style={{ marginTop: 16 }}>
-              <div className="eyebrow">Charges written on this document (BR-56)</div>
+              <div className="eyebrow">Charges written on this document</div>
               {charges.map((c, i) => (
                 <FormGrid key={i}>
                   <Field label="Charge type">
@@ -313,13 +325,12 @@ export default function PodVerifyPage() {
         {pod.podStatus === 'VERIFIED' && (
           <Panel title="Approve">
             <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }}>
-              Verified by {pod.verifiedBy ?? 'another user'}. Approval is the decision to pay, and only it
-              unblocks the balance (BR-10).
+              Verified by {pod.verifiedBy ?? 'another user'}. Approval is the decision to pay — only an approval
+              unblocks the balance.
             </p>
             {isVerifier ? (
               <Banner tone="flag" title="You verified this proof of delivery">
-                Someone else must approve it. That is BR-50, and it is enforced by the service and by a database
-                constraint as well as by this screen.
+                So someone else on your team needs to approve it — the same person cannot do both steps.
               </Banner>
             ) : canApprove ? (
               <button className="btn" onClick={submitApprove} disabled={busy}>
@@ -343,7 +354,7 @@ export default function PodVerifyPage() {
       <Dialog
         open={rejectOpen}
         title="Reject this proof of delivery"
-        body="It returns to the transporter for a replacement. Rejection does not stop the clock — the days between receipt and rejection re-enter the penalty accrual (BR-52)."
+        body="It returns to the transporter for a replacement. Rejection does not stop the clock — the days between receipt and rejection re-enter the penalty accrual."
         confirmLabel="Reject"
         confirmDisabled={!rejectReason.trim()}
         busy={busy}

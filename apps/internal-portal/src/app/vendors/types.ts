@@ -74,7 +74,7 @@ export interface VendorDetail {
   pan: string;
   phone: string;
   altPhone: string | null;
-  fleetBase: string;
+  truckTypes: string[];
   operatingStates: string[];
   advancePct: number;
   bankAccount: string;
@@ -86,7 +86,8 @@ export interface VendorDetail {
   rating: number;
   source: string;
   fleetCount: number;
-  constitution: string;
+  /** Optional — a draft created before this field existed may not carry one. */
+  constitution?: string;
   kyc: KycItem[];
   documents: VendorDocument[];
   advanceHistory: AdvanceHistoryRow[];
@@ -113,6 +114,15 @@ export interface Lead {
   phone: string;
   stage: 'NEW' | 'CONTACTED' | 'DOCUMENTS_REQUESTED' | 'QUALIFIED' | 'CONVERTED' | 'DROPPED';
   notes: string;
+  /**
+   * The transporter this lead became, once it has become one — all three are
+   * null until then. They come back on the list itself, so a converted lead
+   * can name what happened to it without a second fetch. Trust these over
+   * reading `stage`: they are the link, not an inference from it.
+   */
+  convertedVendorId: string | null;
+  convertedVendorCode: string | null;
+  convertedVendorName: string | null;
 }
 
 export interface MarketGapRow {
@@ -167,7 +177,7 @@ export interface VendorDraft {
   altPhone?: string;
   branchId: string;
   pan?: string;
-  fleetBase?: string;
+  truckTypes?: string[];
   operatingStates?: string[];
   fleetCount?: number;
   bankAccount?: string;
@@ -175,4 +185,11 @@ export interface VendorDraft {
   accountHolder?: string;
   advancePct?: number;
   remarks?: string;
+  bodyType?: string;
+  /**
+   * Sent on create only. The server converts that lead inside the same
+   * transaction as the vendor insert — copying its source across and marking
+   * it converted — so the two can never end up half-done.
+   */
+  leadId?: string;
 }

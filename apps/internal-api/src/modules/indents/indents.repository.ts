@@ -59,6 +59,25 @@ export class IndentsRepository {
     return db.selectFrom('indents').selectAll().where('id', '=', id).forUpdate().executeTakeFirst();
   }
 
+  /**
+   * `placement-failure` job's candidate set — `VENDOR_ASSIGNED` belongs here
+   * alongside `OPEN`: an award that never reached `VEHICLE_PLACED` by
+   * pickup day is a failure too (`TRUCK_NEVER_REPORTED`), not just an
+   * indent nobody quoted. `failure_cause is null` so the sweep never
+   * overwrites a cause someone (or a future desk-initiated cancel action)
+   * already set by hand — `CLIENT_CANCELLED` has no backing column
+   * anywhere in this schema, so it can only ever arrive that way.
+   */
+  dueForPlacementFailure() {
+    return this.db
+      .selectFrom('indents')
+      .select(['id', 'stage', 'awarded_quote_id'])
+      .where('stage', 'in', ['OPEN', 'VENDOR_ASSIGNED'])
+      .where('pickup_date', '<', new Date().toISOString().slice(0, 10))
+      .where('failure_cause', 'is', null)
+      .execute();
+  }
+
   findBranchByCity(city: string) {
     return this.db
       .selectFrom('branches')

@@ -3,15 +3,17 @@
 import { useEffect, useState } from 'react';
 import { errorMessage } from '@/apis';
 import { BalancePanel } from '@/components/balance-panel';
-import { POD_TONE } from '@/lib/documents';
+import { POD_STATUS_LABEL, POD_TONE } from '@/lib/documents';
 import { inr } from '@/lib/format';
 import {
   Column,
   DataTable,
+  EmptyState,
   ErrorState,
   Loading,
   ModuleGuard,
   PageHeader,
+  PageIntro,
   Panel,
   Stack,
   StatStrip,
@@ -37,14 +39,18 @@ export default function BalanceQueuePage() {
   useEffect(load, []);
 
   const columns: Column<BalanceQueueRow>[] = [
-    { key: 'trip', label: 'Trip', mono: true, render: (r) => r.tripCode },
+    { key: 'trip', label: 'Trip number', mono: true, render: (r) => r.tripCode },
     { key: 'vendor', label: 'Transporter', render: (r) => r.vendorName },
-    { key: 'lane', label: 'Lane', render: (r) => r.lane },
+    { key: 'lane', label: 'Route', render: (r) => r.lane },
     { key: 'branch', label: 'Branch', render: (r) => r.branchName },
-    { key: 'pod', label: 'POD', render: (r) => <Tag tone={POD_TONE[r.podStatus] as Tone}>{r.podStatus}</Tag> },
+    {
+      key: 'pod',
+      label: 'Delivery proof',
+      render: (r) => <Tag tone={POD_TONE[r.podStatus] as Tone}>{POD_STATUS_LABEL[r.podStatus] ?? r.podStatus}</Tag>,
+    },
     {
       key: 'age',
-      label: 'Day',
+      label: 'Days waiting',
       align: 'right',
       render: (r) => (
         <span style={{ color: r.podAgeDays > 40 ? 'var(--red)' : r.podAgeDays > 20 ? 'var(--flag)' : undefined }}>
@@ -54,14 +60,14 @@ export default function BalanceQueuePage() {
     },
     {
       key: 'penalty',
-      label: 'Penalty',
+      label: 'Late penalty',
       align: 'right',
       render: (r) => <span style={{ color: r.penaltyPaise ? 'var(--red)' : undefined }}>{inr(r.penaltyPaise)}</span>,
     },
-    { key: 'net', label: 'Net payable', align: 'right', render: (r) => inr(r.netPaise) },
+    { key: 'net', label: 'Amount to pay', align: 'right', render: (r) => inr(r.netPaise) },
     {
       key: 'state',
-      label: 'Gate',
+      label: 'Can we pay yet?',
       render: (r) => (r.blocked ? <Tag tone="red">{r.unmetCount} unmet</Tag> : <Tag tone="mint">Releasable</Tag>),
     },
     {
@@ -85,18 +91,22 @@ export default function BalanceQueuePage() {
     <ModuleGuard module="payments">
       <PageHeader
         path="/payments/balance"
-        title="Balance"
-        sub="Gated on an approved proof of delivery. Past forty days nothing is payable (BR-10, BR-25)."
+        title="Final payments"
+        sub="The remaining payment to the transporter, released once their proof of delivery is approved. If it isn't approved within 40 days, the balance is forfeited."
         module="payments"
+      />
+      <PageIntro
+        what="A worklist of trips waiting on their final payment — the balance — once the transporter's proof of delivery is approved. A POD still outstanding past 40 days forfeits the balance, which shows here as a penalty."
+        who="Finance releases the payment; anyone with Payments access can see the queue."
       />
 
       <Stack>
         <StatStrip
           stats={[
-            { k: 'Waiting', v: rows.length },
-            { k: 'Releasable now', v: releasable.length, tone: 'mint' },
-            { k: 'Blocked on POD', v: rows.length - releasable.length, tone: 'red' },
-            { k: 'Penalty in flight', v: inr(rows.reduce((a, r) => a + r.penaltyPaise, 0)), tone: 'flag' },
+            { k: 'Waiting to be paid', id: 'balance-waiting', emoji: '⏳', v: rows.length },
+            { k: 'Ready to pay now', id: 'balance-ready', emoji: '✅', v: releasable.length, tone: 'mint' },
+            { k: 'Held for delivery proof', id: 'balance-held-for-pod', emoji: '📸', v: rows.length - releasable.length, tone: 'red' },
+            { k: 'Late-paperwork penalties', id: 'balance-late-penalties', emoji: '⚖️', v: inr(rows.reduce((a, r) => a + r.penaltyPaise, 0)), tone: 'flag' },
           ]}
         />
 
@@ -106,7 +116,12 @@ export default function BalanceQueuePage() {
             rows={rows}
             rowKey={(r) => r.tripId}
             onRowClick={setSelected}
-            empty="Nothing is waiting on a balance."
+            empty={
+              <EmptyState
+                title="No balances waiting"
+                hint="A trip lands here once its proof of delivery is approved and the final payment falls due. An empty queue means Finance is caught up."
+              />
+            }
           />
         </Panel>
 

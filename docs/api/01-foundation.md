@@ -34,7 +34,48 @@ The first call every page makes. Nothing renders behind the shell until it resol
 
 ## `GET /branches`
 
-**Response** — `[{ "id": "br-nsk", "code": "NSK", "name": "Nashik", "city": "Nashik", "catchmentKm": 150 }]`
+**Permission** — any internal role. Every branch selector in the console reads this, including screens open to roles that cannot administer branches.
+
+**Response**
+
+```jsonc
+[
+  {
+    "id": "br-nsk",
+    "code": "NSK",
+    "name": "Nashik",
+    "city": "Nashik",
+    "catchmentKm": 150,
+    "supplySource": "BOTH",             // UNION | MARKET | BOTH | DIRECT_OWNER | null
+    "supplySourceLabel": "Union and market",  // server-rendered label, null when unset
+    "supplyRemarks": "Union rates hold only through the cane season."  // free text, nullable
+  }
+]
+```
+
+**Supply source** — where a branch actually finds vehicles. `null` is a real state, rendered as "Not recorded": an operator must be able to see that nobody has answered the question yet and fix it. `BOTH` is not a tidy-up of the other two but the common case, and the one most worth recording — a lane served by union and market together prices and fails differently from either alone.
+
+`supplyRemarks` is deliberately free text and never required. The four values cannot express "union only during cane season", and forcing an operator to pick a wrong enum loses more than an empty column does.
+
+The same two fields exist on rate card lanes and RFQ lanes — supply source is decided at sourcing, carried onto the rate sheet on award, and summarised at branch level.
+
+## `POST /branches`
+
+**Permission** — `config.manage`.
+
+**Body** — `{ "name": "Visakhapatnam (HO)", "city": "Visakhapatnam", "code"?: "VZG", "catchmentKm"?: 150, "supplySource"?: "MARKET", "supplyRemarks"?: "…" }`
+
+`code` is derived from the name when omitted — a readable three-letter stem, suffixed on collision. Branch codes are **not** a gap-free legal series, so they do not go through `numbering`; an operator recognises `VZG` in a selector, not `BR-0006`. A supplied code that already exists returns `409`.
+
+**Response** — the created branch, shaped as `GET /branches`.
+
+## `PATCH /branches/:id`
+
+**Permission** — `config.manage`.
+
+**Body** — any subset of `{ name, city, catchmentKm, supplySource, supplyRemarks }`. An explicit `null` on either supply field clears it back to "not recorded"; an omitted key is left untouched. `404` when the branch is unknown.
+
+**Response** — the updated branch.
 
 ---
 

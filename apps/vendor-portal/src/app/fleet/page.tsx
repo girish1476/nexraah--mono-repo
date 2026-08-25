@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import {
   AccountLink,
+  EmptyState,
   ErrorNote,
   Loading,
   Pill,
@@ -16,7 +17,12 @@ import { capitalizeWords } from '@/lib/format';
 import { CITIES } from '@/lib/geo';
 import { VEHICLE_TONE } from '@/lib/status';
 import { addVehicle, getFleet, updateVehicle } from './apis';
-import { FleetVehicle, SETTABLE_STATUSES, VEHICLE_STATUS_LABEL } from './types';
+import {
+  FleetVehicle,
+  SETTABLE_STATUSES,
+  VEHICLE_STATUS_LABEL,
+  VehicleStatus,
+} from './types';
 
 const STATUS_OPTIONS = SETTABLE_STATUSES.map((s) => VEHICLE_STATUS_LABEL[s]) as [
   string,
@@ -25,6 +31,20 @@ const STATUS_OPTIONS = SETTABLE_STATUSES.map((s) => VEHICLE_STATUS_LABEL[s]) as 
 
 const statusFromLabel = (label: string) =>
   SETTABLE_STATUSES.find((s) => VEHICLE_STATUS_LABEL[s] === label)!;
+
+/**
+ * One plain sentence per status. `DOCS_DUE` is the one a transporter cannot
+ * set or clear (part 04 §2) and the top source of "the app is broken" calls,
+ * so its line says who set it and points at the card below.
+ * Note: never say "free from" here — the fleet spec asserts that phrase
+ * appears exactly once, on the ON_TRIP spec line.
+ */
+const VEHICLE_STATUS_REASON: Record<VehicleStatus, string> = {
+  AVAILABLE: 'Free to take a load. Loads that suit this truck are offered to you.',
+  ON_TRIP: 'Carrying a load right now, so it is not offered another one.',
+  DOCS_DUE: 'Set by Nexraah, not by you. Read the box below to clear it.',
+  MAINTENANCE: 'You set this truck aside. It is offered no loads until you mark it Available.',
+};
 
 export default function FleetPage() {
   const [fleet, setFleet] = useState<FleetVehicle[] | null>(null);
@@ -93,7 +113,8 @@ export default function FleetPage() {
     <main className="screen">
       <ScreenHeader
         title="Fleet"
-        sub="Keep this current — loads are matched against it"
+        sub="Your trucks"
+        what="The trucks you run. Nexraah only offers you loads that suit a truck on this list, so keep it correct."
         right={<AccountLink />}
       />
 
@@ -116,8 +137,12 @@ export default function FleetPage() {
 
       {adding && (
         <div className="card">
+          <p style={{ fontSize: 15.5, lineHeight: 1.5, marginBottom: 12 }}>
+            Add a truck so loads that suit it are offered to you. You can change all of this
+            later.
+          </p>
           <label className="muted" htmlFor="reg">
-            Registration
+            Number plate
           </label>
           <input
             id="reg"
@@ -156,7 +181,7 @@ export default function FleetPage() {
           />
 
           <label className="muted" htmlFor="city" style={{ display: 'block', marginTop: 12 }}>
-            Current city (optional)
+            Where the truck is now (you can leave this empty)
           </label>
           <input
             id="city"
@@ -175,17 +200,18 @@ export default function FleetPage() {
           </datalist>
 
           <p className="muted" style={{ marginTop: 12, marginBottom: 6 }}>
-            Status
+            What is this truck doing now?
           </p>
           <Segmented options={STATUS_OPTIONS} value={statusLabel} onChange={setStatusLabel} />
           <p className="muted" style={{ marginTop: 6 }}>
-            Docs due is set by us when a paper lapses — it is not yours to choose.
+            Docs due is missing from this list on purpose. Nexraah sets it when one of the truck&apos;s
+            papers runs out, and only re-uploading that paper in Profile clears it.
           </p>
 
           {status === 'ON_TRIP' && (
             <>
               <label className="muted" htmlFor="free" style={{ display: 'block', marginTop: 12 }}>
-                Free from
+                Date this truck is free again (needed for On trip)
               </label>
               <input
                 id="free"
@@ -219,7 +245,28 @@ export default function FleetPage() {
 
       {!fleet && !error && <Loading />}
       {fleet?.length === 0 && (
-        <p className="muted">No trucks yet. Add one and loads will start matching.</p>
+        <EmptyState
+          title="No trucks added yet"
+          what="Each truck you add shows here with what it is doing today — free, on a load, or off the road."
+          next="Tap Add a truck at the top and fill in the number plate, type and capacity."
+          action={
+            <button
+              onClick={() => setAdding(true)}
+              className="tap"
+              style={{
+                border: '1px solid var(--color-accent)',
+                background: 'var(--color-surface)',
+                borderRadius: 'var(--radius-pill)',
+                padding: '10px 18px',
+                fontSize: 15,
+                fontWeight: 700,
+                color: 'var(--color-accent-700)',
+              }}
+            >
+              Add your first truck
+            </button>
+          }
+        />
       )}
 
       {fleet?.map((v) => (
@@ -228,7 +275,9 @@ export default function FleetPage() {
             <span className="card-title" style={{ fontFamily: 'ui-monospace, Menlo, monospace' }}>
               {v.registrationNo}
             </span>
-            <Pill tone={VEHICLE_TONE[v.status]}>{VEHICLE_STATUS_LABEL[v.status]}</Pill>
+            <Pill tone={VEHICLE_TONE[v.status]} reason={VEHICLE_STATUS_REASON[v.status]}>
+              {VEHICLE_STATUS_LABEL[v.status]}
+            </Pill>
           </div>
           <p className="muted">
             {v.truckType} · {v.capacityKg / 1000} MT{v.currentCity ? ` · ${v.currentCity}` : ''}
@@ -236,21 +285,40 @@ export default function FleetPage() {
           </p>
 
           {v.docsDue ? (
+            /* DOCS_DUE is server-set (part 04 §2). The transporter cannot pick a
+               different status to escape it, so the card says which paper, where
+               to fix it, and that no status buttons are missing by mistake. */
             <div
               style={{
                 marginTop: 10,
                 background: 'var(--flag-t)',
                 borderRadius: 10,
-                padding: 10,
-                fontSize: 13,
+                padding: 12,
+                fontSize: 15,
+                lineHeight: 1.5,
               }}
             >
-              <strong style={{ color: 'var(--flag)' }}>{v.docsDue.documentLabel}</strong> expired{' '}
-              {v.docsDue.expiredOn}. Re-upload it in <Link href="/profile">Profile</Link> to make
-              this truck available again.
+              <p style={{ fontWeight: 700, color: 'var(--flag)' }}>
+                One paper for this truck has run out
+              </p>
+              <p style={{ marginTop: 6 }}>
+                <strong>{v.docsDue.documentLabel}</strong> expired {v.docsDue.expiredOn}. Until a
+                valid one is on file, this truck is not offered any loads.
+              </p>
+              <p style={{ marginTop: 8 }}>
+                Re-upload it in <Link href="/profile">Profile</Link> to make this truck available
+                again. The status clears by itself once the new paper is checked.
+              </p>
+              <p style={{ marginTop: 8, fontWeight: 600 }}>
+                The status buttons are hidden on purpose. Nexraah sets this one, so changing the
+                status here would not fix anything — only the new paper will.
+              </p>
             </div>
           ) : (
             <div style={{ marginTop: 10 }}>
+              <p className="muted" style={{ marginBottom: 6 }}>
+                Tap what this truck is doing now:
+              </p>
               <Segmented
                 options={STATUS_OPTIONS}
                 value={VEHICLE_STATUS_LABEL[v.status]}

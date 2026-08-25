@@ -21,7 +21,11 @@ export default function LoadDetailPage({ params }: { params: { code: string } })
   if (error) {
     return (
       <main className="screen">
-        <ScreenHeader title={params.code} back="Loads" />
+        <ScreenHeader
+          title={params.code}
+          what="This load did not open. Nothing you have already quoted or booked is affected."
+          back="Loads"
+        />
         <ErrorNote message={error} />
         <TabBar />
       </main>
@@ -30,7 +34,11 @@ export default function LoadDetailPage({ params }: { params: { code: string } })
   if (!load) {
     return (
       <main className="screen">
-        <ScreenHeader title={params.code} back="Loads" />
+        <ScreenHeader
+          title={params.code}
+          what="Getting the details of this load and the price range you can quote."
+          back="Loads"
+        />
         <Loading />
         <TabBar />
       </main>
@@ -42,17 +50,25 @@ export default function LoadDetailPage({ params }: { params: { code: string } })
       <ScreenHeader
         title={load.code}
         sub={`${load.originCity} → ${load.destinationCity}`}
+        what="Everything about this load, so you can decide your price. If it suits your truck, send your quote from the button at the bottom."
         back="Loads"
       />
 
       <div className="card">
-        <p className="muted">Bid band</p>
+        <p className="muted">Bid band — the price range for this load</p>
         <p style={{ fontSize: 20, fontWeight: 600, fontFamily: 'var(--font-heading)' }}>
           {inrRange(load.bandLowPaise, load.bandHighPaise)}
         </p>
-        <p className="muted" style={{ marginTop: 6 }}>
-          Quote below {inr(load.bandLowPaise)} and it is refused at entry. Above{' '}
-          {inr(load.bandHighPaise)} it still goes, but the award waits on approval.
+        <p style={{ marginTop: 8, fontSize: 15, lineHeight: 1.5 }}>
+          Quote anywhere inside this range and your price goes in as it is.
+        </p>
+        <p style={{ marginTop: 10, fontSize: 15, lineHeight: 1.5, color: 'var(--red)' }}>
+          Below {inr(load.bandLowPaise)}: the app will not let you send it. This is a fixed floor
+          for this load.
+        </p>
+        <p style={{ marginTop: 8, fontSize: 15, lineHeight: 1.5 }}>
+          Above {inr(load.bandHighPaise)}: you can still send it, but it is not accepted straight
+          away — a Nexraah manager has to approve it first, so you wait longer for an answer.
         </p>
       </div>
 
@@ -62,35 +78,36 @@ export default function LoadDetailPage({ params }: { params: { code: string } })
           ['Weight', `${load.weightKg / 1000} MT`],
           ['Goods', load.goods],
           ['Distance', `${load.distanceKm.toLocaleString('en-IN')} km`],
-          ['Transit required', `${load.transitDays} days`],
-          ['Reporting', REPORTING_LABEL[load.reportingRule]],
+          ['Time allowed for transit', `${load.transitDays} days`],
+          ['When to report', REPORTING_LABEL[load.reportingRule]],
           ['Pickup', dateTime(load.pickupAt)],
-          ['Advance on offer', `${load.advancePct}% of freight`],
+          ['Advance paid up front', `${load.advancePct}% of freight`],
         ]}
       />
 
       {load.remarks && (
         <div className="card">
-          <p className="muted">Remarks</p>
+          <p className="muted">Instructions for this load — follow these exactly</p>
           <p>{load.remarks}</p>
         </div>
       )}
 
       <p className="muted">
-        Missing the reporting time counts as a transit delay against you.
+        If your truck does not reach the pickup point at the reporting time, it is counted as a
+        delay against you.
       </p>
 
       {load.myQuote ? (
         <ActionBar
           label={`Quoted ${inr(load.myQuote.amountPaise)}`}
-          note="Open My quotes to withdraw or track it"
+          note="You have already quoted this load. Go to the Quotes tab to follow it or take it back."
           disabled
           onClick={() => {}}
         />
       ) : (
         <ActionBar
           label="Quote this load"
-          note={`Band ${inrRange(load.bandLowPaise, load.bandHighPaise)}`}
+          note={`Quote inside ${inrRange(load.bandLowPaise, load.bandHighPaise)} for a straight answer`}
           onClick={() => router.push(`/loads/${load.code}/quote`)}
         />
       )}

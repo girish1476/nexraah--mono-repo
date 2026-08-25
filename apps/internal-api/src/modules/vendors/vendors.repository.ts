@@ -86,6 +86,7 @@ export class VendorsRepository {
       gstin: string | null;
       altPhone: string | null;
       advancePct: number;
+      source: string | null;
     },
     code: string,
   ) {
@@ -101,6 +102,7 @@ export class VendorsRepository {
         gstin: row.gstin,
         alt_phone: row.altPhone,
         advance_pct: row.advancePct,
+        source: row.source,
       })
       .returningAll()
       .executeTakeFirstOrThrow();

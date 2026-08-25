@@ -7,7 +7,21 @@ import { inr, dateTime } from '@/lib/format';
 import { TRIP_TONE } from '@/lib/status';
 import { getTrip } from '../apis';
 import { CLOCK_RULE, CLOCK_STOPS_AT, podClock } from '../pod-clock';
-import { POD_STATUS_LABEL, TRIP_STATUS_LABEL, Trip } from '../types';
+import { POD_STATUS_LABEL, TRIP_STATUS_LABEL, Trip, TripStatus } from '../types';
+
+/**
+ * What each trip status means for the money, in the driver's words. The label
+ * alone ("Placed", "Closed") tells a phone user nothing they can act on.
+ * Redaction (BR-55): sentences about this transporter's own trip only.
+ */
+const TRIP_REASON: Record<TripStatus, string> = {
+  PLACED: 'Your truck is booked for this load. Nothing has moved yet.',
+  REPORTED: 'Your truck has reached the loading point and is waiting its turn.',
+  LOADED: 'Goods are on board and your lorry receipt has been issued.',
+  IN_TRANSIT: 'The truck is on the road. The balance falls due after it unloads.',
+  DELIVERED: 'The goods have been handed over. Your 20 days to send the paper copy start now.',
+  CLOSED: 'This trip is finished and nothing further will change on it.',
+};
 
 export default function TripPage({ params }: { params: { id: string } }) {
   const [trip, setTrip] = useState<Trip | null>(null);
@@ -39,19 +53,25 @@ export default function TripPage({ params }: { params: { id: string } }) {
       <ScreenHeader
         title={trip.id}
         sub={`${trip.originCity} → ${trip.destinationCity} · ${trip.distanceKm.toLocaleString('en-IN')} km`}
+        what="One trip, and all its money in one place: what has already been paid to you, what is still to come, and the exact thing holding the rest up."
         back="Trips"
-        right={<Pill tone={TRIP_TONE[trip.status]}>{TRIP_STATUS_LABEL[trip.status]}</Pill>}
+        right={
+          <Pill tone={TRIP_TONE[trip.status]} reason={TRIP_REASON[trip.status]}>
+            {TRIP_STATUS_LABEL[trip.status]}
+          </Pill>
+        }
       />
 
       {/* Advance — held, with every reason named. */}
       {trip.advanceBlockers.length > 0 ? (
         <Callout tone="red" title={`${inr(trip.advancePaise)} advance held`}>
           {trip.advanceBlockers.length} document
-          {trip.advanceBlockers.length === 1 ? '' : 's'} gate the advance. Each one is yours to
-          clear.
+          {trip.advanceBlockers.length === 1 ? '' : 's'} gate the advance — meaning this money
+          stays with us until each one is on file. Every item below is yours to fix, and the
+          advance is released once they are all in.
           <ul style={{ marginTop: 10, paddingLeft: 18 }}>
             {trip.advanceBlockers.map((b) => (
-              <li key={b.what} style={{ marginBottom: 6, fontSize: 14 }}>
+              <li key={b.what} style={{ marginBottom: 8, fontSize: 15 }}>
                 {b.what}
                 <span className="muted" style={{ display: 'block' }}>
                   {b.why}
@@ -59,15 +79,25 @@ export default function TripPage({ params }: { params: { id: string } }) {
               </li>
             ))}
           </ul>
-          <Link href="/profile" style={{ fontSize: 13 }}>
+          <Link href="/profile" className="tap" style={{ fontSize: 15, fontWeight: 700 }}>
             Upload them in Profile →
           </Link>
         </Callout>
       ) : (
         <Callout tone="mint" title={`${inr(trip.advancePaise)} advance released`}>
-          {trip.advanceReleasedAt
-            ? `${dateTime(trip.advanceReleasedAt)}${trip.advanceUtr ? ` · UTR ${trip.advanceUtr}` : ''}`
-            : null}
+          This part is already paid to you. Nothing to do here.
+          {trip.advanceReleasedAt && (
+            <p style={{ marginTop: 6 }}>
+              Sent {dateTime(trip.advanceReleasedAt)}
+              {trip.advanceUtr ? ` · UTR ${trip.advanceUtr}` : ''}
+            </p>
+          )}
+          {trip.advanceUtr && (
+            <p className="muted" style={{ marginTop: 4 }}>
+              UTR is the bank&rsquo;s reference for that transfer. Give it to your bank if you need
+              to trace the money.
+            </p>
+          )}
         </Callout>
       )}
 
@@ -75,9 +105,37 @@ export default function TripPage({ params }: { params: { id: string } }) {
       {clock && (
         <Callout tone={clock.tone} title={clock.headline}>
           Delivered {trip.deliveredAt ? dateTime(trip.deliveredAt) : '—'}. {CLOCK_RULE}
-          <p style={{ marginTop: 6, fontWeight: 500 }}>{CLOCK_STOPS_AT}</p>
+          <ul style={{ margin: '10px 0 0', paddingLeft: 18 }}>
+            <li style={{ marginBottom: 4 }}>
+              <strong>Day 1 to day 20:</strong> nothing comes off. Your full{' '}
+              {inr(trip.balancePaise)} balance is safe.
+            </li>
+            <li style={{ marginBottom: 4 }}>
+              <strong>Day 21 onwards:</strong> {inr(trip.podPenaltyPerDayPaise)} comes off your
+              balance every single day.
+            </li>
+            <li>
+              <strong>After day 40:</strong> the whole balance is gone. You are paid nothing for
+              this trip.
+            </li>
+          </ul>
+          <p
+            style={{
+              marginTop: 10,
+              fontWeight: 700,
+              color: 'var(--red)',
+              lineHeight: 1.45,
+            }}
+          >
+            Sending photos here does not stop the days counting. {CLOCK_STOPS_AT} Courier the
+            signed paper today.
+          </p>
           {!clock.forfeited && (
-            <Link href={`/trips/${trip.id}/pod`}>
+            <Link
+              href={`/trips/${trip.id}/pod`}
+              className="tap"
+              style={{ fontWeight: 700, marginTop: 6 }}
+            >
               {trip.podStatus === 'PENDING' ? 'Attach the POD →' : 'Re-attach the POD →'}
             </Link>
           )}
@@ -86,34 +144,45 @@ export default function TripPage({ params }: { params: { id: string } }) {
 
       <Facts
         rows={[
-          ['Status', TRIP_STATUS_LABEL[trip.status]],
-          ['Proof of delivery', POD_STATUS_LABEL[trip.podStatus]],
+          ['Trip status', TRIP_STATUS_LABEL[trip.status]],
+          ['Delivery paper', POD_STATUS_LABEL[trip.podStatus]],
           ['Vehicle', trip.vehicleRegistrationNo],
           ['Driver', `${trip.driverName} · ${trip.driverPhone}`],
-          ['Freight', inr(trip.freightPaise)],
+          ['Freight agreed', inr(trip.freightPaise)],
           [`Advance ${trip.advancePct}%`, inr(trip.advancePaise)],
-          ['Balance', inr(trip.balancePaise)],
+          ['Balance after advance', inr(trip.balancePaise)],
         ]}
       />
 
       {/* Balance and deductions, itemised. */}
       <div className="card">
-        <p className="card-title" style={{ marginBottom: 8 }}>
+        <p className="card-title" style={{ marginBottom: 4 }}>
           What you will be paid
         </p>
+        <p className="muted" style={{ marginBottom: 8 }}>
+          The full trip amount, then everything that comes off it. The last line is what actually
+          reaches your account.
+        </p>
         {[
-          ['Billable freight', 'As awarded', inr(trip.freightPaise), 'var(--color-text)'],
+          [
+            'Billable freight',
+            'The whole trip amount, before anything comes off',
+            inr(trip.freightPaise),
+            'var(--color-text)',
+          ],
           [
             'Less advance paid',
-            trip.advanceUtr ? `UTR ${trip.advanceUtr}` : 'Not released yet',
+            trip.advanceUtr
+              ? `Already in your account · UTR ${trip.advanceUtr}`
+              : 'Not released yet — counted here all the same, so the figure below is what is left',
             '−' + inr(trip.advancePaise),
             'var(--color-text)',
           ],
           [
-            'Less POD penalty',
+            'Less late-paper deduction',
             trip.penaltyPaise
-              ? `${(trip.podDaysElapsed ?? 0) - 20} days beyond 20 · ${inr(trip.podPenaltyPerDayPaise)}/day`
-              : 'None so far',
+              ? `${(trip.podDaysElapsed ?? 0) - 20} days beyond 20 · ${inr(trip.podPenaltyPerDayPaise)}/day off your balance`
+              : 'None so far — nothing has come off your balance',
             '−' + inr(trip.penaltyPaise),
             trip.penaltyPaise ? 'var(--red)' : 'var(--color-text)',
           ],
@@ -139,10 +208,19 @@ export default function TripPage({ params }: { params: { id: string } }) {
           <strong>Net payable</strong>
           <strong>{inr(trip.netPayablePaise)}</strong>
         </div>
+        <p className="muted" style={{ marginTop: 6 }}>
+          Paid after your delivery paper is approved and your bill is submitted.
+        </p>
       </div>
 
       {/* Milestones */}
       <div className="card">
+        <p className="card-title" style={{ marginBottom: 2 }}>
+          Where this trip has reached
+        </p>
+        <p className="muted" style={{ marginBottom: 8 }}>
+          Filled dots have happened. Empty dots are still to come.
+        </p>
         {trip.milestones.map((m) => (
           <div key={m.key} style={{ display: 'flex', gap: 10, padding: '7px 0' }}>
             <span
@@ -170,11 +248,17 @@ export default function TripPage({ params }: { params: { id: string } }) {
         {trip.lrNo && (
           <Link href={`/trips/${trip.id}/lorry-receipt`} className="card" style={{ marginBottom: 0 }}>
             Lorry receipt {trip.lrNo}
+            <span className="muted" style={{ display: 'block', marginTop: 2 }}>
+              The transport document for this load — keep a copy in the cab
+            </span>
           </Link>
         )}
         {trip.podStatus === 'APPROVED' && (
           <Link href={`/trips/${trip.id}/bill`} className="card" style={{ marginBottom: 0 }}>
             Raise your bill
+            <span className="muted" style={{ display: 'block', marginTop: 2 }}>
+              Send us your bill for the {inr(trip.netPayablePaise)} balance
+            </span>
           </Link>
         )}
       </div>

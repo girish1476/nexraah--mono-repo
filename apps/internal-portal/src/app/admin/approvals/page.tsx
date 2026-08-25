@@ -99,7 +99,7 @@ export default function ApprovalsPage() {
     <ModuleGuard module="approvals">
       <PageHeader
         path="/admin/approvals"
-        title="Approvals inbox"
+        title="Approvals"
         sub="Requests waiting on a decision. Approving replays the original payload verbatim."
         module="approvals"
       />

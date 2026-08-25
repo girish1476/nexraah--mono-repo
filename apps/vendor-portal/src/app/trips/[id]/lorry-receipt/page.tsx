@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ErrorNote, Facts, Loading, Pill, ScreenHeader, TabBar } from '@/components/shell';
+import { Callout, ErrorNote, Facts, Loading, Pill, ScreenHeader, TabBar } from '@/components/shell';
 import { code39 } from '@/lib/code39';
 import { inr, dateTime } from '@/lib/format';
 import { getLorryReceipt } from '../../apis';
+import { CLOCK_RULE, CLOCK_STOPS_AT } from '../../pod-clock';
 import { LorryReceipt } from '../../types';
 
 function Barcode({ value }: { value: string }) {
@@ -53,14 +54,18 @@ export default function LorryReceiptPage({ params }: { params: { id: string } })
       return;
     }
     navigator.clipboard?.writeText(lr.pdfUrl).then(
-      () => setShared('Link copied'),
-      () => setShared('Could not copy the link'),
+      () => setShared('Link copied — paste it into WhatsApp or a message'),
+      () => setShared('Could not copy the link. Use Download PDF and send the file instead.'),
     );
   };
 
   return (
     <main className="screen">
-      <ScreenHeader title="Lorry receipt" back={params.id} />
+      <ScreenHeader
+        title="Lorry receipt"
+        what="The transport document for this load. Print it and keep it in the cab — checkposts and the receiving party both ask for it, and it is the paper the receiver signs at delivery."
+        back={params.id}
+      />
 
       <div className="card" style={{ textAlign: 'center' }}>
         <p
@@ -77,32 +82,40 @@ export default function LorryReceiptPage({ params }: { params: { id: string } })
         </p>
         <Barcode value={lr.lrNo} />
         <div style={{ marginTop: 10 }}>
-          <Pill tone="mint">Released to you</Pill>
+          <Pill
+            tone="mint"
+            reason="This receipt is issued and is yours to carry. Nothing is pending on it."
+          >
+            Released to you
+          </Pill>
         </div>
       </div>
 
       <Facts
         rows={[
-          ['Lane', `${lr.originCity} → ${lr.destinationCity}`],
+          ['Route', `${lr.originCity} → ${lr.destinationCity}`],
           ['Goods', lr.goods],
-          ['Weight', `${lr.weightKg / 1000} MT`],
+          ['Weight loaded', `${lr.weightKg / 1000} MT`],
           ['Truck type', lr.truckType],
           ['Vehicle', lr.vehicleRegistrationNo],
           ['Driver', `${lr.driverName} · ${lr.driverLicenceNo}`],
-          ['Transit days', String(lr.transitDays)],
+          ['Days allowed for the trip', String(lr.transitDays)],
           ['E-way bill', lr.ewayBillNo],
-          ['E-way valid upto', dateTime(lr.ewayValidUpto)],
+          ['E-way bill valid until', dateTime(lr.ewayValidUpto)],
         ]}
       />
 
       <div className="card">
-        <p className="card-title" style={{ marginBottom: 8 }}>
-          Your freight
+        <p className="card-title" style={{ marginBottom: 2 }}>
+          Your freight on this load
+        </p>
+        <p className="muted" style={{ marginBottom: 8 }}>
+          What you were awarded, what has already been paid, and what is still to come.
         </p>
         {[
           ['Agreed freight', inr(lr.freightPaise)],
-          ['Advance paid', '−' + inr(lr.advancePaise)],
-          ['Balance on POD', inr(lr.balancePaise)],
+          ['Advance paid to you', '−' + inr(lr.advancePaise)],
+          ['Balance, paid on proof of delivery', inr(lr.balancePaise)],
         ].map(([k, v], i) => (
           <div
             key={k}
@@ -115,8 +128,21 @@ export default function LorryReceiptPage({ params }: { params: { id: string } })
         ))}
       </div>
 
+      {/* The clock, said once here too: this is the paper it is about (`BR-12`). */}
+      <Callout tone="flag" title="This paper is what gets your balance paid">
+        <p>
+          At delivery the receiver signs this receipt. Get that signed paper to our branch within
+          20 days. {CLOCK_RULE}
+        </p>
+        <p style={{ marginTop: 8, fontWeight: 700 }}>
+          {CLOCK_STOPS_AT} Photographing it in the app starts the check, but only the paper landing
+          at the branch stops the days counting.
+        </p>
+      </Callout>
+
       <p className="muted" style={{ marginBottom: 12 }}>
-        Carry a printed copy. The barcode is scanned at checkposts and at the consignee.
+        Carry a printed copy. The barcode is scanned at checkposts and by the receiving party, and
+        without it the truck can be held up on the road.
       </p>
 
       <div style={{ display: 'grid', gap: 8, marginBottom: 24 }}>
@@ -124,8 +150,9 @@ export default function LorryReceiptPage({ params }: { params: { id: string } })
           href={lr.pdfUrl}
           target="_blank"
           rel="noreferrer"
+          className="tap"
           style={{
-            display: 'block',
+            justifyContent: 'center',
             textAlign: 'center',
             borderRadius: 10,
             padding: '14px 12px',
@@ -135,18 +162,21 @@ export default function LorryReceiptPage({ params }: { params: { id: string } })
             textDecoration: 'none',
           }}
         >
-          Download PDF
+          Download PDF to print
         </a>
         <button
           onClick={share}
+          className="tap"
           style={{
+            justifyContent: 'center',
             borderRadius: 10,
             padding: '12px',
+            fontWeight: 600,
             background: 'var(--color-surface)',
             border: '1px solid var(--color-divider)',
           }}
         >
-          Share
+          Send to the driver
         </button>
         {shared && <p className="muted">{shared}</p>}
       </div>

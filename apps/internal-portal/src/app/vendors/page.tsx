@@ -13,6 +13,7 @@ import {
   Loading,
   ModuleGuard,
   PageHeader,
+  PageIntro,
   Panel,
   Stack,
   Tag,
@@ -20,7 +21,7 @@ import {
   useCan,
 } from '@/lib/ui';
 import { listVendors } from './apis';
-import { VendorListRow, VendorStatus } from './types';
+import { PartyType, VendorListRow, VendorStatus } from './types';
 
 const STATUS_TONE: Record<VendorStatus, Tone> = {
   DRAFT: 'grey',
@@ -28,6 +29,34 @@ const STATUS_TONE: Record<VendorStatus, Tone> = {
   ACTIVE: 'mint',
   SUSPENDED: 'red',
   BLACKLISTED: 'red',
+};
+
+/**
+ * The pill used to print the raw enum with its underscores swapped for
+ * spaces — PENDING VERIFICATION, BLACKLISTED — which is a database value
+ * shouting at somebody, not a status a person would say. These are the
+ * sentences a transporter's file is actually in.
+ */
+const STATUS_LABEL: Record<VendorStatus, string> = {
+  DRAFT: 'Being set up',
+  PENDING_VERIFICATION: 'Papers being checked',
+  ACTIVE: 'Cleared for loads',
+  SUSPENDED: 'On hold',
+  BLACKLISTED: 'Never use again',
+};
+
+const STATUS_EMOJI: Record<VendorStatus, string> = {
+  DRAFT: '📝',
+  PENDING_VERIFICATION: '🔍',
+  ACTIVE: '✅',
+  SUSPENDED: '⏸️',
+  BLACKLISTED: '⛔',
+};
+
+/** An `OWNER` drives their own truck; a `VENDOR` books out other people's. */
+const PARTY_LABEL: Record<PartyType, string> = {
+  OWNER: 'Owns the truck',
+  VENDOR: 'Books other trucks',
 };
 
 export default function VendorsPage() {
@@ -49,29 +78,50 @@ export default function VendorsPage() {
   useEffect(load, [q, status]);
 
   const columns: Column<VendorListRow>[] = [
+    /*
+     * Nine columns did not fit a laptop, so the last one — the only one that
+     * answers "can I actually give this transporter a load" — was scrolled
+     * off the right edge where nobody would find it. Where they are based,
+     * their code and their phone number are supporting detail nobody scans
+     * independently, so they fold into the name; the same for the advance
+     * policy under what we keep. Six columns, and the answer is on screen.
+     */
     {
       key: 'code',
-      label: 'Vendor',
+      label: 'Transporter',
+      primary: true,
+      render: (r) => r.legalName,
+      sub: (r) => `${r.baseCity} · ${r.phone} · ${r.code}`,
+    },
+    {
+      key: 'type',
+      label: 'Kind of operator',
       render: (r) => (
-        <div>
-          <Link href={`/vendors/${r.id}`} className="mono" style={{ fontSize: 12 }}>
-            {r.code}
-          </Link>
-          <div>{r.legalName}</div>
-        </div>
+        <Tag tone="grey" emoji={r.partyType === 'OWNER' ? '🚛' : '🏢'}>
+          {PARTY_LABEL[r.partyType]}
+        </Tag>
       ),
     },
-    { key: 'type', label: 'Type', render: (r) => <Tag tone="grey">{r.partyType}</Tag> },
-    { key: 'base', label: 'Base', render: (r) => `${r.baseCity} · ${r.branchName}` },
-    { key: 'phone', label: 'Phone', mono: true, render: (r) => r.phone },
-    { key: 'fleet', label: 'Fleet', align: 'right', render: (r) => r.fleetCount },
-    { key: 'trips', label: 'Trips', align: 'right', render: (r) => r.trips },
-    { key: 'margin', label: 'Our margin', align: 'right', render: (r) => inrCompact(r.marginPaise) },
-    { key: 'adv', label: 'Advance', align: 'right', render: (r) => `${r.advancePct}%` },
+    { key: 'fleet', label: 'Trucks owned', align: 'right', render: (r) => r.fleetCount },
+    { key: 'trips', label: 'Loads carried', align: 'right', render: (r) => r.trips },
+    {
+      key: 'margin',
+      label: 'What we keep',
+      align: 'right',
+      render: (r) => inrCompact(r.marginPaise),
+      sub: (r) => `${r.advancePct}% paid up front`,
+    },
     {
       key: 'status',
-      label: 'Status',
-      render: (r) => <Tag tone={STATUS_TONE[r.status]}>{r.status.replace(/_/g, ' ')}</Tag>,
+      // No `reason` here on purpose: a sentence of explanation per row makes
+      // the last column wider than the screen. The pill says the state; the
+      // transporter's own file says why.
+      label: 'Can we give them loads?',
+      render: (r) => (
+        <Tag tone={STATUS_TONE[r.status]} emoji={STATUS_EMOJI[r.status]}>
+          {STATUS_LABEL[r.status]}
+        </Tag>
+      ),
     },
   ];
 
@@ -79,17 +129,23 @@ export default function VendorsPage() {
     <ModuleGuard module="vendors">
       <PageHeader
         path="/vendors"
-        title="Vendors"
-        sub="An uncleared vendor is never assignable — BR-01 is the gate the whole supply side hangs on."
+        title="Transporters"
         module="vendors"
         right={
           can('vendor.edit') && (
             <Link href="/vendors/new" className="btn">
-              Onboard a vendor
+              ➕ Add a transporter
             </Link>
           )
         }
       />
+      <PageIntro
+        what="Every transporter we work with — their fleet, how much we've moved with them, and whether their papers are in order."
+        who="Operations onboards them; Compliance decides whether they pass."
+      >
+        A transporter cannot be given loads until Compliance has cleared their documents. That
+        clearance is the gate the whole supply side hangs on.
+      </PageIntro>
 
       <Stack>
         <Panel>
@@ -97,7 +153,7 @@ export default function VendorsPage() {
             <div style={{ flex: '1 1 240px' }}>
               <Field label="Search">
                 <input
-                  placeholder="Name or vendor code"
+                  placeholder="Transporter name or code"
                   defaultValue={q}
                   onBlur={(e) => setQ(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && setQ((e.target as HTMLInputElement).value)}
@@ -110,7 +166,7 @@ export default function VendorsPage() {
                   <option value="">All</option>
                   {Object.keys(STATUS_TONE).map((s) => (
                     <option key={s} value={s}>
-                      {s.replace(/_/g, ' ')}
+                      {STATUS_LABEL[s as VendorStatus]}
                     </option>
                   ))}
                 </select>
@@ -118,20 +174,20 @@ export default function VendorsPage() {
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <Link href="/vendors/leads" className="btn btn-secondary">
-                Leads
+                🌱 New leads
               </Link>
               <Link href="/vendors/market-gap" className="btn btn-secondary">
-                Market gap
+                🗺️ Where we are short of trucks
               </Link>
               <Link href="/vendors/issues" className="btn btn-secondary">
-                Issues
+                🛠️ Problems
               </Link>
             </div>
           </div>
         </Panel>
 
         {error && <ErrorState message={error} retry={load} />}
-        {!rows && !error && <Loading what="Loading vendors" />}
+        {!rows && !error && <Loading what="Loading transporters" />}
         {rows && (
           <Panel pad={false}>
             <DataTable
@@ -139,7 +195,7 @@ export default function VendorsPage() {
               rows={rows}
               rowKey={(r) => r.id}
               onRowClick={(r) => router.push(`/vendors/${r.id}`)}
-              empty="No vendor matches this search."
+              empty="No transporter matches this search."
             />
           </Panel>
         )}

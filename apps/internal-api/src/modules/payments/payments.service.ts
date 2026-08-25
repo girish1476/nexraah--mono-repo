@@ -1,8 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { DomainException, type UnmetItem } from '../../common/domain-exception';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
 import { AuditService } from '../audit/audit.service';
 import { ConfigRepository } from '../config/config.repository';
+import { OrdersService } from '../orders/orders.service';
 import { PaymentsRepository } from './payments.repository';
 import type { ReleasePaymentDto } from './dto/release-payment.dto';
 import type { AcceptBillDto } from './dto/accept-bill.dto';
@@ -24,7 +25,31 @@ export class PaymentsService {
     private readonly paymentsRepository: PaymentsRepository,
     private readonly configRepository: ConfigRepository,
     private readonly auditService: AuditService,
+    private readonly ordersService: OrdersService,
   ) {}
+
+  private readonly logger = new Logger('PaymentsService');
+
+  /**
+   * Moves the ten-step order ladder after a release has COMMITTED.
+   * See `TripsService.syncOrder` for why this runs outside the transaction and
+   * why a failure is logged rather than thrown — doubly so here, where the
+   * money has already moved and the UTR is already recorded.
+   */
+  private async syncOrder(
+    indentId: string | null | undefined,
+    actor: AuthenticatedUser | null,
+    note: string | null = null,
+  ) {
+    if (!indentId) return;
+    try {
+      await this.ordersService.recompute(indentId, actor, note);
+    } catch (e) {
+      this.logger.error(
+        `Order recompute failed for indent ${indentId}: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }
 
   // ---- Advance ----------------------------------------------------------
 
@@ -84,7 +109,10 @@ export class PaymentsService {
   async releaseAdvance(ref: string, dto: ReleasePaymentDto, idempotencyKey: string, actor: AuthenticatedUser) {
     this.assertPaymentFields(dto);
 
-    return this.paymentsRepository.transaction().execute(async (trx) => {
+    // Stays null on the idempotent replay path, where nothing changed and the
+    // ladder therefore has nothing to move.
+    let indentId: string | null = null;
+    const result = await this.paymentsRepository.transaction().execute(async (trx) => {
       const existing = await this.paymentsRepository.findByIdempotencyKeyForUpdate(trx, idempotencyKey);
       if (existing) return this.paymentDto(existing);
 
@@ -98,6 +126,7 @@ export class PaymentsService {
 
       const indent = await this.paymentsRepository.resolveIndentById(lockedTrip.indent_id);
       if (!indent) throw new DomainException(404, 'NOT_FOUND', `Trip ${lockedTrip.id} has no indent.`);
+      indentId = indent.id;
 
       const unmet = await this.advanceUnmet(lockedTrip.id);
       if (unmet.length > 0) {
@@ -130,6 +159,9 @@ export class PaymentsService {
 
       return this.paymentDto(payment);
     });
+    // Step 5, "Advance paid".
+    await this.syncOrder(indentId, actor);
+    return result;
   }
 
   // ---- Balance ------------------------------------------------------
@@ -207,7 +239,10 @@ export class PaymentsService {
   async releaseBalance(tripId: string, dto: ReleasePaymentDto, idempotencyKey: string, actor: AuthenticatedUser) {
     this.assertPaymentFields(dto);
 
-    return this.paymentsRepository.transaction().execute(async (trx) => {
+    // Null on the idempotent replay path, and on the forfeiture path below —
+    // that one throws, so its writes roll back and there is nothing to move.
+    let indentId: string | null = null;
+    const result = await this.paymentsRepository.transaction().execute(async (trx) => {
       const existing = await this.paymentsRepository.findByIdempotencyKeyForUpdate(trx, idempotencyKey);
       if (existing) return this.paymentDto(existing);
 
@@ -239,6 +274,8 @@ export class PaymentsService {
       if (unmet.length > 0) {
         throw new DomainException(409, 'BALANCE_BLOCKED', 'The balance is blocked.', { unmet });
       }
+
+      indentId = trip.indent_id;
 
       const chargeCost = await this.paymentsRepository.chargeCostTotal(tripId);
       const billable = trip.buy_rate + Number(chargeCost.total);
@@ -274,6 +311,10 @@ export class PaymentsService {
 
       return this.paymentDto(payment);
     });
+    // Step 10, "Balance released" — the last rung. `recompute` stamps
+    // `closed_at` when it lands here, which is what makes an order "settled".
+    await this.syncOrder(indentId, actor);
+    return result;
   }
 
   // ---- Transporter bills --------------------------------------------

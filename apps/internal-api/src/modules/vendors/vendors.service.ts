@@ -16,6 +16,7 @@ import {
 } from './vendors.constants';
 import { VendorsRepository, type VendorListFilters } from './vendors.repository';
 import { VendorPortalAccountService } from './vendor-portal-account.service';
+import { LeadsRepository } from './leads.repository';
 import type { CreateVendorDto } from './dto/create-vendor.dto';
 import type { UpdateVendorDto } from './dto/update-vendor.dto';
 import type { SubmitKycDto } from './dto/submit-kyc.dto';
@@ -41,6 +42,7 @@ export class VendorsService implements OnModuleInit {
     private readonly approvalsService: ApprovalsService,
     private readonly approvalsRegistry: ApprovalsRegistry,
     private readonly portalAccountService: VendorPortalAccountService,
+    private readonly leadsRepository: LeadsRepository,
   ) {}
 
   onModuleInit() {
@@ -151,6 +153,7 @@ export class VendorsService implements OnModuleInit {
       baseCity: vendor.base_city,
       branchId: vendor.branch_id,
       fleetBase: vendor.fleet_base,
+      truckTypes: vendor.truck_types,
       operatingStates: vendor.operating_states,
       advancePct: vendor.advance_pct,
       bankAccount: vendor.bank_account ? `••${vendor.bank_account.slice(-4)}` : null,
@@ -174,7 +177,10 @@ export class VendorsService implements OnModuleInit {
       fleet: fleetRows.map((f) => ({
         registration: f.registration,
         type: f.type,
-        capacityKg: f.capacity_kg,
+        // `FleetRow.capacityTn` (docs/api/02-vendors-compliance.md) — every
+        // sibling module (trips/indents/reports) does this same kg→Tn
+        // conversion at the response boundary; this one had drifted.
+        capacityTn: f.capacity_kg / 1000,
         bodyType: f.body_type,
         currentCity: f.current_city,
         status: f.status,
@@ -204,6 +210,15 @@ export class VendorsService implements OnModuleInit {
   async create(dto: CreateVendorDto, actor: AuthenticatedUser) {
     const { branchId, overridden } = await this.deriveBranch(dto.baseCity, dto.branchId, dto.branchOverrideReason);
 
+    let lead: { id: string; source: string | null; stage: string } | undefined;
+    if (dto.leadId) {
+      lead = await this.leadsRepository.findById(dto.leadId);
+      if (!lead) throw new DomainException(404, 'NOT_FOUND', `Unknown lead: ${dto.leadId}`);
+      if (lead.stage === 'CONVERTED') {
+        throw new DomainException(409, 'LEAD_ALREADY_CONVERTED', 'This lead has already been converted to a vendor.');
+      }
+    }
+
     const row = await this.vendorsRepository.transaction().execute(async (trx) => {
       // BR-14/NFR-08: issued inside the transaction that creates the row, via
       // SELECT...FOR UPDATE on the series row — a rollback here never
@@ -220,6 +235,7 @@ export class VendorsService implements OnModuleInit {
           gstin: dto.gstin ?? null,
           altPhone: dto.altPhone ?? null,
           advancePct: dto.advancePct ?? 0,
+          source: lead?.source ?? null,
         },
         code,
       );
@@ -228,8 +244,22 @@ export class VendorsService implements OnModuleInit {
         action: 'VENDOR_CREATED',
         entityType: 'vendors',
         entityId: row.id,
-        after: { legalName: row.legal_name, branchId, branchOverridden: overridden },
+        after: { legalName: row.legal_name, branchId, branchOverridden: overridden, leadId: dto.leadId ?? null },
       });
+
+      // Re-fetch FOR UPDATE inside this same transaction — the earlier
+      // findById above was only to fail fast before doing any work.
+      if (dto.leadId) {
+        const leadForUpdate = await this.leadsRepository.findByIdForUpdate(trx, dto.leadId);
+        if (!leadForUpdate) throw new DomainException(404, 'NOT_FOUND', `Unknown lead: ${dto.leadId}`);
+        if (leadForUpdate.stage === 'CONVERTED') {
+          throw new DomainException(409, 'LEAD_ALREADY_CONVERTED', 'This lead has already been converted to a vendor.');
+        }
+        await this.leadsRepository.updateInTransaction(trx, dto.leadId, {
+          stage: 'CONVERTED',
+          converted_vendor_id: row.id,
+        });
+      }
 
       return row;
     });
@@ -247,11 +277,13 @@ export class VendorsService implements OnModuleInit {
         throw new DomainException(404, 'NOT_FOUND', `Unknown vendor: ${id}`);
       }
 
+      // BR-57. This message is rendered to an operator as-is, so it must not
+      // name a rule code or an HTTP route — it says what to do instead.
       if (dto.advancePct !== undefined && existing.status === 'ACTIVE') {
         throw new DomainException(
           409,
           'ADVANCE_POLICY_CHANGE_REQUIRED',
-          'An active vendor\'s advance policy can only change through PATCH /vendors/:id/advance-policy (BR-57).',
+          "Once a vendor is active, their advance policy has to be changed from the vendor's own page — the change is sent for approval before it applies.",
         );
       }
 
@@ -273,6 +305,9 @@ export class VendorsService implements OnModuleInit {
       if (dto.gstin !== undefined) patch.gstin = dto.gstin;
       if (dto.altPhone !== undefined) patch.alt_phone = dto.altPhone;
       if (dto.fleetBase !== undefined) patch.fleet_base = dto.fleetBase;
+      if (dto.fleetCount !== undefined) patch.declared_fleet_count = dto.fleetCount;
+      if (dto.truckTypes !== undefined) patch.truck_types = dto.truckTypes;
+      if (dto.bodyType !== undefined) patch.fleet_body_type = dto.bodyType;
       if (dto.operatingStates !== undefined) patch.operating_states = dto.operatingStates;
       if (dto.bankAccount !== undefined) patch.bank_account = dto.bankAccount;
       if (dto.ifsc !== undefined) patch.ifsc = dto.ifsc;

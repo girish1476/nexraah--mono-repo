@@ -78,6 +78,7 @@ Every route in `apps/internal-portal/src/app/` and the calls it makes.
 | `/rfq/[id]/award` | `GET /rfqs/:id` · `POST /rfqs/:id/award` |
 | `/telematics` | `GET /telematics` |
 | `/admin` | `GET /config` · `PATCH /config` · `GET /config/number-series` · `PATCH /config/number-series/:key` |
+| `/admin/branches` | `GET /branches` · `POST /branches` · `PATCH /branches/:id` |
 | `/admin/roles` | `GET /admin/roles` · `PATCH /admin/roles/:role/permissions` |
 | `/admin/approvals` | `GET /approvals` · `POST /approvals/:id/approve` · `POST /approvals/:id/reject` |
 | `/admin/import` | `POST /admin/import/:set` · `POST /admin/import/:set/commit` · `GET /admin/import/history` |

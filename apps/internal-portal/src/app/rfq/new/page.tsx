@@ -49,7 +49,7 @@ export default function NewRfqPage() {
   if (level !== 'EDIT') {
     return (
       <ModuleGuard module="rfq">
-        <PageHeader path="/rfq/new" title="New RFQ" module="rfq" />
+        <PageHeader path="/rfq/new" title="New rate request" module="rfq" />
         <Panel>Creating an RFQ belongs to operations, branch management or leadership.</Panel>
       </ModuleGuard>
     );
@@ -57,7 +57,7 @@ export default function NewRfqPage() {
 
   return (
     <ModuleGuard module="rfq">
-      <PageHeader path="/rfq/new" title="New RFQ" sub="Client · cycle · period · submission deadline" module="rfq" />
+      <PageHeader path="/rfq/new" title="New rate request" sub="Client · cycle · period · submission deadline" module="rfq" />
       <Panel>
         <FormGrid>
           <Field label="Client" required>

@@ -6,7 +6,16 @@ import { Callout, ErrorNote, Facts, Loading, Pill, ScreenHeader, TabBar } from '
 import { inr } from '@/lib/format';
 import { DOCUMENT_TONE } from '@/lib/status';
 import { getProfile, uploadDocument } from './apis';
-import { DOCUMENT_STATUS_LABEL, Profile, VendorDocument } from './types';
+import { DOCUMENT_STATUS_LABEL, DocumentStatus, Profile, VendorDocument } from './types';
+
+/** What each document status means for the transporter, in one sentence. */
+const DOCUMENT_STATUS_REASON: Record<DocumentStatus, string> = {
+  MISSING: 'Nexraah does not have this paper yet.',
+  PENDING: 'Sent. Nexraah is checking it — nothing for you to do.',
+  VERIFIED: 'Checked and accepted. Nothing to do.',
+  REJECTED: 'Not accepted. The reason is written below.',
+  EXPIRED: 'The date on this paper has passed. Upload the renewed one.',
+};
 
 /** Selfie geo-stamp — a refusal must be visible, never a silent success. */
 function currentPosition(): Promise<{ latitude: number; longitude: number }> {
@@ -56,22 +65,57 @@ function DocumentRow({
   return (
     <div style={{ padding: '10px 0', borderTop: '1px solid var(--color-divider)' }}>
       <div className="row-between">
-        <span style={{ fontSize: 14 }}>{doc.label}</span>
-        <Pill tone={DOCUMENT_TONE[doc.status]}>{DOCUMENT_STATUS_LABEL[doc.status]}</Pill>
+        <span style={{ fontSize: 15.5, fontWeight: 600 }}>{doc.label}</span>
+        <Pill tone={DOCUMENT_TONE[doc.status]} reason={DOCUMENT_STATUS_REASON[doc.status]}>
+          {DOCUMENT_STATUS_LABEL[doc.status]}
+        </Pill>
       </div>
 
-      {doc.status === 'REJECTED' && doc.rejectionReason && (
-        <p className="muted" style={{ marginTop: 4 }}>
-          Rejected {doc.rejectedOn} — {doc.rejectionReason}
-        </p>
+      {/* A rejection without a visible reason gets re-uploaded identically and
+          rejected again (part 08 §1) — so the reason is the loudest thing here. */}
+      {doc.status === 'REJECTED' && (
+        <div
+          style={{
+            marginTop: 8,
+            background: 'var(--red-t)',
+            borderLeft: '3px solid var(--red)',
+            borderRadius: 8,
+            padding: '10px 12px',
+          }}
+        >
+          <p style={{ color: 'var(--red)', fontWeight: 700, fontSize: 14.5 }}>
+            Why this was not accepted
+          </p>
+          {doc.rejectionReason ? (
+            <p style={{ marginTop: 4, fontSize: 15, lineHeight: 1.5 }}>
+              Rejected {doc.rejectedOn} — {doc.rejectionReason}
+            </p>
+          ) : (
+            <p style={{ marginTop: 4, fontSize: 15, lineHeight: 1.5 }}>
+              Rejected {doc.rejectedOn}. The reason has not come through to this screen.
+            </p>
+          )}
+          <p className="muted" style={{ marginTop: 6 }}>
+            Put this one thing right first. Sending the same picture again will get the same
+            answer.
+          </p>
+        </div>
       )}
       {doc.status === 'EXPIRED' && (
-        <p className="muted" style={{ marginTop: 4 }}>
-          Expired {doc.expiredOn}
-          {doc.groundsVehicleRegistrationNo
-            ? ` · ${doc.groundsVehicleRegistrationNo} is unavailable for new loads until this is renewed`
-            : ''}
-        </p>
+        <>
+          <p style={{ marginTop: 6, fontSize: 15, lineHeight: 1.5 }}>
+            Expired {doc.expiredOn}
+            {doc.groundsVehicleRegistrationNo
+              ? ` · ${doc.groundsVehicleRegistrationNo} is unavailable for new loads until this is renewed`
+              : ''}
+          </p>
+          <p className="muted" style={{ marginTop: 4 }}>
+            Upload the renewed paper here.
+            {doc.groundsVehicleRegistrationNo
+              ? ' That is the only thing that frees the truck — changing its status on the Fleet screen will not.'
+              : ' Nexraah checks it and the status changes on its own.'}
+          </p>
+        </>
       )}
 
       {action && (
@@ -90,13 +134,16 @@ function DocumentRow({
           <button
             onClick={() => inputRef.current?.click()}
             disabled={busy}
+            className="tap"
             style={{
               marginTop: 8,
-              border: '1px solid var(--color-divider)',
+              border: '1px solid var(--color-accent)',
               background: 'var(--color-surface)',
               borderRadius: 999,
-              padding: '6px 14px',
-              fontSize: 13,
+              padding: '9px 16px',
+              fontSize: 15,
+              fontWeight: 700,
+              color: 'var(--color-accent-700)',
             }}
           >
             {busy ? 'Uploading…' : doc.capture ? `${action} — opens the camera` : action}
@@ -123,7 +170,11 @@ export default function ProfilePage() {
   if (!profile) {
     return (
       <main className="screen">
-        <ScreenHeader title="Profile" back="Back" />
+        <ScreenHeader
+          title="Profile"
+          what="Your company details and the papers Nexraah needs from you."
+          back="Back"
+        />
         {error ? <ErrorNote message={error} /> : <Loading />}
         <TabBar />
       </main>
@@ -135,11 +186,16 @@ export default function ProfilePage() {
       <ScreenHeader
         title="Profile"
         sub={`${profile.companyName} · vendor ${profile.vendorCode}`}
+        what="Your company details and every paper Nexraah needs from you. A paper that is rejected or out of date holds up your advance and can stop a truck getting loads."
         back="Back"
       />
 
       {error && <ErrorNote message={error} />}
-      {flash && <Callout tone="mint" title={flash} />}
+      {flash && (
+        <Callout tone="mint" title={flash}>
+          Nothing more to do. The status changes to Verified once it has been checked.
+        </Callout>
+      )}
 
       <Facts
         rows={[
@@ -154,19 +210,22 @@ export default function ProfilePage() {
       />
 
       <div className="card">
-        <p className="card-title" style={{ marginBottom: 8 }}>
+        <p className="card-title" style={{ marginBottom: 4 }}>
           Your business with us
+        </p>
+        <p className="muted" style={{ marginBottom: 8 }}>
+          Your own totals with Nexraah, all trips added together.
         </p>
         <div className="row-between" style={{ padding: '6px 0' }}>
           <span className="muted">Trips carried</span>
           <span>{profile.business.trips}</span>
         </div>
         <div className="row-between" style={{ padding: '6px 0' }}>
-          <span className="muted">Freight value</span>
+          <span className="muted">Freight value of those trips</span>
           <span>{inr(profile.business.valuePaise)}</span>
         </div>
         <div className="row-between" style={{ padding: '6px 0' }}>
-          <span className="muted">Outstanding to you</span>
+          <span className="muted">Still to be paid to you</span>
           <span style={{ fontWeight: 600 }}>{inr(profile.business.outstandingPaise)}</span>
         </div>
       </div>
@@ -189,8 +248,9 @@ export default function ProfilePage() {
       ))}
 
       <p className="muted" style={{ marginBottom: 24 }}>
-        We verify your identity once, not on every load. Your Aadhaar number is never stored in
-        full — only the last four digits. A lapsed vehicle document grounds that truck; see{' '}
+        Your identity is checked once, not on every load. Your Aadhaar number is never kept in
+        full — only the last four digits. When a truck&apos;s paper runs out, that truck stops
+        getting loads until you upload the new one here; you can see which truck on{' '}
         <Link href="/fleet">Fleet</Link>.
       </p>
 

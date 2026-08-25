@@ -39,13 +39,60 @@ export const USERS: Record<RoleCode, { userId: string; name: string; email: stri
   ADMIN: { userId: 'u-adm', name: 'S. Krishnan', email: 'krishnan@nexraah.in', branch: null },
 };
 
+/**
+ * The password every fixture account signs in with, when — and only when —
+ * `NEXT_PUBLIC_USE_MOCKS` is on.
+ *
+ * It is in plain text on purpose. Hashing it would be theatre: this file is
+ * compiled into the browser bundle, so whatever it held would ship next to
+ * the code that checks it, and a reader could be forgiven for thinking a
+ * real credential store had been built. Nothing here is reachable with mocks
+ * off — `lib/auth.ts` sends the password to Supabase Auth on that path and
+ * never consults this list. These six accounts do not exist in any database.
+ */
+export const DEMO_PASSWORD = 'nexraah';
+
+/** Fixture email → role, matched case-insensitively at sign-in. */
+export const CREDENTIALS: Record<string, RoleCode> = Object.fromEntries(
+  (Object.keys(USERS) as RoleCode[]).map((code) => [USERS[code].email.toLowerCase(), code]),
+);
+
+export const SUPPLY_SOURCE_LABEL: Record<string, string> = {
+  UNION: 'Transport union',
+  MARKET: 'Open market',
+  BOTH: 'Union and market',
+  DIRECT_OWNER: 'Direct owners',
+};
+
+/**
+ * `supplySource` is left null on two branches on purpose — "Not recorded" is a
+ * real state an operator has to be able to see and fix, not an oversight.
+ */
 export const BRANCHES = [
-  { id: 'br-nsk', code: 'NSK', name: 'Nashik', city: 'Nashik', catchmentKm: 150 },
-  { id: 'br-pun', code: 'PUN', name: 'Pune', city: 'Pune', catchmentKm: 150 },
-  { id: 'br-vja', code: 'VJA', name: 'Vijayawada', city: 'Vijayawada', catchmentKm: 150 },
-  { id: 'br-gdm', code: 'GDM', name: 'Gandhidham', city: 'Gandhidham', catchmentKm: 150 },
-  { id: 'br-hsr', code: 'HSR', name: 'Hosur', city: 'Hosur', catchmentKm: 150 },
-];
+  { id: 'br-nsk', code: 'NSK', name: 'Nashik', city: 'Nashik', catchmentKm: 150,
+    supplySource: 'BOTH', supplySourceLabel: 'Union and market',
+    supplyRemarks: 'Union rates hold only through the cane season.' },
+  { id: 'br-pun', code: 'PUN', name: 'Pune', city: 'Pune', catchmentKm: 150,
+    supplySource: 'MARKET', supplySourceLabel: 'Open market', supplyRemarks: null },
+  { id: 'br-vja', code: 'VJA', name: 'Vijayawada', city: 'Vijayawada', catchmentKm: 150,
+    supplySource: 'UNION', supplySourceLabel: 'Transport union',
+    supplyRemarks: 'Single union controls the port lanes.' },
+  { id: 'br-gdm', code: 'GDM', name: 'Gandhidham', city: 'Gandhidham', catchmentKm: 150,
+    supplySource: 'DIRECT_OWNER', supplySourceLabel: 'Direct owners', supplyRemarks: null },
+  { id: 'br-hsr', code: 'HSR', name: 'Hosur', city: 'Hosur', catchmentKm: 150,
+    supplySource: null, supplySourceLabel: null, supplyRemarks: null },
+  { id: 'br-vzg', code: 'VZG', name: 'Visakhapatnam (HO)', city: 'Visakhapatnam', catchmentKm: 150,
+    supplySource: null, supplySourceLabel: null, supplyRemarks: null },
+] as {
+  id: string;
+  code: string;
+  name: string;
+  city: string;
+  catchmentKm: number;
+  supplySource: string | null;
+  supplySourceLabel: string | null;
+  supplyRemarks: string | null;
+}[];
 
 export const ADVANCE_DOCUMENT_SET = [
   'CLIENT_INVOICE_OR_PO',
@@ -70,6 +117,12 @@ export const DOC_LABEL: Record<string, string> = {
   LR: 'Lorry receipt',
   POD: 'Proof of delivery',
   LOADING_SLIP: 'Loading slip',
+  TRADE_LICENCE: 'Trade licence',
+  LABOUR_LICENCE: 'Labour licence',
+  UDYAM: 'Udyam / MSME certificate',
+  TDS_DECLARATION: 'TDS declaration',
+  BANK_STATEMENT: 'Bank statement or cancelled cheque',
+  TRANSPORTER_AGREEMENT: 'Transporter agreement',
 };
 
 function tripDocs(): Doc[] {
@@ -239,7 +292,7 @@ export const db = {
       pan: 'AAKCR2148L',
       phone: '9822014471',
       altPhone: '9822014472',
-      fleetBase: 'Nashik',
+      truckTypes: ['32 ft SXL', '22 ft container'],
       operatingStates: ['MH', 'GJ', 'MP', 'WB'],
       advancePct: 40,
       bankAccount: '••4471',
@@ -299,7 +352,7 @@ export const db = {
       pan: 'AALCS8841P',
       phone: '9822088411',
       altPhone: null,
-      fleetBase: 'Pune',
+      truckTypes: ['40 ft trailer'],
       operatingStates: ['MH', 'GJ'],
       advancePct: 40,
       bankAccount: '••8841',
@@ -347,7 +400,7 @@ export const db = {
       pan: 'AAFCB2019H',
       phone: '9944020191',
       altPhone: null,
-      fleetBase: 'Hosur',
+      truckTypes: ['Open body', '32 ft SXL'],
       operatingStates: ['TN', 'KA', 'HR'],
       advancePct: 70,
       bankAccount: '••2019',
@@ -1021,3 +1074,29 @@ export const db = {
 };
 
 export const helpers = { now, daysAgo, daysAhead };
+
+/** Every business-record array in `db` — cleared by `resetToEmpty`. */
+const TRANSACTIONAL_KEYS = [
+  'approvals', 'vendors', 'leads', 'marketGap', 'issues', 'clients', 'indents',
+  'trips', 'podReceipts', 'payments', 'vendorBills', 'invoices', 'receipts',
+  'rfqs', 'telematics', 'importBatches',
+] as const;
+
+/**
+ * Wipes every seeded business record — vendors, clients, indents, trips,
+ * invoices, approvals, the lot — for a manual "build everything from
+ * scratch" test pass. Deliberately opt-in (called only from a UI action,
+ * never on module load): the six dev users, branches and system config stay,
+ * since those are what sign-in and every dropdown depend on, and e2e specs
+ * that assert against the seeded fixtures never call this.
+ */
+export function resetToEmpty(): void {
+  TRANSACTIONAL_KEYS.forEach((key) => {
+    (db[key] as unknown[]).length = 0;
+  });
+  Object.keys(db.rateCards).forEach((key) => delete (db.rateCards as Record<string, unknown>)[key]);
+  Object.keys(db.roleMatrix).forEach((key) => delete (db.roleMatrix as Record<string, unknown>)[key]);
+  db.numberSeries.forEach((series) => {
+    series.nextValue = 1;
+  });
+}

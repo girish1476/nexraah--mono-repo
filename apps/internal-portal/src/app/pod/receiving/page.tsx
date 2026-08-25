@@ -3,18 +3,20 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { errorMessage } from '@/apis';
-import { POD_TONE } from '@/lib/documents';
+import { POD_STATUS_LABEL, POD_TONE } from '@/lib/documents';
 import { fmtDate, inr } from '@/lib/format';
 import {
   Column,
   DataTable,
   Dialog,
+  EmptyState,
   ErrorState,
   Field,
   FormGrid,
   Loading,
   ModuleGuard,
   PageHeader,
+  PageIntro,
   Panel,
   Stack,
   StatStrip,
@@ -74,10 +76,10 @@ export default function PodReceivingPage() {
   if (!data) return <Loading what="Loading the receiving register" />;
 
   const columns: Column<ReceivingRow>[] = [
-    { key: 'lr', label: 'LR', mono: true, render: (r) => r.lrCode ?? '—' },
+    { key: 'lr', label: 'Lorry receipt', mono: true, render: (r) => r.lrCode ?? '—' },
     {
       key: 'trip',
-      label: 'Trip',
+      label: 'Trip number',
       render: (r) => (
         <Link href={`/trips/${r.tripId}`} className="mono" style={{ fontSize: 12 }}>
           {r.tripCode}
@@ -85,12 +87,12 @@ export default function PodReceivingPage() {
       ),
     },
     { key: 'vendor', label: 'Transporter', render: (r) => r.vendorName },
-    { key: 'lane', label: 'Lane', render: (r) => r.lane },
+    { key: 'lane', label: 'Route', render: (r) => r.lane },
     { key: 'delivered', label: 'Delivered', render: (r) => fmtDate(r.deliveredAt) },
-    { key: 'docket', label: 'Courier docket', mono: true, render: (r) => r.courierDocket ?? '—' },
+    { key: 'docket', label: 'Courier tracking no.', mono: true, render: (r) => r.courierDocket ?? '—' },
     {
       key: 'day',
-      label: 'Day',
+      label: 'Days waiting',
       align: 'right',
       render: (r) => (
         <span style={{ color: r.ageDays > 40 ? 'var(--red)' : r.ageDays > 20 ? 'var(--flag)' : undefined }}>
@@ -98,8 +100,12 @@ export default function PodReceivingPage() {
         </span>
       ),
     },
-    { key: 'held', label: 'Balance held', align: 'right', render: (r) => inr(r.balanceHeldPaise) },
-    { key: 'state', label: 'Chain', render: (r) => <Tag tone={POD_TONE[r.podStatus] as Tone}>{r.podStatus}</Tag> },
+    { key: 'held', label: 'Their money we hold', align: 'right', render: (r) => inr(r.balanceHeldPaise) },
+    {
+      key: 'state',
+      label: 'Delivery proof',
+      render: (r) => <Tag tone={POD_TONE[r.podStatus] as Tone}>{POD_STATUS_LABEL[r.podStatus] ?? r.podStatus}</Tag>,
+    },
     {
       key: 'act',
       label: '',
@@ -128,24 +134,38 @@ export default function PodReceivingPage() {
     <ModuleGuard module="pod">
       <PageHeader
         path="/pod/receiving"
-        title="POD receiving register"
-        sub="Attachment does not stop the clock. Branch receipt does (BR-49)."
+        title="Collect delivery proof"
+        sub="A photo attached in the transporter app does not stop the penalty clock — only logging the physical copy here does."
         module="pod"
+      />
+      <PageIntro
+        what="Every proof of delivery that's been photographed in the transporter app but not yet logged as physically received — check the paper against its courier docket here to stop the penalty clock."
+        who="Branch logs each receipt as the physical copy arrives; the photo alone never stops the clock."
       />
 
       <Stack>
         <StatStrip
           stats={[
-            { k: 'Attached in transit', v: data.stats.attachedInTransit },
-            { k: 'Received today', v: data.stats.receivedToday },
-            { k: 'Awaiting verification', v: data.stats.awaitingVerification },
-            { k: 'Awaiting approval', v: data.stats.awaitingApproval },
-            { k: 'Balance held', v: inr(data.stats.balanceHeldPaise), tone: 'flag' },
-            { k: 'Past 20 days', v: data.stats.pastTwentyDays, tone: 'red' },
+            { k: 'Sent, still on the way', id: 'podrecv-in-transit', emoji: '🚚', v: data.stats.attachedInTransit },
+            { k: 'Logged in today', id: 'podrecv-logged-today', emoji: '📥', v: data.stats.receivedToday },
+            { k: 'To check', id: 'podrecv-to-check', emoji: '🔍', v: data.stats.awaitingVerification },
+            { k: 'To approve', id: 'podrecv-to-approve', emoji: '✅', v: data.stats.awaitingApproval },
+            { k: 'Transporter money held', id: 'podrecv-money-held', emoji: '🔒', v: inr(data.stats.balanceHeldPaise), tone: 'flag' },
+            { k: 'Over 20 days late', id: 'podrecv-over-20-days', emoji: '⏰', v: data.stats.pastTwentyDays, tone: 'red' },
           ]}
         />
         <Panel pad={false}>
-          <DataTable columns={columns} rows={data.rows} rowKey={(r) => r.tripId} empty="Nothing delivered is waiting." />
+          <DataTable
+            columns={columns}
+            rows={data.rows}
+            rowKey={(r) => r.tripId}
+            empty={
+              <EmptyState
+                title="Nothing waiting to be received"
+                hint="A trip lands here once its proof of delivery is attached in the transporter app. Log the physical copy as it arrives by courier to stop the penalty clock."
+              />
+            }
+          />
         </Panel>
       </Stack>
 

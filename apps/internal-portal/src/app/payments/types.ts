@@ -79,6 +79,7 @@ export interface BalanceBreakdown {
 export interface BalanceDetail {
   tripId: string;
   tripCode: string;
+  indentCode: string;
   vendorName: string;
   lane: string;
   beneficiary: Beneficiary;

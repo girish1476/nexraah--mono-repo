@@ -9,7 +9,9 @@ import { setRole } from './helpers';
  * OPEN, failureCause ONLY_ABOVE_BAND_QUOTES, 1 quote), IND-4462 (Apex
  * Ceramics, OPEN, 0 quotes), IND-4443 (Berger Paints, TRIP_CREATED, 0
  * quotes, buy rate already written). `indent.create` (EDIT) is seeded to
- * OPS and BRANCH_MGR only; COMPLIANCE, FINANCE and LEADERSHIP hold VIEW.
+ * COMPLIANCE and BRANCH_MGR only (lib/permissions.ts SEED_GRANTS); OPS holds
+ * `indent.manage`/`indent.view` (award, placement, LRs) but not creation,
+ * and FINANCE/LEADERSHIP hold VIEW.
  */
 
 /** The `Field` wrapper has no `htmlFor`/`id`, so getByLabel can't reach the
@@ -42,7 +44,9 @@ test.describe('indents list', () => {
     await expect(page.getByRole('link', { name: 'IND-4468' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'IND-4462' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'IND-4443' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Raise an indent' })).toBeVisible();
+    // OPS holds indent.view/indent.manage but not indent.create — no create
+    // link here; see the 'raise an indent' describe block for BRANCH_MGR.
+    await expect(page.getByRole('link', { name: 'Raise an indent' })).toHaveCount(0);
 
     // failureCause renders as a red tag next to the stage tag.
     await expect(page.getByText('only above band quotes')).toBeVisible();
@@ -67,18 +71,18 @@ test.describe('indents list', () => {
     await setRole(page, 'FINANCE');
     await page.goto('/indents');
 
-    await expect(page.getByText('Read-only for FINANCE')).toBeVisible();
+    await expect(page.getByTestId('view-only')).toBeVisible();
     await expect(page.getByRole('link', { name: 'Raise an indent' })).toHaveCount(0);
 
     await page.goto('/indents/new');
-    await expect(page.getByText('is not held by your role')).toBeVisible();
+    await expect(page.getByText('You don’t have permission to raise indents')).toBeVisible();
     await expect(page.locator('input[name="fromCity"]')).toHaveCount(0);
   });
 });
 
 test.describe('raise an indent', () => {
   test('submitting the form empty surfaces required-field errors and does not navigate away', async ({ page }) => {
-    await setRole(page, 'OPS');
+    await setRole(page, 'BRANCH_MGR');
     await page.goto('/indents/new');
 
     await page.getByRole('button', { name: 'Raise indent' }).click();
@@ -99,7 +103,7 @@ test.describe('raise an indent', () => {
   });
 
   test('a spot indent is blocked until the client rate approval is attached (BR-26/BR-38)', async ({ page }) => {
-    await setRole(page, 'OPS');
+    await setRole(page, 'BRANCH_MGR');
     await page.goto('/indents/new');
 
     await page.locator('select[name="clientId"]').selectOption({ label: 'Sanghvi Metals · SPOT' });
@@ -120,6 +124,16 @@ test.describe('raise an indent', () => {
     await expect(page.getByRole('button', { name: 'Raise indent' })).toBeDisabled();
     await expect(page.getByText('written rate approval first')).toBeVisible();
 
+    // The attach button is `disabled={!confirmationFile}` — a real file has to
+    // be chosen first. This used to click straight through, which only ever
+    // worked because the fixture's `POST /attachments` accepted a request with
+    // no file part at all; it now returns 400 FILE_REQUIRED, matching the
+    // multipart API it mirrors. So the upload is exercised properly here.
+    await page.locator('input[type="file"]').setInputFiles({
+      name: 'rate-approval.pdf',
+      mimeType: 'application/pdf',
+      buffer: Buffer.from('%PDF-1.4 e2e client rate approval'),
+    });
     await page.getByRole('button', { name: 'Attach client rate approval' }).click();
     await expect(page.getByText('Client rate approval attached')).toBeVisible();
     await expect(page.getByText('Rate approval attached', { exact: true })).toBeVisible();
@@ -127,7 +141,7 @@ test.describe('raise an indent', () => {
   });
 
   test('a valid contract indent is created and lands on its detail page', async ({ page }) => {
-    await setRole(page, 'OPS');
+    await setRole(page, 'BRANCH_MGR');
     await page.goto('/indents/new');
 
     await page.locator('select[name="clientId"]').selectOption({ label: 'Berger Paints · CONTRACT' });
@@ -178,7 +192,7 @@ test.describe('indent detail', () => {
     await expect(page.getByRole('link', { name: 'Rathod Roadlines' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Sai Kripa Carriers' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Bhagwati Logistics' })).toBeVisible();
-    await expect(page.getByText('Vendor not cleared (BR-01)')).toHaveCount(2);
+    await expect(page.getByText('been cleared by Compliance yet')).toHaveCount(2);
     await expect(page.getByText('In band', { exact: true })).toHaveCount(2);
     await expect(page.getByText('Out of band', { exact: true })).toHaveCount(1);
     await expect(page.getByRole('button', { name: 'Request approval' })).toBeVisible();

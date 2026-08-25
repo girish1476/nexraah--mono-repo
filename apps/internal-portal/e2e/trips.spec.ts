@@ -29,12 +29,22 @@ test.describe('trips list', () => {
   test.beforeEach(async ({ page }) => {
     await setRole(page, 'OPS');
     await page.goto('/trips');
-    await expect(page.getByRole('heading', { name: 'Trips', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Trips on the road', exact: true })).toBeVisible();
   });
 
   test('renders all four seeded trips with the right columns', async ({ page }) => {
     const headers = page.locator('table.table thead th');
-    await expect(headers).toHaveText(['Trip', 'Client', 'Transporter', 'Lane', 'Truck', 'Delivered', 'Buy rate', 'Stage', 'POD']);
+    await expect(headers).toHaveText([
+      'Trip number',
+      'Client',
+      'Transporter',
+      'Route',
+      'Vehicle',
+      'Delivered',
+      'Transporter cost',
+      'How far along',
+      'Delivery proof',
+    ]);
 
     const rows = page.locator('table.table tbody tr');
     await expect(rows).toHaveCount(4);
@@ -64,7 +74,7 @@ test.describe('trips list', () => {
     const search = page.getByPlaceholder('Any of the above');
     await search.fill('zzz-does-not-exist');
     await search.press('Enter');
-    await expect(page.getByText('Nothing here.')).toBeVisible();
+    await expect(page.getByText('No trip matches this search')).toBeVisible();
     await expect(page.locator('table.table')).toHaveCount(0);
   });
 
@@ -90,7 +100,7 @@ test.describe('trips list', () => {
   test('FINANCE gets a read-only badge (VIEW-level on trips)', async ({ page }) => {
     await setRole(page, 'FINANCE');
     await page.goto('/trips');
-    await expect(page.getByText('Read-only for FINANCE')).toBeVisible();
+    await expect(page.getByTestId('view-only')).toBeVisible();
   });
 
   test('clicking a trip code opens its detail page', async ({ page }) => {
@@ -140,7 +150,7 @@ test.describe('trip detail — TRP-120881 (OPS, edit)', () => {
 
   test('timing panel shows the transit delay banner and carried-over remarks', async ({ page }) => {
     const timing = panel(page, 'Timing');
-    await expect(timing.getByText('PENDING', { exact: true })).toBeVisible();
+    await expect(timing.getByText('Waiting on the transporter', { exact: true })).toBeVisible();
     await expect(page.getByText('Transit delay', { exact: true })).toBeVisible();
     await expect(page.getByText('Reporting was later than')).toBeVisible();
     await expect(page.getByText('Remarks carried from the indent: Stack no more than three high.')).toBeVisible();
@@ -257,7 +267,7 @@ test.describe('trip detail — TRP-120855 (fully cleared money gates)', () => {
   test('FINANCE sees the read-only badge, can release the cleared balance, and cannot capture charges', async ({ page }) => {
     await setRole(page, 'FINANCE');
     await page.goto('/trips/t-120855');
-    await expect(page.getByText('Read-only for FINANCE')).toBeVisible();
+    await expect(page.getByTestId('view-only')).toBeVisible();
 
     // payment.release is granted to FINANCE independent of module-level VIEW access.
     const releaseButton = page.getByRole('button', { name: 'Release ₹19,040' });

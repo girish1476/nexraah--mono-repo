@@ -36,11 +36,21 @@ export default function BillPage({ params }: { params: { id: string } }) {
   if (result) {
     return (
       <main className="screen">
-        <ScreenHeader title="Bill received" back={params.id} />
+        <ScreenHeader
+          title="Bill received"
+          what="Your bill is with us. Nothing more is needed from you on this trip."
+          back={params.id}
+        />
         <Callout tone="mint" title={`Bill ${result.billNo} received`}>
           We compute {inr(result.computedBalancePaise)} against your {inr(result.billedPaise)}.
           {result.variancePaise !== 0 &&
             ` Finance will review the ${inr(Math.abs(result.variancePaise))} difference before releasing.`}
+          {result.variancePaise !== 0 && (
+            <p style={{ marginTop: 8 }}>
+              A difference is not a problem and nothing has been rejected. Someone will look at the
+              two figures and pay what is due — you do not have to send the bill again.
+            </p>
+          )}
         </Callout>
         <TabBar />
       </main>
@@ -64,7 +74,8 @@ export default function BillPage({ params }: { params: { id: string } }) {
     <main className="screen">
       <ScreenHeader
         title="Raise your bill"
-        sub="Your bill to us — not our invoice to the client"
+        sub={`${params.id} · your own bill to Nexraah`}
+        what="Send us your own bill for the balance on this trip. We have already worked out the amount — you only add your bill number and a photo of the bill."
         back={params.id}
       />
 
@@ -72,24 +83,38 @@ export default function BillPage({ params }: { params: { id: string } }) {
 
       {!draft.submittable && (
         <Callout tone="flag" title="Not yet submittable">
-          <ul style={{ marginTop: 4, listStyle: 'none' }}>
+          <p>
+            You can send a bill for this trip only after both of these are done. There is nothing
+            wrong with your bill — the trip is simply not ready yet.
+          </p>
+          <ul style={{ marginTop: 8, listStyle: 'none' }}>
             {draft.conditions.map((c) => (
-              <li key={c.label} style={{ fontSize: 14, padding: '2px 0' }}>
+              <li key={c.label} style={{ fontSize: 15, padding: '3px 0' }}>
                 {c.met ? '✓' : '✗'} {c.label}
+                <span className="muted" style={{ display: 'block' }}>
+                  {c.met ? 'Done' : 'Still waiting'}
+                </span>
               </li>
             ))}
           </ul>
+          <p style={{ marginTop: 8 }}>
+            The boxes below stay locked until both lines show a tick.
+          </p>
         </Callout>
       )}
 
       <div className="card">
-        <p className="card-title" style={{ marginBottom: 8 }}>
-          Amounts — computed, not editable
+        <p className="card-title" style={{ marginBottom: 2 }}>
+          What to bill us for
+        </p>
+        <p className="muted" style={{ marginBottom: 8 }}>
+          These come from the trip itself, so they cannot be edited here. Write the last figure on
+          your bill.
         </p>
         {[
-          ['Freight', inr(draft.freightPaise)],
-          ['Agreed charges', inr(draft.agreedChargesPaise)],
-          ['Bill total', inr(draft.billTotalPaise)],
+          ['Freight agreed', inr(draft.freightPaise)],
+          ['Extra charges already agreed', inr(draft.agreedChargesPaise)],
+          ['Bill for this amount', inr(draft.billTotalPaise)],
         ].map(([k, v], i) => (
           <div
             key={k}
@@ -104,13 +129,17 @@ export default function BillPage({ params }: { params: { id: string } }) {
 
       {/* Declaration sits on the form, beside the number being typed. */}
       <Callout tone="blue" title="TAX PAYABLE UNDER REVERSE CHARGE">
-        Do not add GST to this bill. Nexraah accounts for the tax under the reverse charge
-        mechanism.
+        <p style={{ fontWeight: 600 }}>Do not add GST to this bill.</p>
+        <p style={{ marginTop: 6 }}>
+          Nexraah accounts for the tax under the reverse charge mechanism — in plain words, we pay
+          the GST on this trip to the government, not you. Your bill should show the amount above
+          and no tax line.
+        </p>
       </Callout>
 
       <div className="card">
         <label className="muted" htmlFor="billNo">
-          Your bill number
+          Your bill number — from your own bill book, in whatever format you use
         </label>
         <input
           id="billNo"
@@ -124,7 +153,7 @@ export default function BillPage({ params }: { params: { id: string } }) {
 
       <div className="card">
         <label className="muted" htmlFor="billDate">
-          Bill date
+          The date written on your bill — today or any day before it
         </label>
         <input
           id="billDate"
@@ -140,7 +169,7 @@ export default function BillPage({ params }: { params: { id: string } }) {
 
       <div className="card">
         <label className="muted" htmlFor="billFile">
-          Attach your bill copy
+          A photo or PDF of the bill itself — the same one you keep in your book
         </label>
         <input
           id="billFile"
@@ -155,8 +184,9 @@ export default function BillPage({ params }: { params: { id: string } }) {
       </div>
 
       <p className="muted">
-        Billing more than we compute does not reject the bill. Finance reviews the difference —
-        a detention charge or an extra halt may well be yours to claim.
+        If your bill comes to more than the figure above, send it anyway — it is not rejected for
+        that. Someone checks the difference, and a detention charge or an extra halt may well be
+        yours to claim.
       </p>
 
       <ActionBar
@@ -164,9 +194,9 @@ export default function BillPage({ params }: { params: { id: string } }) {
         disabled={!valid || sending}
         note={
           !draft.submittable
-            ? 'Proof of delivery must be approved first'
+            ? 'Proof of delivery must be approved first — see the checklist at the top'
             : !file
-              ? 'Attach a copy of your bill'
+              ? 'Attach a photo of your bill to send it'
               : undefined
         }
         onClick={submit}

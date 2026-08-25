@@ -13,6 +13,7 @@ import {
   Loading,
   ModuleGuard,
   PageHeader,
+  PageIntro,
   Panel,
   Stack,
   StatStrip,
@@ -69,14 +70,14 @@ export default function PnlPage() {
 
   const columns: Column<PnlRow>[] = [
     { key: 'period', label: granularity === 'MONTHLY' ? 'Branch / period' : 'Period', render: (r) => r.period },
-    { key: 'placement', label: 'Placement rate', align: 'right', render: (r) => inrCompact(r.placementPaise) },
+    { key: 'placement', label: 'Base vehicle cost', align: 'right', render: (r) => inrCompact(r.placementPaise) },
     { key: 'loading', label: 'Loading', align: 'right', render: (r) => inrCompact(r.loadingPaise) },
     { key: 'unloading', label: 'Unloading', align: 'right', render: (r) => inrCompact(r.unloadingPaise) },
     { key: 'detention', label: 'Detention', align: 'right', render: (r) => inrCompact(r.detentionPaise) },
     { key: 'other', label: 'Other', align: 'right', render: (r) => inrCompact(r.otherPaise) },
-    { key: 'cost', label: 'Total cost', align: 'right', render: (r) => inrCompact(r.costPaise) },
-    { key: 'revenue', label: 'Customer rate', align: 'right', render: (r) => inrCompact(r.revenuePaise) },
-    { key: 'margin', label: 'Margin', align: 'right', render: (r) => inrCompact(r.marginPaise) },
+    { key: 'cost', label: 'Total we paid out', align: 'right', render: (r) => inrCompact(r.costPaise) },
+    { key: 'revenue', label: 'Billed to the client', align: 'right', render: (r) => inrCompact(r.revenuePaise) },
+    { key: 'margin', label: 'What we kept', align: 'right', render: (r) => inrCompact(r.marginPaise) },
     {
       key: 'pct',
       label: '%',
@@ -92,7 +93,7 @@ export default function PnlPage() {
     <ModuleGuard module="pnl">
       <PageHeader
         path="/pnl"
-        title="P&L"
+        title="Profit & loss"
         sub={data.scope}
         module="pnl"
         right={
@@ -106,6 +107,13 @@ export default function PnlPage() {
           </div>
         }
       />
+      <PageIntro
+        what="What each branch, lane or client actually earned: what we charged, what the load cost us, and the difference."
+        who={`Finance and leadership see every branch; a branch manager sees their own. You are seeing: ${data.scope}.`}
+      >
+        Margin here is only as honest as the charges logged on each trip — if a cost was never
+        recorded, the profit on that trip looks bigger than it was.
+      </PageIntro>
 
       <Stack>
         <Panel>
@@ -129,43 +137,45 @@ export default function PnlPage() {
 
         <StatStrip
           stats={[
-            { k: 'Customer rate', v: inrCompact(totals.revenuePaise) },
-            { k: 'Total cost', v: inrCompact(totals.costPaise) },
-            { k: 'Margin', v: inrCompact(totals.marginPaise), tone: 'mint' },
-            { k: 'Margin %', v: pct(marginPct(totals.revenuePaise, totals.costPaise)) },
+            { k: 'Billed to the client', emoji: '💰', v: inrCompact(totals.revenuePaise) },
+            { k: 'Total we paid out', emoji: '💸', v: inrCompact(totals.costPaise) },
+            { k: 'What we kept', emoji: '📈', v: inrCompact(totals.marginPaise), tone: 'mint' },
+            { k: 'Kept per ₹100 billed', emoji: '🧮', v: pct(marginPct(totals.revenuePaise, totals.costPaise)) },
           ]}
         />
 
         <Panel pad={false}>
           <DataTable columns={columns} rows={data.rows} rowKey={(r) => r.period} />
           <div className="muted" style={{ fontSize: 11.5, padding: '10px 14px', lineHeight: 1.45 }}>
-            Cost is built from the buy rate and every charge line booked against the load. No percentage appears
-            anywhere in this query — which is why the figure is only as good as the charge capture on each trip.
+            Cost adds what we pay the transporter plus every charge logged against the load. A trip
+            with charges missing will show a margin that looks better than it is — which is what the
+            exceptions list below is for.
           </div>
         </Panel>
 
         {exceptions.length > 0 && (
           <Panel title="Exceptions — closed trips with no charges captured" pad={false}>
             <Banner tone="flag" title={`${exceptions.length} trip(s) overstate margin`}>
-              Nothing else will tell you this (R-01). The weekly charge-capture-exception job populates this
-              panel.
+              These trips closed with no charges logged, so the margin shown above them is
+              overstated. Nothing else on this screen will tell you that. This list refreshes
+              weekly.
             </Banner>
             <DataTable
               columns={[
                 {
                   key: 'trip',
-                  label: 'Trip',
+                  label: 'Trip number',
                   render: (r: PnlException) => (
                     <Link href={`/trips/${r.tripId}/charges`} className="mono" style={{ fontSize: 12 }}>
                       {r.tripCode}
                     </Link>
                   ),
                 },
-                { key: 'lane', label: 'Lane', render: (r) => r.lane },
+                { key: 'lane', label: 'Route', render: (r) => r.lane },
                 { key: 'vendor', label: 'Transporter', render: (r) => r.vendorName },
                 { key: 'branch', label: 'Branch', render: (r) => r.branchName },
                 { key: 'delivered', label: 'Delivered', render: (r) => fmtDate(r.deliveredAt) },
-                { key: 'buy', label: 'Buy rate', align: 'right', render: (r) => inrCompact(r.buyRatePaise) },
+                { key: 'buy', label: 'Transporter cost', align: 'right', render: (r) => inrCompact(r.buyRatePaise) },
                 { key: 'flag', label: '', render: () => <Tag tone="flag">No charges</Tag> },
               ]}
               rows={exceptions}

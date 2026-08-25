@@ -2,6 +2,8 @@
 
 pnpm monorepo.
 
+**New here?** [`END_TO_END_GUIDE.md`](END_TO_END_GUIDE.md) tours what every screen is for. [`FLOWS.md`](FLOWS.md) is the flow manual — every handoff, gate and status, and where each record goes next.
+
 ## Apps
 
 | App               | Stack   | Port | Description        |
@@ -86,11 +88,17 @@ src/
 
 One `apis.ts` and `types.ts` per **feature folder**, not per route file — sub-routes under `trips/[id]/` import from `../../apis`. Anything used by two features moves to `lib/` (no calls) or `components/` (calls).
 
-## Internal console — status
+## Status
 
-**The frontend is built.** All 47 routes of `docs/specs/internal-spec/01-C1-foundation.md` §1.1 exist, typecheck and build. The backend does not exist yet.
+**Both frontends are built** — every route in `docs/specs/internal-spec/01-C1-foundation.md` §1.1 exists, typechecks and builds, plus an `/orders` lifecycle hub added since.
 
-Until it does, the portal runs against a fixture adapter that returns the exact shapes `internal-api` must return:
+**`internal-api` is now real, not a stub.** Twenty-one modules are implemented and the app builds clean: `auth`, `roles`, `branches`, `config`, `numbering`, `approvals`, `attachments`, `audit`, `vendors` (with leads, market gap, issues), `compliance`, `clients`, `indents`, `trips`, `pod`, `payments`, `invoicing`, `rfq`, `reports`, `pnl`, `telematics`, and `portal`.
+
+**The transporter surface (`/api/v1/portal/*`) is half-built.** Its eight read routes are live — loads (list and detail), quotes, trips (list, detail, lorry receipt), fleet and profile. The writes — quote submit and withdraw, POD upload, vendor bills, fleet mutations, document upload — are the next wave; they need the idempotency ledger and the multipart pipeline, neither of which a read path touches.
+
+`PortalModule` imports `PortalDbModule` and no other database module. That single line is layer one of the redaction contract: it rebinds the `DB` token to `portalPool` (role `vendor_api`) for everything constructed in that module's context. Adding `InternalDbModule` there — or importing any module whose repositories it feeds — voids the layer *silently*: the queries keep working, and the columns that were supposed to raise start returning data. The module asserts its own pool role at boot and logs at error level if it is not `vendor_api`.
+
+**Both portals still default to fixture data**, because the write half of the portal surface is not there yet. The fixture adapter returns the exact shapes the real API returns, so no page changes when you flip the flag:
 
 ```bash
 # apps/internal-portal/.env.local

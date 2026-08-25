@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { ChangeEvent, useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { ApprovalRequiredError, errorMessage, request } from '@/apis';
 import { DOC_GROUPS, docLabel } from '@/lib/documents';
 import { fmtDateTime } from '@/lib/format';
+import { ROLES } from '@/lib/permissions';
 import {
   Banner,
   Column,
@@ -15,6 +16,7 @@ import {
   Loading,
   ModuleGuard,
   PageHeader,
+  PageIntro,
   Panel,
   Stack,
   Tag,
@@ -60,6 +62,11 @@ export default function TripDocumentsPage() {
   const [overrideOpen, setOverrideOpen] = useState(false);
   const [overrideReason, setOverrideReason] = useState('');
   const [busy, setBusy] = useState(false);
+  /** The document whose file picker is open — set by `upload`, read by `onFileChosen`. */
+  const [pendingDoc, setPendingDoc] = useState<TripDocument | null>(null);
+  /** Kind currently uploading, so only that row's button shows a busy state. */
+  const [uploading, setUploading] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const load = () => {
     setError(null);
@@ -72,18 +79,45 @@ export default function TripDocumentsPage() {
   };
   useEffect(load, [id]);
 
-  const upload = async (doc: TripDocument) => {
+  /**
+   * Opens the file picker. The upload itself happens in `onFileChosen` — this
+   * only records which document the chosen file belongs to.
+   *
+   * `POST /attachments` is multipart and rejects a body with no `file` part
+   * (`attachments.controller.ts`). This used to post plain JSON, which only ever
+   * worked against the fixture adapter; against the real API every upload failed.
+   */
+  const upload = (doc: TripDocument) => {
+    setPendingDoc(doc);
+    fileInputRef.current?.click();
+  };
+
+  const onFileChosen = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const doc = pendingDoc;
+    // Clear it so picking the same file again after a failure still fires onChange.
+    e.target.value = '';
+    if (!file || !doc) return;
+    setUploading(doc.kind);
     try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('kind', doc.kind);
+      formData.append('entityType', 'trip');
+      formData.append('entityId', id);
       const { id: attachmentId } = await request<{ id: string }>({
         url: '/attachments',
         method: 'POST',
-        data: { kind: doc.kind, entityType: 'trip', entityId: id },
+        data: formData,
       });
       await uploadTripDocument(id, doc.kind, { attachmentId });
-      toast(`${doc.label} uploaded · sent to whoever holds document.verify`);
+      toast(`${doc.label} uploaded · sent for verification`);
       load();
-    } catch (e) {
-      toast(errorMessage(e));
+    } catch (err) {
+      toast(errorMessage(err));
+    } finally {
+      setUploading(null);
+      setPendingDoc(null);
     }
   };
 
@@ -120,7 +154,9 @@ export default function TripDocumentsPage() {
       toast('Override requested');
     } catch (e) {
       if (e instanceof ApprovalRequiredError) {
-        toast(`Sent to ${e.approval.approverRole} · the mismatch stays open until it is approved`);
+        const approverLabel =
+          (ROLES as Record<string, { label: string }>)[e.approval.approverRole]?.label ?? e.approval.approverRole;
+        toast(`Sent to ${approverLabel} · the mismatch stays open until it is approved`);
         setOverrideOpen(false);
         setOverrideReason('');
       } else {
@@ -166,12 +202,16 @@ export default function TripDocumentsPage() {
       render: (r) => {
         if (r.status === 'MISSING' || r.status === 'REJECTED')
           return can('document.verify') || can('indent.manage') ? (
-            <button className="btn btn-secondary btn-sm" onClick={() => upload(r)}>
-              Upload
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => upload(r)}
+              disabled={uploading !== null}
+            >
+              {uploading === r.kind ? 'Uploading…' : 'Upload'}
             </button>
           ) : (
             <span className="muted" style={{ fontSize: 11.5 }}>
-              OPS uploads
+              {ROLES.OPS.label} uploads
             </span>
           );
         if (r.status === 'PENDING')
@@ -199,10 +239,23 @@ export default function TripDocumentsPage() {
       <PageHeader
         path={`/trips/${id}/documents`}
         title="Trip documents"
-        sub="Eleven documents in five groups. Eight of them gate the advance (BR-58)."
+        sub="Eleven documents in five groups. Eight of them must be verified before the advance can be released."
         module="trips"
       />
+      <PageIntro
+        what="Upload, verify or reject each of this trip's required documents — a cross-check mismatch here blocks LR generation until it's resolved."
+        who="Operations desk uploads; compliance verifies."
+      />
       <TripTabs tripId={id} />
+
+      {/* One shared picker for every row — `upload` records which document it is for. */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*,application/pdf"
+        onChange={onFileChosen}
+        style={{ display: 'none' }}
+      />
 
       <Stack>
         {crossCheck && !crossCheck.runnable && (
@@ -231,8 +284,8 @@ export default function TripDocumentsPage() {
                 </div>
               }
             >
-              A mismatch is penalised at a checkpost, so it must be caught before dispatch. `Generate LR` and the
-              placement-complete action stay blocked until this is rejected or overridden (BR-32, BR-44).
+              A mismatch is penalised at a checkpost, so it must be caught before dispatch. Generate LR and
+              completing placement stay blocked until this mismatch is either rejected or overridden.
             </Banner>
             <div style={{ marginTop: 12 }}>
               {crossCheck.mismatches.map((m) => (
@@ -246,7 +299,7 @@ export default function TripDocumentsPage() {
                     borderBottom: '1px solid var(--color-divider)',
                   }}
                 >
-                  <div style={{ fontSize: 13 }}>{m.field}</div>
+                  <div style={{ fontSize: 13 }}>{docLabel(m.field)}</div>
                   <div>
                     <div className="eyebrow">{m.a.source}</div>
                     <div className="mono" style={{ fontSize: 12.5 }}>
@@ -310,7 +363,7 @@ export default function TripDocumentsPage() {
         onConfirm={doOverride}
         onClose={() => setOverrideOpen(false)}
       >
-        <Field label="Reason" required hint="At least 20 characters (BR-44).">
+        <Field label="Reason" required hint="At least 20 characters.">
           <textarea rows={3} value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)} />
         </Field>
       </Dialog>

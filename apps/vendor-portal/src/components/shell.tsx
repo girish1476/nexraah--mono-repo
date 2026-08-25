@@ -68,10 +68,35 @@ const TAB_ICONS: Record<string, ReactNode> = {
   ),
 };
 
-export function Pill({ tone, children }: { tone: Tone; children: ReactNode }) {
-  return (
+/**
+ * Status badge. `reason` is optional and says *why* the status is what it is,
+ * in the driver's own words — a bare word like "Held" tells a phone user
+ * nothing they can act on. Renders only <span>s so a Pill stays legal inside
+ * the <p> tags that several screens already wrap it in.
+ *
+ * Redaction (BR-55/NFR-02): `reason` is a caller-supplied sentence about the
+ * transporter's *own* record. It must never be fed a client identity, a rate
+ * Nexraah charged, or another transporter's price.
+ */
+export function Pill({
+  tone,
+  children,
+  reason,
+}: {
+  tone: Tone;
+  children: ReactNode;
+  reason?: string;
+}) {
+  const badge = (
     <span className="pill" style={toneStyle(tone)}>
       {children}
+    </span>
+  );
+  if (!reason) return badge;
+  return (
+    <span className="pill-stack">
+      {badge}
+      <span className="pill-reason">{reason}</span>
     </span>
   );
 }
@@ -91,21 +116,38 @@ export function Callout({
   children?: ReactNode;
 }) {
   return (
-    <div className="card" style={{ background: `var(--${tone}-t)`, borderColor: 'transparent' }}>
-      <p style={{ color: `var(--${tone})`, fontWeight: 600 }}>{title}</p>
-      {children && <div style={{ fontSize: 13, marginTop: 4 }}>{children}</div>}
+    <div
+      className="card"
+      style={{
+        background: `var(--${tone}-t)`,
+        borderColor: `color-mix(in srgb, var(--${tone}) 22%, transparent)`,
+        borderLeft: `4px solid var(--${tone})`,
+      }}
+    >
+      <p style={{ color: `var(--${tone})`, fontWeight: 700, fontSize: 16, lineHeight: 1.35 }}>
+        {title}
+      </p>
+      {children && <div style={{ fontSize: 15, marginTop: 6, lineHeight: 1.5 }}>{children}</div>}
     </div>
   );
 }
 
+/**
+ * `what` is optional and holds one plain sentence saying what the screen is
+ * for — the answer to "why am I looking at this?" for a driver reading on a
+ * phone, often in a second language. It renders below `sub` in normal body
+ * size, not muted, because it is the line most worth reading.
+ */
 export function ScreenHeader({
   title,
   sub,
+  what,
   back,
   right,
 }: {
   title: string;
   sub?: string;
+  what?: string;
   back?: string;
   right?: ReactNode;
 }) {
@@ -115,20 +157,21 @@ export function ScreenHeader({
       {back && (
         <button
           onClick={() => router.back()}
+          className="tap"
           style={{
             display: 'inline-flex',
             alignItems: 'center',
-            gap: 4,
+            gap: 6,
             background: 'none',
             border: 'none',
             color: 'var(--color-accent-700)',
-            fontWeight: 600,
-            fontSize: 13,
-            padding: '4px 0 8px',
-            margin: '-4px 0 0',
+            fontWeight: 700,
+            fontSize: 15,
+            padding: '4px 8px 4px 0',
+            margin: '-4px 0 2px -2px',
           }}
         >
-          <IconBase size={15}>
+          <IconBase size={18}>
             <path d="M14.5 5 8 12l6.5 7" />
           </IconBase>
           {back}
@@ -138,9 +181,9 @@ export function ScreenHeader({
         <h1
           style={{
             fontFamily: 'var(--font-heading)',
-            fontSize: 25,
+            fontSize: 27,
             fontWeight: 700,
-            lineHeight: 1.2,
+            lineHeight: 1.18,
             letterSpacing: '-0.01em',
           }}
         >
@@ -149,8 +192,21 @@ export function ScreenHeader({
         {right}
       </div>
       {sub && (
-        <p className="muted" style={{ marginTop: 3 }}>
+        <p className="muted" style={{ marginTop: 4 }}>
           {sub}
+        </p>
+      )}
+      {what && (
+        <p
+          style={{
+            marginTop: 8,
+            fontSize: 15.5,
+            lineHeight: 1.5,
+            color: 'var(--color-text)',
+            maxWidth: '42ch',
+          }}
+        >
+          {what}
         </p>
       )}
     </header>
@@ -191,9 +247,11 @@ export function ActionBar({
             width: '100%',
             border: 'none',
             borderRadius: 'var(--radius-sm)',
-            padding: '15px 12px',
-            fontSize: 15,
+            padding: '17px 12px',
+            minHeight: 54,
+            fontSize: 17,
             fontWeight: 700,
+            letterSpacing: '0.005em',
             background: disabled ? 'var(--color-neutral-300)' : 'var(--color-accent)',
             backgroundImage: disabled
               ? 'none'
@@ -230,15 +288,16 @@ export function AccountLink() {
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        gap: 6,
-        fontSize: 13,
-        fontWeight: 600,
+        gap: 7,
+        fontSize: 14.5,
+        fontWeight: 700,
         textDecoration: 'none',
         color: 'var(--color-accent-700)',
         border: '1px solid var(--color-divider)',
         background: 'var(--color-surface)',
         borderRadius: 'var(--radius-pill)',
-        padding: '6px 13px 6px 10px',
+        minHeight: 44,
+        padding: '9px 15px 9px 12px',
         boxShadow: 'var(--shadow-sm)',
         transition: 'box-shadow var(--transition-fast), transform var(--transition-fast)',
       }}
@@ -278,15 +337,16 @@ export function TabBar() {
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: 3,
-              fontSize: 11,
-              fontWeight: active ? 700 : 500,
+              gap: 4,
+              fontSize: 12.5,
+              fontWeight: active ? 700 : 600,
               textDecoration: 'none',
               color: active ? 'var(--color-accent-700)' : 'var(--color-neutral-700)',
               transition: 'color var(--transition-fast)',
             }}
+            aria-current={active ? 'page' : undefined}
           >
-            <IconBase size={20}>{TAB_ICONS[href]}</IconBase>
+            <IconBase size={23}>{TAB_ICONS[href]}</IconBase>
             {label}
           </Link>
         );
@@ -315,9 +375,10 @@ export function Segmented<T extends string>({
             onClick={() => onChange(o)}
             style={{
               borderRadius: 'var(--radius-pill)',
-              padding: '7px 15px',
-              fontSize: 13,
-              fontWeight: on ? 700 : 500,
+              padding: '10px 18px',
+              minHeight: 44,
+              fontSize: 15,
+              fontWeight: on ? 700 : 600,
               border: `1px solid ${on ? 'var(--color-accent)' : 'var(--color-divider)'}`,
               background: on ? 'var(--color-accent)' : 'var(--color-surface)',
               color: on ? '#fff' : 'var(--color-text)',
@@ -340,14 +401,58 @@ export function Facts({ rows }: { rows: [string, string][] }) {
           key={k}
           className="row-between"
           style={{
-            padding: '9px 0',
+            padding: '12px 0',
+            alignItems: 'baseline',
             borderTop: i ? '1px solid var(--color-divider)' : 'none',
           }}
         >
           <span className="muted">{k}</span>
-          <span style={{ fontSize: 14, fontWeight: 500 }}>{v}</span>
+          <span style={{ fontSize: 16, fontWeight: 600, textAlign: 'right', maxWidth: '58%' }}>
+            {v}
+          </span>
         </div>
       ))}
+    </div>
+  );
+}
+
+/**
+ * The "nothing here yet" block. An empty list is not an error and must never
+ * read as one — "No data" tells a driver nothing, so this primitive makes the
+ * useful two sentences the required shape instead of an afterthought:
+ *
+ *   title — what is missing, in the user's words ("No trips yet")
+ *   what  — what will appear here once it exists
+ *   next  — the one step that makes the first one appear
+ *   action— optional link/button that performs that step
+ *
+ * Redaction (BR-55/NFR-02): every string is caller copy about the
+ * transporter's own account. Nothing here is a slot for a client identity,
+ * a rate Nexraah charged, or another transporter's price.
+ */
+export function EmptyState({
+  title,
+  what,
+  next,
+  action,
+}: {
+  title: string;
+  what?: string;
+  next?: string;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="empty">
+      <div className="empty-mark" aria-hidden="true">
+        <IconBase size={26}>
+          <path d="M4 8.5 12 4l8 4.5v7L12 20l-8-4.5v-7Z" />
+          <path d="M4 8.5 12 13l8-4.5M12 13v7" />
+        </IconBase>
+      </div>
+      <p className="empty-title">{title}</p>
+      {what && <p className="empty-line">{what}</p>}
+      {next && <p className="empty-next">{next}</p>}
+      {action && <div style={{ marginTop: 14 }}>{action}</div>}
     </div>
   );
 }
@@ -362,6 +467,16 @@ export function Loading() {
   );
 }
 
+/**
+ * `message` stays the headline so existing screen and e2e expectations still
+ * match it word for word; the added line is the part a driver can act on —
+ * a raw message like "Request failed with status code 404" otherwise reads
+ * like something they broke.
+ */
 export function ErrorNote({ message }: { message: string }) {
-  return <Callout tone="red" title={message} />;
+  return (
+    <Callout tone="red" title={message}>
+      Nothing has changed on your side. Check your signal and try again.
+    </Callout>
+  );
 }

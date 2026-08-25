@@ -37,4 +37,19 @@ export class AttachmentsRepository {
   findById(id: string) {
     return this.db.selectFrom('attachments').selectAll().where('id', '=', id).executeTakeFirst();
   }
+
+  /** `attachment-retention` job — past its `retain_until` date, excluding identity-kind KYC uploads (kept longer, per NFR-04). */
+  findExpired(excludeKinds: string[]) {
+    return this.db
+      .selectFrom('attachments')
+      .select(['id', 'storage_path', 'kind', 'retain_until'])
+      .where('retain_until', 'is not', null)
+      .where('retain_until', '<', new Date().toISOString().slice(0, 10))
+      .where('kind', 'not in', excludeKinds)
+      .execute();
+  }
+
+  deleteById(id: string) {
+    return this.db.deleteFrom('attachments').where('id', '=', id).execute();
+  }
 }

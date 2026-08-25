@@ -3,17 +3,19 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { errorMessage } from '@/apis';
-import { POD_TONE } from '@/lib/documents';
+import { POD_STATUS_LABEL, POD_TONE } from '@/lib/documents';
 import { fmtDate, inr, pct } from '@/lib/format';
 import {
   Column,
   DataTable,
   Dialog,
+  EmptyState,
   ErrorState,
   Field,
   Loading,
   ModuleGuard,
   PageHeader,
+  PageIntro,
   Panel,
   Stack,
   StatStrip,
@@ -24,6 +26,12 @@ import {
 } from '@/lib/ui';
 import { acceptBill, listBills, queryBill } from '../apis';
 import { VendorBill } from '../types';
+
+const BILL_STATUS_LABEL: Record<VendorBill['status'], string> = {
+  SUBMITTED: 'Waiting on Finance',
+  ACCEPTED: 'Accepted',
+  QUERIED: 'Sent back with a question',
+};
 
 /**
  * Transporter bill matching — `/payments/bills` (part 07 §3, BR-53).
@@ -137,12 +145,18 @@ export default function BillsPage() {
         );
       },
     },
-    { key: 'pod', label: 'POD', render: (r) => <Tag tone={POD_TONE[r.podStatus] as Tone}>{r.podStatus}</Tag> },
+    {
+      key: 'pod',
+      label: 'POD status',
+      render: (r) => <Tag tone={POD_TONE[r.podStatus] as Tone}>{POD_STATUS_LABEL[r.podStatus] ?? r.podStatus}</Tag>,
+    },
     {
       key: 'status',
       label: 'Status',
       render: (r) => (
-        <Tag tone={r.status === 'ACCEPTED' ? 'mint' : r.status === 'QUERIED' ? 'flag' : 'grey'}>{r.status}</Tag>
+        <Tag tone={r.status === 'ACCEPTED' ? 'mint' : r.status === 'QUERIED' ? 'flag' : 'grey'}>
+          {BILL_STATUS_LABEL[r.status]}
+        </Tag>
       ),
     },
     {
@@ -175,25 +189,39 @@ export default function BillsPage() {
         sub="Their bill to us, beside the balance we computed. A variance is a conversation, not a rejection."
         module="payments"
       />
+      <PageIntro
+        what="The transporter's own bill for a trip, next to what we calculated is owed. A mismatch is a variance to discuss, not an automatic rejection — Finance can accept at either figure or send it back with a question."
+        who="Finance decides; anyone with Payments access can see the list."
+      />
 
       <Stack>
         <StatStrip
           stats={[
-            { k: 'Submitted', v: rows.filter((r) => r.status === 'SUBMITTED').length },
-            { k: 'With a variance', v: rows.filter((r) => r.variancePaise !== 0).length, tone: 'flag' },
-            { k: 'Queried', v: rows.filter((r) => r.status === 'QUERIED').length },
-            { k: 'Bill value', v: inr(rows.reduce((a, r) => a + r.totalPaise, 0)) },
+            { k: 'Submitted', id: 'bill-submitted', v: rows.filter((r) => r.status === 'SUBMITTED').length },
+            { k: 'With a variance', id: 'bill-variance', v: rows.filter((r) => r.variancePaise !== 0).length, tone: 'flag' },
+            { k: 'Queried', id: 'bill-queried', v: rows.filter((r) => r.status === 'QUERIED').length },
+            { k: 'Bill value', id: 'bill-value', v: inr(rows.reduce((a, r) => a + r.totalPaise, 0)) },
           ]}
         />
         <Panel pad={false}>
-          <DataTable columns={columns} rows={rows} rowKey={(r) => r.id} empty="No bills submitted." />
+          <DataTable
+            columns={columns}
+            rows={rows}
+            rowKey={(r) => r.id}
+            empty={
+              <EmptyState
+                title="No bills submitted"
+                hint="A transporter's bill appears here once they submit it for a trip whose proof of delivery has been approved."
+              />
+            }
+          />
         </Panel>
       </Stack>
 
       <Dialog
         open={!!accepting}
         title="Accept this bill"
-        body="Accepting at the computed figure releases the balance we calculated. Accepting at their figure needs a reason — finance owns that number under BR-40, and it raises no approval."
+        body="Accepting at the computed figure releases the balance we calculated. Accepting at their figure needs a reason. Only Finance can make this call, and no further approval is required."
         facts={
           accepting
             ? [

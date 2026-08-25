@@ -6,7 +6,12 @@ export class CreateIndentDto {
   @IsString() fromCity!: string;
   @IsString() toCity!: string;
   @IsString() material!: string;
-  @IsPositive() weightKg!: number;
+  // Tonnes on the wire, integer kg in the column. `docs/api/03-clients-indents.md`
+  // specifies `weightTn` on the request, and every read path already answers in
+  // tonnes (`indents.service.ts` divides by 1000). Declaring `weightKg` here made
+  // the global `ValidationPipe({ whitelist: true })` strip the tonnes the console
+  // actually sends, so creation failed on a missing required field.
+  @IsPositive() weightTn!: number;
   @IsString() truckType!: string;
   @IsString() pickupDate!: string;
 

@@ -1,5 +1,5 @@
 import { test, expect, Page, Locator } from '@playwright/test';
-import { setRole } from './helpers';
+import { setRole, statValue } from './helpers';
 
 /**
  * Payments — `/payments/advance`, `/payments/balance`, `/payments/bills`
@@ -26,9 +26,6 @@ import { setRole } from './helpers';
  * "now minus deliveredAt" are asserted loosely.
  */
 
-function statValue(page: Page, label: string) {
-  return page.locator('.stat-strip > div').filter({ hasText: label }).locator('.stat-value');
-}
 
 function row(page: Page, text: string) {
   return page.locator('table.table tbody tr').filter({ hasText: text });
@@ -49,18 +46,18 @@ test.describe('Advance', () => {
     await setRole(page, 'FINANCE');
     await page.goto('/payments/advance');
 
-    await expect(statValue(page, 'Waiting')).toHaveText('1');
-    await expect(statValue(page, 'Releasable now')).toHaveText('0');
-    await expect(statValue(page, 'Blocked')).toHaveText('1');
-    await expect(statValue(page, 'Releasable value')).toHaveText('₹0');
+    await expect(statValue(page, 'advance-waiting')).toHaveText('1');
+    await expect(statValue(page, 'advance-ready')).toHaveText('0');
+    await expect(statValue(page, 'advance-held')).toHaveText('1');
+    await expect(statValue(page, 'advance-ready-value')).toHaveText('₹0');
 
     await expect(page.locator('table.table tbody tr')).toHaveCount(1);
     const r = row(page, 'TRP-120881');
-    await expect(r.locator('td[data-label="Indent"]')).toHaveText('IND-4443');
+    await expect(r.locator('td[data-label="Load request"]')).toHaveText('IND-4443');
     await expect(r.locator('td[data-label="Transporter"]')).toHaveText('Rathod Roadlines');
-    await expect(r.locator('td[data-label="Advance"]')).toHaveText('40%');
+    await expect(r.locator('td[data-label="Advance amount"]')).toHaveText('40%');
     await expect(r.locator('td[data-label="Amount"]')).toHaveText('₹23,360');
-    await expect(r.locator('td[data-label="Gate"]')).toHaveText('3 unmet');
+    await expect(r.locator('td[data-label="Can we pay yet?"]')).toHaveText('3 unmet');
   });
 
   test('FINANCE can see exactly what is missing and what has cleared, but release stays disabled behind the document gate', async ({
@@ -118,10 +115,10 @@ test.describe('Balance', () => {
     await setRole(page, 'FINANCE');
     await page.goto('/payments/balance');
 
-    await expect(statValue(page, 'Waiting')).toHaveText('4');
-    await expect(statValue(page, 'Releasable now')).toHaveText('1');
-    await expect(statValue(page, 'Blocked on POD')).toHaveText('3');
-    await expect(statValue(page, 'Penalty in flight')).toHaveText('₹1,500');
+    await expect(statValue(page, 'balance-waiting')).toHaveText('4');
+    await expect(statValue(page, 'balance-ready')).toHaveText('1');
+    await expect(statValue(page, 'balance-held-for-pod')).toHaveText('3');
+    await expect(statValue(page, 'balance-late-penalties')).toHaveText('₹1,500');
     await expect(page.locator('table.table tbody tr')).toHaveCount(4);
   });
 
@@ -130,8 +127,8 @@ test.describe('Balance', () => {
     await page.goto('/payments/balance');
 
     const r = row(page, 'TRP-120881');
-    await expect(r.locator('td[data-label="Net payable"]')).toHaveText('₹59,800');
-    await expect(r.locator('td[data-label="Gate"]')).toHaveText('1 unmet');
+    await expect(r.locator('td[data-label="Amount to pay"]')).toHaveText('₹59,800');
+    await expect(r.locator('td[data-label="Can we pay yet?"]')).toHaveText('1 unmet');
     await r.getByRole('button', { name: 'Open' }).click();
 
     await expect(page.getByText('Balance blocked')).toBeVisible();
@@ -161,7 +158,7 @@ test.describe('Balance', () => {
     await page.goto('/payments/balance');
 
     const r = row(page, 'TRP-120855');
-    await expect(r.locator('td[data-label="Gate"]')).toHaveText('Releasable');
+    await expect(r.locator('td[data-label="Can we pay yet?"]')).toHaveText('Releasable');
     await r.getByRole('button', { name: 'Open' }).click();
 
     await expect(page.getByText('Balance ready to release')).toBeVisible();
@@ -181,7 +178,7 @@ test.describe('Balance', () => {
     await expect(page.getByText('Balance released · ₹19,040 · UTR UTR778899')).toBeVisible();
     await expect(page.locator('table.table tbody tr')).toHaveCount(3);
     await expect(row(page, 'TRP-120855')).toHaveCount(0);
-    await expect(statValue(page, 'Releasable now')).toHaveText('0');
+    await expect(statValue(page, 'balance-ready')).toHaveText('0');
   });
 
   test('LEADERSHIP (VIEW, not branch-scoped) sees all four rows and the gate, with no release control', async ({
@@ -190,7 +187,7 @@ test.describe('Balance', () => {
     await setRole(page, 'LEADERSHIP');
     await page.goto('/payments/balance');
 
-    await expect(page.getByText('Read-only for LEADERSHIP')).toBeVisible();
+    await expect(page.getByTestId('view-only')).toBeVisible();
     await expect(page.locator('table.table tbody tr')).toHaveCount(4);
 
     await row(page, 'TRP-120881').getByRole('button', { name: 'Open' }).click();
@@ -207,10 +204,10 @@ test.describe('Transporter bills', () => {
     await setRole(page, 'FINANCE');
     await page.goto('/payments/bills');
 
-    await expect(statValue(page, 'Submitted')).toHaveText('2');
-    await expect(statValue(page, 'With a variance')).toHaveText('1');
-    await expect(statValue(page, 'Queried')).toHaveText('0');
-    await expect(statValue(page, 'Bill value')).toHaveText('₹72,900');
+    await expect(statValue(page, 'bill-submitted')).toHaveText('2');
+    await expect(statValue(page, 'bill-variance')).toHaveText('1');
+    await expect(statValue(page, 'bill-queried')).toHaveText('0');
+    await expect(statValue(page, 'bill-value')).toHaveText('₹72,900');
 
     const noVariance = row(page, 'AR/26/0221');
     await expect(noVariance.locator('td[data-label="Bill total"]')).toHaveText('₹30,800');
@@ -269,17 +266,17 @@ test.describe('Transporter bills', () => {
     await confirm.click();
 
     await expect(page.getByText('Queried · the transporter has been notified and the bill stays open')).toBeVisible();
-    await expect(row(page, 'AR/26/0221').getByText('QUERIED')).toBeVisible();
+    await expect(row(page, 'AR/26/0221').getByText('Sent back with a question')).toBeVisible();
   });
 
   test('a VIEW-only role sees the bills but no accept or query controls', async ({ page }) => {
     await setRole(page, 'LEADERSHIP');
     await page.goto('/payments/bills');
 
-    await expect(page.getByText('Read-only for LEADERSHIP')).toBeVisible();
+    await expect(page.getByTestId('view-only')).toBeVisible();
     await expect(page.locator('table.table tbody tr')).toHaveCount(2);
     await expect(page.getByRole('button', { name: 'Accept' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Query' })).toHaveCount(0);
-    await expect(page.getByText('Finance decides')).toHaveCount(2);
+    await expect(page.getByText('Finance decides', { exact: true })).toHaveCount(2);
   });
 });

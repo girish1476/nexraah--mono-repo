@@ -167,8 +167,8 @@ export default function RfqAwardPage() {
                 rowKey={(r) => r.id}
               />
               <Banner tone="blue" title="Every line carries its RFQ lane">
-                A rate card line with no RFQ provenance cannot exist — the column is <code>NOT NULL</code>. This
-                preview is exactly what gets written (BR-37).
+                Every rate card line is linked back to the RFQ lane it came from, and that link
+                can&rsquo;t be removed. What you see here is exactly what gets saved.
               </Banner>
             </>
           )}

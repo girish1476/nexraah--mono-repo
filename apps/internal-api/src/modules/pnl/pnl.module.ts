@@ -6,5 +6,6 @@ import { PnlRepository } from './pnl.repository';
 @Module({
   controllers: [PnlController],
   providers: [PnlService, PnlRepository],
+  exports: [PnlRepository],
 })
 export class PnlModule {}

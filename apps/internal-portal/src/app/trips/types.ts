@@ -20,6 +20,7 @@ export interface TripListRow {
   buyRatePaise: number;
   sellRatePaise: number;
   advancePaidPaise: number;
+  balancePaidPaise: number;
   podPenaltyPaise: number;
 }
 
@@ -106,7 +107,6 @@ export interface TripDetail extends TripListRow {
   ewayValidTill: string | null;
   podReceivedAt: string | null;
   podClosureBasis: string | null;
-  balancePaidPaise: number;
   billed: boolean;
   documents: TripDocument[];
   charges: TripCharge[];

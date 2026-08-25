@@ -18,8 +18,9 @@ describe('levelFor', () => {
   it('returns NONE for a role with no access', () => {
     expect(levelFor('payments', 'OPS')).toBe('NONE');
   });
-  it('gives ADMIN no access to the operational "today" queue', () => {
-    expect(levelFor('today', 'ADMIN')).toBe('NONE');
+  it('gives ADMIN EDIT access to every module, operational screens included', () => {
+    expect(levelFor('today', 'ADMIN')).toBe('EDIT');
+    expect(levelFor('payments', 'ADMIN')).toBe('EDIT');
   });
   it('gives every role a defined level for every module (matrix has no gaps)', () => {
     const modules: Parameters<typeof levelFor>[0][] = [
@@ -53,19 +54,33 @@ describe('navFor', () => {
       }
     }
   });
-  it('ADMIN sees a minimal, mostly-governance nav', () => {
-    const labels = navFor('ADMIN').flatMap((g) => g.items.map((i) => i.label));
-    expect(labels).toEqual(
-      expect.arrayContaining(['Vendors', 'Approvals', 'Control panel', 'Roles matrix', 'Import']),
+  /*
+   * These assert on `href`, not `label`. What the test is actually protecting
+   * is *which screens a role can reach* — a rule with real consequences. Nav
+   * wording is being rewritten repeatedly for clarity, and a test that fails
+   * every time someone improves a label trains people to edit the test rather
+   * than read it. The route a role can open is the invariant; the words above
+   * it are not.
+   */
+  it('ADMIN sees the full console — every module is EDIT', () => {
+    const hrefs = navFor('ADMIN').flatMap((g) => g.items.map((i) => i.href));
+    expect(hrefs).toEqual(
+      expect.arrayContaining([
+        '/today',
+        '/vendors',
+        '/payments/advance',
+        '/admin/approvals',
+        '/admin',
+        '/admin/roles',
+        '/admin/import',
+      ]),
     );
-    expect(labels).not.toContain('Today');
-    expect(labels).not.toContain('Advance');
   });
   it('OPS sees the operational nav but not payments/invoicing/admin', () => {
-    const labels = navFor('OPS').flatMap((g) => g.items.map((i) => i.label));
-    expect(labels).toEqual(expect.arrayContaining(['Today', 'Indents', 'Trips', 'RFQ']));
-    expect(labels).not.toContain('Advance');
-    expect(labels).not.toContain('Control panel');
+    const hrefs = navFor('OPS').flatMap((g) => g.items.map((i) => i.href));
+    expect(hrefs).toEqual(expect.arrayContaining(['/today', '/indents', '/trips', '/rfq']));
+    expect(hrefs).not.toContain('/payments/advance');
+    expect(hrefs).not.toContain('/admin');
   });
 });
 
