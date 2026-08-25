@@ -2,7 +2,7 @@
 
 pnpm monorepo.
 
-**New here?** [`END_TO_END_GUIDE.md`](END_TO_END_GUIDE.md) tours what every screen is for. [`FLOWS.md`](FLOWS.md) is the flow manual — every handoff, gate and status, and where each record goes next.
+**New here?** [`END_TO_END_GUIDE.md`](END_TO_END_GUIDE.md) tours what every screen is for. [`FLOWS.md`](FLOWS.md) is the flow manual — every handoff, gate and status, and where each record goes next. [`DEPLOY.md`](DEPLOY.md) is the runbook for putting the stakeholder demo online.
 
 ## Apps
 

@@ -736,7 +736,9 @@ pnpm dev            # everything
 | Backend | http://localhost:4002/api/v1 |
 | Transporter edge | http://localhost:4001/api/v1 |
 
-**Signing in.** There is no real login yet. The bottom of the internal sidebar has a **role switcher** — a prototype control that changes what you can see and do. It disappears when real sign-in lands.
+**Signing in.** The console has a real sign-in screen at `/signin`, and what it does behind the form depends only on whether fixtures are on. With fixtures **on** it checks the six demo accounts and mints its own token — no external service involved. With fixtures **off** the password goes to Supabase Auth, which issues the token the backend verifies; the console never issues one itself in either mode.
+
+The old role switcher — a prototype control in the sidebar that changed your role by writing to browser storage — **is gone**, along with the `/dev-login` screen of one button per role. Those buttons were backed by tokens hand-signed months earlier that had quietly expired, so every sign-in against a real backend failed with "Invalid or expired token" and no hint that a stale constant was the cause.
 
 **Both apps run on fixture data by default**, because the transporter *write* routes — submitting a quote, uploading a delivery note, raising a bill — are not built yet. The fixtures return the exact shapes the real backend returns, so no screen behaves differently.
 

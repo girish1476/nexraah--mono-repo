@@ -75,11 +75,14 @@ mock adapters return the exact shapes the real API contract calls for.
 
 ## 3. Signing in and switching roles (internal console only)
 
-`internal-portal` has no real login yet (Supabase auth is scoped but not
-wired). Instead, the bottom of the sidebar has a **role switcher** — a
-prototype control that writes `role` to `localStorage`, which the mock
-adapter reads to decide what you can see and do. It has **zero** effect
-against a real `internal-api`, and will be deleted once real auth lands.
+`internal-portal` signs in for real, at `/signin`. What happens on submit
+depends only on `NEXT_PUBLIC_USE_MOCKS`: with mocks on it checks the six
+fixture accounts (password `nexraah`) and mints its own token; with mocks off
+the password goes to Supabase Auth, which issues the JWT `internal-api`
+verifies against JWKS. The console never issues a token itself either way.
+
+The prototype **role switcher** and the `/dev-login` screen it sat beside are
+both gone — `lib/auth.ts` now clears any `localStorage.role` left behind.
 
 Six roles exist, each scoped to what that job actually needs (`docs` calls
 this the module matrix, `BR-29`):
