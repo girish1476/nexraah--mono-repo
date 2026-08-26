@@ -13,6 +13,24 @@ export interface IndentListFilters {
 export class IndentsRepository {
   constructor(@Inject(DB) private readonly db: InternalDb) {}
 
+  /** The agreed rate card lane an indent names, for cross-verification. */
+  findRateCardLane(laneId: string) {
+    return this.db
+      .selectFrom('rate_card_lanes')
+      .select([
+        'id',
+        'client_id as clientId',
+        'origin',
+        'destination',
+        'truck_type as truckType',
+        'rate as ratePaise',
+        'valid_from as validFrom',
+        'valid_to as validTo',
+      ])
+      .where('id', '=', laneId)
+      .executeTakeFirst();
+  }
+
   /** Just the onboarding state — the indent guard needs nothing else. */
   findClientStatus(clientId: string) {
     return this.db
@@ -60,8 +78,25 @@ export class IndentsRepository {
     return query.orderBy('indents.pickup_date', 'desc').execute();
   }
 
+  /**
+   * Joins the two names the detail screen shows in its header, which `list()`
+   * has always joined and this did not — so the load-request detail page
+   * rendered a blank Client and Branch against the real API while looking
+   * correct in the fixture, which carries the names inline.
+   *
+   * `selectAll('indents')` keeps every column in its own snake_case shape, so
+   * the existing mappers are untouched; the two aliases are additive. An inner
+   * join is safe here: `client_id` and `branch_id` are both NOT NULL.
+   */
   findById(id: string) {
-    return this.db.selectFrom('indents').selectAll().where('id', '=', id).executeTakeFirst();
+    return this.db
+      .selectFrom('indents')
+      .innerJoin('clients', 'clients.id', 'indents.client_id')
+      .innerJoin('branches', 'branches.id', 'indents.branch_id')
+      .selectAll('indents')
+      .select(['clients.name as clientName', 'branches.name as branchName'])
+      .where('indents.id', '=', id)
+      .executeTakeFirst();
   }
 
   findByIdForUpdate(db: DbExecutor, id: string) {

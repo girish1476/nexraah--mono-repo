@@ -12,7 +12,7 @@ export const INTERNAL_ROLES = [
   'OPS',
   'COMPLIANCE',
   'FINANCE',
-  'BRANCH_MGR',
+  'BD',
   'LEADERSHIP',
   'ADMIN',
 ] as const;
@@ -20,7 +20,21 @@ export const INTERNAL_ROLES = [
 export type InternalRoleCode = (typeof INTERNAL_ROLES)[number];
 
 export const SEED_GRANTS: Record<InternalRoleCode, string[]> = {
-  OPS: ['indent.manage', 'indent.view', 'vendor.edit', 'rfq.edit'],
+  // Operations absorbed the branch manager — see the portal's permissions.ts
+  // for the full reasoning, including the deliberate cost of `approve.exception`
+  // landing on the desk that raises exceptions.
+  OPS: [
+    'indent.create',
+    'indent.manage',
+    'indent.view',
+    'vendor.edit',
+    'rfq.edit',
+    'pod.receive',
+    'pod.verify',
+    'pod.approve',
+    'approve.exception',
+    'pnl.view_own',
+  ],
   COMPLIANCE: [
     'client.onboard',
     'indent.create',
@@ -37,24 +51,33 @@ export const SEED_GRANTS: Record<InternalRoleCode, string[]> = {
     'approve.exception',
   ],
   FINANCE: ['payment.release', 'invoice.create', 'receipt.record', 'client.manage', 'pnl.view_all', 'indent.view'],
-  BRANCH_MGR: [
+  // Business development — rate management only. `rfq.submit` is deliberately
+  // absent: it is a fixed permission held by Leadership, so the desk that
+  // builds a price is never the desk that sends it to the client.
+  BD: ['rfq.edit', 'client.manage', 'indent.view', 'pnl.view_own'],
+  // Leadership oversees every desk in fact, not just on paper. `payment.release`
+  // stays out — a fixed permission that never belongs to two roles, so
+  // oversight of the money never becomes a second pair of hands on it.
+  LEADERSHIP: [
     'indent.create',
     'indent.manage',
     'indent.view',
+    'document.verify',
     'vendor.edit',
+    'vendor.verify',
+    'vendor.activate',
+    'vendor.advance_policy',
+    'client.manage',
+    'client.onboard',
     'rfq.edit',
+    'rfq.submit',
     'pod.receive',
     'pod.verify',
     'pod.approve',
-    'approve.exception',
-    'pnl.view_own',
-  ],
-  LEADERSHIP: [
-    'indent.view',
-    'rfq.submit',
     'approve.above_band',
     'approve.waiver',
     'approve.exception',
+    'approve.contract',
     'pnl.view_all',
   ],
   ADMIN: ['config.manage'],

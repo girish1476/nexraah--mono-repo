@@ -153,7 +153,7 @@ export function updateLead(id: string, patch: Partial<Lead>) {
   return request<Lead>({ url: `/vendors/leads/${id}`, method: 'PATCH', data: patch });
 }
 
-/** GET /vendors/market-gap?branch= — branch-scoped for BRANCH_MGR server-side. */
+/** GET /vendors/market-gap?branch= — scoped to the caller's own branch server-side. */
 export function listMarketGap(params: { branch?: string } = {}) {
   return request<MarketGapRow[]>({ url: '/vendors/market-gap', method: 'GET', params });
 }

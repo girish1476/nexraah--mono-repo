@@ -36,7 +36,7 @@ Two audiences means two separate apps:
 
 | | Who | What they see |
 |---|---|---|
-| **Internal console** | Operations, Compliance, Finance, Branch managers, Leadership, Administrators | Everything — client names, what we charge, what we pay, every transporter's quote, the margin |
+| **Internal console** | Operations, Compliance, Finance, Leadership, Administrators | Everything — client names, what we charge, what we pay, every transporter's quote, the margin |
 | **Transporter portal** | The trucking companies who carry the freight | Only their own loads, their own quotes, their own money. Never the client's name, never what the client was charged, never another transporter's quote |
 
 ```mermaid
@@ -75,7 +75,7 @@ flowchart TD
     B1["Lead"] --> B2["Onboard transporter"] --> B3["Compliance clears them"] --> B4["ACTIVE — can now be awarded work"]
   end
 
-  subgraph S2["Stage 2 · Demand — Branch manager + Leadership, ongoing"]
+  subgraph S2["Stage 2 · Demand — Operations + Leadership, ongoing"]
     C1["Client"] --> C2["Quote request<br/>for a lane"] --> C3["Client awards it"] --> C4["Rate card lane<br/>— a price we can raise orders against"]
   end
 
@@ -180,7 +180,7 @@ Activation refuses outright unless **every** identity item and **every** require
 | The transporter record | Vendors directory — fleet size, trip count, our margin on them, their advance % | Everyone |
 | Their vehicles | Their own Fleet tab in the transporter portal | Them |
 | Matching open orders | Their Loads tab | Them |
-| A complaint about them | Vendors → Issues, and the Today screen if it's high severity | Operations / Branch manager |
+| A complaint about them | Vendors → Issues, and the Today screen if it's high severity | Operations |
 | Routes where we have too few transporters | Vendors → Market gap | Operations — this is a recruitment target, feeding back to Leads |
 
 **Vehicle statuses in their portal:** Available · On trip · Documents due · Maintenance. "Documents due" is set by the system only, when a compliance document has expired. A transporter cannot clear it by picking a different status — they have to re-upload the document under Profile.
@@ -255,7 +255,7 @@ Glossary for this section, once: an **indent** is a request for one truck on one
 
 ### Step 1 — Indent created
 
-**Who:** Operations, Compliance or a Branch manager. **Where:** Indents → Raise an indent.
+**Who:** Operations or Compliance. **Where:** Indents → Raise an indent.
 
 You capture three things:
 
@@ -400,7 +400,7 @@ The 20-day deadline, the ₹100 per day and the 40-day forfeit are all configura
 
 ### Step 9 — Delivery note verified
 
-**Who:** Compliance, or the Branch manager. **Where:** POD → Verify.
+**Who:** Compliance or Operations. **Where:** POD → Verify.
 
 Two distinct actions: **verify** (it was checked) then **approve** (it is accepted). **Rejecting sends it back and does not stop the clock** — the penalty keeps accruing while it is being fixed, which is the entire point.
 
@@ -682,14 +682,19 @@ Worth being precise about what the open decision is. The written contract for ac
 
 ## 13. Your day, by role
 
-Six roles. A module you cannot act on is **absent from the sidebar entirely**, never greyed out — if you do not see Payments as Operations, that is correct, not a bug.
+Five roles. A module you cannot act on is **absent from the sidebar entirely**, never greyed out — if you do not see Payments as Operations, that is correct, not a bug.
+
+> **There used to be a sixth: the branch manager.** It has been folded into Operations, because the two were never separated by what they could *do* — only by how much they could *see*. An operator now raises indents, receives and approves delivery notes, and reviews branch margin, all of which the branch manager used to own.
+>
+> **Seeing less is now a property of the person, not the job title.** Anyone whose record carries a branch sees only that branch; anyone without one sees the whole company. So a branch manager who becomes an operator keeps exactly the view they had this morning, and nothing was taken from operators who already saw everything.
+>
+> One consequence worth naming: Operations also inherited the ability to **approve exceptions**. Compliance and Leadership still hold it, so a second desk can still review — but it is no longer guaranteed to be a different desk from the one that raised the request.
 
 | Role | Lands on | Opens with | Hands off to |
 |---|---|---|---|
 | **Operations** | Today's queue | Orders with no quotes, placements that failed overnight | Compliance (documents), Finance (payment) |
 | **Compliance** | Compliance desk | Transporters awaiting clearance, documents awaiting verification, delivery notes awaiting approval | Operations (rejections go back), Finance (cleared documents open the advance) |
 | **Finance** | Payments → Balance | Balances ready to release, then advances, then invoicing and collections | Nobody — Finance is the end of both money chains |
-| **Branch manager** | Today's queue | Their own branch only: placement performance, margin, delivery notes to receive and approve | Same as Operations, scoped to their branch |
 | **Leadership** | Monthly overview | Approvals waiting on them, quote requests to submit, the business review | Whoever raised the approval — it replays on its own |
 | **Administrator** | Control panel | Configuration, branches, roles, imports. **Not** day-to-day decisions | Everyone, by configuration |
 

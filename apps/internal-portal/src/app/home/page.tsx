@@ -19,7 +19,7 @@ import {
 import { getHome } from './apis';
 import { HomeResponse } from './types';
 
-/** Home — `/home` (part 10 §2). Leadership and branch managers land here. */
+/** Home — `/home` (part 10 §2). Leadership lands here; operations can open it. */
 export default function HomePage() {
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [data, setData] = useState<HomeResponse | null>(null);
@@ -124,7 +124,7 @@ export default function HomePage() {
       />
       <PageIntro
         what="How the business is doing this month — what we moved, what we made, and what is still owed in either direction."
-        who="Leadership and branch managers read this monthly. Day-to-day work lives on My desk."
+        who="Leadership and operations read this monthly. Day-to-day work lives on My desk."
       />
 
       <div style={{ marginBottom: 20 }}>

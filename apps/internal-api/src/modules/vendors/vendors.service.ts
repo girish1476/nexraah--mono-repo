@@ -164,7 +164,12 @@ export class VendorsService implements OnModuleInit {
       panelDate: vendor.panel_date,
       rating: vendor.rating,
       source: vendor.source,
-      fleetCount: fleetRows.length,
+      // Onboarding's declared count (`declared_fleet_count`), not
+      // `fleetRows.length` — `vendor_fleet` is a separate, not-yet-built
+      // truck-registration table that nothing currently writes to, so a
+      // row-count here would read 0 for every vendor regardless of what the
+      // onboarding wizard collected. Matches `list()`'s same fix.
+      fleetCount: vendor.declared_fleet_count,
       kyc,
       documents,
       advanceHistory: advanceHistory.map((h) => ({

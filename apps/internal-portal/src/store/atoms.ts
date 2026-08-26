@@ -21,7 +21,7 @@ export interface Session {
   role: RoleCode;
   /** Server-issued list. Falls back to SEED_GRANTS before the call resolves. */
   permissions: Permission[];
-  /** BRANCH_MGR only — every list is scoped to it at the repository layer. */
+  /** Set only for a branch-bound user — every list is scoped to it at the repository layer. */
   branch: Branch | null;
 }
 

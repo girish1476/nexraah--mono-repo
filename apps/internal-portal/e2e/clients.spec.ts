@@ -3,7 +3,7 @@ import { setRole } from './helpers';
 
 /**
  * Client master — `/clients`, `/clients/new`, `/clients/[id]` (lib/permissions.ts
- * `clients` module: FINANCE=EDIT, OPS/COMPLIANCE/BRANCH_MGR/LEADERSHIP=VIEW,
+ * `clients` module: FINANCE/COMPLIANCE=EDIT, OPS/LEADERSHIP=VIEW,
  * ADMIN=NONE, gated by `useLevel('clients')` rather than a named permission).
  *
  * Fixture facts pinned against `src/mocks/db.ts`:

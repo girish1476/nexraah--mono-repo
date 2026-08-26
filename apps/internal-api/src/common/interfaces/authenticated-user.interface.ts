@@ -1,4 +1,4 @@
-export type InternalRole = 'OPS' | 'COMPLIANCE' | 'FINANCE' | 'BRANCH_MGR' | 'LEADERSHIP' | 'ADMIN';
+export type InternalRole = 'OPS' | 'COMPLIANCE' | 'FINANCE' | 'LEADERSHIP' | 'ADMIN';
 
 export type PermissionLevel = 'NONE' | 'VIEW' | 'EDIT';
 

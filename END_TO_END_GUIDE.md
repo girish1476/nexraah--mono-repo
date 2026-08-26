@@ -92,9 +92,36 @@ this the module matrix, `BR-29`):
 | **OPS** (Operations desk) | `/today` | Vendor onboarding, indents, awards, placement, LRs, transit |
 | **COMPLIANCE** | `/compliance` | Vendor clearance, document verification, advance-document checks, contract approval, POD verify/approve |
 | **FINANCE** | `/payments/balance` | All payment release, invoicing, receipts, collections |
-| **BRANCH_MGR** (Branch manager) | `/today` | Branch placement performance, margin, RFQ sourcing, POD receive/verify/approve — scoped to their own branch |
-| **LEADERSHIP** | `/home` | Approvals, RFQ submission, reporting — sees everything, edits little |
+| **BD** (Business development) | `/rfq` | Rate cards, RFQ pricing and lane build-up, client relationships |
+| **LEADERSHIP** | `/home` | Oversight of every desk, approvals, RFQ submission, reporting |
 | **ADMIN** (Administrator) | `/admin` | Configuration, users, roles — deliberately locked out of day-to-day operational screens |
+
+**Business development** is the odd one out, deliberately. Every other role owns
+a *stage* of the shipment — Operations moves the truck, Compliance clears the
+papers, Finance moves the money. BD owns what the lane is **worth**: it builds
+the RFQ price, keeps the client's rate card, and holds the relationship the rate
+belongs to. It gets `pnl.view_own` because a desk setting prices with no sight
+of the margin they produce is guessing.
+
+What it deliberately cannot do is **submit** a price. `rfq.submit` stays with
+Leadership, so the desk that proposes a rate is never the desk that commits it
+to the client — otherwise an above-band price would carry the same signature
+twice.
+
+**Leadership oversees the other desks in fact, not just on paper.** As of
+2026-08-26 it holds the operating permissions of Operations and Compliance, and
+the compliance queue — previously the one screen in the console it could not
+open at all — is now fully reachable. Two consequences worth knowing:
+
+- Leadership **cannot release payments.** `payment.release` sits in a protected
+  set with `pod.waive` and `config.manage`, permissions that never belong to two
+  roles at once. Overseeing the money and being a second pair of hands able to
+  move it are different things, and the payment audit trail is only worth
+  reading while exactly one desk can pay.
+- Vendor clearance no longer **forces** two desks. Compliance normally does it,
+  but Leadership can now clear a vendor alone. The two-person rule on proof of
+  delivery is unaffected — it keys on the acting person, not the role, so nobody
+  approves what they themselves verified.
 
 A module a role can't reach is **absent from the sidebar entirely**, never
 shown greyed-out — if you don't see "Payments" as OPS, that's correct, not a
@@ -147,7 +174,7 @@ It is now recorded in three places, because it is decided at three moments:
 
 | Where | When it's set | Why there |
 |---|---|---|
-| **Branch** (`/admin/branches`) | The branch's overall posture | What a branch manager sees at a glance for their region |
+| **Branch** (`/admin/branches`) | The branch's overall posture | What a branch-scoped operator sees at a glance for their region |
 | **RFQ lane** (sourcing screen) | While sourcing a lane | Sourcing is the moment you actually learn whether a lane is union or market |
 | **Rate card lane** (client rate sheet) | Carried across on award | The agreed basis for the price on the sheet |
 
@@ -274,7 +301,7 @@ through:
    This does **not** stop the clock — only the branch physically receiving
    the paper copy does. From `DELIVERED`, the transporter has 20 days before
    a ₹100/day deduction starts accruing against their balance, and 40 days
-   before the balance is forfeited outright (compliance/branch manager
+   before the balance is forfeited outright (compliance/operations
    verify and approve POD on the internal side).
 9. Once POD is **approved**, the **balance** payment gate opens. The
    transporter can also now **raise a bill** — if their number differs from

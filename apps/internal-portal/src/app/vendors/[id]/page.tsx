@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { ApiError, ApprovalRequiredError, errorMessage } from '@/apis';
+import { ApiError, ApprovalRequiredError, errorMessage, request } from '@/apis';
 import { fmtDate, inr, inrCompact, pct } from '@/lib/format';
 import { ROLES, RoleCode } from '@/lib/permissions';
 import {
@@ -32,16 +32,37 @@ import {
   getVendor,
   rejectDocument,
   rejectKyc,
+  submitKyc,
+  uploadVendorDocument,
   verifyDocument,
   verifyKyc,
 } from '../apis';
 import { CheckStatus, FleetRow, KycItem, VendorDetail, VendorDocument } from '../types';
+import { UploadCell } from '../upload-cell';
 
 const CHECK_TONE: Record<CheckStatus, Tone> = {
   MISSING: 'red',
   PENDING: 'flag',
   VERIFIED: 'mint',
   REJECTED: 'red',
+};
+
+const PAN_RE = /^[A-Z]{5}\d{4}[A-Z]$/;
+const AADHAAR_LAST4_RE = /^\d{4}$/;
+
+/** Same rules as the onboarding wizard's KYC capture — kept in sync deliberately. */
+const KYC_NORMALIZE: Record<string, (value: string) => string> = {
+  PAN: (v) => v.toUpperCase().slice(0, 10),
+  AADHAAR: (v) => v.replace(/\D/g, '').slice(0, 4),
+};
+const KYC_VALIDATE: Record<string, (value: string) => string | undefined> = {
+  PAN: (v) => (PAN_RE.test(v) ? undefined : 'PAN looks wrong, e.g. AAKCR2148L'),
+  AADHAAR: (v) => (AADHAAR_LAST4_RE.test(v) ? undefined : 'Enter the last four digits only'),
+};
+const KYC_PLACEHOLDER: Record<string, string> = {
+  PAN: 'PAN number',
+  AADHAAR: 'Last four digits',
+  ADDRESS: 'Reference',
 };
 
 /**
@@ -151,6 +172,65 @@ export default function VendorDetailPage() {
     }
   };
 
+  /**
+   * Completes a KYC item or document that's MISSING or REJECTED without
+   * sending the operator back through the onboarding wizard — a stranded
+   * DRAFT (created at wizard step 1, then abandoned before any upload) had
+   * no way to be finished from here otherwise, and neither did re-uploading
+   * a REJECTED item. Same multipart-then-reference pattern the wizard uses.
+   */
+  const attach = async (
+    file: File,
+    meta: { kind?: string; entityType?: string; entityId?: string; latitude?: number; longitude?: number } = {},
+  ) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (meta.kind) formData.append('kind', meta.kind);
+    if (meta.entityType) formData.append('entityType', meta.entityType);
+    if (meta.entityId) formData.append('entityId', meta.entityId);
+    if (meta.latitude !== undefined) formData.append('latitude', String(meta.latitude));
+    if (meta.longitude !== undefined) formData.append('longitude', String(meta.longitude));
+    const { id: attachmentId } = await request<{ id: string; sha256: string }>({
+      url: '/attachments',
+      method: 'POST',
+      data: formData,
+    });
+    return attachmentId;
+  };
+
+  const onUploadKyc = async (
+    kind: string,
+    value: string,
+    file: File,
+    geo?: { latitude: number; longitude: number },
+  ) => {
+    try {
+      const attachmentId = await attach(file, {
+        kind,
+        entityType: 'vendor',
+        entityId: id,
+        latitude: geo?.latitude,
+        longitude: geo?.longitude,
+      });
+      await submitKyc(id, kind, { value, route: 'MANUAL', attachmentId });
+      load();
+      toast(`${kind} uploaded · queued for compliance`);
+    } catch (e) {
+      toast(errorMessage(e));
+    }
+  };
+
+  const onUploadDocument = async (kind: string, reference: string, file: File) => {
+    try {
+      const attachmentId = await attach(file, { kind, entityType: 'vendor', entityId: id });
+      await uploadVendorDocument(id, kind, { attachmentId, ...(reference ? { reference } : {}) });
+      load();
+      toast(`${kind.replace(/_/g, ' ')} uploaded · queued for compliance`);
+    } catch (e) {
+      toast(errorMessage(e));
+    }
+  };
+
   const onPolicySubmit = async () => {
     setBusy(true);
     try {
@@ -188,21 +268,41 @@ export default function VendorDetailPage() {
       key: 'act',
       label: '',
       align: 'right',
-      render: (r) =>
-        can('vendor.verify') && r.status === 'PENDING' ? (
-          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-            <button className="btn btn-secondary btn-sm" onClick={() => onVerifyKyc(r.kind)}>
-              Verify
-            </button>
-            <button className="btn btn-secondary btn-sm" onClick={() => setRejecting({ table: 'kyc', kind: r.kind })}>
-              Reject
-            </button>
-          </div>
-        ) : (
+      render: (r) => {
+        if (can('vendor.verify') && r.status === 'PENDING') {
+          return (
+            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+              <button className="btn btn-secondary btn-sm" onClick={() => onVerifyKyc(r.kind)}>
+                Verify
+              </button>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => setRejecting({ table: 'kyc', kind: r.kind })}
+              >
+                Reject
+              </button>
+            </div>
+          );
+        }
+        if (can('vendor.edit') && (r.status === 'MISSING' || r.status === 'REJECTED')) {
+          return (
+            <UploadCell
+              placeholder={KYC_PLACEHOLDER[r.kind] ?? 'Reference'}
+              needsReference={r.kind !== 'SELFIE'}
+              useCamera={r.kind === 'SELFIE'}
+              requireGeotag={r.kind === 'SELFIE'}
+              normalize={KYC_NORMALIZE[r.kind]}
+              validate={KYC_VALIDATE[r.kind]}
+              onUpload={(value, file, geo) => onUploadKyc(r.kind, value, file, geo)}
+            />
+          );
+        }
+        return (
           <span className="muted" style={{ fontSize: 11.5 }}>
             {r.status === 'VERIFIED' ? '' : 'COMPLIANCE verifies'}
           </span>
-        ),
+        );
+      },
     },
   ];
 
@@ -215,30 +315,36 @@ export default function VendorDetailPage() {
       key: 'act',
       label: '',
       align: 'right',
-      render: (r) =>
-        can('vendor.verify') && r.status === 'PENDING' ? (
-          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-            <button className="btn btn-secondary btn-sm" onClick={() => onVerifyDocument(r.kind)}>
-              Verify
-            </button>
-            <button
-              className="btn btn-secondary btn-sm"
-              onClick={() => setRejecting({ table: 'document', kind: r.kind })}
-            >
-              Reject
-            </button>
-          </div>
-        ) : (
+      render: (r) => {
+        if (can('vendor.verify') && r.status === 'PENDING') {
+          return (
+            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+              <button className="btn btn-secondary btn-sm" onClick={() => onVerifyDocument(r.kind)}>
+                Verify
+              </button>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => setRejecting({ table: 'document', kind: r.kind })}
+              >
+                Reject
+              </button>
+            </div>
+          );
+        }
+        if (can('vendor.edit') && (r.status === 'MISSING' || r.status === 'REJECTED')) {
+          return (
+            <UploadCell
+              placeholder="Reference or number"
+              onUpload={(value, file) => onUploadDocument(r.kind, value, file)}
+            />
+          );
+        }
+        return (
           <span className="muted" style={{ fontSize: 11.5 }}>
-            {r.status === 'VERIFIED'
-              ? ''
-              : r.status === 'MISSING'
-                ? 'Not uploaded yet'
-                : r.status === 'REJECTED'
-                  ? 'Needs a fresh upload'
-                  : 'COMPLIANCE verifies'}
+            {r.status === 'VERIFIED' ? '' : 'COMPLIANCE verifies'}
           </span>
-        ),
+        );
+      },
     },
   ];
 

@@ -1184,7 +1184,7 @@ table.table tbody tr:nth-child(even):hover {
 
 /* Below the console breakpoint the sidebar becomes an off-canvas drawer
    behind a hamburger toggle (`.mobile-topbar`) — same nav, same permission
-   filtering, just reachable on a branch manager's phone (NFR-06). */
+   filtering, just reachable on an operator's phone (NFR-06). */
 .mobile-topbar {
   display: none;
 }

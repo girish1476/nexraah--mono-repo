@@ -20,8 +20,8 @@ export class RfqRepository {
 
   /**
    * `rfqs`/`rfq_lanes` carry no `branch_id` column — branch-scoping this list
-   * for BRANCH_MGR is not mechanically possible without a schema change, so
-   * this intentionally returns every RFQ regardless of the caller's role.
+   * is not mechanically possible without a schema change, so this
+   * intentionally returns every RFQ regardless of the caller's branch.
    */
   list(filters: RfqListFilters) {
     let query = this.db

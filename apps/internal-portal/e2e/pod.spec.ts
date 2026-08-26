@@ -4,11 +4,11 @@ import { setRole, statValue } from './helpers';
 /**
  * POD — `/pod/pending`, `/pod/receiving`, `/pod/[id]/verify` (part 06).
  *
- * Module `pod`: COMPLIANCE and BRANCH_MGR are EDIT, OPS/FINANCE/LEADERSHIP
+ * Module `pod`: COMPLIANCE and OPS are EDIT, FINANCE/LEADERSHIP
  * are VIEW, ADMIN is NONE. But module-level EDIT is not the same as holding
  * the named permission a control actually checks: `pod.waive` is a fixed
  * permission (BR-43) held only by COMPLIANCE (see SEED_GRANTS in
- * lib/permissions.ts), so BRANCH_MGR — EDIT on the module — still doesn't
+ * lib/permissions.ts), so OPS — EDIT on the module — still doesn't
  * get the "Propose waiver" button. Tests below assert the real
  * permission-gated behaviour rather than the module-level shorthand.
  *
@@ -98,10 +98,10 @@ test.describe('POD pending list', () => {
     await expect(row(page, 'TRP-120869').getByRole('button', { name: 'Propose waiver' })).toHaveCount(0);
   });
 
-  test('BRANCH_MGR has module-level EDIT but lacks the fixed pod.waive permission, so no waiver button renders', async ({
+  test('Operations has module-level EDIT but lacks the fixed pod.waive permission, so no waiver button renders', async ({
     page,
   }) => {
-    await setRole(page, 'BRANCH_MGR');
+    await setRole(page, 'OPS');
     await page.goto('/pod/pending');
 
     // Branch-scoped to Nashik — only TRP-120881 is visible at all.

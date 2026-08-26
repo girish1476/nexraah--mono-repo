@@ -4,7 +4,7 @@ import { setRole, statValue } from './helpers';
 /**
  * Billing surfaces — `/invoices`, `/invoices/new`, `/invoices/[id]`,
  * `/receivables`, `/pnl` (lib/permissions.ts `invoices` · `receivables` ·
- * `pnl` modules). FINANCE is EDIT on all three; BRANCH_MGR and LEADERSHIP
+ * `pnl` modules). FINANCE is EDIT on all three; OPS and LEADERSHIP
  * are VIEW on invoices/receivables (LEADERSHIP is EDIT on pnl).
  *
  * Fixture facts pinned against `src/mocks/db.ts`:
@@ -15,8 +15,8 @@ import { setRole, statValue } from './helpers';
  *    received ₹0 · balance ₹36,550 · due 4 days ago (0–30 days bucket).
  *  - Delivered, unbilled trips: TRP-120881 and TRP-120874 (both Berger
  *    Paints), TRP-120855 (Apex Ceramics). Sanghvi Metals (SPOT) has none.
- *  - `/pnl` returns 5 branch rows for a non-BRANCH_MGR role, 1 (Nashik) for
- *    BRANCH_MGR. Exceptions (delivered, zero charge lines): TRP-120874 and
+ *  - `/pnl` returns 5 branch rows — no fixture user carries a branch, so
+ *    nothing is scoped. Exceptions (delivered, zero charge lines): TRP-120874 and
  *    TRP-120869.
  *
  * A few tests mutate the shared mock db (there is no reset endpoint — see
@@ -79,8 +79,8 @@ test.describe('invoices list', () => {
     await expect(rows.first()).toContainText('NEX-INV-000410');
   });
 
-  test('BRANCH_MGR (VIEW) sees the ledger read-only, with no New invoice link', async ({ page }) => {
-    await setRole(page, 'BRANCH_MGR');
+  test('Operations (VIEW) sees the ledger read-only, with no New invoice link', async ({ page }) => {
+    await setRole(page, 'OPS');
     await page.goto('/invoices');
 
     await expect(page.getByTestId('view-only')).toBeVisible();
@@ -129,8 +129,8 @@ test.describe('new invoice form', () => {
     await expect(page.getByRole('button', { name: 'Generate invoice' })).toBeDisabled();
   });
 
-  test('BRANCH_MGR without invoice.create is blocked from the form', async ({ page }) => {
-    await setRole(page, 'BRANCH_MGR');
+  test('Operations without invoice.create is blocked from the form', async ({ page }) => {
+    await setRole(page, 'OPS');
     await page.goto('/invoices/new');
 
     await expect(page.getByText('Invoicing is a finance action.')).toBeVisible();
@@ -191,8 +191,8 @@ test.describe('invoice detail', () => {
     await expect(page.getByText('PART PAID')).toBeVisible();
   });
 
-  test('BRANCH_MGR (VIEW) can read an issued invoice but gets no mutating controls', async ({ page }) => {
-    await setRole(page, 'BRANCH_MGR');
+  test('Operations (VIEW) can read an issued invoice but gets no mutating controls', async ({ page }) => {
+    await setRole(page, 'OPS');
     await page.goto('/invoices/inv-410');
 
     await expect(page.getByRole('heading', { name: 'NEX-INV-000410' })).toBeVisible();
@@ -250,8 +250,8 @@ test.describe('receivables', () => {
     await expect(dialog).toBeHidden();
   });
 
-  test('BRANCH_MGR (VIEW) sees the ledger without a Record receipt control', async ({ page }) => {
-    await setRole(page, 'BRANCH_MGR');
+  test('Operations (VIEW) sees the ledger without a Record receipt control', async ({ page }) => {
+    await setRole(page, 'OPS');
     await page.goto('/receivables');
 
     await expect(page.locator('table.table tbody tr').first()).toBeVisible();
@@ -300,16 +300,16 @@ test.describe('P&L', () => {
     await expect(page.locator('th', { hasText: /^Period$/ })).toBeVisible();
   });
 
-  test('BRANCH_MGR (VIEW) is scoped to its own branch, with no exceptions panel', async ({ page }) => {
-    await setRole(page, 'BRANCH_MGR');
+  // Operations inherited `pnl.view_own` and VIEW on the module. It carries no
+  // branch, so "own" resolves to everything — the read-only badge, not the
+  // row count, is what this pins.
+  test('Operations (VIEW) reads the P&L without mutating controls', async ({ page }) => {
+    await setRole(page, 'OPS');
     await page.goto('/pnl');
 
     await expect(page.getByTestId('view-only')).toBeVisible();
-    await expect(page.getByText('Nashik only · pnl.view_all not granted', { exact: true })).toBeVisible();
-
-    const rows = page.locator('table.table tbody tr');
-    await expect(rows).toHaveCount(1);
-    await expect(rows.first()).toContainText('Nashik');
+    await expect(page.getByText('All branches', { exact: true })).toBeVisible();
+    await expect(page.locator('table.table tbody tr')).toHaveCount(5);
 
     await expect(page.getByText(/overstate margin/)).toHaveCount(0);
   });

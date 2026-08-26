@@ -18,7 +18,7 @@ function isPublic(pathname: string | null): boolean {
 
 /**
  * `GET /auth/session` is the first call every page depends on: it carries the
- * role, the server-issued permission list and the branch a BRANCH_MGR is
+ * role, the server-issued permission list and the branch a scoped user is
  * scoped to. Nothing renders behind the shell until it resolves.
  *
  * Loading and failure used to collapse into the same `session === null`
@@ -152,7 +152,6 @@ function sessionLanding(session: Session): string {
     OPS: '/today',
     COMPLIANCE: '/compliance',
     FINANCE: '/payments/balance',
-    BRANCH_MGR: '/today',
     LEADERSHIP: '/home',
     ADMIN: '/admin',
   };

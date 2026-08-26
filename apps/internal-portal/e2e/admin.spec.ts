@@ -14,7 +14,7 @@ import {
  * already covered by `rbac-nav.spec.ts`, so this file is about what ADMIN
  * can actually do, plus what LEADERSHIP's read-only view withholds.
  * `approvals` is a *different* module (OPS=VIEW, COMPLIANCE/FINANCE/
- * BRANCH_MGR/LEADERSHIP=EDIT, ADMIN=VIEW) — an administrator only gets an
+ * OPS/LEADERSHIP=EDIT, ADMIN=VIEW) — an administrator only gets an
  * audit view of that queue, never a decision.
  *
  * The shared mock db (`src/mocks/db.ts`) has no reset endpoint, so a few
@@ -213,7 +213,7 @@ test.describe('roles matrix', () => {
 
     const modules = page.locator('table.table').nth(0);
     await expect(moduleCell(modules, 'Client bills', 'FINANCE')).toHaveText('✓');
-    await expect(moduleCell(modules, 'Client bills', 'BRANCH_MGR')).toHaveText('◐');
+    await expect(moduleCell(modules, 'Client bills', 'OPS')).toHaveText('◐');
     await expect(moduleCell(modules, 'Client bills', 'ADMIN')).toHaveText('✓');
     await expect(moduleCell(modules, 'Settings', 'ADMIN')).toHaveText('✓');
     await expect(moduleCell(modules, 'Settings', 'LEADERSHIP')).toHaveText('◐');
@@ -234,7 +234,7 @@ test.describe('roles matrix', () => {
     await expect(rfqSubmit.locator('td[data-label="Movable"]')).toHaveText('Fixed');
 
     const indentCreate = permissionRow(permissions, 'indent.create');
-    await expect(indentCreate.locator(roleColumn("BRANCH_MGR") + " input")).toBeChecked();
+    await expect(indentCreate.locator(roleColumn("OPS") + " input")).toBeChecked();
     await expect(indentCreate.locator(roleColumn("FINANCE") + " input")).not.toBeChecked();
     await expect(indentCreate.locator('td[data-label="Movable"]')).toHaveText('Any role');
   });
@@ -244,15 +244,15 @@ test.describe('roles matrix', () => {
     await page.goto('/admin/roles');
 
     const permissions = page.locator('table.table').nth(1);
-    // document.verify on BRANCH_MGR is untouched by every other test in this
+    // document.verify on OPS is untouched by every other test in this
     // suite, so this toggle cannot race the cross-check assertions above.
-    const cell = permissionRow(permissions, 'document.verify').locator(roleColumn("BRANCH_MGR") + " input");
+    const cell = permissionRow(permissions, 'document.verify').locator(roleColumn("OPS") + " input");
     await expect(cell).not.toBeChecked();
 
     // The toast names both in plain words now, so it is built from the same
     // maps the page renders from rather than restating them.
     const verifyDocs = PERMISSION_LABEL['document.verify'];
-    const branchMgr = ROLES.BRANCH_MGR.label;
+    const branchMgr = ROLES.OPS.label;
 
     await cell.click();
     await expect(page.getByText(`${verifyDocs} granted to ${branchMgr} · audited`)).toBeVisible();

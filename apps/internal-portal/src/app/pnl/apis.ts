@@ -3,7 +3,7 @@ import { Granularity, PnlException, PnlResponse } from './types';
 
 /**
  * GET /pnl?granularity=&from=&to=&branch=
- * A BRANCH_MGR request returns only their branch — enforced at the repository
+ * A branch-bound caller gets only their branch — enforced at the repository
  * layer, and the test asserts the endpoint rather than the screen.
  */
 export function getPnl(params: { granularity?: Granularity; from?: string; to?: string; branch?: string } = {}) {

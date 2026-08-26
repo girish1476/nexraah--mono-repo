@@ -7,7 +7,7 @@ import type { InternalDb } from '../../db/kysely';
 export class ReportsRepository {
   constructor(@Inject(DB) private readonly db: InternalDb) {}
 
-  /** Open indents — the pending-allocation queue. `branchId` scopes BRANCH_MGR (part 09). */
+  /** Open indents — the pending-allocation queue. `branchId` scopes a branch-bound caller (part 09). */
   openIndents(branchId: string | null) {
     let query = this.db
       .selectFrom('indents')
@@ -208,8 +208,8 @@ export class ReportsRepository {
   /**
    * Issued/part-paid invoices not yet fully collected. Invoices carry no
    * branch_id (one invoice can span trips from more than one branch), so a
-   * BRANCH_MGR's figure is approximated via "touches at least one of their
-   * trips" rather than split proportionally.
+   * a branch-bound caller's figure is approximated via "touches at least one
+   * of their trips" rather than split proportionally.
    */
   receivables(branchId: string | null) {
     let query = this.db

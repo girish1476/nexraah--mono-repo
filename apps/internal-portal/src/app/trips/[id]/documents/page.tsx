@@ -67,6 +67,16 @@ export default function TripDocumentsPage() {
   /** Kind currently uploading, so only that row's button shows a busy state. */
   const [uploading, setUploading] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  /**
+   * The invoice and the e-way bill are the two documents the cross-check
+   * actually reads (`trips.service.ts`'s `crossCheck`) — everything else
+   * uploads straight through. Picking a file for either of these two opens
+   * this small dialog instead of uploading immediately, so the typed values
+   * exist for the check to compare against the lorry receipt at all.
+   */
+  const [keyedDoc, setKeyedDoc] = useState<TripDocument | null>(null);
+  const [keyedFile, setKeyedFile] = useState<File | null>(null);
+  const [keyedForm, setKeyedForm] = useState<Record<string, string>>({});
 
   const load = () => {
     setError(null);
@@ -98,6 +108,17 @@ export default function TripDocumentsPage() {
     // Clear it so picking the same file again after a failure still fires onChange.
     e.target.value = '';
     if (!file || !doc) return;
+    if (doc.kind === 'CLIENT_INVOICE_OR_PO' || doc.kind === 'EWAY_BILL') {
+      setKeyedDoc(doc);
+      setKeyedFile(file);
+      setKeyedForm({});
+      setPendingDoc(null);
+      return;
+    }
+    await doUpload(doc, file);
+  };
+
+  const doUpload = async (doc: TripDocument, file: File, keyedValues?: Record<string, string>) => {
     setUploading(doc.kind);
     try {
       const formData = new FormData();
@@ -110,7 +131,7 @@ export default function TripDocumentsPage() {
         method: 'POST',
         data: formData,
       });
-      await uploadTripDocument(id, doc.kind, { attachmentId });
+      await uploadTripDocument(id, doc.kind, { attachmentId, keyedValues });
       toast(`${doc.label} uploaded · sent for verification`);
       load();
     } catch (err) {
@@ -119,6 +140,27 @@ export default function TripDocumentsPage() {
       setUploading(null);
       setPendingDoc(null);
     }
+  };
+
+  const submitKeyed = async () => {
+    if (!keyedDoc || !keyedFile) return;
+    const keyedValues: Record<string, string> =
+      keyedDoc.kind === 'CLIENT_INVOICE_OR_PO'
+        ? {
+            invoiceNo: (keyedForm.invoiceNo ?? '').trim(),
+            invoiceValue: String(Math.round(Number(keyedForm.invoiceValueRupees || 0) * 100)),
+            consignorGstin: (keyedForm.consignorGstin ?? '').trim().toUpperCase(),
+            consigneeName: (keyedForm.consigneeName ?? '').trim(),
+          }
+        : {
+            vehicleNo: (keyedForm.vehicleNo ?? '').trim().toUpperCase(),
+            validTill: keyedForm.validTill ?? '',
+          };
+    const doc = keyedDoc;
+    const file = keyedFile;
+    setKeyedDoc(null);
+    setKeyedFile(null);
+    await doUpload(doc, file, keyedValues);
   };
 
   const verify = async (doc: TripDocument) => {
@@ -366,6 +408,70 @@ export default function TripDocumentsPage() {
         <Field label="Reason" required hint="At least 20 characters.">
           <textarea rows={3} value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)} />
         </Field>
+      </Dialog>
+
+      <Dialog
+        open={!!keyedDoc}
+        title={`Key in details for ${keyedDoc?.label ?? ''}`}
+        body="Type exactly what the document says — these values are what the cross-check compares against the lorry receipt."
+        confirmLabel="Upload"
+        confirmDisabled={
+          keyedDoc?.kind === 'CLIENT_INVOICE_OR_PO'
+            ? !keyedForm.invoiceNo?.trim() || !keyedForm.invoiceValueRupees
+            : !keyedForm.vehicleNo?.trim() || !keyedForm.validTill
+        }
+        busy={uploading !== null}
+        onConfirm={submitKeyed}
+        onClose={() => {
+          setKeyedDoc(null);
+          setKeyedFile(null);
+        }}
+      >
+        {keyedDoc?.kind === 'CLIENT_INVOICE_OR_PO' ? (
+          <>
+            <Field label="Invoice number" required>
+              <input
+                value={keyedForm.invoiceNo ?? ''}
+                onChange={(e) => setKeyedForm({ ...keyedForm, invoiceNo: e.target.value })}
+              />
+            </Field>
+            <Field label="Invoice value (₹)" required>
+              <input
+                type="number"
+                value={keyedForm.invoiceValueRupees ?? ''}
+                onChange={(e) => setKeyedForm({ ...keyedForm, invoiceValueRupees: e.target.value })}
+              />
+            </Field>
+            <Field label="Consignor GSTIN">
+              <input
+                value={keyedForm.consignorGstin ?? ''}
+                onChange={(e) => setKeyedForm({ ...keyedForm, consignorGstin: e.target.value })}
+              />
+            </Field>
+            <Field label="Consignee name">
+              <input
+                value={keyedForm.consigneeName ?? ''}
+                onChange={(e) => setKeyedForm({ ...keyedForm, consigneeName: e.target.value })}
+              />
+            </Field>
+          </>
+        ) : (
+          <>
+            <Field label="Vehicle number" required>
+              <input
+                value={keyedForm.vehicleNo ?? ''}
+                onChange={(e) => setKeyedForm({ ...keyedForm, vehicleNo: e.target.value })}
+              />
+            </Field>
+            <Field label="Valid till" required>
+              <input
+                type="date"
+                value={keyedForm.validTill ?? ''}
+                onChange={(e) => setKeyedForm({ ...keyedForm, validTill: e.target.value })}
+              />
+            </Field>
+          </>
+        )}
       </Dialog>
     </ModuleGuard>
   );

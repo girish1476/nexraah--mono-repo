@@ -1,9 +1,11 @@
 import { AxiosAdapter, AxiosError, AxiosRequestConfig, AxiosResponse } from 'axios';
 import { RoleCode, SEED_GRANTS } from '@/lib/permissions';
 import {
+  ACCOUNTS,
   ADVANCE_DOCUMENT_SET,
   BRANCHES,
   CREDENTIALS,
+  type FixtureAccount,
   DEMO_PASSWORD,
   DOC_LABEL,
   SUPPLY_SOURCE_LABEL,
@@ -57,6 +59,16 @@ interface MockClaims {
   sub: string;
   email: string;
   role: RoleCode;
+  /**
+   * Branch code, or `null` for someone who sees every branch.
+   *
+   * On the token because that is where the real system keeps it:
+   * `auth.service.ts` returns `branch: user.branch` per user. Deriving it
+   * from the role instead — which this fixture did until the BRANCH_MGR merge
+   * made scoping a property of the person — cannot represent two people of
+   * the same role on different branches, which is now the ordinary case.
+   */
+  branch: string | null;
   typ: 'access' | 'refresh';
   exp: number;
   /**
@@ -77,12 +89,12 @@ const b64url = (value: string) =>
 const unb64url = (value: string) =>
   atob(value.replace(/-/g, '+').replace(/_/g, '/'));
 
-function mint(role: RoleCode, typ: 'access' | 'refresh'): string {
-  const user = USERS[role];
+function mint(account: FixtureAccount, typ: 'access' | 'refresh'): string {
   const claims: MockClaims = {
-    sub: user.userId,
-    email: user.email,
-    role,
+    sub: account.userId,
+    email: account.email,
+    role: account.role,
+    branch: account.branch,
     typ,
     exp: Date.now() + (typ === 'access' ? ACCESS_TTL_MS : REFRESH_TTL_MS),
     jti: (minted += 1),
@@ -120,10 +132,10 @@ function readToken(token: string | null | undefined, typ: 'access' | 'refresh'):
   }
 }
 
-function issue(role: RoleCode) {
+function issue(account: FixtureAccount) {
   return {
-    accessToken: mint(role, 'access'),
-    refreshToken: mint(role, 'refresh'),
+    accessToken: mint(account, 'access'),
+    refreshToken: mint(account, 'refresh'),
     expiresAt: Date.now() + ACCESS_TTL_MS,
   };
 }
@@ -136,17 +148,21 @@ function issue(role: RoleCode) {
  */
 export async function mockSignIn(email: string, password: string) {
   await new Promise((r) => setTimeout(r, 260));
-  const role = CREDENTIALS[email.trim().toLowerCase()];
-  if (!role || password !== DEMO_PASSWORD) {
+  const account = CREDENTIALS[email.trim().toLowerCase()];
+  if (!account || password !== DEMO_PASSWORD) {
     throw new Error('That email and password do not match an account.');
   }
-  return issue(role);
+  return issue(account);
 }
 
 export async function mockRefresh(refreshToken: string) {
   const result = readToken(refreshToken, 'refresh');
   if (!result.ok) throw new Error('This session has expired. Sign in again.');
-  return issue(result.claims.role);
+  // Resolved by `sub`, not by role: refreshing Sunita Rao's session must not
+  // hand back the unscoped Operations account and quietly widen her scope.
+  const account = ACCOUNTS.find((a) => a.userId === result.claims.sub);
+  if (!account) throw new Error('This session has expired. Sign in again.');
+  return issue(account);
 }
 
 /**
@@ -156,17 +172,28 @@ export async function mockRefresh(refreshToken: string) {
  * token, so the format can never drift out from under the suite — which is
  * precisely how the checked-in dev tokens managed to expire unnoticed.
  */
-export function mintAccessToken(role: RoleCode): string {
-  return mint(role, 'access');
+export function mintAccessToken(who: RoleCode | FixtureAccount): string {
+  return mint(typeof who === 'string' ? USERS[who] : who, 'access');
 }
 
-/** The six fixture accounts, for the sign-in screen's demo list. */
-export function mockAccounts(): { email: string; name: string; role: RoleCode }[] {
-  return (Object.keys(USERS) as RoleCode[]).map((role) => ({
-    email: USERS[role].email,
-    name: USERS[role].name,
-    role,
-  }));
+/**
+ * The scoped fixture account for a role, if one exists.
+ *
+ * `USERS[role]` can only ever answer with the role's default person, who is
+ * always unscoped — so a spec that wants to prove branch narrowing has to ask
+ * for the branched account by name.
+ */
+export function branchedAccount(role: RoleCode): FixtureAccount | undefined {
+  return ACCOUNTS.find((a) => a.role === role && a.branch !== null);
+}
+
+/**
+ * Every fixture account, for the sign-in screen's demo list — including the
+ * branched one, so signing in as a scoped person is demonstrable rather than
+ * only reachable from a test.
+ */
+export function mockAccounts(): { email: string; name: string; role: RoleCode; branch: string | null }[] {
+  return ACCOUNTS.map(({ email, name, role, branch }) => ({ email, name, role, branch }));
 }
 
 interface Ctx {
@@ -174,6 +201,14 @@ interface Ctx {
   query: URLSearchParams;
   body: any;
   role: RoleCode;
+  /**
+   * The signed-in person's branch code, or `null` for all-branches.
+   *
+   * Sits beside `role` rather than being looked up from it, because after the
+   * BRANCH_MGR merge two people can share a role and see different branches.
+   * Read from the token, which is where the real API reads it from too.
+   */
+  branch: string | null;
   headers: Record<string, any>;
 }
 
@@ -370,9 +405,28 @@ function tripSummary(t: any) {
   };
 }
 
-function scopeBranch(rows: any[], role: RoleCode) {
-  if (role !== 'BRANCH_MGR') return rows;
-  return rows.filter((r) => r.branchId === 'br-nsk' || r.branchName === 'Nashik');
+/**
+ * The branch a signed-in user is scoped to, or null for someone who sees the
+ * whole company. Scoping is a property of the *user* now, not of their role —
+ * BRANCH_MGR is gone and Operations absorbed it, so the only thing that can
+ * narrow a view is whether that person has a branch on their record — which
+ * is now read from the token's `branch` claim, per user, exactly as
+ * `auth.service.ts` does it.
+ *
+ * This used to read `USERS[role].branch`, a role-keyed lookup that could not
+ * express two people of one role on different branches. That made mock mode
+ * structurally unable to reproduce per-user scoping, so "mock mode shows all
+ * branches" was evidence of nothing. It is the caller's own branch now, so it
+ * is evidence again.
+ */
+function scopedBranch(code: string | null) {
+  return code ? (BRANCHES.find((b) => b.code === code) ?? null) : null;
+}
+
+function scopeBranch(rows: any[], code: string | null) {
+  const branch = scopedBranch(code);
+  if (!branch) return rows;
+  return rows.filter((r) => r.branchId === branch.id || r.branchName === branch.name);
 }
 
 /* ---- orders — the ten-step spine ----------------------------------------
@@ -834,9 +888,9 @@ const routes: [string, RegExp, Handler][] = [
   [
     'GET',
     /^\/vendors\/market-gap$/,
-    ({ role }) =>
+    ({ role, branch }) =>
       ok(
-        scopeBranch(db.marketGap, role).map((g) => ({
+        scopeBranch(db.marketGap, branch).map((g) => ({
           ...g,
           gap: Math.max(0, g.target - g.onPanel),
           progressPct: g.target ? Math.round((g.converted / g.target) * 100) : 0,
@@ -1305,11 +1359,11 @@ const routes: [string, RegExp, Handler][] = [
   [
     'GET',
     /^\/indents$/,
-    ({ query, role }) => {
+    ({ query, role, branch }) => {
       const stage = query.get('stage');
       const client = query.get('client');
       return ok(
-        scopeBranch(db.indents, role)
+        scopeBranch(db.indents, branch)
           .filter((i) => !stage || i.stage === stage)
           .filter((i) => !client || i.clientId === client)
           .map((i) => ({
@@ -1386,7 +1440,7 @@ const routes: [string, RegExp, Handler][] = [
   [
     'GET',
     /^\/orders$/,
-    ({ query, role }) => {
+    ({ query, role, branch }) => {
       const status = query.get('status');
       const client = query.get('client');
       const openOnly = query.get('open') === '1' || query.get('open') === 'true';
@@ -1396,7 +1450,7 @@ const routes: [string, RegExp, Handler][] = [
       const limit = Math.min(Math.max(Number(query.get('limit')) || 50, 1), 200);
       const offset = Math.max(Number(query.get('offset')) || 0, 0);
 
-      const all = scopeBranch(db.indents, role)
+      const all = scopeBranch(db.indents, branch)
         .map(orderRow)
         .filter((r) => !status || r.status === status)
         .filter((r) => !client || db.indents.find((i: any) => i.id === r.indentId)?.clientId === client)
@@ -1416,9 +1470,9 @@ const routes: [string, RegExp, Handler][] = [
   [
     'GET',
     /^\/orders\/counts$/,
-    ({ role }) => {
+    ({ role, branch }) => {
       const counts: Record<string, number> = {};
-      for (const row of scopeBranch(db.indents, role).map(orderRow)) {
+      for (const row of scopeBranch(db.indents, branch).map(orderRow)) {
         counts[row.status] = (counts[row.status] ?? 0) + 1;
       }
       return ok(counts);
@@ -1588,12 +1642,12 @@ const routes: [string, RegExp, Handler][] = [
   [
     'GET',
     /^\/trips$/,
-    ({ query, role }) => {
+    ({ query, role, branch }) => {
       const q = (query.get('q') ?? '').toLowerCase();
       const stage = query.get('stage');
       const podStatus = query.get('pod_status');
       return ok(
-        scopeBranch(db.trips, role)
+        scopeBranch(db.trips, branch)
           .filter((t) => !stage || t.stage === stage)
           .filter((t) => !podStatus || t.podStatus === podStatus)
           .filter(
@@ -1742,7 +1796,10 @@ const routes: [string, RegExp, Handler][] = [
       if (!trip.vehicleNo) fail(409, 'NOT_PLACED', 'A lorry receipt cannot be issued before the truck is placed (BR-13).');
       if (trip.lrCode) fail(409, 'LR_EXISTS', 'This trip already carries a lorry receipt (BR-22).');
       trip.lrCode = nextNumber('LR');
-      trip.lr = { ...(trip.lr ?? {}), code: trip.lrCode, status: 'BOOKED', lrDate: helpers.now(), bookedAt: helpers.now() };
+      // Matches trips.repository.ts's `finalizeLr`: generating an LR sets it
+      // RELEASED directly, not BOOKED — BOOKED is only the pre-generate draft
+      // placeholder. depart() below gates on RELEASED specifically.
+      trip.lr = { ...(trip.lr ?? {}), code: trip.lrCode, status: 'RELEASED', lrDate: helpers.now(), bookedAt: helpers.now() };
       return ok(trip.lr);
     },
   ],
@@ -1755,14 +1812,43 @@ const routes: [string, RegExp, Handler][] = [
       return ok(trip.lr);
     },
   ],
+  [
+    'POST',
+    /^\/trips\/([^/]+)\/depart$/,
+    ({ params }) => {
+      const trip = findTrip(params[0]);
+      if (trip.stage !== 'OPEN') fail(409, 'NOT_OPEN', `Trip ${trip.code} is not OPEN (currently ${trip.stage}).`);
+      if (trip.lr?.status !== 'RELEASED') {
+        fail(409, 'LR_NOT_GENERATED', 'The lorry receipt must be generated before departure.');
+      }
+      trip.stage = 'IN_TRANSIT';
+      trip.lr = { ...trip.lr, status: 'IN_TRANSIT' };
+      return ok(trip);
+    },
+  ],
+  [
+    'POST',
+    /^\/trips\/([^/]+)\/deliver$/,
+    ({ params, body }) => {
+      const trip = findTrip(params[0]);
+      if (trip.stage !== 'IN_TRANSIT') {
+        fail(409, 'NOT_IN_TRANSIT', `Trip ${trip.code} is not IN_TRANSIT (currently ${trip.stage}).`);
+      }
+      trip.stage = 'DELIVERED';
+      trip.deliveredAt = body?.deliveredAt ?? helpers.now();
+      trip.podStatus = 'PENDING';
+      trip.lr = { ...trip.lr, status: 'DELIVERED' };
+      return ok(trip);
+    },
+  ],
   ['GET', /^\/trips\/([^/]+)$/, ({ params }) => ok(findTrip(params[0]))],
 
   /* ------------------------------------------------------------- C5 ----- */
   [
     'GET',
     /^\/pod\/receiving$/,
-    ({ role }) => {
-      const rows = scopeBranch(db.trips, role).filter((t) => t.deliveredAt);
+    ({ role, branch }) => {
+      const rows = scopeBranch(db.trips, branch).filter((t) => t.deliveredAt);
       return ok({
         stats: {
           attachedInTransit: rows.filter((t) => t.podStatus === 'ATTACHED').length,
@@ -1795,11 +1881,15 @@ const routes: [string, RegExp, Handler][] = [
   [
     'GET',
     /^\/pod\/pending$/,
-    ({ role, query }) => {
+    // `scope` is who the caller is; `branch` is what they typed in the filter
+    // box. Two different things that both want the name "branch" — keeping
+    // them apart matters, because passing the lowercased filter text as the
+    // scope silently matches no branch code and turns scoping off entirely.
+    ({ role, query, branch: scope }) => {
       const branch = (query.get('branch') ?? '').trim().toLowerCase();
       const transporter = (query.get('transporter') ?? '').trim().toLowerCase();
       const ageing = query.get('ageing');
-      const rows = scopeBranch(db.trips, role)
+      const rows = scopeBranch(db.trips, scope)
         .filter((t) => t.deliveredAt && !['APPROVED', 'WAIVED'].includes(t.podStatus))
         .filter((t) => !branch || t.branchName.toLowerCase().includes(branch))
         .filter((t) => !transporter || t.vendorName.toLowerCase().includes(transporter))
@@ -1943,7 +2033,7 @@ const routes: [string, RegExp, Handler][] = [
   [
     'POST',
     /^\/pod\/([^/]+)\/waive$/,
-    ({ params, body, role }) => {
+    ({ params, body, role, branch }) => {
       const trip = findTrip(params[0]);
       if (!body?.reason || body.reason.trim().length < 30)
         fail(400, 'REASON_TOO_SHORT', 'A waiver reason of at least 30 characters is required (BR-43).');
@@ -1966,9 +2056,9 @@ const routes: [string, RegExp, Handler][] = [
   [
     'GET',
     /^\/payments\/advance$/,
-    ({ role }) =>
+    ({ role, branch }) =>
       ok(
-        scopeBranch(db.trips, role)
+        scopeBranch(db.trips, branch)
           .filter((t) => t.advancePaidPaise === 0 && t.buyRatePaise)
           .map((t) => {
             const gate = advanceGate(t);
@@ -2017,7 +2107,7 @@ const routes: [string, RegExp, Handler][] = [
   [
     'POST',
     /^\/payments\/advance\/([^/]+)$/,
-    ({ params, body, headers, role }) => {
+    ({ params, body, headers, role, branch }) => {
       const trip =
         db.trips.find((t) => t.indentId === params[0] || t.indentCode === params[0] || t.id === params[0]) ??
         fail(404, 'NOT_FOUND', 'No trip for this indent');
@@ -2054,9 +2144,9 @@ const routes: [string, RegExp, Handler][] = [
   [
     'GET',
     /^\/payments\/balance$/,
-    ({ role }) =>
+    ({ role, branch }) =>
       ok(
-        scopeBranch(db.trips, role)
+        scopeBranch(db.trips, branch)
           .filter((t) => t.deliveredAt && t.balancePaidPaise === 0)
           .map((t) => {
             const gate = balanceGate(t);
@@ -2409,7 +2499,7 @@ const routes: [string, RegExp, Handler][] = [
   [
     'POST',
     /^\/rfqs\/([^/]+)\/award$/,
-    ({ params, body }) => {
+    ({ params, body, branch }) => {
       const rfq = findRfq(params[0]);
       const created: any[] = [];
       (body?.lanes ?? []).forEach((decision: any) => {
@@ -2443,13 +2533,13 @@ const routes: [string, RegExp, Handler][] = [
   [
     'GET',
     /^\/reports\/today$/,
-    ({ role }) => {
-      const indents = scopeBranch(db.indents, role);
+    ({ role, branch }) => {
+      const indents = scopeBranch(db.indents, branch);
       const open = indents.filter((i) => i.stage === 'OPEN');
       const failures = indents.filter(
         (i) => ['OPEN', 'VENDOR_ASSIGNED'].includes(i.stage) && new Date(i.pickupDate).getTime() < Date.now(),
       );
-      const trips = scopeBranch(db.trips, role);
+      const trips = scopeBranch(db.trips, branch);
       return ok({
         pendingAllocation: {
           stats: {
@@ -2511,15 +2601,15 @@ const routes: [string, RegExp, Handler][] = [
   [
     'GET',
     /^\/reports\/home$/,
-    ({ role }) => {
-      const trips = scopeBranch(db.trips, role);
+    ({ role, branch }) => {
+      const trips = scopeBranch(db.trips, branch);
       const branchRows = [
         { branchName: 'Nashik', trips: 412, revenuePaise: 1864000000, costPaise: 1598000000 },
         { branchName: 'Pune', trips: 388, revenuePaise: 1721000000, costPaise: 1483000000 },
         { branchName: 'Vijayawada', trips: 301, revenuePaise: 1394000000, costPaise: 1226000000 },
         { branchName: 'Gandhidham', trips: 266, revenuePaise: 1538000000, costPaise: 1371000000 },
         { branchName: 'Hosur', trips: 194, revenuePaise: 987000000, costPaise: 872000000 },
-      ].filter((b) => role !== 'BRANCH_MGR' || b.branchName === 'Nashik');
+      ].filter((b) => !scopedBranch(branch) || b.branchName === scopedBranch(branch)!.name);
       const revenuePaise = branchRows.reduce((a, b) => a + b.revenuePaise, 0);
       const costPaise = branchRows.reduce((a, b) => a + b.costPaise, 0);
       return ok({
@@ -2561,16 +2651,18 @@ const routes: [string, RegExp, Handler][] = [
   [
     'GET',
     /^\/pnl$/,
-    ({ role }) => {
+    ({ role, branch }) => {
       const rows = [
         { period: 'Nashik', placementPaise: 1418000000, loadingPaise: 92000000, unloadingPaise: 61000000, detentionPaise: 21000000, otherPaise: 6000000, revenuePaise: 1864000000 },
         { period: 'Pune', placementPaise: 1329000000, loadingPaise: 82000000, unloadingPaise: 54000000, detentionPaise: 14000000, otherPaise: 4000000, revenuePaise: 1721000000 },
         { period: 'Vijayawada', placementPaise: 1104000000, loadingPaise: 71000000, unloadingPaise: 39000000, detentionPaise: 9000000, otherPaise: 3000000, revenuePaise: 1394000000 },
         { period: 'Gandhidham', placementPaise: 1241000000, loadingPaise: 79000000, unloadingPaise: 41000000, detentionPaise: 8000000, otherPaise: 2000000, revenuePaise: 1538000000 },
         { period: 'Hosur', placementPaise: 781000000, loadingPaise: 54000000, unloadingPaise: 29000000, detentionPaise: 6000000, otherPaise: 2000000, revenuePaise: 987000000 },
-      ].filter((r) => role !== 'BRANCH_MGR' || r.period === 'Nashik');
+      ].filter((r) => !scopedBranch(branch) || r.period === scopedBranch(branch)!.name);
       return ok({
-        scope: role === 'BRANCH_MGR' ? 'Nashik only · pnl.view_all not granted' : 'All branches',
+        scope: scopedBranch(branch)
+          ? `${scopedBranch(branch)!.name} only · pnl.view_all not granted`
+          : 'All branches',
         rows: rows.map((r) => {
           const costPaise = r.placementPaise + r.loadingPaise + r.unloadingPaise + r.detentionPaise + r.otherPaise;
           return { ...r, costPaise, marginPaise: r.revenuePaise - costPaise };
@@ -2581,9 +2673,9 @@ const routes: [string, RegExp, Handler][] = [
   [
     'GET',
     /^\/pnl\/exceptions$/,
-    ({ role }) =>
+    ({ role, branch }) =>
       ok(
-        scopeBranch(db.trips, role)
+        scopeBranch(db.trips, branch)
           .filter((t) => t.charges.length === 0 && t.deliveredAt)
           .map((t) => ({
             tripId: t.id,
@@ -2676,6 +2768,19 @@ function currentRole(): RoleCode {
   return result.ok ? result.claims.role : 'OPS';
 }
 
+/**
+ * The signed-in person's branch, from the token — `null` for all-branches.
+ *
+ * A token minted before `branch` joined the claims has it `undefined`; that
+ * reads as unscoped, which is the safe direction: it shows too much rather
+ * than silently hiding rows.
+ */
+function currentBranch(): string | null {
+  if (typeof window === 'undefined') return null;
+  const result = readToken(localStorage.getItem('token'), 'access');
+  return result.ok ? (result.claims.branch ?? null) : null;
+}
+
 function envelope(config: AxiosRequestConfig, httpStatus: number, data: any): AxiosResponse {
   return {
     data: { success: true, data },
@@ -2717,6 +2822,7 @@ export const mockAdapter: AxiosAdapter = async (config) => {
         query,
         body,
         role: currentRole(),
+        branch: currentBranch(),
         headers,
       });
       if (result && typeof result === 'object' && '__status' in result)

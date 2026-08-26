@@ -9,6 +9,8 @@ import { ApprovalsRegistry } from '../approvals/approvals.registry';
 import { OrdersService } from '../orders/orders.service';
 import { VendorsRepository } from '../vendors/vendors.repository';
 import { canRaiseIndent, indentBlockReason } from '../clients/client-onboarding';
+import { awardBlockReason, vendorExpiryReport } from '../vendors/vendor-document-expiry';
+import { crossCheckRate } from './rate-cross-check';
 import { IndentsRepository, type IndentListFilters } from './indents.repository';
 import type { CreateIndentDto } from './dto/create-indent.dto';
 import type { PlacementDto } from './dto/placement.dto';
@@ -124,6 +126,12 @@ export class IndentsService implements OnModuleInit {
       id: indent.id,
       code: indent.code,
       clientId: indent.client_id,
+      // Joined in `findById`. Without these the detail header rendered blank
+      // Client and Branch on the real API; `awardedQuoteId` is what draws the
+      // "Awarded" tag on the winning bid.
+      clientName: indent.clientName,
+      branchName: indent.branchName,
+      awardedQuoteId: indent.awarded_quote_id,
       branchId: indent.branch_id,
       fromCity: indent.from_city,
       toCity: indent.to_city,
@@ -198,6 +206,45 @@ export class IndentsService implements OnModuleInit {
     if (!client) {
       throw new DomainException(404, 'CLIENT_NOT_FOUND', 'That client does not exist.');
     }
+    /*
+     * Rate cross-verification: does this price match what we agreed?
+     *
+     * Nothing checked this before. An indent stored `rate_card_lane_id` and
+     * `sell_rate` next to each other and never compared them, so a contract
+     * load could be raised at any price against a lane that said something
+     * else — or against another client's lane, or one that expired months
+     * ago. The loss is quiet: an under-priced contract load bills less than
+     * the contract entitles us to, and no report would ever surface it.
+     *
+     * Only runs when a lane is actually named. A contract client moving on a
+     * route their rate card does not cover is legitimate; it just has no
+     * agreed price to be checked against.
+     */
+    if (dto.rateCardLaneId) {
+      const lane = await this.indentsRepository.findRateCardLane(dto.rateCardLaneId);
+      if (!lane) {
+        throw new DomainException(404, 'RATE_CARD_LANE_NOT_FOUND', 'That rate card lane does not exist.');
+      }
+      const check = crossCheckRate(
+        {
+          clientId: dto.clientId,
+          fromCity: dto.fromCity,
+          toCity: dto.toCity,
+          truckType: dto.truckType,
+          sellRatePaise: dto.sellRatePaise,
+          pickupDate: dto.pickupDate,
+        },
+        lane,
+      );
+      if (!check.ok) {
+        throw new DomainException(409, 'RATE_CROSS_CHECK_FAILED', check.reason ?? 'Rate does not match the rate card.', {
+          mismatch: check.mismatch,
+          agreedRatePaise: check.agreedRatePaise ?? null,
+          quotedRatePaise: dto.sellRatePaise,
+        });
+      }
+    }
+
     if (!canRaiseIndent(client.status)) {
       throw new DomainException(
         422,
@@ -325,6 +372,43 @@ export class IndentsService implements OnModuleInit {
       });
     }
 
+    /*
+     * ...and nor can one whose legal papers have since lapsed.
+     *
+     * `status === 'ACTIVE'` was the whole of the check, and it is a statement
+     * about the past: it records that Compliance cleared this vendor once.
+     * `vendor_documents.valid_to` has been captured and displayed since the
+     * first migration and read by nothing, so a trade licence that expired a
+     * year ago left the vendor ACTIVE and awardable. The exposure is not a
+     * wrong number on a screen — it is goods moving on a vehicle whose
+     * paperwork we are asserting we checked.
+     *
+     * Deliberately blocks only *new* work. Nothing here suspends the vendor
+     * or touches trips already running: a certificate lapsing overnight must
+     * not strand a load mid-route, and suspending is Compliance's decision to
+     * take, not a side effect of awarding.
+     */
+    // `findDocuments` is a `selectAll()`, so the rows are snake_case.
+    const vendorDocs = await this.vendorsRepository.findDocuments(quote.vendor_id);
+    const expiry = vendorExpiryReport(
+      vendorDocs.map((d) => ({ kind: d.kind, status: d.status, validTo: d.valid_to ?? null })),
+      new Date(),
+    );
+    if (expiry.hasExpired) {
+      throw new DomainException(
+        409,
+        'VENDOR_DOCUMENTS_EXPIRED',
+        awardBlockReason(vendor.status, expiry) ?? 'This transporter has expired documents.',
+        {
+          unmet: expiry.expired.map((e) => ({
+            key: e.kind,
+            label: `${e.kind.replace(/_/g, ' ')} expired ${e.validTo}`,
+            state: 'BLOCKED',
+          })),
+        },
+      );
+    }
+
     await this.indentsRepository.decideQuote(trx, quoteId, 'ACCEPTED');
     await this.indentsRepository.rejectOtherSubmittedQuotes(trx, indentId, quoteId);
 
@@ -350,7 +434,10 @@ export class IndentsService implements OnModuleInit {
   }
 
   async placement(indentId: string, dto: PlacementDto, actor: AuthenticatedUser) {
-    return this.indentsRepository.transaction().execute(async (trx) => {
+    // Returns the FULL indent, not a stub. The detail page stores whatever this
+    // resolves to as the whole record, so a three-field reply blanked every
+    // other field on screen until the user reloaded.
+    const { transitDelay } = await this.indentsRepository.transaction().execute(async (trx) => {
       const indent = await this.indentsRepository.findByIdForUpdate(trx, indentId);
       if (!indent) throw new DomainException(404, 'NOT_FOUND', `Unknown indent: ${indentId}`);
       if (indent.stage !== 'VENDOR_ASSIGNED') {
@@ -381,8 +468,9 @@ export class IndentsService implements OnModuleInit {
         before: { stage: indent.stage },
         after: { stage: updated.stage, transitDelay },
       });
-      return { id: updated.id, stage: updated.stage, transitDelay };
+      return { transitDelay };
     });
+    return { ...(await this.getById(indentId)), transitDelay };
   }
 
   async createTrip(indentId: string, actor: AuthenticatedUser) {

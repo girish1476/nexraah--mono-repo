@@ -25,8 +25,13 @@ The first call every page makes. Nothing renders behind the shell until it resol
 }
 ```
 
-`role` is one of `OPS · COMPLIANCE · FINANCE · BRANCH_MGR · LEADERSHIP · ADMIN`.
-`branch` is `{ id, code, name }` for `BRANCH_MGR` and `null` for every other role. It is presentation only — scoping happens at the repository layer regardless.
+`role` is one of `OPS · COMPLIANCE · FINANCE · BD · LEADERSHIP · ADMIN`.
+
+**`BRANCH_MGR` no longer exists.** It was merged into `OPS` on 2026-08-26 — the two desks were never separated by what they could *do*, only by how much they could *see*, and that is now carried by the user rather than the role.
+
+**`BD` (business development) was added the same day.** It is the only role whose subject is price rather than a stage of the shipment: RFQ lane build-up, rate cards, and the client relationship the rate belongs to. It deliberately does not hold `rfq.submit`, so the desk that proposes a price is never the desk that commits it to the client.
+
+`branch` is `{ id, code, name }` for **any** user whose record carries a branch, and `null` for anyone unscoped — it is no longer tied to one role. It is presentation only; scoping happens at the repository layer regardless.
 
 `permissions` is the authoritative grant list. The frontend hides controls from it; the server enforces the same list on every request.
 

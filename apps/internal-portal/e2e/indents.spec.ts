@@ -9,9 +9,8 @@ import { setRole } from './helpers';
  * OPEN, failureCause ONLY_ABOVE_BAND_QUOTES, 1 quote), IND-4462 (Apex
  * Ceramics, OPEN, 0 quotes), IND-4443 (Berger Paints, TRIP_CREATED, 0
  * quotes, buy rate already written). `indent.create` (EDIT) is seeded to
- * COMPLIANCE and BRANCH_MGR only (lib/permissions.ts SEED_GRANTS); OPS holds
- * `indent.manage`/`indent.view` (award, placement, LRs) but not creation,
- * and FINANCE/LEADERSHIP hold VIEW.
+ * OPS and COMPLIANCE (lib/permissions.ts SEED_GRANTS) — Operations gained it
+ * when it absorbed the branch manager — and FINANCE/LEADERSHIP hold VIEW.
  */
 
 /** The `Field` wrapper has no `htmlFor`/`id`, so getByLabel can't reach the
@@ -44,9 +43,8 @@ test.describe('indents list', () => {
     await expect(page.getByRole('link', { name: 'IND-4468' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'IND-4462' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'IND-4443' })).toBeVisible();
-    // OPS holds indent.view/indent.manage but not indent.create — no create
-    // link here; see the 'raise an indent' describe block for BRANCH_MGR.
-    await expect(page.getByRole('link', { name: 'Raise an indent' })).toHaveCount(0);
+    // OPS holds indent.create since the merge, so the link is offered.
+    await expect(page.getByRole('link', { name: 'Raise an indent' })).toHaveCount(1);
 
     // failureCause renders as a red tag next to the stage tag.
     await expect(page.getByText('only above band quotes')).toBeVisible();
@@ -82,7 +80,7 @@ test.describe('indents list', () => {
 
 test.describe('raise an indent', () => {
   test('submitting the form empty surfaces required-field errors and does not navigate away', async ({ page }) => {
-    await setRole(page, 'BRANCH_MGR');
+    await setRole(page, 'OPS');
     await page.goto('/indents/new');
 
     await page.getByRole('button', { name: 'Raise indent' }).click();
@@ -103,7 +101,7 @@ test.describe('raise an indent', () => {
   });
 
   test('a spot indent is blocked until the client rate approval is attached (BR-26/BR-38)', async ({ page }) => {
-    await setRole(page, 'BRANCH_MGR');
+    await setRole(page, 'OPS');
     await page.goto('/indents/new');
 
     await page.locator('select[name="clientId"]').selectOption({ label: 'Sanghvi Metals · SPOT' });
@@ -141,7 +139,7 @@ test.describe('raise an indent', () => {
   });
 
   test('a valid contract indent is created and lands on its detail page', async ({ page }) => {
-    await setRole(page, 'BRANCH_MGR');
+    await setRole(page, 'OPS');
     await page.goto('/indents/new');
 
     await page.locator('select[name="clientId"]').selectOption({ label: 'Berger Paints · CONTRACT' });

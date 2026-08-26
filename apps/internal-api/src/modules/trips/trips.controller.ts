@@ -91,12 +91,18 @@ export class TripsController {
     return this.tripsService.getLr(id);
   }
 
+  // The consignment note is the document the driver carries and the client is
+  // billed against. Both writes take `indent.manage`, the same permission as
+  // depart/deliver below — the class guard authenticates but does not authorise,
+  // so without this any signed-in role could rewrite a consignee or issue an LR.
   @Patch(':id/lr')
+  @RequirePermission('indent.manage')
   patchLr(@Param('id') id: string, @Body() dto: PatchLrDto, @CurrentUser() user: AuthenticatedUser) {
     return this.tripsService.patchLr(id, dto, user);
   }
 
   @Post(':id/lr/generate')
+  @RequirePermission('indent.manage')
   generateLr(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.tripsService.generateLr(id, user);
   }

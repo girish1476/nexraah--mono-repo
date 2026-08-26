@@ -8,6 +8,7 @@ import {
   moduleForPath,
   navFor,
   ROLE_CODES,
+  SEED_GRANTS,
 } from './permissions';
 
 describe('levelFor', () => {
@@ -18,7 +19,10 @@ describe('levelFor', () => {
     expect(levelFor('indents', 'FINANCE')).toBe('VIEW');
   });
   it('returns NONE for a role with no access', () => {
-    expect(levelFor('payments', 'OPS')).toBe('NONE');
+    // `payments` used to be the example here. Operations picked up VIEW on it
+    // when it absorbed the branch manager, so the module that still answers
+    // NONE for Operations is the compliance desk.
+    expect(levelFor('compliance', 'OPS')).toBe('NONE');
   });
   it('gives ADMIN EDIT access to every module, operational screens included', () => {
     expect(levelFor('today', 'ADMIN')).toBe('EDIT');
@@ -91,14 +95,24 @@ describe('navFor', () => {
    * must not be offered to them.
    */
   it('offers the onboarding wizard to the roles that hold vendor.edit and nobody else', () => {
+    /*
+     * Derived from `SEED_GRANTS`, not a hand-listed set of roles. The rule this
+     * protects is "the row appears exactly where the permission behind it is
+     * held" — spelling out the roles instead restates today's grants, so the
+     * test fails whenever the matrix is retuned even though the rule still
+     * holds. It did exactly that when Leadership gained `vendor.edit`.
+     */
     const sees = (role: (typeof ROLE_CODES)[number]) =>
       navFor(role).some((g) => g.items.some((i) => i.href === '/vendors/new'));
-    expect(sees('OPS')).toBe(true);
-    expect(sees('BRANCH_MGR')).toBe(true);
-    expect(sees('ADMIN')).toBe(true);
-    expect(sees('COMPLIANCE')).toBe(false);
-    expect(sees('FINANCE')).toBe(false);
-    expect(sees('LEADERSHIP')).toBe(false);
+    for (const role of ROLE_CODES) {
+      expect(sees(role), `${role} nav row vs vendor.edit grant`).toBe(
+        SEED_GRANTS[role].includes('vendor.edit'),
+      );
+    }
+    // The rule is only meaningful while the permission is actually split.
+    const holders = ROLE_CODES.filter((r) => SEED_GRANTS[r].includes('vendor.edit'));
+    expect(holders.length).toBeGreaterThan(0);
+    expect(holders.length).toBeLessThan(ROLE_CODES.length);
   });
   it('gates creation rows on the permission of each page, per role', () => {
     const hrefs = (role: (typeof ROLE_CODES)[number]) =>
@@ -106,8 +120,9 @@ describe('navFor', () => {
     expect(hrefs('FINANCE')).toEqual(expect.arrayContaining(['/clients/new', '/invoices/new']));
     expect(hrefs('OPS')).not.toContain('/clients/new');
     expect(hrefs('COMPLIANCE')).toEqual(expect.arrayContaining(['/indents/new', '/vendors/leads']));
-    expect(hrefs('OPS')).not.toContain('/indents/new');
-    expect(hrefs('BRANCH_MGR')).toContain('/indents/new');
+    // Operations absorbed the branch manager and with it `indent.create`, so
+    // the raise-an-indent row is now offered to Ops as well as Compliance.
+    expect(hrefs('OPS')).toContain('/indents/new');
   });
   it('uses the grants the session actually carries over the role seed', () => {
     const withGrant = navFor('COMPLIANCE', ['vendor.edit']).flatMap((g) => g.items.map((i) => i.href));

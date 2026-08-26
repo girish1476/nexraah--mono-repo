@@ -14,8 +14,8 @@ export class ReportsController {
   @Get('today')
   @RequirePermission('indent.view')
   today(@CurrentUser() user: AuthenticatedUser) {
-    // part 09: BRANCH_MGR sees only their own branch; `branch` is null for
-    // every other role (part 01), so this naturally scopes only that role.
+    // part 09: a caller with a branch on their record sees only that branch;
+    // `branch` is null for anyone who is not scoped, so this scopes itself.
     return this.reportsService.today(user.branch?.id ?? null);
   }
 

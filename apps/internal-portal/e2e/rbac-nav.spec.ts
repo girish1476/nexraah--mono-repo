@@ -20,7 +20,7 @@ import { setRole } from './helpers';
  */
 
 interface RoleCase {
-  role: 'OPS' | 'COMPLIANCE' | 'FINANCE' | 'BRANCH_MGR' | 'LEADERSHIP' | 'ADMIN';
+  role: 'OPS' | 'COMPLIANCE' | 'FINANCE' | 'LEADERSHIP' | 'ADMIN';
   landsOn: string;
   visible: string[];
   hidden: string[];
@@ -56,9 +56,23 @@ const allBut = (visible: string[]) => ALL_ROUTES.filter((r) => !visible.includes
 
 const CASES: RoleCase[] = [
   {
+    // Operations absorbed the branch manager, so its module set is the union
+    // of the two: home, both POD queues and the approvals inbox came across.
     role: 'OPS',
     landsOn: '/today',
-    visible: ['/today', '/orders', '/indents', '/trips', '/rfq', '/telematics', '/vendors'],
+    visible: [
+      '/today',
+      '/home',
+      '/orders',
+      '/vendors',
+      '/indents',
+      '/trips',
+      '/pod/receiving',
+      '/pod/pending',
+      '/rfq',
+      '/telematics',
+      '/admin/approvals',
+    ],
     hidden: [],
   },
   {
@@ -93,24 +107,6 @@ const CASES: RoleCase[] = [
       '/invoices',
       '/receivables',
       '/pnl',
-      '/admin/approvals',
-    ],
-    hidden: [],
-  },
-  {
-    role: 'BRANCH_MGR',
-    landsOn: '/today',
-    visible: [
-      '/today',
-      '/home',
-      '/orders',
-      '/vendors',
-      '/indents',
-      '/trips',
-      '/pod/receiving',
-      '/pod/pending',
-      '/rfq',
-      '/telematics',
       '/admin/approvals',
     ],
     hidden: [],

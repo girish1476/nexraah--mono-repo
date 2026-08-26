@@ -108,7 +108,7 @@ export default function TripChargesPage() {
       />
       <PageIntro
         what="Record what this trip cost against what's billed to the client — the gap between them is the margin on this trip."
-        who="Captured by operations, branch managers or compliance, usually during POD verification."
+        who="Captured by operations or compliance, usually during POD verification."
       />
       <TripTabs tripId={id} />
 

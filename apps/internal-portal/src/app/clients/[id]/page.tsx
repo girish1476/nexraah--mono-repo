@@ -7,9 +7,11 @@ import { fmtDate, inr, inrCompact } from '@/lib/format';
 import {
   Column,
   DataTable,
+  Dialog,
   EmptyState,
   ErrorState,
   FactList,
+  Field,
   Loading,
   ModuleGuard,
   PageHeader,
@@ -17,9 +19,17 @@ import {
   Panel,
   Split,
   Tag,
+  useCan,
+  useToast,
 } from '@/lib/ui';
-import { getClient, getRateCard } from '../apis';
-import { Client, RateCardLane } from '../types';
+import { getClient, getRateCard, patchClient } from '../apis';
+import {
+  CLIENT_STATUS_LABEL,
+  CLIENT_STATUS_REASON,
+  CLIENT_STATUS_TONE,
+  Client,
+  RateCardLane,
+} from '../types';
 
 /**
  * Client file — `/clients/[id]`.
@@ -42,6 +52,43 @@ export default function ClientDetailPage() {
   const [client, setClient] = useState<Client | null>(null);
   const [lanes, setLanes] = useState<RateCardLane[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const can = useCan();
+  const toast = useToast();
+  // `patchClient` has existed since the module shipped and had no caller, so a
+  // company name could only be corrected by calling the API by hand. Finance
+  // and Admin hold `client.manage`; nobody else sees this.
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<Partial<Client>>({});
+  const [saving, setSaving] = useState(false);
+
+  const openEdit = () => {
+    if (!client) return;
+    setDraft({
+      name: client.name,
+      billingCity: client.billingCity,
+      gstin: client.gstin,
+      contact: client.contact,
+      phone: client.phone,
+      email: client.email,
+      creditDays: client.creditDays,
+      serviceLevel: client.serviceLevel,
+    });
+    setEditing(true);
+  };
+
+  const saveEdit = async () => {
+    setSaving(true);
+    try {
+      await patchClient(id, draft);
+      toast('Client details updated');
+      setEditing(false);
+      load();
+    } catch (e) {
+      toast(errorMessage(e));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const load = () => {
     setError(null);
@@ -89,15 +136,16 @@ export default function ClientDetailPage() {
         }`}
         module="clients"
         right={
-          client.status === 'ACTIVE' ? (
-            <Tag tone="mint" reason={`${client.creditDays} days to pay`}>
-              Active
-            </Tag>
-          ) : (
-            <Tag tone="red" reason="New bookings should not be accepted until Finance lifts the hold">
-              On hold
-            </Tag>
-          )
+          <Tag
+            tone={CLIENT_STATUS_TONE[client.status]}
+            reason={
+              client.status === 'ACTIVE'
+                ? `${client.creditDays} days to pay`
+                : CLIENT_STATUS_REASON[client.status]
+            }
+          >
+            {CLIENT_STATUS_LABEL[client.status]}
+          </Tag>
         }
       />
       <PageIntro
@@ -107,7 +155,17 @@ export default function ClientDetailPage() {
 
       <Split
         aside={
-          <Panel title="Client details" pad={false}>
+          <Panel
+            title="Client details"
+            pad={false}
+            right={
+              can('client.manage') ? (
+                <button className="btn btn-secondary btn-sm" onClick={openEdit}>
+                  Edit
+                </button>
+              ) : undefined
+            }
+          >
             <FactList
               facts={[
                 ['Code', client.code],
@@ -174,6 +232,66 @@ export default function ClientDetailPage() {
           )}
         </Panel>
       </Split>
+
+      <Dialog
+        open={editing}
+        title="Edit client details"
+        body="Corrects what we hold on this client. The rate card is not editable here — those prices come from the quote we won."
+        confirmLabel={saving ? 'Saving…' : 'Save changes'}
+        onConfirm={saveEdit}
+        onClose={() => setEditing(false)}
+        busy={saving}
+      >
+        <Field label="Company name" required>
+          <input
+            value={draft.name ?? ''}
+            onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+          />
+        </Field>
+        <Field label="Billed at (city)">
+          <input
+            value={draft.billingCity ?? ''}
+            onChange={(e) => setDraft({ ...draft, billingCity: e.target.value })}
+          />
+        </Field>
+        <Field label="GSTIN (tax number)">
+          <input
+            value={draft.gstin ?? ''}
+            onChange={(e) => setDraft({ ...draft, gstin: e.target.value })}
+          />
+        </Field>
+        <Field label="Contact person">
+          <input
+            value={draft.contact ?? ''}
+            onChange={(e) => setDraft({ ...draft, contact: e.target.value })}
+          />
+        </Field>
+        <Field label="Phone">
+          <input
+            value={draft.phone ?? ''}
+            onChange={(e) => setDraft({ ...draft, phone: e.target.value })}
+          />
+        </Field>
+        <Field label="Email">
+          <input
+            value={draft.email ?? ''}
+            onChange={(e) => setDraft({ ...draft, email: e.target.value })}
+          />
+        </Field>
+        <Field label="Payment terms (days from invoice)">
+          <input
+            type="number"
+            value={draft.creditDays ?? 0}
+            onChange={(e) => setDraft({ ...draft, creditDays: Number(e.target.value) })}
+          />
+        </Field>
+        <Field label="Service promise">
+          <input
+            value={draft.serviceLevel ?? ''}
+            onChange={(e) => setDraft({ ...draft, serviceLevel: e.target.value })}
+          />
+        </Field>
+      </Dialog>
     </ModuleGuard>
   );
 }

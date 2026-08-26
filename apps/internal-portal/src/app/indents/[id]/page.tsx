@@ -190,7 +190,7 @@ export default function IndentDetailPage() {
         if (!canAward)
           return (
             <span className="muted" style={{ fontSize: 11.5 }}>
-              Award is {ROLES.OPS.label} or {ROLES.BRANCH_MGR.label}
+              Award is {ROLES.OPS.label}
             </span>
           );
         return (
@@ -217,7 +217,7 @@ export default function IndentDetailPage() {
       />
       <PageIntro
         what="Everything about one indent in one place — the transporter quotes with their band position, the buy rate locked in the moment one is awarded, and the vehicle placement and trip that follow."
-        who="Operations and branch managers award quotes and record placement; everyone else with indent access can see the full record."
+        who="Operations awards quotes and records placement; everyone else with indent access can see the full record."
       />
 
       <Split

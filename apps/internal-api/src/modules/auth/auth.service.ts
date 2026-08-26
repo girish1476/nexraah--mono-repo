@@ -17,10 +17,16 @@ export class AuthService {
    * authoritative grant list the frontend hides controls from — every code
    * held at `VIEW` or `EDIT`, `NONE` omitted.
    *
-   * `branch` is `{id, code, name}` for `BRANCH_MGR` and `null` for every
-   * other role, even when the `users` row carries a `branch_id` (seed data
-   * sets one on every internal user, ADMIN included) — it is presentation
-   * only, and every other role reads it as "not branch-scoped".
+   * `branch` is passed through exactly as the `users` row carries it. It is
+   * the single thing that decides whether a person is branch-scoped, now that
+   * BRANCH_MGR is gone and Operations has absorbed it: a user with a branch
+   * sees only that branch, a user without one sees the whole company.
+   *
+   * This used to be nulled for every role except BRANCH_MGR, which made the
+   * column inert for everyone else. It is live for everyone now, so seed data
+   * only sets a branch on people who are genuinely scoped to one — see
+   * `supabase/seed.sql`. Adding a branch to a user is what scopes them; there
+   * is no longer a role that does it.
    */
   toSession(user: AuthenticatedUser): SessionResponse {
     return {
@@ -31,7 +37,7 @@ export class AuthService {
       permissions: [...user.permissions.entries()]
         .filter(([, level]) => level !== 'NONE')
         .map(([code]) => code),
-      branch: user.role === 'BRANCH_MGR' ? user.branch : null,
+      branch: user.branch,
     };
   }
 }

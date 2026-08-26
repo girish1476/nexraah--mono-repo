@@ -175,7 +175,7 @@ export default function NewIndentPage() {
         <PageHeader path="/indents/new" title="New load request" module="indents" />
         <PageIntro
           what="Raise an indent — turn a client's shipment need into a priced request for a truck, ready to place with a transporter once it's published."
-          who="Whoever holds indent creation access — usually compliance staff or a branch manager."
+          who="Whoever holds indent creation access — usually operations or compliance staff."
         />
         <Panel>
           You don’t have permission to raise indents. Ask an admin to grant you indent creation access, or have
@@ -197,7 +197,7 @@ export default function NewIndentPage() {
       />
       <PageIntro
         what="Raise an indent — turn a client's shipment need into a priced request for a truck, ready to place with a transporter once it's published."
-        who="Whoever holds indent creation access — usually compliance staff or a branch manager."
+        who="Whoever holds indent creation access — usually operations or compliance staff."
       >
         Contract clients are priced straight from their agreed rate card lanes; a spot load needs a sourcing
         rate and the client’s written price approval attached before it can be raised.

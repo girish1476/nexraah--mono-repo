@@ -79,7 +79,7 @@ export default function TripsPage() {
       <PageHeader path="/trips" title="Trips on the road" sub="The operational and financial record of a consignment in motion" module="trips" />
       <PageIntro
         what="Search every trip — on the road or already delivered — by LR, trip, indent, truck, transporter, client or branch, and see its stage and POD status at a glance."
-        who="Operations and branch managers live in this list day to day; everyone else can look a trip up here too."
+        who="Operations lives in this list day to day; everyone else can look a trip up here too."
       />
       <Stack>
         <Panel>

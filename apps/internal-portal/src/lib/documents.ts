@@ -30,10 +30,19 @@ export const DOC_GROUPS: { key: DocGroup; label: string; kinds: string[] }[] = [
 /**
  * `needsReference` defaults to `true`. Where it's `false` the onboarding
  * wizard captures a photo only — no typed reference/number field.
+ *
+ * PAN and Aadhaar must stay `true` (the default — left unset here): they're
+ * the two kinds with dedicated normalize/validate rules (`KYC_NORMALIZE`/
+ * `KYC_VALIDATE` in `vendors/new/page.tsx`) precisely because the typed
+ * number is what gets stored — Aadhaar as its last four digits (BR-04), PAN
+ * in full. `needsReference: false` here previously suppressed that field
+ * entirely, so the wizard captured a photo and silently stored nothing for
+ * either — the KYC row existed with `valueMasked: null` forever. Only a
+ * kind with no value to type — the selfie — should skip the field.
  */
 export const VENDOR_KYC_KINDS: { kind: string; label: string; note?: string; needsReference?: boolean }[] = [
-  { kind: 'PAN', label: 'PAN card', needsReference: false },
-  { kind: 'AADHAAR', label: 'Aadhaar card', needsReference: false },
+  { kind: 'PAN', label: 'PAN card' },
+  { kind: 'AADHAAR', label: 'Aadhaar card' },
   {
     kind: 'ADDRESS',
     label: 'Address proof',

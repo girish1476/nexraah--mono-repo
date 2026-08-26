@@ -3,7 +3,7 @@ import { setRole, statValue } from './helpers';
 
 /**
  * Payments — `/payments/advance`, `/payments/balance`, `/payments/bills`
- * (part 07). Module `payments`: FINANCE alone is EDIT; BRANCH_MGR and
+ * (part 07). Module `payments`: FINANCE alone is EDIT; OPS and
  * LEADERSHIP are VIEW; OPS and COMPLIANCE are NONE (already covered by the
  * lock-panel tests in rbac-nav.spec.ts). `payment.release` is a fixed
  * permission (BR-40) that only FINANCE ever holds, so these tests focus on
@@ -95,8 +95,8 @@ test.describe('Advance', () => {
     await expect(page.getByText('Release stays disabled until every item above is verified')).toBeVisible();
   });
 
-  test('BRANCH_MGR (VIEW) sees the same blocked gate with no release control at all', async ({ page }) => {
-    await setRole(page, 'BRANCH_MGR');
+  test('Operations (VIEW) sees the same blocked gate with no release control at all', async ({ page }) => {
+    await setRole(page, 'OPS');
     await page.goto('/payments/advance');
     // Branch-scoped to Nashik — TRP-120881 is Nashik, so it's still there.
     await expect(page.locator('table.table tbody tr')).toHaveCount(1);

@@ -7,9 +7,10 @@ import { MarketGapRepository } from './market-gap.repository';
 export class MarketGapService {
   constructor(private readonly marketGapRepository: MarketGapRepository) {}
 
-  // Branch-scoped for BRANCH_MGR — docs/api/02-vendors-compliance.md, part 01 §2.5.
+  // Scoped to the caller's own branch when they have one — a user without a
+  // branch sees every branch's gap. Keyed on the user, not on a role.
   async list(actor: AuthenticatedUser) {
-    const branchId = actor.role === 'BRANCH_MGR' ? (actor.branch?.id ?? undefined) : undefined;
+    const branchId = actor.branch?.id ?? undefined;
     const rows = await this.marketGapRepository.list(branchId);
     return rows.map((r) => {
       // gap/progressPct are computed server-side (docs/api/02) — the screen

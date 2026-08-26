@@ -27,7 +27,7 @@ export class PnlService {
       throw new DomainException(403, 'PERMISSION_DENIED', 'Missing permission: pnl.view_all or pnl.view_own.');
     }
 
-    // A BRANCH_MGR (view_own, not view_all) is always forced to their own
+    // A caller with view_own but not view_all is always forced to their own
     // branch — a ?branch= query from that caller is not honoured, matching
     // "scoping happens at the repository layer, never the frontend" (part 09).
     const forcedBranchId = !canViewAll ? (user.branch?.id ?? null) : null;

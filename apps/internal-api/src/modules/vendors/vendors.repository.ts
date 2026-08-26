@@ -21,7 +21,6 @@ export class VendorsRepository {
     let query = this.db
       .selectFrom('vendors')
       .innerJoin('branches', 'branches.id', 'vendors.branch_id')
-      .leftJoin('vendor_fleet', 'vendor_fleet.vendor_id', 'vendors.id')
       .leftJoin('trips', 'trips.vendor_id', 'vendors.id')
       .leftJoin('indents', 'indents.id', 'trips.indent_id')
       .select((eb) => [
@@ -35,7 +34,11 @@ export class VendorsRepository {
         'vendors.status as status',
         'vendors.advance_pct as advancePct',
         'vendors.rating as rating',
-        eb.fn.count<number>('vendor_fleet.id').distinct().as('fleetCount'),
+        // Onboarding's declared count, not a count of `vendor_fleet` rows —
+        // nothing populates that table yet (no truck-registration feature
+        // exists), so a row-count here would show 0 for every vendor,
+        // unconditionally, regardless of what onboarding collected.
+        'vendors.declared_fleet_count as fleetCount',
         eb.fn.count<number>('trips.id').distinct().as('trips'),
         eb.fn
           .coalesce(eb.fn.sum<number>(sql`indents.sell_rate - trips.buy_rate`), sql<number>`0`)

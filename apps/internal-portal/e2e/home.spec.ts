@@ -16,8 +16,9 @@ import { setRole, statValue } from './helpers';
  *     inrCompact, which divides paise by 1e2 then by 1e7 for Cr), cost =
  *     "₹6.55 Cr", margin = "₹95.4 L", margin% = 12.7.
  *
- * BRANCH_MGR is scoped to Nashik only (`scopeBranch`), so its branch table
- * has one row and its POD "pending" count reflects only Nashik's trip.
+ * No fixture user carries a branch any more, so every role sees every branch.
+ * Branch scoping is now a property of the person (`users.branch_id`), not of
+ * a role — see the note in `scopeBranch` (src/mocks/index.ts).
  */
 
 /**
@@ -139,18 +140,18 @@ test.describe('home — module-level access', () => {
     await expect(page.getByTestId('view-only')).toBeVisible();
   });
 
-  test('BRANCH_MGR (EDIT-level) has no read-only badge and sees only its own branch', async ({ page }) => {
-    await setRole(page, 'BRANCH_MGR');
+  // Operations went VIEW -> EDIT on `home` when it absorbed the branch
+  // manager, so it gets the monthly review with no read-only badge — and,
+  // carrying no branch, it sees every branch rather than one.
+  test('Operations (EDIT-level) has no read-only badge and sees every branch', async ({ page }) => {
+    await setRole(page, 'OPS');
     await page.goto('/home');
     await expect(page.getByTestId('view-only')).toHaveCount(0);
     await showFullDetail(page);
 
     const panel = page.locator('.surface', { has: page.getByRole('heading', { name: 'How each branch did' }) });
-    const rows = panel.locator('tbody tr');
-    await expect(rows).toHaveCount(1);
+    await expect(panel.locator('tbody tr')).toHaveCount(5);
     await expect(panel.getByText('Nashik', { exact: true })).toBeVisible();
-
-    // Nashik's one seeded trip is delivered but PENDING on POD.
-    await expect(statValue(page, 'pod-pending')).toHaveText('1');
+    await expect(panel.getByText('Pune', { exact: true })).toBeVisible();
   });
 });

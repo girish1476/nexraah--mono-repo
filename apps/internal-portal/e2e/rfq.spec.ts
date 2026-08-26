@@ -9,7 +9,7 @@ import { setRole, statValue } from './helpers';
  * SOURCING, two priced lanes (rl-11 Kolkata → Nashik monthly-sourced,
  * rl-12 Kolkata → Guwahati high/low-sourced). rfq-2 is Apex Ceramics,
  * status SUBMITTED, one lane (rl-21 Mundra → Jaipur) ready to award.
- * `rfq.edit` (EDIT) is seeded to OPS, BRANCH_MGR and LEADERSHIP;
+ * `rfq.edit` (EDIT) is seeded to OPS and LEADERSHIP;
  * COMPLIANCE and FINANCE hold VIEW. `rfq.submit` is LEADERSHIP-only (fixed).
  */
 

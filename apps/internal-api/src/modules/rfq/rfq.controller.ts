@@ -26,7 +26,17 @@ export class RfqController {
     return this.rfqService.getById(id);
   }
 
+  // Creating a rate request is an edit, and takes the same permission as
+  // add-lane / set-sourcing / set-buildup / award below. Without it the class
+  // guard authenticated but did not authorise, so any signed-in internal user
+  // could open a rate request against any client.
+  //
+  // The two GETs above stay open deliberately: reads are ungated across this
+  // codebase (vendors, indents, trips), and the module matrix gives Compliance
+  // and Finance view-only on rate requests — gating the reads on `rfq.edit`
+  // would lock out exactly those two desks.
   @Post()
+  @RequirePermission('rfq.edit')
   create(@Body() dto: CreateRfqDto, @CurrentUser() user: AuthenticatedUser) {
     return this.rfqService.create(dto, user);
   }

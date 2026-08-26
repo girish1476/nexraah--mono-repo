@@ -21,15 +21,22 @@ on conflict (code) do nothing;
 insert into users (name, email, role_id, branch_id)
 select v.name, v.email, r.id, b.id
   from (values
-    ('Anita Desai',  'anita@nexraah.test',  'OPS',        'BLR'),
-    ('Vikram Nair',  'vikram@nexraah.test', 'COMPLIANCE', 'BLR'),
-    ('Priya Menon',  'priya@nexraah.test',  'FINANCE',    'BLR'),
-    ('Sunita Rao',   'sunita@nexraah.test', 'BRANCH_MGR', 'HYD'),
-    ('Arjun Kapoor', 'arjun@nexraah.test',  'LEADERSHIP', 'BLR'),
-    ('Dev Admin',    'dev@nexraah.test',    'ADMIN',      'BLR')
+    -- `branch_code` is what scopes a person now that BRANCH_MGR is gone: a
+    -- user with one sees only that branch, a user with null sees everything.
+    -- Sunita was the branch manager and keeps exactly the view she had.
+    ('Anita Desai',  'anita@nexraah.test',  'OPS',        null::text),
+    ('Vikram Nair',  'vikram@nexraah.test', 'COMPLIANCE', null::text),
+    ('Priya Menon',  'priya@nexraah.test',  'FINANCE',    null::text),
+    ('Sunita Rao',   'sunita@nexraah.test', 'OPS',        'HYD'),
+    -- Business development. Unbranched on purpose: a rate is negotiated for a
+    -- lane, and a lane spans branches, so scoping this desk to one office
+    -- would hide half the lanes it prices.
+    ('Neha Bhatt',   'neha@nexraah.test',   'BD',         null::text),
+    ('Arjun Kapoor', 'arjun@nexraah.test',  'LEADERSHIP', null::text),
+    ('Dev Admin',    'dev@nexraah.test',    'ADMIN',      null::text)
   ) as v(name, email, role_code, branch_code)
   join roles    r on r.code = v.role_code
-  join branches b on b.code = v.branch_code
+  left join branches b on b.code = v.branch_code
 on conflict (email) do nothing;
 
 insert into vendors (code, legal_name, party_type, base_city, branch_id, phone,

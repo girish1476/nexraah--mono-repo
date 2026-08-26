@@ -16,6 +16,7 @@ import {
   PageIntro,
   Panel,
   Tag,
+  useCan,
   useLevel,
 } from '@/lib/ui';
 import { listClients } from './apis';
@@ -31,6 +32,10 @@ import { Client } from './types';
 export default function ClientsPage() {
   const router = useRouter();
   const level = useLevel('clients');
+  // Module access is not the same as the permission. Compliance holds EDIT on
+  // this module so it can work the onboarding queue, but not `client.manage` —
+  // gating the button on the module showed it to them and 403'd on submit.
+  const can = useCan();
   const [rows, setRows] = useState<Client[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -107,7 +112,7 @@ export default function ClientsPage() {
         title="Clients"
         module="clients"
         right={
-          level === 'EDIT' && (
+          can('client.manage') && (
             <Link href="/clients/new" className="btn">
               New client
             </Link>
@@ -135,7 +140,7 @@ export default function ClientsPage() {
                 title="No clients on file yet"
                 hint="A client is any company that books freight with us. Add the first one and it becomes selectable when an indent — a client's request for a truck — is raised, and when you invoice them."
                 action={
-                  level === 'EDIT' ? (
+                  can('client.manage') ? (
                     <Link href="/clients/new" className="btn">
                       New client
                     </Link>

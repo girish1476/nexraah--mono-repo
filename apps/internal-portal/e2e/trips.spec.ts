@@ -17,7 +17,7 @@ import { setRole } from './helpers';
  *               balance gate fully cleared (the one trip with nothing
  *               blocking it)
  *
- * Only Nashik (TRP-120881) is visible to BRANCH_MGR (`scopeBranch`).
+ * No fixture user carries a branch, so every role sees every trip.
  */
 
 const panel = (page: Page, heading: string) =>
@@ -88,13 +88,6 @@ test.describe('trips list', () => {
     await field(page, 'POD status').locator('select').selectOption('APPROVED');
     await expect(page.locator('table.table tbody tr')).toHaveCount(1);
     await expect(page.getByRole('link', { name: 'TRP-120855' })).toBeVisible();
-  });
-
-  test('BRANCH_MGR sees only its own branch’s trip', async ({ page }) => {
-    await setRole(page, 'BRANCH_MGR');
-    await page.goto('/trips');
-    await expect(page.locator('table.table tbody tr')).toHaveCount(1);
-    await expect(page.getByRole('link', { name: 'TRP-120881' })).toBeVisible();
   });
 
   test('FINANCE gets a read-only badge (VIEW-level on trips)', async ({ page }) => {

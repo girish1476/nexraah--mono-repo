@@ -181,8 +181,34 @@ api.interceptors.response.use(
  * Unwraps the envelope and returns `data` directly.
  * Throws `ApprovalRequiredError` on 202 and `ApiError` on anything else.
  */
+/**
+ * A `FormData` body must not inherit this instance's JSON content type.
+ *
+ * The instance sets `Content-Type: application/json` for every call, and axios
+ * reads that header before it looks at the body:
+ *
+ *   // axios/lib/defaults/index.js
+ *   if (isFormData) {
+ *     return hasJSONContentType ? JSON.stringify(formDataToJSON(data)) : data;
+ *   }
+ *
+ * So a file appended to `FormData` is quietly flattened into a JSON string, the
+ * file never leaves the browser, and `POST /attachments` answers
+ * 400 "multipart field file is required". The fixture adapter ignores the body
+ * entirely, so every demo and e2e run passes regardless — which is exactly why
+ * this survived a previous fix that only changed the calling page.
+ *
+ * Clearing the header lets the browser set `multipart/form-data` together with
+ * the boundary token, which is the one part we must never write by hand.
+ */
+function withMultipartHeader(config: AxiosRequestConfig): AxiosRequestConfig {
+  const isFormData = typeof FormData !== 'undefined' && config.data instanceof FormData;
+  if (!isFormData) return config;
+  return { ...config, headers: { ...config.headers, 'Content-Type': undefined } };
+}
+
 export async function request<T>(config: AxiosRequestConfig): Promise<T> {
-  const response = await api.request<ApiEnvelope<T>>(config);
+  const response = await api.request<ApiEnvelope<T>>(withMultipartHeader(config));
   if (response.status === 202) {
     const payload = response.data?.data as unknown as {
       approvalRequired?: boolean;

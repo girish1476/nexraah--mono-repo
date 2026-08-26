@@ -315,7 +315,7 @@ export default function TelematicsPage() {
       />
       <PageIntro
         what="Where the trucks currently carrying your loads are, and which ones need a phone call today."
-        who="Operations and branch managers watch this during transit."
+        who="Operations watches this during transit."
       >
         A truck is flagged when it goes faster than {data.config.overspeedKmph} km/h, sits still for
         more than {data.config.haltMinutes} minutes, or stops reporting its position for{' '}

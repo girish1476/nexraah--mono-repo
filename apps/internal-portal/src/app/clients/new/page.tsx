@@ -18,6 +18,7 @@ import {
   PageIntro,
   Panel,
   Stack,
+  useCan,
   useLevel,
   useToast,
 } from '@/lib/ui';
@@ -58,6 +59,7 @@ export default function NewClientPage() {
   const router = useRouter();
   const toast = useToast();
   const level = useLevel('clients');
+  const can = useCan();
   const form = useForm<Form>({
     resolver: zodResolver(schema),
     defaultValues: { engagement: 'CONTRACT', creditDays: 45, serviceLevel: 'Next day placement' },
@@ -76,7 +78,8 @@ export default function NewClientPage() {
     }
   });
 
-  if (level !== 'EDIT') {
+  // `client.manage`, not module EDIT — see clients/page.tsx.
+  if (level !== 'EDIT' || !can('client.manage')) {
     return (
       <ModuleGuard module="clients">
         <PageHeader path="/clients/new" title="New client" module="clients" />

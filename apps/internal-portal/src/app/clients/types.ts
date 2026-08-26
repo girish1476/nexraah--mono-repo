@@ -4,6 +4,46 @@ import type { SupplySource } from '@/app/admin/branches/types';
 
 export type Engagement = 'SPOT' | 'CONTRACT';
 
+/**
+ * The five states a client can actually be in, matching the database
+ * (`20260825040000_client_onboarding.sql`). This used to read
+ * `ACTIVE | SUSPENDED` — neither of which is a value the column can hold apart
+ * from ACTIVE — so every newly created client, which now starts as DRAFT,
+ * rendered as a red "On hold" pointing staff at Finance. The desk that clears
+ * a draft is Compliance, not Finance.
+ */
+export type ClientStatus =
+  | 'DRAFT'
+  | 'PENDING_VERIFICATION'
+  | 'ACTIVE'
+  | 'REJECTED'
+  | 'INACTIVE';
+
+/** What each state means on screen, and who has to act to move it on. */
+export const CLIENT_STATUS_LABEL: Record<ClientStatus, string> = {
+  DRAFT: 'Being set up',
+  PENDING_VERIFICATION: 'With compliance',
+  ACTIVE: 'Active',
+  REJECTED: 'Turned down',
+  INACTIVE: 'Stood down',
+};
+
+export const CLIENT_STATUS_REASON: Record<ClientStatus, string> = {
+  DRAFT: 'Still being filled in — submit it to compliance when the file is complete',
+  PENDING_VERIFICATION: 'Compliance is checking the paperwork — no bookings until they clear it',
+  REJECTED: 'Compliance turned this client down — see the reason on file',
+  INACTIVE: 'This client was stood down — no new bookings',
+  ACTIVE: 'Cleared for bookings',
+};
+
+export const CLIENT_STATUS_TONE: Record<ClientStatus, 'mint' | 'flag' | 'red' | 'grey'> = {
+  DRAFT: 'grey',
+  PENDING_VERIFICATION: 'flag',
+  ACTIVE: 'mint',
+  REJECTED: 'red',
+  INACTIVE: 'grey',
+};
+
 export interface Client {
   id: string;
   code: string;
@@ -20,7 +60,7 @@ export interface Client {
   agreementAttachmentId?: string | null;
   creditDays: number;
   serviceLevel: string;
-  status: 'ACTIVE' | 'SUSPENDED';
+  status: ClientStatus;
   outstandingPaise: number;
 }
 

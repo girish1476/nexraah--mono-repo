@@ -13,8 +13,7 @@ import { setRole, statValue } from './helpers';
  *    TRP-120869 (TRP-120855 is APPROVED, so it is excluded).
  *  - Vendor issues not RESOLVED: IS-0041, IS-0042 (IS-0043 is RESOLVED).
  *
- * BRANCH_MGR is scoped to Nashik (`scopeBranch`). Nashik's only indent
- * (IND-4443) isn't OPEN, so BRANCH_MGR sees empty allocation/failure panels
+ * No fixture user carries a branch, so nothing here is branch-scoped
  * while POD overdue (TRP-120881) and vendor issues (not branch-scoped) still
  * show rows — a real empty-state case distinct from the ADMIN lock panel
  * already covered by rbac-nav.spec.ts.
@@ -123,28 +122,9 @@ test.describe('today — stat strip and queues (OPS, unscoped)', () => {
   });
 });
 
-test.describe('today — branch scoping empty state (BRANCH_MGR)', () => {
-  test('Nashik has no open indents: allocation and failure panels go empty, POD/issues do not', async ({ page }) => {
-    await setRole(page, 'BRANCH_MGR');
-    await page.goto('/today');
-    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
-
-    await expect(
-      page.locator('.surface', {
-        has: page.getByRole('heading', { name: 'Loads waiting for a transporter' }),
-      }),
-    ).toHaveCount(0);
-    await expect(
-      page.locator('.surface', { has: page.getByRole('heading', { name: 'Loads we could not place' }) }),
-    ).toHaveCount(0);
-
-    // Not branch-limited to zero: BRANCH_MGR still has its own POD-overdue
-    // trip and the (unscoped) vendor issues queue.
-    const podPanel = page.locator('.surface', { has: page.getByRole('heading', { name: 'still missing their signed paperwork' }) });
-    await expect(podPanel.locator('tbody tr')).toHaveCount(1);
-    await expect(podPanel.getByText('TRP-120881')).toBeVisible();
-
-    const issuesPanel = page.locator('.surface', { has: page.getByRole('heading', { name: 'Open problems with transporters' }) });
-    await expect(issuesPanel.locator('tbody tr')).toHaveCount(2);
-  });
-});
+// The branch-scoping empty-state block that used to live here proved that a
+// branch manager saw narrowed queues. Branch scoping is now a property of the
+// user's own record rather than of a role, and no fixture user carries a
+// branch — so there is nothing left for it to assert. Restoring that coverage
+// needs a branch claim on the minted token plus a second Operations fixture
+// account; see `scopedBranch` in src/mocks/index.ts.

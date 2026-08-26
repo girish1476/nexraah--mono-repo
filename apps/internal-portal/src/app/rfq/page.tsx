@@ -79,7 +79,7 @@ export default function RfqPage() {
       />
       <PageIntro
         what="Winning a lane — a route you'll run for a client again and again — at a price that still works once a transporter is paid."
-        who="Operations and branch managers build these; leadership submits them to the client."
+        who="Operations builds these; leadership submits them to the client."
       >
         This happens before any single load. A lane won here is what an indent can then be raised
         against. Each request moves through: draft, sourcing (finding what transporters would carry

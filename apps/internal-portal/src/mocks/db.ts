@@ -30,14 +30,62 @@ export interface Doc {
   keyedValues: Record<string, string>;
 }
 
-export const USERS: Record<RoleCode, { userId: string; name: string; email: string; branch: string | null }> = {
-  OPS: { userId: 'u-ops', name: 'Anil Deshmukh', email: 'anil@nexraah.in', branch: null },
-  COMPLIANCE: { userId: 'u-cmp', name: 'Meera Iyer', email: 'meera@nexraah.in', branch: null },
-  FINANCE: { userId: 'u-fin', name: 'Rakesh Nair', email: 'rakesh@nexraah.in', branch: null },
-  BRANCH_MGR: { userId: 'u-bm', name: 'Sunita Rao', email: 'sunita@nexraah.in', branch: 'NSK' },
-  LEADERSHIP: { userId: 'u-lead', name: 'Vikram Shah', email: 'vikram@nexraah.in', branch: null },
-  ADMIN: { userId: 'u-adm', name: 'S. Krishnan', email: 'krishnan@nexraah.in', branch: null },
-};
+export interface FixtureAccount {
+  userId: string;
+  name: string;
+  email: string;
+  role: RoleCode;
+  /** Branch code, or `null` for someone who sees every branch. */
+  branch: string | null;
+}
+
+/**
+ * Every fixture account — a **list**, because branch scoping is a property of
+ * the person, not of their role.
+ *
+ * This was `Record<RoleCode, …>`, one account per role, which was fine while
+ * `BRANCH_MGR` existed and was the only branch-scoped role. The merge folded
+ * that role into Operations and moved scoping onto the user record
+ * (`auth.service.ts` now passes `user.branch` straight through), and a
+ * role-keyed map cannot express the case that matters after that change: two
+ * people, same role, different branches. Not "no branched fixture" — no way
+ * to *write* one. The branch-scoping tests were deleted rather than fixed for
+ * exactly that reason.
+ *
+ * Sunita Rao is the scoped Operations account. She was the BRANCH_MGR the
+ * merge reassigned, so keeping her as the branched one matches what
+ * `supabase/seed.sql` now does with the same person.
+ */
+export const ACCOUNTS: FixtureAccount[] = [
+  { userId: 'u-ops', name: 'Anil Deshmukh', email: 'anil@nexraah.in', role: 'OPS', branch: null },
+  { userId: 'u-ops-nsk', name: 'Sunita Rao', email: 'sunita@nexraah.in', role: 'OPS', branch: 'NSK' },
+  { userId: 'u-cmp', name: 'Meera Iyer', email: 'meera@nexraah.in', role: 'COMPLIANCE', branch: null },
+  { userId: 'u-fin', name: 'Rakesh Nair', email: 'rakesh@nexraah.in', role: 'FINANCE', branch: null },
+  // Business development. Added because `ROLE_CODES` gained `BD` and this map
+  // had no entry for it — `USERS.BD` was `undefined`, which the `Record` cast
+  // hid from the compiler and would have surfaced as a crash the first time
+  // anything asked who verified a document as BD.
+  { userId: 'u-bd', name: 'Neha Bhatt', email: 'neha@nexraah.in', role: 'BD', branch: null },
+  { userId: 'u-lead', name: 'Vikram Shah', email: 'vikram@nexraah.in', role: 'LEADERSHIP', branch: null },
+  { userId: 'u-adm', name: 'S. Krishnan', email: 'krishnan@nexraah.in', role: 'ADMIN', branch: null },
+];
+
+/**
+ * The default account for a role — the first listed, always the unscoped one.
+ *
+ * Kept as a map so the ~20 `USERS[role]` call sites in `mocks/index.ts` (who
+ * verified a document, who raised an issue) carry on unchanged. Anything that
+ * cares about *branch* must read the token's claim instead: this map can only
+ * ever answer with the role's default person.
+ */
+export const USERS: Record<RoleCode, FixtureAccount> = ACCOUNTS.reduce(
+  (byRole, account) => {
+    // First listed wins, which is why the unscoped account is listed first.
+    if (!byRole[account.role]) byRole[account.role] = account;
+    return byRole;
+  },
+  {} as Record<RoleCode, FixtureAccount>,
+);
 
 /**
  * The password every fixture account signs in with, when — and only when —
@@ -52,9 +100,15 @@ export const USERS: Record<RoleCode, { userId: string; name: string; email: stri
  */
 export const DEMO_PASSWORD = 'nexraah';
 
-/** Fixture email → role, matched case-insensitively at sign-in. */
-export const CREDENTIALS: Record<string, RoleCode> = Object.fromEntries(
-  (Object.keys(USERS) as RoleCode[]).map((code) => [USERS[code].email.toLowerCase(), code]),
+/**
+ * Fixture email → the whole account, matched case-insensitively at sign-in.
+ *
+ * The account, not the role: signing in as Sunita Rao has to produce a token
+ * carrying her branch, and a role alone cannot say which of two Operations
+ * people just signed in.
+ */
+export const CREDENTIALS: Record<string, FixtureAccount> = Object.fromEntries(
+  ACCOUNTS.map((account) => [account.email.toLowerCase(), account]),
 );
 
 export const SUPPLY_SOURCE_LABEL: Record<string, string> = {
@@ -221,7 +275,7 @@ export const db = {
         'Chakan → Coimbatore. Only two quotes in band, both from vendors without a fitness certificate on file.',
       amountPaise: 3580000,
       requesterId: 'u-bm',
-      requesterName: 'Sunita Rao · BRANCH_MGR',
+      requesterName: 'Sunita Rao · OPS',
       approverRole: 'LEADERSHIP',
       requiredPermission: 'approve.above_band',
       reason: 'Only above-band quotes on this lane for three consecutive loads.',

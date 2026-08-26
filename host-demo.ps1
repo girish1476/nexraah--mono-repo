@@ -97,12 +97,25 @@ if ($cfExe) {
   Copy-Item $cfExe $renamed -Force -ErrorAction SilentlyContinue
   if (Test-Path $renamed) { $cfExe = $renamed }
 }
-$tunnelCmd = if ($cfExe) { "`"$cfExe`" tunnel --no-autoupdate" } else { 'npx --yes cloudflared tunnel' }
+# `--protocol http2`: the default QUIC (UDP) transport kept dropping on this
+# Wi-Fi ("no recent network activity" → reconnect every few minutes), and every
+# drop is a window where the public link fails for whoever is opening it.
+# TCP/HTTP2 is slower to set up but stays connected.
+$tunnelCmd = if ($cfExe) { "`"$cfExe`" tunnel --no-autoupdate --protocol http2" } else { 'npx --yes cloudflared tunnel --protocol http2' }
 
 $pids += Start-Hidden (Join-Path $repo 'apps\internal-portal') "set NEXT_DIST_DIR=.next-prod&& npx next start -p $INTERNAL_PORT" (Join-Path $logs 'internal-portal.log')
 $pids += Start-Hidden (Join-Path $repo 'apps\vendor-portal')   "npx next start -p $VENDOR_PORT"                                     (Join-Path $logs 'vendor-portal.log')
-$pids += Start-Hidden $repo "$tunnelCmd --url http://localhost:$INTERNAL_PORT" (Join-Path $logs 'internal-tunnel.log')
-$pids += Start-Hidden $repo "$tunnelCmd --url http://localhost:$VENDOR_PORT"   (Join-Path $logs 'vendor-tunnel.log')
+
+# The tunnels are owned by watchdog.ps1, not started here: a free quick tunnel
+# is discarded by Cloudflare the moment its connection drops and never comes
+# back on its own ("Unauthorized: Tunnel not found"), so something has to
+# recreate it. The watchdog probes each tunnel every minute, replaces dead
+# ones, and writes the current hostnames to .hosting\links.json.
+$watchdog = Join-Path $logs 'watchdog.ps1'
+$wdPidFile = Join-Path $logs 'watchdog.pid'
+if (Test-Path $wdPidFile) { try { Stop-Process -Id ([int](Get-Content $wdPidFile)) -Force -ErrorAction Stop } catch {} }
+$wd = Start-Process -FilePath 'pwsh' -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File',$watchdog -WindowStyle Hidden -PassThru
+$pids += $wd.Id
 $pids | Set-Content $pidFile
 
 # ---- wait for the tunnel hostnames --------------------------------------------
@@ -121,6 +134,9 @@ function Wait-TunnelUrl([string]$log) {
 $lan = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.*' } | Select-Object -First 1).IPAddress
 $internalUrl = Wait-TunnelUrl (Join-Path $logs 'internal-tunnel.log')
 $vendorUrl   = Wait-TunnelUrl (Join-Path $logs 'vendor-tunnel.log')
+# Authoritative, and the place to look later when hostnames have rotated:
+$linksFile = Join-Path $logs 'links.json'
+if (Test-Path $linksFile) { Write-Host "All current links (kept fresh by the watchdog): $linksFile" }
 
 Write-Host ''
 Write-Host '================ Nexraah demo hosting ================'

@@ -3,7 +3,7 @@ import { TodayResponse } from './types';
 
 /**
  * GET /reports/today · `indent.view`
- * Branch scoping for BRANCH_MGR is applied at the repository layer, never
+ * Branch scoping for a branch-bound caller is applied at the repository layer, never
  * here and never in a controller (part 10 §4).
  */
 export function getToday() {

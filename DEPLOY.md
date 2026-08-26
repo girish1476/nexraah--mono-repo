@@ -79,7 +79,7 @@ its Loads tab.
 
 ## Signing in to the demo
 
-The sign-in screen lists the six accounts. The password for all of them is:
+The sign-in screen lists the five accounts. The password for all of them is:
 
 ```
 nexraah
@@ -90,7 +90,6 @@ nexraah
 | Operations | anil@nexraah.in | Today's queue |
 | Compliance | meera@nexraah.in | Compliance desk |
 | Finance | rakesh@nexraah.in | Payments → Balance |
-| Branch manager | sunita@nexraah.in | Today's queue, Nashik only |
 | Leadership | vikram@nexraah.in | Monthly overview |
 | Administrator | krishnan@nexraah.in | Control panel |
 

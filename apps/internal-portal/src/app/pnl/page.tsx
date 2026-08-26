@@ -109,7 +109,7 @@ export default function PnlPage() {
       />
       <PageIntro
         what="What each branch, lane or client actually earned: what we charged, what the load cost us, and the difference."
-        who={`Finance and leadership see every branch; a branch manager sees their own. You are seeing: ${data.scope}.`}
+        who={`Finance and leadership see every branch; anyone tied to a single branch sees only theirs. You are seeing: ${data.scope}.`}
       >
         Margin here is only as honest as the charges logged on each trip — if a cost was never
         recorded, the profit on that trip looks bigger than it was.

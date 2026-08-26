@@ -13,7 +13,7 @@ export const ROLE_CODES = [
   'OPS',
   'COMPLIANCE',
   'FINANCE',
-  'BRANCH_MGR',
+  'BD',
   'LEADERSHIP',
   'ADMIN',
 ] as const;
@@ -27,7 +27,6 @@ export interface RoleDef {
   label: string;
   landsOn: string;
   owns: string;
-  branchScoped: boolean;
 }
 
 export const ROLES: Record<RoleCode, RoleDef> = {
@@ -35,43 +34,48 @@ export const ROLES: Record<RoleCode, RoleDef> = {
     code: 'OPS',
     label: 'Operations desk',
     landsOn: '/today',
-    owns: 'Awards, placement, trip creation, LRs, transit',
-    branchScoped: false,
+    owns: 'Awards, placement, trip creation, LRs, transit, POD receive/verify/approve, branch margin',
   },
   COMPLIANCE: {
     code: 'COMPLIANCE',
     label: 'Compliance',
     landsOn: '/compliance',
     owns: 'Indent intake, vendor clearance, document verification and cross-check, contract approval, POD verify and approve',
-    branchScoped: false,
   },
   FINANCE: {
     code: 'FINANCE',
     label: 'Finance',
     landsOn: '/payments/balance',
     owns: 'All payment release, invoicing, receipts, collections',
-    branchScoped: false,
   },
-  BRANCH_MGR: {
-    code: 'BRANCH_MGR',
-    label: 'Branch manager',
-    landsOn: '/today',
-    owns: 'Branch placement performance, margin, RFQ sourcing, POD receive/verify/approve',
-    branchScoped: true,
+  /**
+   * Business development — the desk that wins the lane and sets what it is
+   * worth. Added 2026-08-26 at the owner's direction, and deliberately the
+   * only role whose subject is *price* rather than a stage of the shipment.
+   *
+   * It owns rate management end to end: building an RFQ lane's price, keeping
+   * the client's rate card, and the client relationship the rate belongs to.
+   * What it does not own is the moment a price becomes a commitment —
+   * `rfq.submit` stays with Leadership, so the desk that proposes a rate is
+   * never the desk that sends it to the client.
+   */
+  BD: {
+    code: 'BD',
+    label: 'Business development',
+    landsOn: '/rfq',
+    owns: 'Rate cards, RFQ pricing and lane build-up, client relationships',
   },
   LEADERSHIP: {
     code: 'LEADERSHIP',
     label: 'Leadership',
     landsOn: '/home',
-    owns: 'Approvals, RFQ submission, reporting',
-    branchScoped: false,
+    owns: 'Oversight of every desk, approvals, RFQ submission, reporting',
   },
   ADMIN: {
     code: 'ADMIN',
     label: 'Administrator',
     landsOn: '/admin',
     owns: 'Configuration, users, roles',
-    branchScoped: false,
   },
 };
 
@@ -120,7 +124,35 @@ export const FIXED_PERMISSIONS: Permission[] = [
 export const GRANTABLE_ANYWHERE: Permission[] = ['indent.create', 'indent.manage', 'document.verify'];
 
 export const SEED_GRANTS: Record<RoleCode, Permission[]> = {
-  OPS: ['indent.manage', 'indent.view', 'vendor.edit', 'rfq.edit'],
+  /**
+   * Operations absorbed the branch manager in full. The two desks were never
+   * separated by what they could do — only by how much they could see, and
+   * that is now carried by the user's own branch rather than by their role.
+   *
+   * `approve.exception` came across with the rest. It is worth being explicit
+   * about the cost, because the approvals registry still labels the three
+   * kinds it governs — ADVANCE_OVERRIDE, ADVANCE_POLICY_CHANGE, DOC_OVERRIDE —
+   * as "Senior to OPS". That label is no longer guaranteed: an operator can
+   * now approve an exception another operator raised. Compliance and
+   * Leadership still hold the permission, so a different desk *can* still
+   * review; it is simply no longer forced. This was a product decision taken
+   * with that trade-off on the table, not an oversight of it.
+   *
+   * `BR-50` is unaffected — the two-person POD rule keys on the acting user,
+   * not the role, so one operator still cannot approve what they verified.
+   */
+  OPS: [
+    'indent.create',
+    'indent.manage',
+    'indent.view',
+    'vendor.edit',
+    'rfq.edit',
+    'pod.receive',
+    'pod.verify',
+    'pod.approve',
+    'approve.exception',
+    'pnl.view_own',
+  ],
   COMPLIANCE: [
     'client.onboard',
     'indent.create',
@@ -137,24 +169,51 @@ export const SEED_GRANTS: Record<RoleCode, Permission[]> = {
     'approve.exception',
   ],
   FINANCE: ['payment.release', 'invoice.create', 'receipt.record', 'client.manage', 'pnl.view_all', 'indent.view'],
-  BRANCH_MGR: [
+  /**
+   * Rate management, and nothing that spends money or moves a truck.
+   *
+   * `rfq.edit` builds the lane price, `client.manage` keeps the rate card it
+   * lands on, and `pnl.view_own` is here because a desk that sets prices with
+   * no sight of the margin they produce is guessing. `indent.view` lets them
+   * see what the lane actually carried once it was won.
+   *
+   * Deliberately absent: `rfq.submit` — a fixed permission that stays with
+   * Leadership, so the desk that proposes a price never also sends it to the
+   * client. Also absent is every `approve.*`: BD raises an above-band price,
+   * it does not approve one.
+   */
+  BD: ['rfq.edit', 'client.manage', 'indent.view', 'pnl.view_own'],
+  /**
+   * Leadership oversees every desk. As of 2026-08-26 that is literal rather
+   * than nominal: they hold the operating permissions of Operations,
+   * Compliance and Finance's document work, not merely a view of the screens.
+   *
+   * `payment.release` is still not here, and that is not an oversight. It sits
+   * in FIXED_PERMISSIONS with `pod.waive` and `config.manage` — permissions
+   * that never belong to two roles at once. Oversight of the money is a
+   * different thing from being a second pair of hands that can move it, and
+   * the audit trail is only worth reading while exactly one desk can pay.
+   */
+  LEADERSHIP: [
     'indent.create',
     'indent.manage',
     'indent.view',
-    'rfq.edit',
+    'document.verify',
     'vendor.edit',
+    'vendor.verify',
+    'vendor.activate',
+    'vendor.advance_policy',
+    'client.manage',
+    'client.onboard',
+    'rfq.edit',
+    'rfq.submit',
     'pod.receive',
     'pod.verify',
     'pod.approve',
-    'approve.exception',
-    'pnl.view_own',
-  ],
-  LEADERSHIP: [
-    'indent.view',
-    'rfq.submit',
     'approve.above_band',
     'approve.waiver',
     'approve.exception',
+    'approve.contract',
     'pnl.view_all',
   ],
   /**
@@ -213,7 +272,12 @@ const V: Level = 'VIEW';
 const N: Level = 'NONE';
 
 /**
- * Order: OPS · COMPLIANCE · FINANCE · BRANCH_MGR · LEADERSHIP · ADMIN.
+ * Order: OPS · COMPLIANCE · FINANCE · LEADERSHIP · ADMIN.
+ *
+ * BRANCH_MGR is gone. Where it held more than OPS did — home, pod, payments,
+ * invoices, receivables, pnl, approvals — OPS was raised to the branch
+ * manager's level rather than the other way round, so nobody lost a screen
+ * they had this morning. Branch scoping moved to the user's own branch.
  *
  * ADMIN is EDIT on every module — the sidebar shows the full console and
  * every screen unlocks its controls. What ADMIN still can't do lives in
@@ -230,9 +294,9 @@ export const MODULE_ACCESS: Record<ModuleKey, Record<RoleCode, Level>> = {
    * simply means "can open it", so every role gets one place to see where a
    * shipment actually stands instead of piecing it together across screens.
    */
-  orders: { OPS: E, COMPLIANCE: E, FINANCE: E, BRANCH_MGR: E, LEADERSHIP: E, ADMIN: E },
-  today: { OPS: E, COMPLIANCE: E, FINANCE: V, BRANCH_MGR: E, LEADERSHIP: V, ADMIN: E },
-  home: { OPS: V, COMPLIANCE: V, FINANCE: E, BRANCH_MGR: E, LEADERSHIP: E, ADMIN: E },
+  orders: { OPS: E, COMPLIANCE: E, FINANCE: E, BD: E, LEADERSHIP: E, ADMIN: E },
+  today: { OPS: E, COMPLIANCE: E, FINANCE: V, BD: E, LEADERSHIP: E, ADMIN: E },
+  home: { OPS: E, COMPLIANCE: V, FINANCE: E, BD: E, LEADERSHIP: E, ADMIN: E },
   /**
    * Operations owns vendor onboarding — it is the desk that actually brings a
    * transporter in and collects their papers. Compliance still owns the
@@ -240,8 +304,23 @@ export const MODULE_ACCESS: Record<ModuleKey, Record<RoleCode, Level>> = {
    * SEED_GRANTS.OPS, so an operator can open and fill a vendor record but
    * cannot pass it themselves.
    */
-  vendors: { OPS: E, COMPLIANCE: E, FINANCE: V, BRANCH_MGR: E, LEADERSHIP: V, ADMIN: E },
-  compliance: { OPS: N, COMPLIANCE: E, FINANCE: V, BRANCH_MGR: N, LEADERSHIP: N, ADMIN: E },
+  vendors: { OPS: E, COMPLIANCE: E, FINANCE: V, BD: V, LEADERSHIP: E, ADMIN: E },
+  /**
+   * Leadership was `NONE` here until 2026-08-26 — the compliance queue was the
+   * one screen in the console they could not open at all, which sat oddly with
+   * a role whose job is oversight. It is now EDIT at the owner's direction:
+   * they can verify documents and clear a vendor themselves, not only watch
+   * the backlog.
+   *
+   * The cost, stated plainly because it is a real one: vendor clearance no
+   * longer *forces* two desks. Compliance normally does it, but Leadership can
+   * now clear a vendor alone. `BR-50`'s two-person POD rule is unaffected — it
+   * keys on the acting user rather than the role, so nobody approves what they
+   * themselves verified, whatever role they hold.
+   *
+   * BD is `NONE`: rate work has no business in the document queue.
+   */
+  compliance: { OPS: N, COMPLIANCE: E, FINANCE: V, BD: N, LEADERSHIP: E, ADMIN: E },
   /**
    * Compliance runs client onboarding — bringing a client in, collecting
    * their papers and clearing them — so `clients` is EDIT for them, the same
@@ -249,10 +328,10 @@ export const MODULE_ACCESS: Record<ModuleKey, Record<RoleCode, Level>> = {
    * keeps `client.manage` and with it the commercial record; the two
    * permissions divide the module rather than competing for it.
    */
-  clients: { OPS: V, COMPLIANCE: E, FINANCE: E, BRANCH_MGR: V, LEADERSHIP: V, ADMIN: E },
-  indents: { OPS: E, COMPLIANCE: E, FINANCE: V, BRANCH_MGR: E, LEADERSHIP: V, ADMIN: E },
-  trips: { OPS: E, COMPLIANCE: E, FINANCE: V, BRANCH_MGR: E, LEADERSHIP: V, ADMIN: E },
-  pod: { OPS: V, COMPLIANCE: E, FINANCE: V, BRANCH_MGR: E, LEADERSHIP: V, ADMIN: E },
+  clients: { OPS: V, COMPLIANCE: E, FINANCE: E, BD: E, LEADERSHIP: E, ADMIN: E },
+  indents: { OPS: E, COMPLIANCE: E, FINANCE: V, BD: V, LEADERSHIP: E, ADMIN: E },
+  trips: { OPS: E, COMPLIANCE: E, FINANCE: V, BD: V, LEADERSHIP: E, ADMIN: E },
+  pod: { OPS: E, COMPLIANCE: E, FINANCE: V, BD: N, LEADERSHIP: E, ADMIN: E },
   /**
    * Compliance verifies the advance document checklist; Finance releases the
    * money. Both need the payments screens, so the module is EDIT for both —
@@ -260,14 +339,24 @@ export const MODULE_ACCESS: Record<ModuleKey, Record<RoleCode, Level>> = {
    * permission that never moves to a second role, so Compliance sees the gate
    * and clears documents against it without ever being able to pay.
    */
-  payments: { OPS: N, COMPLIANCE: E, FINANCE: E, BRANCH_MGR: V, LEADERSHIP: V, ADMIN: E },
-  invoices: { OPS: N, COMPLIANCE: N, FINANCE: E, BRANCH_MGR: V, LEADERSHIP: V, ADMIN: E },
-  receivables: { OPS: N, COMPLIANCE: N, FINANCE: E, BRANCH_MGR: V, LEADERSHIP: V, ADMIN: E },
-  rfq: { OPS: E, COMPLIANCE: V, FINANCE: V, BRANCH_MGR: E, LEADERSHIP: E, ADMIN: E },
-  telematics: { OPS: E, COMPLIANCE: V, FINANCE: N, BRANCH_MGR: E, LEADERSHIP: V, ADMIN: E },
-  pnl: { OPS: N, COMPLIANCE: N, FINANCE: E, BRANCH_MGR: V, LEADERSHIP: E, ADMIN: E },
-  approvals: { OPS: V, COMPLIANCE: E, FINANCE: E, BRANCH_MGR: E, LEADERSHIP: E, ADMIN: E },
-  admin: { OPS: N, COMPLIANCE: N, FINANCE: N, BRANCH_MGR: N, LEADERSHIP: V, ADMIN: E },
+  /**
+   * Leadership is EDIT here so they can work the advance and balance gates
+   * alongside Compliance and Finance. They still cannot pay: `payment.release`
+   * is a fixed permission and stays with Finance alone, so the screen unlocks
+   * and the release button does not.
+   *
+   * BD is VIEW — a desk that prices lanes needs to see whether the money on
+   * them actually moved, and nothing beyond that.
+   */
+  payments: { OPS: V, COMPLIANCE: E, FINANCE: E, BD: V, LEADERSHIP: E, ADMIN: E },
+  invoices: { OPS: V, COMPLIANCE: N, FINANCE: E, BD: V, LEADERSHIP: E, ADMIN: E },
+  receivables: { OPS: V, COMPLIANCE: N, FINANCE: E, BD: V, LEADERSHIP: E, ADMIN: E },
+  /** BD's home screen — the lane price is built here. */
+  rfq: { OPS: E, COMPLIANCE: V, FINANCE: V, BD: E, LEADERSHIP: E, ADMIN: E },
+  telematics: { OPS: E, COMPLIANCE: V, FINANCE: N, BD: N, LEADERSHIP: E, ADMIN: E },
+  pnl: { OPS: V, COMPLIANCE: N, FINANCE: E, BD: V, LEADERSHIP: E, ADMIN: E },
+  approvals: { OPS: E, COMPLIANCE: E, FINANCE: E, BD: V, LEADERSHIP: E, ADMIN: E },
+  admin: { OPS: N, COMPLIANCE: N, FINANCE: N, BD: N, LEADERSHIP: V, ADMIN: E },
 };
 
 export const MODULE_LABEL: Record<ModuleKey, string> = {
