@@ -17,3 +17,9 @@ test-results
 playwright-report
 blob-report
 playwright/.cache
+.vercel
+
+# Playwright fixture session written by e2e/global-setup.ts — regenerated
+# every run, and never a real credential.
+e2e/.auth
+

@@ -191,6 +191,19 @@ button.card:active {
   max-width: 34ch;
 }
 
+/* A pill-stack sitting in a label/status row dissolves into the row itself:
+   the pill stays on the label's line, flush right, and the reason takes a
+   full-width line beneath. Without this, the reason's width drags the whole
+   stack leftwards and both end up as a ragged column hanging mid-row. */
+.row-between > .pill-stack {
+  display: contents;
+}
+.row-between > .pill-stack .pill-reason {
+  flex-basis: 100%;
+  max-width: none;
+  margin-top: -4px;
+}
+
 /* Nothing here yet — never an error, always a next step. */
 .empty {
   background: var(--color-surface);
@@ -297,4 +310,316 @@ input[type='radio'] {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* ---- printable lorry receipt (/print/lr/[id]) --------------------------- */
+/*
+ * The transporter's copy is a document that has to survive being carried in
+ * a cab and read at a checkpost, so it is set in black on white at a size
+ * that photocopies, not in the app's screen palette.
+ */
+
+.print-sheet {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 24px 20px 40px;
+  background: #fff;
+  color: #000;
+}
+
+.print-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.print-actions button {
+  border: none;
+  border-radius: 10px;
+  padding: 12px 18px;
+  font: inherit;
+  font-weight: 600;
+  color: #fff;
+  background: var(--color-accent);
+  cursor: pointer;
+}
+
+.print-actions span,
+.print-actions p {
+  font-size: 13px;
+  color: #555;
+  margin: 0;
+}
+
+.lr-head {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+  justify-content: space-between;
+  border-bottom: 2px solid #000;
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+}
+
+.lr-head h1 {
+  font-size: 17px;
+  margin: 0 0 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.lr-no {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 22px;
+  letter-spacing: 1px;
+  margin: 0;
+}
+
+.lr-barcode {
+  width: 260px;
+  height: 60px;
+  display: block;
+  flex: none;
+}
+
+.lr-block {
+  margin-bottom: 14px;
+  break-inside: avoid;
+}
+
+.lr-block h2 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  margin: 0 0 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #999;
+}
+
+.lr-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 5px 0;
+  font-size: 14px;
+}
+
+.lr-signs {
+  display: flex;
+  gap: 28px;
+  margin-top: 28px;
+  break-inside: avoid;
+}
+
+.lr-signs > div {
+  flex: 1;
+  font-size: 12px;
+}
+
+.lr-rule {
+  border-bottom: 1px solid #000;
+  height: 44px;
+  margin: 2px 0 4px;
+}
+
+.lr-foot {
+  margin-top: 22px;
+  padding-top: 10px;
+  border-top: 1px solid #999;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+@media print {
+  /* Anything that only makes sense on a screen — buttons, the app's fixed
+     tab bar — must not appear on the paper or it prints over the receipt. */
+  .no-print,
+  nav {
+    display: none !important;
+  }
+
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
+
+  body {
+    background: #fff;
+  }
+
+  .print-sheet {
+    max-width: none;
+    padding: 0;
+  }
+}
+
+/* ---- sign-in ------------------------------------------------------------
+   The transporter's front door. Centred and generously spaced rather than
+   dense: this is the one screen someone may use once a month, standing
+   outside, and every other screen in this app assumes they got past it. */
+
+.signin-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: 24px 16px 40px;
+}
+
+.signin-card {
+  width: 100%;
+  max-width: 400px;
+  /* A real surface, not content floating on the page ground — same tokens
+     as .card so the front door matches every screen behind it. */
+  background: var(--color-surface);
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  padding: 26px 22px 24px;
+}
+
+.signin-brand {
+  display: flex;
+  /* Top-align: centring the mark against the two-line name + tagline block
+     leaves it visibly sagging below the wordmark. */
+  align-items: flex-start;
+  gap: 13px;
+  margin-bottom: 26px;
+}
+
+.signin-mark {
+  font-size: 34px;
+  line-height: 1;
+  flex: none;
+  /* Optically level with the h1's cap height. */
+  margin-top: 1px;
+}
+
+.signin-brand h1 {
+  font-size: 27px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.signin-sub {
+  margin: 2px 0 0;
+  font-size: 14.5px;
+  color: var(--color-muted, #3a4759);
+}
+
+.signin-label {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  margin: 18px 0 6px;
+}
+
+.signin-hint {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: var(--color-muted, #3a4759);
+}
+
+/* The reveal button sits inside the field's own row so the 16px input font —
+   which stops iOS zooming the page on focus — is not disturbed. */
+.signin-password {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.signin-password .field {
+  flex: 1;
+  padding-right: 76px;
+}
+
+.signin-reveal {
+  position: absolute;
+  right: 6px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--color-accent, #17497b);
+  padding: 0 10px;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.signin-error {
+  margin: 16px 0 0;
+  padding: 11px 14px;
+  border: 1px solid var(--red-edge, #ecc0b8);
+  border-left: 4px solid var(--red, #9c2f21);
+  border-radius: 8px;
+  background: var(--red-tint, #fbeae7);
+  color: var(--red, #9c2f21);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.signin-submit {
+  width: 100%;
+  margin-top: 24px;
+  min-height: 54px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--color-accent, #17497b);
+  color: #fff;
+  font: inherit;
+  font-size: 17px;
+  font-weight: 700;
+  cursor: pointer;
+  /* This button also carries .tap, whose inline-flex left-parks the label —
+     a full-width primary action must keep its label centred. */
+  justify-content: center;
+  text-align: center;
+  padding: 0 16px;
+}
+
+.signin-submit:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.signin-demo {
+  margin-top: 26px;
+  padding: 13px 15px;
+  border: 1px dashed var(--color-border, #c7d1e0);
+  border-radius: 10px;
+  font-size: 14.5px;
+}
+
+.signin-demo p {
+  margin: 0;
+}
+
+.signin-demo-title {
+  font-weight: 700;
+  margin-bottom: 3px !important;
+}
+
+.signin-demo-fill {
+  margin-top: 9px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--color-accent, #17497b);
+  text-decoration: underline;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.signin-help {
+  margin-top: 26px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-muted, #3a4759);
 }
