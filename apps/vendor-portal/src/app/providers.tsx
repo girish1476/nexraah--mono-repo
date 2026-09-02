@@ -22,27 +22,40 @@ const PUBLIC_ROUTES = ['/signin'];
  * real API a signed-out visitor would watch several screens fail one request at
  * a time instead of being told once, plainly, that they need to sign in.
  *
- * Rendering is held back until the check has run. The alternative is a flash of
- * a transporter's loads before the redirect, which on a shared phone is a small
- * leak rather than a cosmetic flicker.
+ * **The gate runs once, on mount, and never again.** That is load-bearing, not
+ * an optimisation. An earlier version depended on `usePathname()` and re-ran on
+ * every navigation, which broke client-side navigation across the whole app:
+ * `<Link>` intercepts the click and starts a transition, this component then
+ * re-rendered mid-transition, and the navigation was abandoned with the URL
+ * left where it started. Every committed test that clicked a link to move
+ * between screens failed, and the symptom — a click that registers and does
+ * nothing — looks nothing like its cause.
+ *
+ * Reading the token once is also the honest scope: a token cannot appear or
+ * vanish because someone moved between screens, only because they signed in,
+ * signed out, or the server rejected it. Sign-in and sign-out both do a hard
+ * `location.replace`, so this remounts and re-checks; rejection is `apis.ts`'s
+ * 401 path. No route change needs to re-ask.
  */
 function AuthGate({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname() ?? '';
   const [checked, setChecked] = useState(false);
 
-  const isPublic = PUBLIC_ROUTES.some((r) => pathname.startsWith(r));
-
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
-      if (isPublic) {
+      // Read at mount rather than from a hook, so this effect can have an
+      // empty dependency list and never re-run on navigation.
+      const path = window.location.pathname;
+      if (PUBLIC_ROUTES.some((r) => path.startsWith(r))) {
         if (!cancelled) setChecked(true);
         return;
       }
+
       // Refresh a token that is about to die *before* the first screen fires
-      // its requests, so a driver who left the app open overnight does not get
+      // its requests, so a driver who left the app open overnight is not
       // bounced to sign-in for a session that could have been renewed.
       await ensureFreshToken();
       if (cancelled) return;
@@ -57,9 +70,13 @@ function AuthGate({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [isPublic, pathname, router]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  if (!checked) return null;
+  // The sign-in screen must render even while `checked` is false — it is the
+  // one place a signed-out person is supposed to be, and gating it behind its
+  // own check would leave them staring at a blank page.
+  if (!checked && !PUBLIC_ROUTES.some((r) => pathname.startsWith(r))) return null;
   return <>{children}</>;
 }
 
