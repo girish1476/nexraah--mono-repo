@@ -93,6 +93,9 @@ export const PERMISSIONS = [
   'vendor.advance_policy',
   'client.manage',
   'client.onboard',
+  'rate.revise',
+  'audit.view',
+  'ticket.resolve',
   'pod.receive',
   'pod.verify',
   'pod.approve',
@@ -168,7 +171,16 @@ export const SEED_GRANTS: Record<RoleCode, Permission[]> = {
     'approve.contract',
     'approve.exception',
   ],
-  FINANCE: ['payment.release', 'invoice.create', 'receipt.record', 'client.manage', 'pnl.view_all', 'indent.view'],
+  FINANCE: [
+    'payment.release',
+    'invoice.create',
+    'receipt.record',
+    'client.manage',
+    'rate.revise',
+    'audit.view',
+    'pnl.view_all',
+    'indent.view',
+  ],
   /**
    * Rate management, and nothing that spends money or moves a truck.
    *
@@ -214,6 +226,7 @@ export const SEED_GRANTS: Record<RoleCode, Permission[]> = {
     'approve.waiver',
     'approve.exception',
     'approve.contract',
+    'audit.view',
     'pnl.view_all',
   ],
   /**
@@ -236,12 +249,15 @@ export const SEED_GRANTS: Record<RoleCode, Permission[]> = {
     'vendor.advance_policy',
     'client.manage',
     'client.onboard',
+    'rate.revise',
     'pod.receive',
     'pod.verify',
     'pod.approve',
     'rfq.edit',
     'invoice.create',
     'receipt.record',
+    'audit.view',
+    'ticket.resolve',
     'pnl.view_all',
   ],
 };
@@ -265,6 +281,9 @@ export type ModuleKey =
   | 'telematics'
   | 'pnl'
   | 'approvals'
+  | 'records'
+  | 'search'
+  | 'tickets'
   | 'admin';
 
 const E: Level = 'EDIT';
@@ -295,8 +314,23 @@ export const MODULE_ACCESS: Record<ModuleKey, Record<RoleCode, Level>> = {
    * shipment actually stands instead of piecing it together across screens.
    */
   orders: { OPS: E, COMPLIANCE: E, FINANCE: E, BD: E, LEADERSHIP: E, ADMIN: E },
-  today: { OPS: E, COMPLIANCE: E, FINANCE: V, BD: E, LEADERSHIP: E, ADMIN: E },
-  home: { OPS: E, COMPLIANCE: V, FINANCE: E, BD: E, LEADERSHIP: E, ADMIN: E },
+  /** The third common segment. One box that finds anything, for everybody. */
+  search: { OPS: E, COMPLIANCE: E, FINANCE: E, BD: E, LEADERSHIP: E, ADMIN: E },
+  /**
+   * Raising a ticket is open to every desk — the person who spots wrong data
+   * is whoever was using the screen. Acting on one is gated separately by
+   * `ticket.resolve`, which only Administration holds.
+   */
+  tickets: { OPS: E, COMPLIANCE: E, FINANCE: E, BD: E, LEADERSHIP: E, ADMIN: E },
+  /*
+   * My desk, Business snapshot and Global search are EDIT for every role at
+   * the owner's direction — the three screens everybody starts from, common
+   * to all six desks rather than varying by job. Finance was VIEW on `today`
+   * and Compliance VIEW on `home`, which meant two desks landed on a screen
+   * they could read and not work.
+   */
+  today: { OPS: E, COMPLIANCE: E, FINANCE: E, BD: E, LEADERSHIP: E, ADMIN: E },
+  home: { OPS: E, COMPLIANCE: E, FINANCE: E, BD: E, LEADERSHIP: E, ADMIN: E },
   /**
    * Operations owns vendor onboarding — it is the desk that actually brings a
    * transporter in and collects their papers. Compliance still owns the
@@ -356,13 +390,21 @@ export const MODULE_ACCESS: Record<ModuleKey, Record<RoleCode, Level>> = {
   telematics: { OPS: E, COMPLIANCE: V, FINANCE: N, BD: N, LEADERSHIP: E, ADMIN: E },
   pnl: { OPS: V, COMPLIANCE: N, FINANCE: E, BD: V, LEADERSHIP: E, ADMIN: E },
   approvals: { OPS: E, COMPLIANCE: E, FINANCE: E, BD: V, LEADERSHIP: E, ADMIN: E },
+  /**
+   * The audit trail. EDIT for the three desks that hold `audit.view`, for
+   * the same reason `orders` is EDIT everywhere: the module level only
+   * decides whether the screen can be opened, and a VIEW level would hide
+   * the row from the sidebar entirely. Nothing on it mutates anything —
+   * nothing CAN, the table refuses UPDATE and DELETE at the database.
+   */
+  records: { OPS: N, COMPLIANCE: N, FINANCE: E, BD: N, LEADERSHIP: E, ADMIN: E },
   admin: { OPS: N, COMPLIANCE: N, FINANCE: N, BD: N, LEADERSHIP: V, ADMIN: E },
 };
 
 export const MODULE_LABEL: Record<ModuleKey, string> = {
   today: 'My desk',
   home: 'Business snapshot',
-  orders: 'All shipments',
+  orders: 'Orders',
   vendors: 'Transporters',
   compliance: 'Document checks',
   clients: 'Clients',
@@ -373,9 +415,12 @@ export const MODULE_LABEL: Record<ModuleKey, string> = {
   invoices: 'Client bills',
   receivables: 'Money to collect',
   rfq: 'Rate requests',
-  telematics: 'Live vehicle tracking',
+  telematics: 'Tracking',
   pnl: 'Profit & loss',
   approvals: 'Approvals',
+  records: 'Record of what happened',
+  search: 'Global search',
+  tickets: 'Tickets',
   admin: 'Settings',
 };
 
@@ -408,6 +453,9 @@ export const MODULE_EMOJI: Record<ModuleKey, string> = {
   telematics: '📍',
   pnl: '📈',
   approvals: '✋',
+  records: '🧭',
+  search: '🔎',
+  tickets: '🎫',
   admin: '🎛️',
 };
 
@@ -424,6 +472,18 @@ export const PERMISSION_LABEL: Record<Permission, string> = {
   'vendor.advance_policy': 'Set vendor advance policy',
   'client.manage': 'Create and edit client records',
   'client.onboard': 'Onboard and clear clients',
+  // Who may *propose* a change to a price already agreed with a client. It
+  // never applies one on its own — the change goes for sign-off to somebody
+  // holding `approve.contract`, and no role holds both.
+  'rate.revise': 'Change an agreed client rate',
+  // Read the trail of who did what. There is no matching write or delete
+  // permission, and there cannot be — the table refuses both at the
+  // database, so this grants review and nothing else.
+  'audit.view': 'Review the record of what everyone did',
+  // Raising a ticket needs no permission — anyone who spots wrong data
+  // can report it. This is the other half: acting on one, which means
+  // correcting a record somebody else entered.
+  'ticket.resolve': 'Act on reported data problems',
   'pod.receive': 'Receive proof of delivery',
   'pod.verify': 'Verify proof of delivery',
   'pod.approve': 'Approve proof of delivery',
@@ -459,6 +519,9 @@ const ROUTE_MODULES: [string, ModuleKey][] = [
   ['/telematics', 'telematics'],
   ['/pnl', 'pnl'],
   ['/admin/approvals', 'approvals'],
+  ['/records', 'records'],
+  ['/search', 'search'],
+  ['/tickets', 'tickets'],
   ['/admin', 'admin'],
 ];
 
@@ -489,7 +552,14 @@ export function levelFor(module: ModuleKey, role: RoleCode): Level {
  * `area` picks up `--area-*` from globals.css. No module moved permission —
  * this is naming and grouping only, so `MODULE_ACCESS` is untouched.
  */
-export type AreaKey = 'desk' | 'ship' | 'biz' | 'money' | 'control';
+/**
+ * Six places, not five. "Clients & supply" was one group holding both sides of
+ * a load — the companies whose goods move and the transporters that move them
+ * — which put twelve rows under one heading and asked the reader to sort them
+ * out. They are separate desks doing separate work, so they are separate
+ * areas.
+ */
+export type AreaKey = 'desk' | 'ship' | 'biz' | 'supply' | 'money' | 'control';
 
 export interface NavItem {
   label: string;
@@ -521,10 +591,27 @@ export interface NavGroup {
 }
 
 /**
- * Inside "The shipment", the items are in the order the ten steps actually
- * happen — load request, trip, tracking, collect proof, verify proof. A
- * person following a shipment down the sidebar is following it through its
- * life, which is the one ordering nobody has to be taught.
+ * Six areas, rebuilt 2026-09-02 to the owner's marked-up console.
+ *
+ * What changed and why, since every one of these was a specific instruction:
+ *
+ *  - **"All shipments" is now "Global search", and it moved to the top.** It
+ *    was a per-area row for finding one load; it is the box you use to find
+ *    anything, so it belongs beside My desk rather than inside Orders.
+ *  - **My desk · Business snapshot · Global search are common to every role.**
+ *    Same three rows, same place, whichever desk you are on.
+ *  - **"The shipment" is now "Orders"**, and it carries the delivery-proof
+ *    queues split the way the work actually splits: what is outstanding, what
+ *    has blown its window, and what is sitting as a photo with no paper.
+ *  - **"Clients & supply" became two areas.** Twelve rows under one heading
+ *    asked the reader to sort demand from supply themselves.
+ *  - **"Money" is now "Payments"** and **"Live vehicle tracking" is
+ *    "Tracking"** — both plainer, both what people already call them.
+ *  - **"Raise a load request" is gone.** Load requests already carries its own
+ *    "Raise an indent" button, so the sidebar row was a second door to one
+ *    room.
+ *  - **"Trips on the road" is gone.** Its whole job was finding a trip, which
+ *    Global search now does across every record at once.
  */
 export const NAV: NavGroup[] = [
   {
@@ -545,20 +632,20 @@ export const NAV: NavGroup[] = [
         emoji: '📊',
         note: 'How the month is going',
       },
+      {
+        label: 'Global search',
+        href: '/search',
+        module: 'search',
+        emoji: '🔎',
+        note: 'Find any load, trip, client, transporter or bill by one code',
+      },
     ],
   },
   {
-    label: 'The shipment',
+    label: 'Orders',
     area: 'ship',
     emoji: '🚚',
     items: [
-      {
-        label: 'All shipments',
-        href: '/orders',
-        module: 'orders',
-        emoji: '📦',
-        note: 'Every load, and how far along it is',
-      },
       {
         label: 'Load requests',
         href: '/indents',
@@ -567,47 +654,58 @@ export const NAV: NavGroup[] = [
         note: 'What clients have asked us to move',
       },
       {
-        label: 'Raise a load request',
-        href: '/indents/new',
-        module: 'indents',
-        emoji: '➕',
-        note: 'Log a new load a client wants moved',
-        permission: 'indent.create',
-      },
-      {
-        label: 'Trips on the road',
-        href: '/trips',
-        module: 'trips',
-        emoji: '🛣️',
-        note: 'Vehicles booked and running',
-      },
-      {
-        label: 'Live vehicle tracking',
+        label: 'Tracking',
         href: '/telematics',
         module: 'telematics',
         emoji: '📍',
         note: 'Where the trucks are right now',
       },
+      /*
+       * Three delivery-proof rows where there were two, and they are cut by
+       * what is wrong rather than by who acts. "Collect" and "Check" named the
+       * desk's own verbs; these name the state of the paper, which is what
+       * somebody arrives looking for.
+       */
       {
-        label: 'Collect delivery proof',
-        href: '/pod/receiving',
-        module: 'pod',
-        emoji: '📸',
-        note: 'Log the signed paperwork as it arrives',
-      },
-      {
-        label: 'Check delivery proof',
+        label: 'Delivery proof pending',
         href: '/pod/pending',
         module: 'pod',
         emoji: '🔍',
-        note: 'Approve it so the final payment can go out',
+        note: 'Delivered loads whose signed paper has not reached us',
       },
+      {
+        /*
+         * A preset of the row above, not a screen of its own. `/pod/pending`
+         * already carries the ageing filter and the backend already accepts
+         * `within | breached | forfeited`, so this needed a link rather than a
+         * second copy of the same table. It pointed at `/pod/breached`, which
+         * has no page — a dead row in the sidebar.
+         */
+        label: 'Delivery proof past due',
+        href: '/pod/pending?ageing=breached',
+        module: 'pod',
+        emoji: '⏰',
+        note: 'Past the agreed window — a penalty is running on these',
+      },
+      /*
+       * An "E-POD pending" row belongs here and is deliberately absent until
+       * it can work. It would list trips whose proof was photographed in the
+       * transporter app but whose paper has not reached a branch — that is
+       * `pod_status = 'ATTACHED'`, and nothing in the system ever writes that
+       * value (the portal has no update grant on `trips` and derives it in the
+       * response only). The row would therefore always be empty, which reads
+       * as "nothing to chase" rather than "not built".
+       *
+       * Restore it once something persists ATTACHED. Same for a "Tickets" row:
+       * `ticket.resolve` exists as a permission, but there is no tickets
+       * endpoint, table or page behind it yet.
+       */
     ],
   },
   {
-    label: 'Clients & supply',
+    label: 'Clients',
     area: 'biz',
-    emoji: '🤝',
+    emoji: '🏢',
     items: [
       {
         label: 'Clients',
@@ -637,11 +735,21 @@ export const NAV: NavGroup[] = [
          * and offering Finance a queue of decisions they cannot make is the
          * "menu of screens you can look at but not touch" this filter exists
          * to prevent.
-         *
-         * The two rows together are the whole division: Finance signs a
-         * client up, Compliance decides whether we carry for them.
          */
         permission: 'client.onboard',
+      },
+      {
+        label: 'Change an agreed rate',
+        href: '/clients/rate-changes',
+        module: 'clients',
+        emoji: '⚖️',
+        note: 'Move the price on a lane we have already agreed — with a reason and a sign-off',
+        /*
+         * Deliberately NOT offered to the desks that approve it — Compliance
+         * and Leadership hold `approve.contract` and would otherwise be shown
+         * a screen whose whole output lands back in their own inbox.
+         */
+        permission: 'rate.revise',
       },
       {
         label: 'Rate requests',
@@ -657,6 +765,13 @@ export const NAV: NavGroup[] = [
         emoji: '📣',
         note: 'Start pricing a client’s lanes for a new period',
       },
+    ],
+  },
+  {
+    label: 'Supply',
+    area: 'supply',
+    emoji: '🚛',
+    items: [
       {
         label: 'Transporters',
         href: '/vendors',
@@ -703,9 +818,9 @@ export const NAV: NavGroup[] = [
     ],
   },
   {
-    label: 'Money',
+    label: 'Payments',
     area: 'money',
-    emoji: '💰',
+    emoji: '💳',
     items: [
       {
         label: 'Advance payments',
@@ -771,9 +886,25 @@ export const NAV: NavGroup[] = [
         emoji: '✋',
         note: 'Decisions only you can sign off',
       },
+      /*
+       * A "Tickets" row belongs here — open to every desk, since the person who
+       * spots wrong data is whoever was on the screen, with `ticket.resolve`
+       * gating action on somebody else's. It is deliberately absent until it
+       * can work: the permission exists, but there is no tickets endpoint, no
+       * table and no page behind it, so the row was a dead link in the
+       * sidebar of every role. Restore it with the page.
+       */
       { label: 'Settings', href: '/admin', module: 'admin', emoji: '🎛️' },
       { label: 'Who can do what', href: '/admin/roles', module: 'admin', emoji: '👥' },
       { label: 'Branches', href: '/admin/branches', module: 'admin', emoji: '🏬' },
+      {
+        label: 'Record of what happened',
+        href: '/records',
+        module: 'records',
+        emoji: '🧭',
+        note: 'Every change anyone made, who made it, and when',
+        permission: 'audit.view',
+      },
       { label: 'Bulk upload', href: '/admin/import', module: 'admin', emoji: '⬆️' },
     ],
   },

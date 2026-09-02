@@ -84,7 +84,11 @@ describe('navFor', () => {
   });
   it('OPS sees the operational nav but not payments/invoicing/admin', () => {
     const hrefs = navFor('OPS').flatMap((g) => g.items.map((i) => i.href));
-    expect(hrefs).toEqual(expect.arrayContaining(['/today', '/indents', '/trips', '/rfq']));
+    // `/trips` was here until the 2026-09-02 nav rebuild retired the row —
+    // finding a trip is Global search's job now, and the page is still
+    // reachable from a search result. The rule being protected is which
+    // *areas* Operations reaches, so the row it stands on can change.
+    expect(hrefs).toEqual(expect.arrayContaining(['/today', '/indents', '/rfq', '/pod/pending']));
     expect(hrefs).not.toContain('/payments/advance');
     expect(hrefs).not.toContain('/admin');
   });
@@ -119,10 +123,16 @@ describe('navFor', () => {
       navFor(role).flatMap((g) => g.items.map((i) => i.href));
     expect(hrefs('FINANCE')).toEqual(expect.arrayContaining(['/clients/new', '/invoices/new']));
     expect(hrefs('OPS')).not.toContain('/clients/new');
-    expect(hrefs('COMPLIANCE')).toEqual(expect.arrayContaining(['/indents/new', '/vendors/leads']));
-    // Operations absorbed the branch manager and with it `indent.create`, so
-    // the raise-an-indent row is now offered to Ops as well as Compliance.
-    expect(hrefs('OPS')).toContain('/indents/new');
+    expect(hrefs('COMPLIANCE')).toContain('/vendors/leads');
+    /*
+     * `/indents/new` used to be asserted here and is deliberately gone: the
+     * 2026-09-02 rebuild removed the row because Load requests carries its own
+     * "Raise an indent" button, and a sidebar row for it was a second door to
+     * one room. `/vendors/new` carries the same rule — a creation row that
+     * appears only where the permission behind the page is held — and it still
+     * has a row, so it is what the assertion stands on now.
+     */
+    expect(hrefs('OPS')).toContain('/vendors/new');
   });
   it('uses the grants the session actually carries over the role seed', () => {
     const withGrant = navFor('COMPLIANCE', ['vendor.edit']).flatMap((g) => g.items.map((i) => i.href));
@@ -163,7 +173,11 @@ describe('navFor', () => {
     for (const role of ROLE_CODES) {
       for (const group of navFor(role)) {
         for (const item of group.items) {
-          const segments = item.href.replace(/^\//, '').split('/');
+          // A row may carry a preset — `/pod/pending?ageing=breached` offers
+          // the past-due queue without a second screen that is the first one
+          // with a filter pre-set. What must exist is the page behind the
+          // path, so the query is not part of the question.
+          const segments = item.href.replace(/^\//, '').split('?')[0].split('/');
           expect(
             existsSync(join(dir, ...segments, 'page.tsx')),
             `${item.href} (${item.label}) has no page.tsx`,

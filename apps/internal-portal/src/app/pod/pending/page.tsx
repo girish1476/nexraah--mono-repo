@@ -25,7 +25,7 @@ import {
   useCan,
   useToast,
 } from '@/lib/ui';
-import { getPending, pendingExportUrl, waivePenalty } from '../apis';
+import { getPending, waivePenalty } from '../apis';
 import { PendingResponse, PendingRow } from '../types';
 
 /**
@@ -43,6 +43,23 @@ export default function PodPendingPage() {
   const [branch, setBranch] = useState('');
   const [transporter, setTransporter] = useState('');
   const [ageing, setAgeing] = useState('');
+
+  /**
+   * A preset arriving as `?ageing=breached`, so the sidebar can offer "past
+   * due" as its own row without a second screen that is this one with a filter
+   * pre-set. The filter control below stays live, so somebody who lands on the
+   * preset can widen it without going back.
+   *
+   * Read from `window.location` on mount rather than `useSearchParams()`,
+   * which would put this page behind a Suspense boundary at build time for a
+   * value it only needs once.
+   */
+  useEffect(() => {
+    const preset = new URLSearchParams(window.location.search).get('ageing');
+    if (preset === 'within' || preset === 'breached' || preset === 'forfeited') {
+      setAgeing(preset);
+    }
+  }, []);
   const [waiving, setWaiving] = useState<PendingRow | null>(null);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
@@ -141,11 +158,6 @@ export default function PodPendingPage() {
         title="Check delivery proof"
         sub="Balances held against undelivered proof. ₹100 per day accrues from day 21; past 40 days nothing is payable."
         module="pod"
-        right={
-          <a className="btn btn-secondary" href={pendingExportUrl({ branch, transporter, ageing })}>
-            Export CSV
-          </a>
-        }
       />
       <PageIntro
         what="Every trip still missing its proof of delivery, oldest first, with the balance being held and the penalty accruing against each one."
