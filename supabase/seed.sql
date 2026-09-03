@@ -61,7 +61,13 @@ select v.id, f.registration, f.type, f.capacity_kg, f.status, f.city
     ('VND-0003','TS09EF3456','32FT_SXL', 18000,'AVAILABLE','Hyderabad')
   ) as f(vendor_code, registration, type, capacity_kg, status, city)
   join vendors v on v.code = f.vendor_code
-on conflict (registration) do nothing;
+-- Matches the per-vendor index, not a global one. `vendor_fleet.registration`
+-- was globally unique until 20260824140000 replaced it with
+-- `(vendor_id, registration)` — a global constraint discloses another vendor's
+-- fleet through the duplicate error. This arbiter was left on the old shape,
+-- so the whole seed aborted with "no unique or exclusion constraint matching
+-- the ON CONFLICT specification" and `supabase db reset` could not complete.
+on conflict (vendor_id, registration) do nothing;
 
 insert into clients (code, name, billing_city, engagement, credit_days, status) values
   ('CLT-0001','Meridian Foods','Bengaluru','CONTRACT',30,'ACTIVE'),
