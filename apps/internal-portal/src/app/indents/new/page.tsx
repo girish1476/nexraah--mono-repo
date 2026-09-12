@@ -37,7 +37,6 @@ import { createIndent } from '../apis';
 const schema = z
   .object({
     clientId: z.string().min(1, 'Required'),
-    branchId: z.string().min(1, 'Required'),
     fromCity: z.string().min(2, 'Required').transform((v) => capitalizeWords(v)),
     toCity: z.string().min(2, 'Required').transform((v) => capitalizeWords(v)),
     material: z.string().min(2, 'Required'),
@@ -69,14 +68,6 @@ const schema = z
 
 type Form = z.infer<typeof schema>;
 
-const BRANCHES = [
-  { id: 'br-nsk', name: 'Nashik' },
-  { id: 'br-pun', name: 'Pune' },
-  { id: 'br-vja', name: 'Vijayawada' },
-  { id: 'br-gdm', name: 'Gandhidham' },
-  { id: 'br-hsr', name: 'Hosur' },
-];
-
 export default function NewIndentPage() {
   const router = useRouter();
   const toast = useToast();
@@ -90,7 +81,6 @@ export default function NewIndentPage() {
   const form = useForm<Form>({
     resolver: zodResolver(schema),
     defaultValues: {
-      branchId: 'br-nsk',
       reportingRule: 'SAME_DAY',
       rateSource: 'CONTRACT',
       transitDays: 2,
@@ -144,7 +134,6 @@ export default function NewIndentPage() {
     try {
       const indent = await createIndent({
         clientId: v.clientId,
-        branchId: v.branchId,
         fromCity: v.fromCity,
         toCity: v.toCity,
         material: v.material,
@@ -216,16 +205,17 @@ export default function NewIndentPage() {
                 ))}
               </select>
             </Field>
-            <Field label="Branch" required hint="Derived from the pickup city; carried unchanged.">
-              <select {...form.register('branchId')}>
-                {BRANCHES.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Pickup city" required error={form.formState.errors.fromCity?.message}>
+            {/*
+              No branch picker. The server works the branch out from the
+              pickup city (BR-20) and never read a branch sent here — the old
+              select was a control that did nothing, which is worse than none.
+            */}
+            <Field
+              label="Pickup city"
+              required
+              hint="The branch that runs this load is worked out from the pickup city."
+              error={form.formState.errors.fromCity?.message}
+            >
               <CityField
                 listId="cities-from-city"
                 {...form.register('fromCity')}

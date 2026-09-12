@@ -37,13 +37,28 @@ export interface Trip {
   lrNo: string | null;
   originCity: string;
   destinationCity: string;
-  distanceKm: number;
+  /**
+   * Nullable: the API sends `distanceKm: null` on every load and trip today
+   * (`portal-loads.service.ts`, `portal-trips.service.ts` — no distance
+   * provider is wired). Declaring it `number` here made the screens call
+   * `.toLocaleString()` on null and throw; only the fixture, which
+   * hardcodes numbers, kept them standing.
+   */
+  distanceKm: number | null;
   status: TripStatus;
   podStatus: PodStatus;
   podRejectionReason: string | null;
   vehicleRegistrationNo: string;
-  driverName: string;
-  driverPhone: string;
+  /**
+   * Nullable: `driverName` is `trips.driver_name`, an optional column, and
+   * `driverPhone` is snapshotted from `lorry_receipts.driver->>'phone'`
+   * (`portal-trips.repository.ts`) — so it is null on every trip until an LR
+   * is booked. `PortalTripDto` declares both `string | null` (`portal.dto.ts`).
+   * Declaring these required here rendered the literal string "null" on the
+   * trip detail screen (`Driver: null · null`) for any trip before LOADED.
+   */
+  driverName: string | null;
+  driverPhone: string | null;
   freightPaise: number;
   advancePct: number;
   advancePaise: number;
@@ -60,24 +75,35 @@ export interface Trip {
   milestones: { key: string; label: string; at: string | null; done: boolean }[];
 }
 
+/**
+ * Mirrors `PortalLorryReceiptDto` (`portal.dto.ts`). Several fields are
+ * genuinely nullable there — `weightKg`/`truckType` from `trips.weight_kg` /
+ * `trips.vehicle_type`, `driverName`/`driverLicenceNo`/`transitDays` from
+ * columns the DTO itself types `| null`, and `pdfUrl` which
+ * `portal-trips.service.ts` sets to `null` on every response today (no
+ * server-side renderer exists yet). Declaring these required rendered the
+ * literal string "null" (or `NaN` for `weightKg / 1000`) on the lorry-receipt
+ * and printable-copy screens whenever a field was unset — the same bug class
+ * `Load`/`Trip`'s `distanceKm` above already documents.
+ */
 export interface LorryReceipt {
   lrNo: string;
   issuedAt: string;
   originCity: string;
   destinationCity: string;
   goods: string;
-  weightKg: number;
-  truckType: string;
+  weightKg: number | null;
+  truckType: string | null;
   vehicleRegistrationNo: string;
-  driverName: string;
-  driverLicenceNo: string;
-  transitDays: number;
-  ewayBillNo: string;
-  ewayValidUpto: string;
+  driverName: string | null;
+  driverLicenceNo: string | null;
+  transitDays: number | null;
+  ewayBillNo: string | null;
+  ewayValidUpto: string | null;
   freightPaise: number;
   advancePaise: number;
   balancePaise: number;
-  pdfUrl: string;
+  pdfUrl: string | null;
 }
 
 export interface AttachPodRequest {

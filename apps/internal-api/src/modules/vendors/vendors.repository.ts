@@ -62,8 +62,19 @@ export class VendorsRepository {
     return query.orderBy('vendors.legal_name').execute();
   }
 
+  /**
+   * Carries `branchName` next to the raw row. `list()` has always joined it
+   * and the detail page prints it, so a detail response without it rendered
+   * "Branch: undefined" against the real API while the mock had it all along.
+   */
   findById(id: string) {
-    return this.db.selectFrom('vendors').selectAll().where('id', '=', id).executeTakeFirst();
+    return this.db
+      .selectFrom('vendors')
+      .leftJoin('branches', 'branches.id', 'vendors.branch_id')
+      .selectAll('vendors')
+      .select('branches.name as branchName')
+      .where('vendors.id', '=', id)
+      .executeTakeFirst();
   }
 
   findByIdForUpdate(db: DbExecutor, id: string) {
@@ -122,8 +133,15 @@ export class VendorsRepository {
 
   // ---- KYC -----------------------------------------------------------
 
+  /** Carries the attachment's geotag so the selfie row can say where it was taken (BR-23). */
   findKyc(vendorId: string) {
-    return this.db.selectFrom('vendor_kyc').selectAll().where('vendor_id', '=', vendorId).execute();
+    return this.db
+      .selectFrom('vendor_kyc')
+      .leftJoin('attachments', 'attachments.id', 'vendor_kyc.attachment_id')
+      .selectAll('vendor_kyc')
+      .select(['attachments.geo_lat as geoLat', 'attachments.geo_lng as geoLng'])
+      .where('vendor_kyc.vendor_id', '=', vendorId)
+      .execute();
   }
 
   findKycOne(db: DbExecutor, vendorId: string, kind: string) {
@@ -133,6 +151,53 @@ export class VendorsRepository {
       .where('vendor_id', '=', vendorId)
       .where('kind', '=', kind)
       .executeTakeFirst();
+  }
+
+  /**
+   * Every PAN/AADHAAR row with a photo on file but no extracted value —
+   * the population left behind by the `needsReference: false` bug the
+   * onboarding wizard shipped with. `attachment_id is not null` excludes
+   * anything with no photo to re-key from (nothing for Compliance to open).
+   * `REJECTED` excluded: that goes through a fresh upload, not a backfill.
+   */
+  findKycValueGaps() {
+    return this.db
+      .selectFrom('vendor_kyc')
+      .innerJoin('vendors', 'vendors.id', 'vendor_kyc.vendor_id')
+      .select([
+        'vendors.id as vendorId',
+        'vendors.code as vendorCode',
+        'vendors.legal_name as vendorName',
+        'vendor_kyc.kind as kind',
+        'vendor_kyc.attachment_id as attachmentId',
+        'vendor_kyc.status as status',
+      ])
+      .where('vendor_kyc.kind', 'in', ['PAN', 'AADHAAR'])
+      .where('vendor_kyc.value_masked', 'is', null)
+      .where('vendor_kyc.attachment_id', 'is not', null)
+      .where('vendor_kyc.status', 'in', ['PENDING', 'VERIFIED'])
+      .orderBy('vendors.legal_name')
+      .execute();
+  }
+
+  /**
+   * Fills in `value_masked` without touching `status`/`verified_by` — this
+   * is not a re-submission (which resets verification, `upsertKyc` below),
+   * it is recording what was already on the photo. The `value_masked is
+   * null` guard makes this a no-op rather than an overwrite if the value
+   * was somehow already backfilled by the time this runs (double-submit,
+   * two Compliance tabs) — `rowCount === 0` means the caller lost the race
+   * or the row is no longer in the gap it thought it was in.
+   */
+  async backfillKycValue(db: DbExecutor, vendorId: string, kind: string, valueMasked: string): Promise<boolean> {
+    const result = await db
+      .updateTable('vendor_kyc')
+      .set({ value_masked: valueMasked })
+      .where('vendor_id', '=', vendorId)
+      .where('kind', '=', kind)
+      .where('value_masked', 'is', null)
+      .executeTakeFirst();
+    return Number(result.numUpdatedRows) > 0;
   }
 
   upsertKyc(
@@ -160,16 +225,26 @@ export class VendorsRepository {
           status: 'PENDING',
           verified_by: null,
           verified_at: null,
+          // A fresh photo makes the old rejection stale — carrying it forward
+          // would tell the transporter their new upload was rejected too.
+          reject_reason: null,
         }),
       )
       .returningAll()
       .executeTakeFirstOrThrow();
   }
 
-  decideKyc(db: DbExecutor, vendorId: string, kind: string, status: 'VERIFIED' | 'REJECTED', verifiedBy: string) {
+  decideKyc(
+    db: DbExecutor,
+    vendorId: string,
+    kind: string,
+    status: 'VERIFIED' | 'REJECTED',
+    verifiedBy: string,
+    rejectReason: string | null,
+  ) {
     return db
       .updateTable('vendor_kyc')
-      .set({ status, verified_by: verifiedBy, verified_at: new Date().toISOString() })
+      .set({ status, verified_by: verifiedBy, verified_at: new Date().toISOString(), reject_reason: rejectReason })
       .where('vendor_id', '=', vendorId)
       .where('kind', '=', kind)
       .returningAll()
@@ -177,6 +252,41 @@ export class VendorsRepository {
   }
 
   // ---- Documents -------------------------------------------------------
+
+  /**
+   * Every time-bound legal document across every vendor, for the periodic
+   * audit sweep.
+   *
+   * One query rather than a `findDocuments` per vendor: the sweep runs over
+   * the whole book nightly, and N+1 against a few thousand transporters is the
+   * difference between a job that finishes and one that quietly stops being
+   * run. Only ACTIVE vendors — a suspended one is already off the board, and
+   * listing their lapsed papers in a chase queue is work nobody should do.
+   */
+  documentsForExpirySweep(kinds: string[]) {
+    return this.db
+      .selectFrom('vendor_documents')
+      .innerJoin('vendors', 'vendors.id', 'vendor_documents.vendor_id')
+      .select([
+        'vendors.id as vendorId',
+        'vendors.code as vendorCode',
+        'vendors.legal_name as vendorName',
+        'vendors.status as vendorStatus',
+        'vendors.phone as vendorPhone',
+        'vendors.branch_id as branchId',
+        'vendor_documents.kind as kind',
+        'vendor_documents.status as status',
+        'vendor_documents.valid_to as validTo',
+      ])
+      .where('vendors.status', '=', 'ACTIVE')
+      .where('vendor_documents.kind', 'in', kinds)
+      .where('vendor_documents.status', '=', 'VERIFIED')
+      // A document with no recorded expiry is not expired — it is unrecorded,
+      // and `expiryStateOf` reports it as NO_EXPIRY. Excluded here so the
+      // sweep reads only rows that can actually lapse.
+      .where('vendor_documents.valid_to', 'is not', null)
+      .execute();
+  }
 
   findDocuments(vendorId: string) {
     return this.db.selectFrom('vendor_documents').selectAll().where('vendor_id', '=', vendorId).execute();
@@ -222,6 +332,9 @@ export class VendorsRepository {
           valid_to: row.validTo,
           status: 'PENDING',
           verified_by: null,
+          // Same reasoning as `upsertKyc`: a fresh upload makes the old
+          // rejection reason stale.
+          reject_reason: null,
         }),
       )
       .returningAll()
@@ -234,10 +347,11 @@ export class VendorsRepository {
     kind: string,
     status: 'VERIFIED' | 'REJECTED',
     verifiedBy: string,
+    rejectReason: string | null,
   ) {
     return db
       .updateTable('vendor_documents')
-      .set({ status, verified_by: verifiedBy })
+      .set({ status, verified_by: verifiedBy, reject_reason: rejectReason })
       .where('vendor_id', '=', vendorId)
       .where('kind', '=', kind)
       .returningAll()

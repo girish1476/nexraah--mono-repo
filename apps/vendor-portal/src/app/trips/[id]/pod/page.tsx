@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
   ActionBar,
+  AppHeader,
   Callout,
   EmptyState,
   ErrorNote,
@@ -12,6 +13,7 @@ import {
   TabBar,
 } from '@/components/shell';
 import { inr, dateTime } from '@/lib/format';
+import { newIdempotencyKey } from '@/apis';
 import { attachPod, getTrip } from '../../apis';
 import { CLOCK_RULE, CLOCK_STOPS_AT, podClock } from '../../pod-clock';
 import { Trip } from '../../types';
@@ -44,6 +46,9 @@ export default function PodPage({ params }: { params: { id: string } }) {
   const [sentOn, setSentOn] = useState(today());
   const [note, setNote] = useState('');
   const [sending, setSending] = useState(false);
+  // Minted once per mount and reused across a retry of the same submission —
+  // a network drop and a re-tap of the button must not read as two attaches.
+  const [idempotencyKey] = useState(newIdempotencyKey);
 
   useEffect(() => {
     getTrip(params.id)
@@ -54,6 +59,7 @@ export default function PodPage({ params }: { params: { id: string } }) {
   if (!trip) {
     return (
       <main className="screen">
+      <AppHeader />
         <ScreenHeader title="Proof of delivery" back={params.id} />
         {error ? <ErrorNote message={error} /> : <Loading />}
         <TabBar />
@@ -82,7 +88,7 @@ export default function PodPage({ params }: { params: { id: string } }) {
   const submit = () => {
     if (!valid) return;
     setSending(true);
-    attachPod(trip.id, { files, courierDocketNo: docket.trim(), sentOn, note: note.trim() })
+    attachPod(trip.id, { files, courierDocketNo: docket.trim(), sentOn, note: note.trim() }, idempotencyKey)
       .then(() => router.push(`/trips/${trip.id}`))
       .catch((e) => {
         setError(e.message);
@@ -92,6 +98,7 @@ export default function PodPage({ params }: { params: { id: string } }) {
 
   return (
     <main className="screen">
+      <AppHeader />
       <ScreenHeader
         title="Proof of delivery"
         sub={`${trip.id} · ${trip.originCity} → ${trip.destinationCity}`}

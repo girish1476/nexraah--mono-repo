@@ -20,7 +20,7 @@ import { setRole } from './helpers';
  */
 
 interface RoleCase {
-  role: 'OPS' | 'COMPLIANCE' | 'FINANCE' | 'LEADERSHIP' | 'ADMIN';
+  role: 'OPS' | 'COMPLIANCE' | 'FINANCE' | 'BD' | 'LEADERSHIP' | 'ADMIN';
   landsOn: string;
   visible: string[];
   hidden: string[];
@@ -83,6 +83,12 @@ const CASES: RoleCase[] = [
       '/orders',
       '/compliance',
       '/vendors',
+      // Compliance holds EDIT on clients so it can work the onboarding queue
+      // — a client is cleared before we carry for them, the same shape as
+      // vendor clearance. The module being EDIT necessarily also surfaces the
+      // ungated `/clients` row; creating or editing the commercial record
+      // still needs `client.manage`, which Compliance does not hold.
+      '/clients',
       '/indents',
       '/trips',
       '/pod/receiving',
@@ -112,9 +118,39 @@ const CASES: RoleCase[] = [
     hidden: [],
   },
   {
+    /**
+     * Leadership's oversight was made literal: EDIT on every module except
+     * `admin`, which stays VIEW. So the console opens to them everywhere
+     * apart from the settings screens.
+     *
+     * Written as a derivation rather than a list of twenty-odd routes,
+     * because the list is not the rule — "everything but the admin console"
+     * is. The previous five-route literal was the pre-widening matrix and had
+     * simply been left behind; a fresh literal would go stale the same way
+     * the next time a module is added.
+     *
+     * What this still pins is the one negative that survived: Leadership can
+     * reach every operational screen and none of the four settings ones.
+     */
     role: 'LEADERSHIP',
     landsOn: '/home',
-    visible: ['/home', '/orders', '/rfq', '/pnl', '/admin/approvals'],
+    visible: ALL_ROUTES.filter(
+      (r) => !['/admin', '/admin/roles', '/admin/branches', '/admin/import'].includes(r),
+    ),
+    hidden: [],
+  },
+  {
+    /**
+     * Business development — added because the role existed with no case at
+     * all, so the sixth role's nav set was unpinned entirely.
+     *
+     * The shape worth guarding is how narrow it is: BD prices lanes and keeps
+     * the client relationship, and touches nothing that moves a truck or
+     * spends money. No trips, no POD, no payments, no invoices.
+     */
+    role: 'BD',
+    landsOn: '/rfq',
+    visible: ['/today', '/home', '/orders', '/clients', '/rfq'],
     hidden: [],
   },
   {

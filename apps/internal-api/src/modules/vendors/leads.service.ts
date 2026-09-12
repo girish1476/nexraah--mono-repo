@@ -17,12 +17,7 @@ export class LeadsService {
 
   async list() {
     const rows = await this.leadsRepository.list();
-    return rows.map((row) => ({
-      ...this.toDto(row),
-      convertedVendorId: row.converted_vendor_id,
-      convertedVendorCode: row.converted_vendor_code,
-      convertedVendorName: row.converted_vendor_name,
-    }));
+    return rows.map((row) => this.toJoinedDto(row));
   }
 
   async create(dto: CreateLeadDto, actor: AuthenticatedUser) {
@@ -41,7 +36,11 @@ export class LeadsService {
         notes: dto.notes ?? null,
       });
     });
-    return this.toDto(row);
+    // Joined re-fetch, not `toDto(row)` on the plain insert row — a new lead
+    // is never itself converted, but the response shape must still match
+    // `list()`/`update()` (see `update()`'s comment) rather than silently
+    // omitting `convertedVendor*`.
+    return this.joinedDto(row.id);
   }
 
   async update(id: string, dto: UpdateLeadDto) {
@@ -59,11 +58,24 @@ export class LeadsService {
     if (dto.phone !== undefined) patch.phone = dto.phone;
     if (dto.trucksClaimed !== undefined) patch.trucks_claimed = dto.trucksClaimed;
 
-    const row = await this.leadsRepository.update(id, patch);
-    return this.toDto(row);
+    await this.leadsRepository.update(id, patch);
+    // Joined re-fetch — `update()`'s plain `.returningAll()` row carries the
+    // raw `converted_vendor_id` column but never `converted_vendor_code`/
+    // `_name` (those need the `vendors` join `list()` does). Returning that
+    // plain row here used to blank a converted lead's transporter link the
+    // moment anything else about it was edited — the row the screen swaps in
+    // has to be the same shape `list()` gave it, or the field this page reads
+    // to show "Now a transporter" silently disappears.
+    return this.joinedDto(id);
   }
 
-  private toDto(row: {
+  private async joinedDto(id: string) {
+    const row = await this.leadsRepository.findByIdJoined(id);
+    if (!row) throw new DomainException(404, 'NOT_FOUND', `Unknown lead: ${id}`);
+    return this.toJoinedDto(row);
+  }
+
+  private toJoinedDto(row: {
     id: string;
     code: string;
     name: string;
@@ -74,6 +86,9 @@ export class LeadsService {
     phone: string | null;
     stage: string;
     notes: string | null;
+    converted_vendor_id: string | null;
+    converted_vendor_code: string | null;
+    converted_vendor_name: string | null;
   }) {
     return {
       id: row.id,
@@ -86,6 +101,9 @@ export class LeadsService {
       phone: row.phone,
       stage: row.stage,
       notes: row.notes,
+      convertedVendorId: row.converted_vendor_id,
+      convertedVendorCode: row.converted_vendor_code,
+      convertedVendorName: row.converted_vendor_name,
     };
   }
 }

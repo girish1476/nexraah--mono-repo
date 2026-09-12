@@ -43,6 +43,7 @@ export class TripsRepository {
         'trips.buy_rate as buyRatePaise',
         'indents.sell_rate as sellRatePaise',
         'trips.advance_paid as advancePaidPaise',
+        'trips.balance_paid as balancePaidPaise',
         'trips.pod_penalty as podPenaltyPaise',
       ]);
   }
@@ -86,8 +87,36 @@ export class TripsRepository {
     return query.orderBy('trips.created_at', 'desc').execute();
   }
 
+  /**
+   * Joins the names/codes the detail screen renders unconditionally
+   * (part 05 §2) — `list()`/`baseListQuery()` already join these for the
+   * list row shape; `findById()` returned only `trips.*`, leaving
+   * `clientName`, `vendorName`, `branchName`, `indentCode`, `lrCode` and
+   * `podPenaltyPaise` undefined on the trip detail page. Mirrors
+   * `baseListQuery()`'s join shape; `selectAll('trips')` keeps every trips
+   * column in its own snake_case shape so existing callers (`trip.indent_id`,
+   * `trip.buy_rate`, etc.) are untouched, same pattern as
+   * `indents.repository.ts`'s `findById()`.
+   */
   findById(id: string) {
-    return this.db.selectFrom('trips').selectAll().where('id', '=', id).executeTakeFirst();
+    return this.db
+      .selectFrom('trips')
+      .innerJoin('indents', 'indents.id', 'trips.indent_id')
+      .innerJoin('clients', 'clients.id', 'trips.client_id')
+      .innerJoin('vendors', 'vendors.id', 'trips.vendor_id')
+      .innerJoin('branches', 'branches.id', 'trips.branch_id')
+      .leftJoin('lorry_receipts', 'lorry_receipts.trip_id', 'trips.id')
+      .selectAll('trips')
+      .select([
+        'indents.code as indentCode',
+        'clients.name as clientName',
+        'vendors.legal_name as vendorName',
+        'branches.name as branchName',
+        'lorry_receipts.code as lrCode',
+        'trips.pod_penalty as podPenaltyPaise',
+      ])
+      .where('trips.id', '=', id)
+      .executeTakeFirst();
   }
 
   findByIdForUpdate(db: DbExecutor, id: string) {

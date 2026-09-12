@@ -8,6 +8,11 @@ export const APPROVAL_KINDS = [
   'PENALTY_WAIVER',
   'DOC_OVERRIDE',
   'BRANCH_OVERRIDE',
+  // Added 2026-08-26 with the rate-card write path. The list is mirrored by a
+  // check constraint on `approvals.kind` — widened in
+  // `20260826000000_rate_revision.sql`, because a kind this file knows about
+  // and the database does not fails on insert at runtime, not at build.
+  'RATE_REVISION',
 ] as const;
 
 export type ApprovalKind = (typeof APPROVAL_KINDS)[number];
@@ -19,8 +24,13 @@ export type ApprovalKind = (typeof APPROVAL_KINDS)[number];
  * permissions actually exist (`approve.above_band`, `approve.waiver`,
  * `approve.exception`, `approve.contract` — `20260814090400_...sql` §1), not
  * one per kind, so the four "Senior to OPS" kinds share `approve.exception`.
- * `approve.contract` (COMPLIANCE's vendor-contract approval) maps to none of
- * the six — it isn't one of this engine's kinds.
+ *
+ * `approve.contract` mapped to none of the original six. `RATE_REVISION` is
+ * the first kind that fits it: an agreed client rate IS the contract, and the
+ * two desks holding `approve.contract` (Compliance, Leadership) are exactly
+ * the two that should countersign a change to one. Note the deliberate
+ * consequence — neither of them holds `rate.revise`, so nobody can propose a
+ * revision and then approve their own.
  */
 export const REQUIRED_PERMISSION_BY_KIND: Record<ApprovalKind, string> = {
   ABOVE_BAND_PRICE: 'approve.above_band',
@@ -29,6 +39,7 @@ export const REQUIRED_PERMISSION_BY_KIND: Record<ApprovalKind, string> = {
   ADVANCE_POLICY_CHANGE: 'approve.exception',
   DOC_OVERRIDE: 'approve.exception',
   BRANCH_OVERRIDE: 'approve.exception',
+  RATE_REVISION: 'approve.contract',
 };
 
 /** Part 01 §3's literal approver column — a display label, not a permission check. */
@@ -39,6 +50,7 @@ export const APPROVER_ROLE_LABEL_BY_KIND: Record<ApprovalKind, string> = {
   PENALTY_WAIVER: 'LEADERSHIP',
   DOC_OVERRIDE: 'Senior to OPS',
   BRANCH_OVERRIDE: 'LEADERSHIP',
+  RATE_REVISION: 'COMPLIANCE',
 };
 
 /**

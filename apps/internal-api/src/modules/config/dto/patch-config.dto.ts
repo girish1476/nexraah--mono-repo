@@ -2,18 +2,21 @@ import { Type } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
+  IsIn,
   IsInt,
   IsObject,
   IsOptional,
   IsString,
+  Matches,
   Min,
   ValidateNested,
 } from 'class-validator';
+import { GSTIN_SHAPE_RE, PAN_RE } from '../../../common/validation/formats';
 
 class CompanyDto {
   @IsString() name!: string;
-  @IsString() gstin!: string;
-  @IsString() pan!: string;
+  @Matches(GSTIN_SHAPE_RE) gstin!: string;
+  @Matches(PAN_RE) pan!: string;
   @IsString() cin!: string;
   @IsString() address!: string;
   @IsString() bank!: string;
@@ -24,7 +27,7 @@ export class PatchConfigDto {
   @IsOptional() @IsObject() modules?: Record<string, boolean>;
 
   @IsOptional() @IsBoolean() kyc_strict_gate?: boolean;
-  @IsOptional() @IsString() kyc_route?: string;
+  @IsOptional() @IsIn(['MANUAL', 'API']) kyc_route?: 'MANUAL' | 'API';
 
   @IsOptional() @IsArray() @IsString({ each: true }) advance_document_set?: string[];
   @IsOptional() @IsInt() @Min(0) advance_default_pct?: number;

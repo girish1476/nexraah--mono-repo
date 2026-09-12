@@ -603,6 +603,228 @@ function clientOnboardingGate(client: any) {
   return { unmet, cleared, canActivate: unmet.length === 0 };
 }
 
+/* ---- tickets -------------------------------------------------------------
+   Mirrors `ticket-rules.ts` in internal-api: the same refusals, in the same
+   order, with the same wording. `ticket-rules-drift.test.ts` holds the two
+   together. */
+
+const MIN_TICKET_DETAIL = 20;
+
+export function ticketTransitionRefusal(
+  from: string,
+  to: string | undefined,
+  resolution: string | null | undefined,
+): { code: string; message: string } | null {
+  if (!to || to === from) return null;
+
+  if (!['OPEN', 'IN_PROGRESS', 'RESOLVED', 'WONT_FIX'].includes(to)) {
+    return { code: 'NOT_A_STATUS', message: `${to} is not a ticket status.` };
+  }
+
+  const closed = (s: string) => s === 'RESOLVED' || s === 'WONT_FIX';
+
+  if (closed(from) && closed(to)) {
+    return {
+      code: 'ALREADY_CLOSED',
+      message: 'This ticket is already closed. Reopen it first if there is more to do.',
+    };
+  }
+
+  if (closed(to)) {
+    const note = (resolution ?? '').trim();
+    if (note.length === 0) {
+      return {
+        code: 'RESOLUTION_REQUIRED',
+        message: 'Say what was done about it. The person who reported it reads this.',
+      };
+    }
+    if (note.length < MIN_TICKET_DETAIL) {
+      return {
+        code: 'RESOLUTION_TOO_SHORT',
+        message: `Say what was done in at least ${MIN_TICKET_DETAIL} characters — "fixed" is not an answer.`,
+      };
+    }
+  }
+
+  return null;
+}
+
+/* ---- audit trail ---------------------------------------------------------
+   Mirrors `audit-labels.ts` in internal-api: the same verbs, the same nouns,
+   the same de-slugged fallback for an action neither side has a word for yet.
+   `audit-labels-drift.test.ts` holds the two together. */
+
+const AUDIT_ACTION_VERB: Record<string, string> = {
+  CREATE: 'created',
+  UPDATE: 'changed',
+  DELETE: 'removed',
+  STATUS_CHANGE: 'changed the status of',
+  APPROVAL_RAISED: 'asked for approval on',
+  APPROVAL_APPROVED: 'approved',
+  APPROVAL_REJECTED: 'turned down',
+  PAYMENT_RELEASED: 'released payment for',
+  DOCUMENT_VERIFIED: 'verified a document on',
+  DOCUMENT_REJECTED: 'rejected a document on',
+  RATE_REVISION_APPLIED: 'changed the agreed rate on',
+  VENDOR_ACTIVATED: 'cleared for work',
+  CLIENT_ACTIVATED: 'cleared for work',
+};
+
+const AUDIT_ENTITY_NOUN: Record<string, string> = {
+  vendors: 'transporter',
+  vendor_documents: 'transporter’s papers',
+  clients: 'client',
+  client_documents: 'client’s papers',
+  indents: 'load request',
+  trips: 'trip',
+  trip_documents: 'trip papers',
+  rate_card_lanes: 'agreed rate',
+  payments: 'payment',
+  invoices: 'invoice',
+  receipts: 'receipt',
+  approvals: 'approval',
+  pod_receipts: 'delivery proof',
+  quotes: 'quote',
+  rfqs: 'rate request',
+  users: 'person',
+  roles: 'role',
+  config: 'setting',
+  notifications: 'notification',
+};
+
+const deslugAudit = (code: string) => code.toLowerCase().replace(/_/g, ' ');
+
+export function auditActionLabel(action: string): string {
+  return AUDIT_ACTION_VERB[action] ?? deslugAudit(action);
+}
+
+export function auditEntityLabel(entityType: string): string {
+  return AUDIT_ENTITY_NOUN[entityType] ?? deslugAudit(entityType);
+}
+
+/**
+ * Which fields moved. Only keys present in `after` count — a partial update
+ * writes only what it touched, and diffing over the union would report a dozen
+ * phantom removals on every row.
+ */
+export function auditChangedFields(before: unknown, after: unknown) {
+  if (!after || typeof after !== 'object' || Array.isArray(after)) return [];
+  const b = (before && typeof before === 'object' && !Array.isArray(before) ? before : {}) as Record<string, unknown>;
+  const a = after as Record<string, unknown>;
+  return Object.keys(a)
+    .filter((key) => JSON.stringify(b[key]) !== JSON.stringify(a[key]))
+    .map((key) => ({ field: key, from: b[key] ?? null, to: a[key] }));
+}
+
+export function auditDescribe(row: {
+  actorName: string | null;
+  actorRole: string;
+  action: string;
+  entityType: string;
+}): string {
+  const who = row.actorName ?? `Somebody with the ${row.actorRole} role`;
+  return `${who} ${auditActionLabel(row.action)} a ${auditEntityLabel(row.entityType)}`;
+}
+
+function auditEventDto(e: any) {
+  return {
+    id: e.id,
+    at: e.at,
+    actorId: e.actorId ?? null,
+    actorName: e.actorName ?? null,
+    actorRole: e.actorRole,
+    byVendor: (e.actorVendorId ?? null) !== null,
+    action: e.action,
+    actionLabel: auditActionLabel(e.action),
+    entityType: e.entityType,
+    entityLabel: auditEntityLabel(e.entityType),
+    entityId: e.entityId ?? null,
+    summary: auditDescribe(e),
+    changed: auditChangedFields(e.before, e.after),
+    before: e.before ?? null,
+    after: e.after ?? null,
+  };
+}
+
+/* ---- client rate revision ------------------------------------------------
+   Mirrors `rate-revision.ts` in internal-api: the same five refusals, checked
+   in the same order, with the same wording. Exported so
+   `rate-revision-drift.test.ts` can hold it against the real one — the fixture
+   being the more permissive side is how a screen ends up demonstrating a state
+   the product refuses. */
+
+/** Same floor as the approvals engine's REASON_TOO_SHORT (>= 20, trimmed). */
+const MIN_REVISION_REASON = 20;
+
+export function rateRevisionRefusal(
+  lane: { ratePaise: number; validFrom: string; validTo: string | null },
+  input: { newRatePaise: number; effectiveFrom: string; reason: string },
+  now: Date = new Date(),
+): { code: string; message: string } | null {
+  if (input.newRatePaise === lane.ratePaise) {
+    return { code: 'SAME_RATE', message: 'That is the rate already in force — nothing would change.' };
+  }
+
+  if (!input.reason || input.reason.trim().length < MIN_REVISION_REASON) {
+    return {
+      code: 'REASON_TOO_SHORT',
+      message: 'Say why the rate is changing. It is what a billing dispute is argued from later.',
+    };
+  }
+
+  const effective = Date.parse(input.effectiveFrom);
+  if (Number.isNaN(effective)) {
+    return { code: 'EFFECTIVE_IN_PAST', message: 'That is not a date.' };
+  }
+
+  if (effective <= Date.parse(lane.validFrom)) {
+    return {
+      code: 'EFFECTIVE_BEFORE_START',
+      message: `The new rate has to start after the current one did (${lane.validFrom}).`,
+    };
+  }
+
+  // Backdating is refused outright: it would silently re-price loads already
+  // raised, and already invoiced. A retrospective correction belongs in a
+  // credit note against the invoice, where somebody can see it.
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  if (effective < startOfToday) {
+    return {
+      code: 'EFFECTIVE_IN_PAST',
+      message:
+        'A rate cannot start in the past — it would re-price loads already raised. Raise a credit note against the invoice instead.',
+    };
+  }
+
+  if (lane.validTo && Date.parse(lane.validTo) < startOfToday) {
+    return {
+      code: 'LANE_ALREADY_CLOSED',
+      message: `That agreed rate ended on ${lane.validTo}. Award a new lane rather than revising a closed one.`,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * The lanes actually in force for a client today.
+ *
+ * A revised rate leaves two rows for one route — the closed original and its
+ * successor — so anything counting or displaying "the rate card" has to mean
+ * the current one. History is still there; it just is not the answer to "what
+ * do we charge them".
+ */
+function lanesInForce(clientId: string, on: string = new Date().toISOString().slice(0, 10)): any[] {
+  return (db.rateCards[clientId] ?? []).filter(
+    (l: any) => l.validFrom <= on && (!l.validTo || l.validTo >= on),
+  );
+}
+
+/** Matches internal-api's `rupees()` — same grouping, same symbol. */
+function rupeesOf(paise: number): string {
+  return `₹${(paise / 100).toLocaleString('en-IN')}`;
+}
+
 function clientOnboardingDetail(client: any) {
   const gate = clientOnboardingGate(client);
   return {
@@ -661,14 +883,22 @@ const routes: [string, RegExp, Handler][] = [
       const role = result.ok
         ? result.claims.role
         : fail(401, 'UNAUTHORIZED', 'Missing or invalid bearer token.');
-      const user = USERS[role];
+      // Resolved by `sub`, not by role. `USERS[role]` answers with the role's
+      // default person, so a session for the *second* Operations account
+      // would have come back wearing the first one's name, id and — the part
+      // that actually changes behaviour — their empty branch.
+      const claims = result.ok ? result.claims : null;
+      const user = ACCOUNTS.find((a) => a.userId === claims?.sub) ?? USERS[role];
       return ok({
         userId: user.userId,
         name: user.name,
         email: user.email,
         role,
         permissions: SEED_GRANTS[role],
-        branch: user.branch ? BRANCHES.find((b) => b.code === user.branch) : null,
+        // From the token's claim, mirroring `auth.service.ts`, which returns
+        // `branch: user.branch` unconditionally now rather than nulling it
+        // for every role but one.
+        branch: scopedBranch(claims?.branch ?? user.branch),
       });
     },
   ],
@@ -903,7 +1133,13 @@ const routes: [string, RegExp, Handler][] = [
     ({ params, body }) => {
       const row = db.marketGap.find((g) => g.id === params[0]) ?? fail(404, 'NOT_FOUND', 'Row not found');
       Object.assign(row, body);
-      return ok(row);
+      // Same computed shape the list hands out — the real API answers a write
+      // with the full row, and the screen swaps it in for the one it has.
+      return ok({
+        ...row,
+        gap: Math.max(0, row.target - row.onPanel),
+        progressPct: row.target ? Math.round((row.converted / row.target) * 100) : 0,
+      });
     },
   ],
   ['GET', /^\/vendors\/issues$/, ({ query }) => {
@@ -1119,6 +1355,30 @@ const routes: [string, RegExp, Handler][] = [
     },
   ],
   [
+    'POST',
+    /^\/vendors\/([^/]+)\/suspend$/,
+    ({ params, body }) => {
+      const vendor = findVendor(params[0]);
+      if (!body?.reason || body.reason.trim().length < 20)
+        fail(400, 'REASON_TOO_SHORT', 'A reason of at least 20 characters is required.');
+      if (vendor.status !== 'ACTIVE')
+        fail(409, 'VENDOR_NOT_ACTIVE', 'Only an active transporter can be put on hold — this one is not active.');
+      vendor.status = 'SUSPENDED';
+      return ok({ id: vendor.id, status: vendor.status });
+    },
+  ],
+  [
+    'POST',
+    /^\/vendors\/([^/]+)\/reinstate$/,
+    ({ params }) => {
+      const vendor = findVendor(params[0]);
+      if (vendor.status !== 'SUSPENDED')
+        fail(409, 'VENDOR_NOT_ON_HOLD', 'This transporter is not on hold, so there is nothing to take them off.');
+      vendor.status = 'ACTIVE';
+      return ok({ id: vendor.id, status: vendor.status });
+    },
+  ],
+  [
     'PATCH',
     /^\/vendors\/([^/]+)\/advance-policy$/,
     ({ params, body, role }) => {
@@ -1170,12 +1430,18 @@ const routes: [string, RegExp, Handler][] = [
             .map((c) => ({
               ref: c.code,
               subject: `${c.name} · rate contract ${c.agreementNo ?? ''}`.trim(),
-              note: (db.rateCards[c.id] ?? []).length
-                ? `${(db.rateCards[c.id] ?? []).length} lanes priced`
+              /*
+               * Lanes IN FORCE, not rate rows. Once a rate can be revised, one
+               * route has several rows — the closed original and its successor
+               * — and counting rows would tell the compliance desk a client has
+               * two routes priced when they have one route priced twice.
+               */
+              note: lanesInForce(c.id).length
+                ? `${lanesInForce(c.id).length} lane${lanesInForce(c.id).length === 1 ? '' : 's'} priced`
                 : 'No rate card lanes exist for this contract',
               ageDays: 1,
-              flag: (db.rateCards[c.id] ?? []).length ? 'Yours to approve' : 'No lanes priced',
-              tone: (db.rateCards[c.id] ?? []).length ? 'blue' : 'flag',
+              flag: lanesInForce(c.id).length ? 'Yours to approve' : 'No lanes priced',
+              tone: lanesInForce(c.id).length ? 'blue' : 'flag',
               href: `/clients/${c.id}`,
               action: 'Decide',
             })),
@@ -1204,6 +1470,271 @@ const routes: [string, RegExp, Handler][] = [
     'GET',
     /^\/clients\/([^/]+)\/rate-card$/,
     ({ params }) => ok(db.rateCards[params[0]] ?? []),
+  ],
+
+  /* -------------------------------------------------------- tickets --- */
+  /*
+   * Mirrors the tickets module in internal-api — same scoping, same refusals.
+   *
+   * The scoping is the part worth mirroring faithfully: a caller without
+   * `ticket.resolve` sees only what they raised. The fixture cannot read a
+   * token (see the auth block), so it answers from `currentRole()` the same
+   * way every other handler here does, and ADMIN is the role that resolves.
+   */
+  [
+    'GET',
+    /^\/tickets$/,
+    ({ query, role }) => {
+      const canResolve = SEED_GRANTS[role].includes('ticket.resolve');
+      const status = query.get('status');
+      const mine = query.get('mine') === '1';
+
+      const visible = db.tickets
+        .filter((t: any) => (canResolve && !mine ? true : t.raisedBy === USERS[role].userId))
+        .filter((t: any) => !status || t.status === status)
+        .sort((a: any, b: any) => {
+          // Blocking first, then oldest — the order the work should be done in.
+          const rank = (t: any) => (t.severity === 'BLOCKING' ? 0 : 1);
+          return rank(a) - rank(b) || String(a.createdAt).localeCompare(String(b.createdAt));
+        });
+
+      const live = visible.filter((t: any) => t.status === 'OPEN' || t.status === 'IN_PROGRESS');
+      const ages = live.map((t: any) =>
+        Math.max(0, Math.floor((Date.now() - Date.parse(t.createdAt)) / 86400000)),
+      );
+
+      return ok({
+        canResolve,
+        scope: canResolve && !mine ? 'ALL' : 'MINE',
+        summary: {
+          open: visible.filter((t: any) => t.status === 'OPEN').length,
+          inProgress: visible.filter((t: any) => t.status === 'IN_PROGRESS').length,
+          blocking: live.filter((t: any) => t.severity === 'BLOCKING').length,
+          oldestOpenDays: ages.length ? Math.max(...ages) : null,
+        },
+        rows: visible,
+      });
+    },
+  ],
+  [
+    'POST',
+    /^\/tickets$/,
+    ({ body, role }) => {
+      if (!body.subject || String(body.subject).trim().length < 5) {
+        fail(400, 'VALIDATION_ERROR', 'Give it a short title.');
+      }
+      if (!body.detail || String(body.detail).trim().length < 20) {
+        fail(400, 'VALIDATION_ERROR', 'Say what is wrong in at least 20 characters.');
+      }
+      if (!body.raisedOnPath) {
+        // Captured by the client, never typed. A report without it is
+        // unactionable, so the fixture refuses it the way the DTO does.
+        fail(400, 'VALIDATION_ERROR', 'A report has to say which screen it came from.');
+      }
+
+      const ticket = {
+        id: `tkt-${db.tickets.length + 1}-${Date.now()}`,
+        code: `TKT-${String(db.tickets.length + 4).padStart(4, '0')}`,
+        subject: String(body.subject).trim(),
+        detail: String(body.detail).trim(),
+        kind: body.kind ?? 'WRONG_DATA',
+        severity: body.severity ?? 'NORMAL',
+        status: 'OPEN',
+        raisedOnPath: body.raisedOnPath,
+        entityType: body.entityType ?? null,
+        entityId: body.entityId ?? null,
+        resolution: null,
+        resolvedAt: null,
+        resolvedByName: null,
+        createdAt: helpers.now(),
+        raisedBy: USERS[role].userId,
+        raisedByName: USERS[role].name,
+        branchName: null,
+      };
+      db.tickets.unshift(ticket);
+      return status(201, ticket);
+    },
+  ],
+  [
+    'PATCH',
+    /^\/tickets\/([^/]+)$/,
+    ({ params, body, role }) => {
+      if (!SEED_GRANTS[role].includes('ticket.resolve')) {
+        fail(403, 'FORBIDDEN', 'Only Administration can act on a reported problem.');
+      }
+      const ticket =
+        db.tickets.find((t: any) => t.id === params[0] || t.code === params[0]) ??
+        fail(404, 'NOT_FOUND', `Ticket ${params[0]} not found`);
+
+      const refusal = ticketTransitionRefusal(ticket.status, body.status, body.resolution);
+      if (refusal) fail(400, `TICKET_${refusal.code}`, refusal.message);
+
+      if (body.severity) ticket.severity = body.severity;
+      if (body.status && body.status !== ticket.status) {
+        ticket.status = body.status;
+        if (body.status === 'RESOLVED' || body.status === 'WONT_FIX') {
+          ticket.resolution = String(body.resolution).trim();
+          ticket.resolvedAt = helpers.now();
+          ticket.resolvedByName = USERS[role].name;
+        } else {
+          // Reopening clears the closure — leaving a named person's sign-off
+          // on a ticket that is open again says something untrue about them.
+          ticket.resolution = null;
+          ticket.resolvedAt = null;
+          ticket.resolvedByName = null;
+        }
+      }
+      return ok(ticket);
+    },
+  ],
+
+  /* ---------------------------------------------------- audit trail --- */
+  /*
+   * Mirrors `audit-read.service.ts` and `audit-labels.ts` in internal-api —
+   * same envelope, same composed `summary`, same `changed` diff. Read-only,
+   * and there is deliberately no write route: the real table refuses UPDATE
+   * and DELETE at the database, so a fixture that let anything edit an entry
+   * would be demonstrating a capability the product does not have.
+   */
+  [
+    'GET',
+    /^\/audit\/filters$/,
+    () =>
+      ok({
+        actions: [...new Set(db.auditEvents.map((e: any) => e.action))]
+          .sort()
+          .map((code) => ({ code, label: auditActionLabel(code as string) })),
+        entityTypes: [...new Set(db.auditEvents.map((e: any) => e.entityType))]
+          .sort()
+          .map((code) => ({ code, label: auditEntityLabel(code as string) })),
+      }),
+  ],
+  [
+    'GET',
+    /^\/audit$/,
+    ({ query }) => {
+      const limit = Math.min(Math.max(Number(query.get('limit') ?? 50) || 50, 1), 200);
+      const offset = Math.max(Number(query.get('offset') ?? 0) || 0, 0);
+      const action = query.get('action');
+      const entityType = query.get('entityType');
+      const from = query.get('from');
+      const to = query.get('to');
+
+      const matched = db.auditEvents
+        .filter((e: any) => !action || e.action === action)
+        .filter((e: any) => !entityType || e.entityType === entityType)
+        .filter((e: any) => !from || e.at >= from)
+        // Inclusive of the whole `to` day, matching the API.
+        .filter((e: any) => !to || e.at < `${to}T23:59:59.999Z`)
+        .sort((a: any, b: any) => String(b.at).localeCompare(String(a.at)));
+
+      return ok({
+        total: matched.length,
+        limit,
+        offset,
+        events: matched.slice(offset, offset + limit).map(auditEventDto),
+      });
+    },
+  ],
+  [
+    'GET',
+    /^\/audit\/([^/]+)\/([^/]+)$/,
+    ({ params }) => {
+      const matched = db.auditEvents
+        .filter((e: any) => e.entityType === params[0] && e.entityId === params[1])
+        .sort((a: any, b: any) => String(b.at).localeCompare(String(a.at)));
+      return ok({ total: matched.length, limit: 200, offset: 0, events: matched.map(auditEventDto) });
+    },
+  ],
+
+  /* ------------------------------------------- client rate revision --- */
+  /*
+   * Mirrors `rate-revision.ts` in internal-api — same refusals, checked in the
+   * same order. `rate-revision-drift.test.ts` compares the two across every
+   * generated combination, because a fixture that is quietly more permissive
+   * than the API it stands in for is how a screen ends up demonstrating a
+   * state the product refuses.
+   *
+   * Unscoped by branch on purpose: an agreed rate is a fact about the client,
+   * not about which branch happens to run the load.
+   */
+  [
+    'GET',
+    /^\/clients\/([^/]+)\/rate-revisions$/,
+    ({ params }) =>
+      ok(
+        db.rateRevisions
+          .filter((r: any) => r.clientId === params[0])
+          .map((r: any) => ({
+            id: r.id,
+            status: r.status,
+            oldRatePaise: r.oldRatePaise,
+            newRatePaise: r.newRatePaise,
+            effectiveFrom: r.effectiveFrom,
+            reason: r.reason,
+            lane: r.lane,
+            truckType: r.truckType,
+            requestedByName: r.requestedByName,
+            createdAt: r.createdAt,
+          }))
+          .sort((a: any, b: any) => String(b.createdAt).localeCompare(String(a.createdAt))),
+      ),
+  ],
+  [
+    'POST',
+    /^\/clients\/([^/]+)\/rate-revisions$/,
+    ({ params, body, role }) => {
+      const clientId = params[0];
+      const client =
+        db.clients.find((c: any) => c.id === clientId || c.code === clientId) ??
+        fail(404, 'NOT_FOUND', `Client ${clientId} not found`);
+
+      const lane =
+        (db.rateCards[client.id] ?? []).find((l: any) => l.id === body.laneId) ??
+        fail(404, 'NOT_FOUND', `Rate card lane ${body.laneId} not found on this client`);
+
+      if (db.rateRevisions.some((r: any) => r.fromLaneId === lane.id && r.status === 'PENDING')) {
+        fail(
+          409,
+          'REVISION_ALREADY_PENDING',
+          'A revision for this lane is already waiting for approval. Decide that one first.',
+        );
+      }
+
+      const refusal = rateRevisionRefusal(lane, body);
+      if (refusal) fail(400, `RATE_REVISION_${refusal.code}`, refusal.message);
+
+      db.rateRevisions.unshift({
+        id: `rr-${db.rateRevisions.length + 1}-${Date.now()}`,
+        clientId: client.id,
+        fromLaneId: lane.id,
+        toLaneId: null,
+        status: 'PENDING',
+        oldRatePaise: lane.ratePaise,
+        newRatePaise: body.newRatePaise,
+        effectiveFrom: body.effectiveFrom,
+        reason: body.reason,
+        lane: `${lane.origin} → ${lane.destination}`,
+        truckType: lane.truckType,
+        requestedByName: `${USERS[role].name} · ${role}`,
+        createdAt: helpers.now(),
+      });
+
+      return raiseApproval({
+        kind: 'RATE_REVISION',
+        entityType: 'clients',
+        entityId: client.id,
+        title: `Rate change · ${client.name} · ${lane.origin} → ${lane.destination}`,
+        detail: `${rupeesOf(lane.ratePaise)} → ${rupeesOf(body.newRatePaise)} from ${body.effectiveFrom} (${lane.truckType})`,
+        amountPaise: body.newRatePaise,
+        // Compliance and Leadership hold `approve.contract`; neither holds
+        // `rate.revise`, so nobody signs off their own proposal.
+        approverRole: 'COMPLIANCE',
+        requiredPermission: 'approve.contract',
+        reason: body.reason,
+        role,
+      });
+    },
   ],
 
   /* --------------------------------------------- client onboarding --- */
@@ -1425,7 +1956,10 @@ const routes: [string, RegExp, Handler][] = [
         awardedQuoteId: null,
         quotes: [],
         failureCause: null,
-        branchName: BRANCHES.find((b) => b.id === body.branchId)?.name ?? 'Nashik',
+        // Same rule as the real API (BR-20): the branch comes from the pickup
+        // city, not from anything the form sends.
+        branchName:
+          BRANCHES.find((b) => b.city.toLowerCase() === String(body.fromCity ?? '').toLowerCase())?.name ?? 'Nashik',
         clientName: db.clients.find((c) => c.id === body.clientId)?.name ?? '—',
         distanceKm: 0,
         ...body,
@@ -2691,6 +3225,25 @@ const routes: [string, RegExp, Handler][] = [
 
   /* ------------------------------------------------------------ C10 ----- */
   ['GET', /^\/telematics$/, () => ok({ config: { overspeedKmph: db.config.overspeed_kmph, haltMinutes: db.config.halt_minutes, darkVehicleIntervalMinutes: db.config.dark_vehicle_interval_minutes }, vehicles: db.telematics })],
+  /*
+   * `GET /telematics/vehicles/:vehicleNo` — the trip page's tracking panel.
+   *
+   * The backend has served this since the fleet board shipped
+   * (`telematics.controller.ts`), and `forVehicle()` returns **null** for a
+   * vehicle that is not on an open trip rather than 404ing — which is why the
+   * portal types it `VehicleRow | null`. Without this handler the adapter
+   * threw "No fixture for GET ...", so opening any trip in mock mode raised an
+   * uncaught error. Returning null here, not `fail(404)`, is what mirrors the
+   * real route.
+   */
+  [
+    'GET',
+    /^\/telematics\/vehicles\/([^/]+)$/,
+    ({ params }) => {
+      const vehicleNo = decodeURIComponent(params[0]);
+      return ok(db.telematics.find((v: any) => v.vehicleNo === vehicleNo) ?? null);
+    },
+  ],
   [
     'PATCH',
     /^\/telematics\/vehicles\/([^/]+)$/,
@@ -2713,6 +3266,30 @@ const routes: [string, RegExp, Handler][] = [
     /^\/admin\/import\/([^/]+)\/commit$/,
     ({ params, body }) => {
       const batch = db.importBatches.find((b) => b.id === body?.batchId) ?? fail(404, 'NOT_FOUND', 'Batch not found');
+
+      // These three refusals mirror `ImportService.commit` exactly. Without
+      // them this adapter is more permissive than the thing it stands in for,
+      // and the opening-balance case is the one that bites: a demo would show
+      // a balance import committing cleanly when the real backend refuses it.
+      if (batch.status === 'COMMITTED') {
+        fail(409, 'ALREADY_COMMITTED', 'This batch has already been committed.');
+      }
+      if (batch.status === 'ABORTED') {
+        fail(
+          409,
+          'IMPORT_ABORTED',
+          'This file did not reconcile at dry run and cannot be committed. Correct it and upload again.',
+        );
+      }
+      if (params[0] === 'opening-balances') {
+        fail(
+          501,
+          'IMPORT_SET_NOT_WRITABLE',
+          'Opening balances validate and reconcile, but committing them needs a file format that carries the ' +
+            'fields an advance, an unbilled trip and an invoice each require. That format is not yet specified.',
+        );
+      }
+
       batch.status = 'COMMITTED';
       batch.committedAt = helpers.now();
       return ok({ ...batch, set: params[0] });

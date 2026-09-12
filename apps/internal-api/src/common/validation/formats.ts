@@ -23,6 +23,9 @@ export const PHONE_RE = /^[6-9]\d{9}$/;
 /** `AAKCR2148L` — five letters, four digits, one letter. */
 export const PAN_RE = /^[A-Z]{5}\d{4}[A-Z]$/;
 
+/** BR-04: only the last four digits of Aadhaar are ever accepted or stored. */
+export const AADHAAR_LAST4_RE = /^\d{4}$/;
+
 /** `HDFC0001234` — four letters, a literal 0, six alphanumerics. */
 export const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
 
@@ -55,6 +58,7 @@ export const VEHICLE_RE = /^[A-Z0-9][A-Z0-9 -]{4,14}$/i;
 export const FORMAT_MESSAGE = {
   phone: 'Enter a ten-digit Indian mobile number.',
   pan: 'PAN looks wrong — it should read like AAKCR2148L.',
+  aadhaar: 'Enter the last four digits only.',
   ifsc: 'IFSC looks wrong — it should read like HDFC0001234.',
   gstin: 'GSTIN should be 15 characters: state code, PAN, entity code, Z, check digit.',
   vehicle: 'Vehicle number looks wrong — e.g. MH 15 GT 4482.',

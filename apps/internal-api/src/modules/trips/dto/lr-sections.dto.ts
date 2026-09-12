@@ -3,7 +3,6 @@ import {
   IsInt,
   IsNumber,
   IsOptional,
-  IsPositive,
   IsString,
   Matches,
   MaxLength,
@@ -49,10 +48,10 @@ export class LrPartyDto {
 export class LrGoodsDto {
   @IsOptional() @IsString() @MaxLength(400) description?: string;
 
-  @IsOptional() @IsInt() @IsPositive() packages?: number;
+  @IsOptional() @IsInt() @Min(0) packages?: number;
 
   /** Tonnes, so a decimal — unlike the paise fields, which are integers. */
-  @IsOptional() @IsNumber() @IsPositive() weightTn?: number;
+  @IsOptional() @IsNumber() @Min(0) weightTn?: number;
 
   @IsOptional() @IsInt() @Min(0) valuePaise?: number;
 }

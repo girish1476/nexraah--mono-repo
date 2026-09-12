@@ -95,8 +95,10 @@ export interface TripDetail extends TripListRow {
   capacityTn: number;
   driverName: string;
   driverLicence: string;
-  driverPhone: string | null;
-  distanceKm: number;
+  /** No `driver_phone` column exists anywhere in the backend schema — genuinely absent data, never sent. */
+  driverPhone?: string | null;
+  /** No `distance_km` column exists anywhere in the backend schema — genuinely absent data, never sent. */
+  distanceKm?: number;
   weightTn: number;
   transitDaysRequired: number;
   actualTransitDays: number | null;

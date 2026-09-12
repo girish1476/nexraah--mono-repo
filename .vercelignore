@@ -1,0 +1,17 @@
+# Not needed to build on Vercel — keeps the upload small and free of local junk.
+node_modules
+.hosting
+**/.next
+**/.next-*
+**/.next-prod
+**/.next-prod-stage
+**/.next-prod-old
+**/.turbo
+**/coverage
+**/playwright-report
+**/test-results
+apps/vendor-mobile
+supabase
+docs
+*.log
+.git

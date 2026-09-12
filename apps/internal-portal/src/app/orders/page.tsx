@@ -161,7 +161,7 @@ export default function OrdersPage() {
   return (
     <ModuleGuard module="orders">
       <PageHeader
-        title="All shipments"
+        title="Orders"
         sub="Every load we are moving, and how far along it is"
         module="orders"
         right={

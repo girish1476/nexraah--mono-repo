@@ -22,7 +22,13 @@ async function bootstrap() {
 
   app.setGlobalPrefix('api/v1');
   app.enableCors();
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  // `forbidNonWhitelisted`: a property the DTO does not declare is a 400, not
+  // a silent drop. Without it a stray or misspelt key answered "200 OK" with
+  // the data gone — four confirmed instances (vendor fleet fields, lead notes,
+  // issue tripId, the portal quote's truck) before it was switched on.
+  // `common/validation/validation.test.ts` builds its pipe with these same
+  // options; change both together.
+  app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
   app.useGlobalFilters(new AllExceptionsFilter());
   app.useGlobalInterceptors(new TransformInterceptor());
 

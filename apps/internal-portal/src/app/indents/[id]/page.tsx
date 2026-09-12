@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ApiError, ApprovalRequiredError, errorMessage } from '@/apis';
 import { AdvancePanel } from '@/components/advance-panel';
@@ -124,6 +124,21 @@ export default function IndentDetailPage() {
   // steps ("Raised" and "Quotes in") both fall under stage OPEN, so a shared
   // stage key can never tell them apart.
   const stagePosition = STAGE_ORDER.indexOf(indent.stage);
+  // No `distance_km` column exists in the backend, so this row is only
+  // included when the value is actually present — same
+  // build-then-filter shape as `home/page.tsx`'s `attention` list.
+  const indentFacts: ([string, ReactNode] | null)[] = [
+    ['Client', indent.clientName],
+    ['Branch', indent.branchName],
+    ['Material', indent.material],
+    ['Truck type', indent.truckType],
+    ['Weight', `${indent.weightTn} MT`],
+    indent.distanceKm != null ? ['Distance', `${indent.distanceKm} km`] : null,
+    ['Pickup', fmtDate(indent.pickupDate)],
+    ['Transit days', indent.transitDays],
+    ['Reporting', indent.reportingRule.replace(/_/g, ' ').toLowerCase()],
+    ['Advance %', `${indent.advancePct}%`],
+  ];
   const progress = [
     { label: 'Raised', done: true },
     { label: 'Quotes in', done: indent.quotes.length > 0 },
@@ -131,7 +146,10 @@ export default function IndentDetailPage() {
     { label: 'Placed', done: stagePosition >= STAGE_ORDER.indexOf('VEHICLE_PLACED') },
     { label: 'Trip created', done: stagePosition >= STAGE_ORDER.indexOf('TRIP_CREATED') },
   ];
-  const canAward = can('indent.manage') || can('indent.view');
+  // `POST /indents/:id/award` is `indent.manage` on the server. Including
+  // `indent.view` here handed Finance and Leadership an Award button that
+  // 403'd the moment they pressed it.
+  const canAward = can('indent.manage');
 
   const columns: Column<Quote>[] = [
     {
@@ -224,20 +242,7 @@ export default function IndentDetailPage() {
         aside={
           <>
             <Panel title="Indent" pad={false}>
-              <FactList
-                facts={[
-                  ['Client', indent.clientName],
-                  ['Branch', indent.branchName],
-                  ['Material', indent.material],
-                  ['Truck type', indent.truckType],
-                  ['Weight', `${indent.weightTn} MT`],
-                  ['Distance', `${indent.distanceKm} km`],
-                  ['Pickup', fmtDate(indent.pickupDate)],
-                  ['Transit days', indent.transitDays],
-                  ['Reporting', indent.reportingRule.replace(/_/g, ' ').toLowerCase()],
-                  ['Advance %', `${indent.advancePct}%`],
-                ]}
-              />
+              <FactList facts={indentFacts.filter((f): f is [string, ReactNode] => f !== null)} />
             </Panel>
 
             <Panel title="Pricing" pad={false}>

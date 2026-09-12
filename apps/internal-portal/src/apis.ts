@@ -89,7 +89,8 @@ export interface Approval {
     | 'ADVANCE_POLICY_CHANGE'
     | 'PENALTY_WAIVER'
     | 'DOC_OVERRIDE'
-    | 'BRANCH_OVERRIDE';
+    | 'BRANCH_OVERRIDE'
+    | 'RATE_REVISION';
   entityType: string;
   entityId: string;
   requesterId: string;

@@ -24,6 +24,14 @@ import { FLEET_STATUSES } from './portal.constants';
  * ignored." A whitelist-strip would be the ignoring the spec forbids.
  */
 
+/**
+ * `04-P3` §1: "Indian format, unique **within vendor**". The format is checked
+ * loosely on purpose — BH-series, older state formats and the spacing a phone
+ * keyboard produces all have to pass, and a registration this server rejects is
+ * a truck the transporter cannot offer at all.
+ */
+const REGISTRATION = /^[A-Za-z0-9][A-Za-z0-9 -]{4,18}$/;
+
 // ── POST /portal/loads/:code/quote — 11-portal.md §5.2 ────────────────────
 
 export class SubmitQuoteDto {
@@ -42,6 +50,34 @@ export class SubmitQuoteDto {
   @IsUUID()
   vehicleId?: string;
 
+  /**
+   * What the quote form actually sends (`FE.md`, `loads/[code]/quote`): a
+   * number plate typed or picked from the fleet list — a transporter with no
+   * truck saved yet can still quote. Until this was declared, the whitelist
+   * stripped it silently and every portal bid reached the Ops desk with an
+   * empty Truck column. Resolved against their own fleet in the service when
+   * it matches one; kept as typed when it doesn't.
+   */
+  @IsOptional()
+  @IsString()
+  @Matches(REGISTRATION)
+  vehicleRegistrationNo?: string;
+
+  /** Indian mobile, same rule the form applies before it lets them submit. */
+  @IsOptional()
+  @Matches(/^[6-9]\d{9}$/)
+  driverMobile?: string;
+
+  /** When the truck reports — the load's own rule, or the one they can offer instead. */
+  @IsOptional()
+  @IsIn(['SAME_DAY', 'NEXT_DAY', 'SCHEDULED'])
+  reportingRule?: 'SAME_DAY' | 'NEXT_DAY' | 'SCHEDULED';
+
+  /** `YYYY-MM-DD`, only meaningful with `SCHEDULED`. */
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  scheduledDate?: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(500)
@@ -49,14 +85,6 @@ export class SubmitQuoteDto {
 }
 
 // ── POST /portal/fleet, PATCH /portal/fleet/:id — 11-portal.md §5.3 ───────
-
-/**
- * `04-P3` §1: "Indian format, unique **within vendor**". The format is checked
- * loosely on purpose — BH-series, older state formats and the spacing a phone
- * keyboard produces all have to pass, and a registration this server rejects is
- * a truck the transporter cannot offer at all.
- */
-const REGISTRATION = /^[A-Za-z0-9][A-Za-z0-9 -]{4,18}$/;
 
 /** A geotag coordinate as a multipart text part. Range is checked in the service. */
 const SIGNED_DECIMAL = /^-?\d{1,3}(\.\d{1,10})?$/;

@@ -2,7 +2,9 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { ReactNode } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
+import { useAccount } from '@/lib/account';
+import { signOut } from '@/lib/auth';
 
 export type Tone = 'mint' | 'flag' | 'red' | 'blue' | 'grey';
 
@@ -280,31 +282,311 @@ const TABS: [string, string][] = [
   ['/fleet', 'Fleet'],
 ];
 
-/** Header account link — the Profile entry point. */
-export function AccountLink() {
+/**
+ * The account button, and the sheet behind it.
+ *
+ * `NFR-06` asks for "four bottom tabs, profile in the header menu". The tabs
+ * were there; the header menu was a bare link rendered on Fleet and Trips and
+ * nowhere else — so a transporter who landed on Loads, which is where everyone
+ * lands, had no way to reach their own file at all.
+ *
+ * Two jobs, and the second is the one that matters:
+ *
+ *  1. Reach Profile from every screen.
+ *  2. **Say when a paper needs them.** A rejected document used to be
+ *     discoverable only by opening Profile and scrolling, so the way most
+ *     transporters found out was that their advance did not arrive. The badge
+ *     carries that to every screen.
+ */
+export function AccountButton() {
+  const [open, setOpen] = useState(false);
+  const { profile, attention } = useAccount();
+  const path = usePathname();
+
+  // A sheet left open across a navigation is a sheet covering the screen you
+  // just asked for.
+  useEffect(() => setOpen(false), [path]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
+
+  const needs = attention.count > 0;
+
   return (
-    <Link
-      href="/profile"
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="tap"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={
+          needs
+            ? `Account and profile — ${attention.count} paper${attention.count === 1 ? '' : 's'} need attention`
+            : 'Account and profile'
+        }
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 7,
+          fontSize: 14.5,
+          fontWeight: 700,
+          color: 'var(--color-accent-700)',
+          border: `1px solid ${needs ? 'var(--flag)' : 'var(--color-divider)'}`,
+          background: needs ? 'var(--flag-t)' : 'var(--color-surface)',
+          borderRadius: 'var(--radius-pill)',
+          minHeight: 44,
+          padding: '9px 13px 9px 12px',
+          boxShadow: 'var(--shadow-sm)',
+        }}
+      >
+        <IconBase size={16}>{TAB_ICONS['/profile']}</IconBase>
+        Profile
+        {needs && (
+          <span
+            aria-hidden="true"
+            style={{
+              minWidth: 20,
+              height: 20,
+              padding: '0 6px',
+              borderRadius: 999,
+              background: 'var(--flag)',
+              color: '#fff',
+              fontSize: 12,
+              fontWeight: 700,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            {attention.count}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Account"
+          onClick={() => setOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 40,
+            background: 'rgba(16, 26, 40, 0.45)',
+            display: 'flex',
+            alignItems: 'flex-end',
+            justifyContent: 'center',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: 480,
+              background: 'var(--color-surface)',
+              borderRadius: '18px 18px 0 0',
+              padding: '10px 16px calc(16px + env(safe-area-inset-bottom))',
+              boxShadow: 'var(--shadow-lg)',
+            }}
+          >
+            <div
+              aria-hidden="true"
+              style={{
+                width: 40,
+                height: 4,
+                borderRadius: 999,
+                background: 'var(--color-neutral-300)',
+                margin: '4px auto 14px',
+              }}
+            />
+
+            {/* Who you are. A shared phone in a transport office may be signed
+                in as somebody else entirely, and nothing used to say so. */}
+            <p style={{ fontSize: 18, fontWeight: 700, lineHeight: 1.25 }}>
+              {profile ? profile.companyName : 'Your account'}
+            </p>
+            <p className="muted" style={{ marginTop: 2 }}>
+              {profile
+                ? profile.contactName
+                  ? `${profile.contactName} · transporter ${profile.vendorCode}`
+                  : `Transporter ${profile.vendorCode}`
+                : 'Loading your details…'}
+            </p>
+
+            {needs && (
+              <div
+                style={{
+                  marginTop: 14,
+                  background: attention.groundsATruck ? 'var(--red-t)' : 'var(--flag-t)',
+                  borderLeft: `4px solid ${attention.groundsATruck ? 'var(--red)' : 'var(--flag)'}`,
+                  borderRadius: 10,
+                  padding: '11px 13px',
+                }}
+              >
+                <p
+                  style={{
+                    color: attention.groundsATruck ? 'var(--red)' : 'var(--flag)',
+                    fontWeight: 700,
+                    fontSize: 15.5,
+                    lineHeight: 1.35,
+                  }}
+                >
+                  {attention.headline}
+                </p>
+                <p style={{ fontSize: 14.5, marginTop: 4, lineHeight: 1.45 }}>
+                  Open Profile — everything that needs you is listed at the top.
+                </p>
+              </div>
+            )}
+
+            {/*
+              No `onClick={() => setOpen(false)}` here, deliberately. Closing
+              the sheet in the click handler unmounts this anchor synchronously,
+              and the client-side navigation it was about to start dies with it
+              — intermittently, as `ERR_ABORTED; maybe frame was detached`. The
+              path-change effect above already closes the sheet once the
+              navigation lands, which is both correct and one place instead of
+              two.
+            */}
+            <Link
+              href="/profile"
+              className="tap"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '100%',
+                marginTop: 14,
+                minHeight: 52,
+                borderRadius: 'var(--radius-sm)',
+                background: 'var(--color-accent)',
+                color: '#fff',
+                fontSize: 16.5,
+                fontWeight: 700,
+                textDecoration: 'none',
+              }}
+            >
+              Profile &amp; documents
+            </Link>
+
+            {/*
+              Sign out belongs here and nowhere else. `signOut()` has existed
+              in lib/auth.ts with no caller anywhere in the app — so a driver
+              on a shared phone in a transport office had no way to end their
+              session, and the next person to pick it up was them.
+            */}
+            <button
+              onClick={() => {
+                signOut();
+                setOpen(false);
+                // A hard replace rather than a router push: every cached page
+                // and atom in memory still belongs to the person signing out.
+                window.location.replace('/signin');
+              }}
+              className="tap"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '100%',
+                marginTop: 8,
+                minHeight: 48,
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--color-divider)',
+                background: 'var(--color-surface)',
+                fontSize: 16,
+                fontWeight: 700,
+                color: 'var(--red)',
+              }}
+            >
+              Sign out
+            </button>
+
+            <button
+              onClick={() => setOpen(false)}
+              className="tap"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '100%',
+                marginTop: 8,
+                minHeight: 48,
+                borderRadius: 'var(--radius-sm)',
+                border: 'none',
+                background: 'none',
+                fontSize: 16,
+                fontWeight: 700,
+                color: 'var(--color-neutral-700)',
+              }}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/** The old name, kept so nothing that already renders it breaks. */
+export function AccountLink() {
+  return <AccountButton />;
+}
+
+/**
+ * The bar every screen starts with: what app this is, and your account.
+ *
+ * Screens used to place the account link themselves through `ScreenHeader`'s
+ * `right` slot, which meant it competed with each screen's own control — on
+ * Loads the truck-type filter won and the account link simply was not
+ * rendered. A screen cannot forget this one, and its own `right` slot is free
+ * again for whatever that screen actually needs.
+ */
+export function AppHeader() {
+  return (
+    <div
       style={{
-        display: 'inline-flex',
+        display: 'flex',
         alignItems: 'center',
-        gap: 7,
-        fontSize: 14.5,
-        fontWeight: 700,
-        textDecoration: 'none',
-        color: 'var(--color-accent-700)',
-        border: '1px solid var(--color-divider)',
-        background: 'var(--color-surface)',
-        borderRadius: 'var(--radius-pill)',
-        minHeight: 44,
-        padding: '9px 15px 9px 12px',
-        boxShadow: 'var(--shadow-sm)',
-        transition: 'box-shadow var(--transition-fast), transform var(--transition-fast)',
+        justifyContent: 'space-between',
+        gap: 12,
+        padding: '10px 0 2px',
       }}
     >
-      <IconBase size={14}>{TAB_ICONS['/profile']}</IconBase>
-      Profile
-    </Link>
+      <Link
+        href="/loads"
+        style={{
+          display: 'inline-flex',
+          alignItems: 'baseline',
+          gap: 7,
+          textDecoration: 'none',
+          color: 'var(--color-text)',
+        }}
+      >
+        <span
+          style={{
+            fontFamily: 'var(--font-heading)',
+            fontSize: 19,
+            fontWeight: 700,
+            letterSpacing: '-0.01em',
+          }}
+        >
+          Nexraah
+        </span>
+        <span className="muted" style={{ fontSize: 13 }}>
+          transporter
+        </span>
+      </Link>
+      <AccountButton />
+    </div>
   );
 }
 

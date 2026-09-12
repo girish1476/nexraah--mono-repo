@@ -273,10 +273,27 @@ export class RfqService {
     });
   }
 
+  /**
+   * Award only proceeds out of SUBMITTED — the status `submit()` writes.
+   * Without this gate, any holder of `rfq.edit` (OPS or BD, not only
+   * LEADERSHIP) could award a DRAFT/SOURCING/QUOTED rfq directly, bypassing
+   * the LEADERSHIP-only `rfq.submit` step entirely (permissions.ts: "the
+   * desk that proposes a rate is never the desk that sends it to the
+   * client"). Requiring SUBMITTED as the sole starting state also covers
+   * re-awarding — award() itself moves the rfq on to AWARDED or LOST, so an
+   * already-decided rfq can never satisfy this check again.
+   */
   async award(rfqId: string, dto: AwardRfqDto, actor: AuthenticatedUser) {
     return this.rfqRepository.transaction().execute(async (trx) => {
       const rfq = await this.rfqRepository.findByIdForUpdate(trx, rfqId);
       if (!rfq) throw new DomainException(404, 'NOT_FOUND', `Unknown RFQ: ${rfqId}`);
+      if (rfq.status !== 'SUBMITTED') {
+        throw new DomainException(
+          409,
+          'NOT_SUBMITTED',
+          'This RFQ has to be submitted before it can be awarded.',
+        );
+      }
 
       const lanes = await this.rfqRepository.findLanesForRfq(rfqId);
       const byId = new Map(lanes.map((l) => [l.id, l]));

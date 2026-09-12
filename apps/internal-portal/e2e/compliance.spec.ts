@@ -85,7 +85,9 @@ test.describe('Compliance desk — COMPLIANCE role', () => {
 
     const apex = queue.locator('tr').filter({ hasText: 'CLT-0090' });
     await expect(apex).toContainText('Apex Ceramics · rate contract APX/RC/2026');
-    await expect(apex).toContainText('1 lanes priced');
+    // One route priced, not two: `rc-3` was closed by the July revision and
+    // `rc-4` replaced it. The queue counts lanes in force, not rate rows.
+    await expect(apex).toContainText('1 lane priced');
 
     // Sanghvi Metals (CLT-0088) is SPOT engagement — never has a rate contract to decide.
     await expect(queue).not.toContainText('Sanghvi Metals');

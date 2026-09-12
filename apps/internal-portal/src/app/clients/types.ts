@@ -50,16 +50,16 @@ export interface Client {
   name: string;
   billingCity: string;
   gstin: string | null;
-  contact: string;
-  phone: string;
-  email: string;
+  contact: string | null;
+  phone: string | null;
+  email: string | null;
   engagement: Engagement;
   agreementNo: string | null;
   validFrom: string | null;
   validTo: string | null;
   agreementAttachmentId?: string | null;
   creditDays: number;
-  serviceLevel: string;
+  serviceLevel: string | null;
   status: ClientStatus;
   outstandingPaise: number;
 }

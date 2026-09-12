@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { SupabaseJwtGuard } from '../../common/guards/supabase-jwt.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
@@ -13,9 +13,11 @@ import { UpdateIssueDto } from './dto/update-issue.dto';
 export class IssuesController {
   constructor(private readonly issuesService: IssuesService) {}
 
+  // `?status=` is what the screen's filter sends; it used to be ignored here,
+  // so "Resolved" showed every issue and the filter looked broken.
   @Get()
-  list() {
-    return this.issuesService.list();
+  list(@Query('status') status?: string) {
+    return this.issuesService.list(status);
   }
 
   @Post()

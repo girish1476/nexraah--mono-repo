@@ -1,4 +1,4 @@
-import { ApiResponse, request } from '@/apis';
+import { ApiResponse, idempotent, request } from '@/apis';
 import { USE_MOCK, mock } from '@/lib/mock';
 import { Load, PlaceQuoteRequest, PlaceQuoteResult, TruckType, Vehicle } from './types';
 
@@ -114,7 +114,8 @@ export function getQuotableVehicles() {
   }).then((r) => r.data);
 }
 
-export function placeQuote(code: string, body: PlaceQuoteRequest) {
+/** Retry-safety contract as `attachPod` — `idempotencyKey` is the caller's. */
+export function placeQuote(code: string, body: PlaceQuoteRequest, idempotencyKey: string) {
   if (USE_MOCK) {
     const load = FIXTURES.find((l) => l.code === code)!;
     const aboveBand = body.amountPaise > load.bandHighPaise;
@@ -126,7 +127,7 @@ export function placeQuote(code: string, body: PlaceQuoteRequest) {
       aboveBand,
     });
   }
-  return request<ApiResponse<PlaceQuoteResult>>({
+  return idempotent<ApiResponse<PlaceQuoteResult>>(idempotencyKey, {
     url: `/portal/loads/${code}/quote`,
     method: 'POST',
     data: body,

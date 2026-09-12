@@ -40,6 +40,7 @@ export class OrdersRepository {
       .innerJoin('clients', 'clients.id', 'orders.client_id')
       .innerJoin('branches', 'branches.id', 'orders.branch_id')
       .leftJoin('trips', 'trips.id', 'orders.trip_id')
+      .leftJoin('vendors', 'vendors.id', 'trips.vendor_id')
       .leftJoin('invoices', 'invoices.id', 'orders.invoice_id')
       .select([
         'orders.id as id',
@@ -55,10 +56,19 @@ export class OrdersRepository {
         'indents.pickup_date as pickupDate',
         'indents.sell_rate as sellRatePaise',
         'indents.failure_cause as failureCause',
+        'indents.material as material',
+        'indents.weight_kg as weightKg',
+        'indents.truck_type as truckType',
         'clients.name as clientName',
         'branches.name as branchName',
         'trips.id as tripId',
         'trips.code as tripCode',
+        'trips.vehicle_no as vehicleNo',
+        'trips.driver_name as driverName',
+        'trips.buy_rate as buyRatePaise',
+        'trips.advance_paid as advancePaidPaise',
+        'trips.balance_paid as balancePaidPaise',
+        'vendors.legal_name as vendorName',
         'invoices.id as invoiceId',
         'invoices.code as invoiceCode',
       ]);
@@ -116,6 +126,10 @@ export class OrdersRepository {
 
   getByIndentId(indentId: string) {
     return this.baseQuery().where('orders.indent_id', '=', indentId).executeTakeFirst();
+  }
+
+  getByIndentCode(indentCode: string) {
+    return this.baseQuery().where('indents.code', '=', indentCode).executeTakeFirst();
   }
 
   /** Counts per step, for the phase tabs — one query, not one per tab. */

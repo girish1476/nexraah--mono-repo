@@ -16,6 +16,8 @@ export class AttachmentsRepository {
     bytes: number;
     sha256: string;
     uploadedBy: string;
+    geoLat?: number | null;
+    geoLng?: number | null;
   }) {
     return this.db
       .insertInto('attachments')
@@ -29,6 +31,8 @@ export class AttachmentsRepository {
         bytes: row.bytes,
         sha256: row.sha256,
         uploaded_by: row.uploadedBy,
+        geo_lat: row.geoLat != null ? String(row.geoLat) : null,
+        geo_lng: row.geoLng != null ? String(row.geoLng) : null,
       })
       .returningAll()
       .executeTakeFirstOrThrow();

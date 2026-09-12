@@ -80,10 +80,19 @@ export default function NewInvoicePage() {
   const submit = async (issue: boolean) => {
     setBusy(true);
     try {
+      // Rounding and the total stay on screen only — the server computes both
+      // from the heads (NFR-09) and refuses a body that carries them. A blank
+      // due date falls back to the client's credit terms, since the API
+      // requires one and the field is not otherwise mandatory here.
+      const dueDate =
+        form.dueDate ||
+        new Date(new Date(form.invoiceDate).getTime() + (client?.creditDays ?? 0) * 86_400_000)
+          .toISOString()
+          .slice(0, 10);
       const invoice = await createInvoice({
         clientId,
         invoiceDate: form.invoiceDate,
-        dueDate: form.dueDate || undefined,
+        dueDate,
         tripIds: chosen.map((t) => t.id),
         freightPaise,
         loadingPaise: form.loadingRupees * 100,
@@ -91,10 +100,8 @@ export default function NewInvoicePage() {
         detentionPaise: form.detentionRupees * 100,
         otherPaise: form.otherRupees * 100,
         discountPaise: form.discountRupees * 100,
-        roundOffPaise,
-        totalPaise,
         notes: form.notes,
-      } as never);
+      });
       if (issue) {
         const issued = await generateInvoice(invoice.id);
         toast(`${issued.code} issued`);

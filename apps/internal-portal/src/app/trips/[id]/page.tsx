@@ -110,7 +110,7 @@ export default function TripDetailPage() {
       <PageHeader
         path={`/trips/${trip.code}`}
         title={trip.code}
-        sub={`${trip.lane} · ${trip.distanceKm} km · ${trip.vendorName}`}
+        sub={`${trip.lane}${trip.distanceKm != null ? ` · ${trip.distanceKm} km` : ''} · ${trip.vendorName}`}
         module="trips"
         right={
           <Link href={`/orders/${trip.indentCode}`} className="btn btn-secondary">

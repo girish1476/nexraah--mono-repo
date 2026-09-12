@@ -287,6 +287,101 @@ test.describe('lorry receipt sub-page', () => {
 
     await assertNoRedactedFields(page);
   });
+
+  /**
+   * The printable copy, and the link that reaches it.
+   *
+   * This exists because the button here used to be
+   * `<a href={lr.pdfUrl} target="_blank">Download PDF to print</a>` while
+   * `pdfUrl` was `'#'` in the fixture and `null` from the real API — no PDF
+   * was generated anywhere. Clicking it opened a blank tab. Nothing caught
+   * that, because no test ever followed the link: the page rendered, the
+   * button was present, and the one thing it was for did nothing.
+   *
+   * So this asserts the destination, not the presence of a control.
+   */
+  test('the printable copy opens from the lorry receipt and carries the LR', async ({ page }) => {
+    await page.goto('/trips/TR-20881/lorry-receipt');
+
+    await page.getByRole('link', { name: 'Open the printable copy' }).click();
+    await expect(page).toHaveURL(/\/print\/lr\/TR-20881$/, { timeout: 15_000 });
+
+    // The document itself: number, route, vehicle and the transporter's own
+    // freight — everything a checkpost or the receiving party asks for.
+    await expect(page.getByText('NXR/LR/26/0884')).toBeVisible();
+    await expect(page.getByText('Nashik → Kolkata')).toBeVisible();
+    await expect(page.getByText('MH 15 GT 4482')).toBeVisible();
+    await expect(page.getByText('₹58,400')).toBeVisible();
+
+    // A ruled space for the signature the whole document exists to collect.
+    await expect(page.getByText('Received the goods in good condition')).toBeVisible();
+
+    // The print control is a real button, not a link to nowhere.
+    await expect(page.getByRole('button', { name: 'Print or save as PDF' })).toBeVisible();
+
+    await assertNoRedactedFields(page);
+  });
+
+  /**
+   * The same page inside the vendor app, where `window.print()` does not
+   * exist — Android's WebView has no printing at all. The page hands its
+   * HTML to the native side over the bridge instead, and `expo-print` opens
+   * the OS print sheet.
+   *
+   * Stubbing the bridge is the only way to test this without a device, and
+   * it is worth doing: the app path is precisely the one that was broken,
+   * and a stub still pins the contract that matters — that a real, complete
+   * document reaches native, carrying this trip's receipt and nothing from
+   * the client's side of it.
+   */
+  test('inside the vendor app the print button hands the document to native', async ({ page }) => {
+    await page.addInitScript(() => {
+      const w = window as unknown as Record<string, unknown>;
+      w.ReactNativeWebView = { postMessage: () => {} };
+      w.NexraahNative = {
+        print: (opts: { html: string; title: string }) => {
+          (window as unknown as Record<string, unknown>).__printRequest = opts;
+        },
+      };
+    });
+
+    await page.goto('/print/lr/TR-20881');
+    await page.getByRole('button', { name: 'Print or save as PDF' }).click();
+
+    const sent = await page.evaluate(
+      () => (window as unknown as Record<string, unknown>).__printRequest as
+        { html: string; title: string } | undefined,
+    );
+
+    expect(sent, 'the page never reached the native bridge').toBeTruthy();
+    expect(sent!.title).toBe('NXR/LR/26/0884');
+
+    // A standalone document, not a fragment: expo-print renders it with no
+    // stylesheet of its own, so the styles have to travel with it.
+    expect(sent!.html).toContain('<!doctype html>');
+    expect(sent!.html).toContain('<style>');
+    expect(sent!.html).toContain('NXR/LR/26/0884');
+    expect(sent!.html).toContain('MH 15 GT 4482');
+    expect(sent!.html).toContain('Received the goods in good condition');
+
+    // The redaction contract applies to what crosses the bridge too — this
+    // document is printed and handed to the receiving party.
+    //
+    // Checked against the document's *rendered text*, not its markup. The
+    // raw string carries the inline stylesheet, and a CSS `margin: 0` trips
+    // the ` margin` term — a false positive that would have made this
+    // assertion look like a leak on its first run. `assertNoRedactedFields`
+    // reads `innerText` for the same reason.
+    const rendered = await page.evaluate((html: string) => {
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      doc.querySelectorAll('style, script').forEach((el) => el.remove());
+      return (doc.body.textContent ?? '').toLowerCase();
+    }, sent!.html);
+
+    for (const term of FORBIDDEN_TERMS) {
+      expect(rendered, `redaction leak: found "${term}" in the printed document`).not.toContain(term);
+    }
+  });
 });
 
 test.describe('proof of delivery sub-page', () => {
@@ -322,11 +417,16 @@ test.describe('proof of delivery sub-page', () => {
     await expect(page).toHaveURL(/\/trips\/TR-20874$/, { timeout: 15_000 });
   });
 
-  test('TR-20881 (not yet delivered) still renders the POD window safely with no delivery date', async ({ page }) => {
+  test('TR-20881 (not yet delivered) shows no clock — the count has not started', async ({ page }) => {
+    // The 20-day window starts at delivery. A trip with no `deliveredAt` must
+    // never render a countdown — that used to default the elapsed days to 0
+    // and tell the transporter their money was already on the clock before
+    // the truck had even arrived.
     await page.goto('/trips/TR-20881/pod');
 
-    await expect(page.getByText('Delivered —.')).toBeVisible();
-    await expect(page.getByText('20 days left in the window')).toBeVisible();
+    await expect(page.getByText('The 20 days have not started yet')).toBeVisible();
+    await expect(page.getByText('The count begins the day this load is delivered, not today.')).toBeVisible();
+    await expect(page.getByText('20 days left in the window')).not.toBeVisible();
   });
 });
 
@@ -392,6 +492,10 @@ test.describe('redaction sweep (BR-55/NFR-02)', () => {
       '/trips/TR-20881/pod',
       '/trips/TR-20874/pod',
       '/trips/TR-20881/lorry-receipt',
+      // The printed copy leaves the building — it is carried in a cab and
+      // handed to the receiving party — so it is the last place a client
+      // rate or margin may appear.
+      '/print/lr/TR-20881',
     ];
     for (const url of urls) {
       await page.goto(url);

@@ -109,6 +109,15 @@ export default function ImportPage() {
   const active = SETS.find((s) => s.key === set)!;
   const totals = batch?.report?.controlTotals;
   const blockedByTotals = !!totals && !totals.reconciles;
+  /*
+   * The server decides committability, not this screen. A batch comes back
+   * ABORTED when the file cannot be written whatever the operator clicks, and
+   * a mismatched control total is only one way to get there — a file that
+   * supplies no control total at all is aborted too, and that one has no
+   * `controlTotals` to render, so checking the totals alone left the button
+   * live for a commit the server would refuse.
+   */
+  const aborted = batch?.status === 'ABORTED';
 
   return (
     <ModuleGuard module="admin">
@@ -175,6 +184,13 @@ export default function ImportPage() {
               </div>
             </div>
 
+            {aborted && !totals && (
+              <Banner tone="red" title="This file cannot be committed">
+                It was read and checked, but nothing here can be written. The rejects below say why —
+                correct the file and upload it again.
+              </Banner>
+            )}
+
             {totals && (
               <Banner
                 tone={totals.reconciles ? 'mint' : 'red'}
@@ -197,7 +213,7 @@ export default function ImportPage() {
             )}
 
             <div style={{ marginTop: 16 }}>
-              <button className="btn" onClick={doCommit} disabled={busy || blockedByTotals}>
+              <button className="btn" onClick={doCommit} disabled={busy || blockedByTotals || aborted}>
                 Confirm and commit
               </button>
               <span className="muted" style={{ fontSize: 12, marginLeft: 10 }}>

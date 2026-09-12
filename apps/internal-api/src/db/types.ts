@@ -118,6 +118,9 @@ export interface AttachmentsTable {
   uploaded_by: string;
   uploaded_at: Generated<string>;
   retain_until: string | null;
+  /** Where the photo was taken (BR-23 selfie) — pg `numeric`, arrives as a string. Both set or both null. */
+  geo_lat: string | null;
+  geo_lng: string | null;
   created_at: Generated<string>;
   updated_at: Generated<string>;
 }
@@ -134,6 +137,34 @@ export interface ApprovalsTable {
   approver_id: string | null;
   decided_at: string | null;
   note: string | null;
+  created_at: Generated<string>;
+  updated_at: Generated<string>;
+}
+
+/**
+ * Data problems reported from the screen they were spotted on.
+ *
+ * `resolution` is nullable in the column and required by a CHECK once the
+ * status is RESOLVED or WONT_FIX — a ticket closed with no note tells the
+ * person who raised it nothing, so they raise it again.
+ */
+export interface TicketsTable {
+  id: Generated<string>;
+  code: string;
+  raised_on_path: string;
+  entity_type: string | null;
+  entity_id: string | null;
+  subject: string;
+  detail: string;
+  kind: Generated<'WRONG_DATA' | 'MISSING_DATA' | 'ACCESS' | 'HOW_DO_I' | 'OTHER'>;
+  severity: Generated<'BLOCKING' | 'NORMAL' | 'MINOR'>;
+  status: Generated<'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'WONT_FIX'>;
+  raised_by: string;
+  branch_id: string | null;
+  assigned_to: string | null;
+  resolution: string | null;
+  resolved_by: string | null;
+  resolved_at: Date | null;
   created_at: Generated<string>;
   updated_at: Generated<string>;
 }
@@ -201,6 +232,7 @@ export interface VendorKycTable {
   verified_by: string | null;
   verified_at: string | null;
   attachment_id: string | null;
+  reject_reason: string | null;
   created_at: Generated<string>;
   updated_at: Generated<string>;
 }
@@ -215,6 +247,7 @@ export interface VendorDocumentsTable {
   valid_to: string | null;
   status: Generated<string>;
   verified_by: string | null;
+  reject_reason: string | null;
   created_at: Generated<string>;
   updated_at: Generated<string>;
 }
@@ -404,6 +437,30 @@ export interface RateCardLanesTable {
   valid_to: string | null;
   supply_source: SupplySource | null;
   supply_remarks: string | null;
+  created_at: Generated<string>;
+  updated_at: Generated<string>;
+}
+
+/**
+ * Why an agreed client rate moved, and who signed it off.
+ *
+ * `to_lane_id` is null until the revision is approved — the successor lane in
+ * `rate_card_lanes` is not created until somebody countersigns, so a pending
+ * revision changes nothing anybody is billed against.
+ */
+export interface RateRevisionsTable {
+  id: Generated<string>;
+  client_id: string;
+  from_lane_id: string;
+  to_lane_id: string | null;
+  old_rate: number;
+  new_rate: number;
+  effective_from: string;
+  reason: string;
+  approval_id: string | null;
+  requested_by: string;
+  approved_by: string | null;
+  status: Generated<'PENDING' | 'APPLIED' | 'REJECTED'>;
   created_at: Generated<string>;
   updated_at: Generated<string>;
 }
@@ -682,6 +739,7 @@ export interface ReceiptsTable {
   mode: string;
   reference: string | null;
   remarks: string | null;
+  idempotency_key: string;
   created_at: Generated<string>;
   updated_at: Generated<string>;
 }
@@ -753,6 +811,24 @@ export interface IssuesTable {
   updated_at: Generated<string>;
 }
 
+/** Part 12 · go-live import. `20260830000000_c11_import_batches.sql`. */
+export interface ImportBatchesTable {
+  id: Generated<string>;
+  set_name: string;
+  file_name: string;
+  file_hash: string;
+  row_count: number;
+  rejected_count: number;
+  actor_id: string;
+  actor_name: string;
+  status: Generated<string>;
+  report: Json;
+  payload: Json;
+  committed_at: string | null;
+  created_at: Generated<string>;
+  updated_at: Generated<string>;
+}
+
 export interface Database {
   branches: BranchesTable;
   roles: RolesTable;
@@ -761,10 +837,12 @@ export interface Database {
   role_permissions: RolePermissionsTable;
   users: UsersTable;
   config: ConfigTable;
+  import_batches: ImportBatchesTable;
   number_series: NumberSeriesTable;
   attachments: AttachmentsTable;
   approvals: ApprovalsTable;
   audit_events: AuditEventsTable;
+  tickets: TicketsTable;
   vendors: VendorsTable;
   vendor_users: VendorUsersTable;
   vendor_kyc: VendorKycTable;
@@ -778,6 +856,7 @@ export interface Database {
   rfq_lanes: RfqLanesTable;
   rfq_lane_sourcing: RfqLaneSourcingTable;
   rate_card_lanes: RateCardLanesTable;
+  rate_revisions: RateRevisionsTable;
   indents: IndentsTable;
   quotes: QuotesTable;
   trips: TripsTable;

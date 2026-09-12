@@ -2,7 +2,7 @@
 
 import { useAtom } from 'jotai';
 import { useEffect, useState } from 'react';
-import { ErrorNote, Facts, Loading, ScreenHeader, TabBar } from '@/components/shell';
+import { AppHeader, ErrorNote, Facts, Loading, ScreenHeader, TabBar } from '@/components/shell';
 import { dateTime } from '@/lib/format';
 import { userAtom } from '@/store/atoms';
 import { getHealth } from './apis';
@@ -21,6 +21,7 @@ export default function DashboardPage() {
 
   return (
     <main className="screen">
+      <AppHeader />
       <ScreenHeader
         title="Connection check"
         sub="Dashboard"

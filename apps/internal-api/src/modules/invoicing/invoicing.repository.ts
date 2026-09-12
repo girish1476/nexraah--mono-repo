@@ -194,6 +194,10 @@ export class InvoicingRepository {
       .execute();
   }
 
+  findReceiptByIdempotencyKeyForUpdate(db: DbExecutor, key: string) {
+    return db.selectFrom('receipts').selectAll().where('idempotency_key', '=', key).forUpdate().executeTakeFirst();
+  }
+
   insertReceipt(
     db: DbExecutor,
     row: {
@@ -206,6 +210,7 @@ export class InvoicingRepository {
       mode: string;
       reference: string;
       remarks: string | null;
+      idempotency_key: string;
     },
   ) {
     return db.insertInto('receipts').values(row).returningAll().executeTakeFirstOrThrow();

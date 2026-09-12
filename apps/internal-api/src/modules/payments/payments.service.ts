@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DomainException, type UnmetItem } from '../../common/domain-exception';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
+import type { DbExecutor } from '../../db/kysely';
 import { AuditService } from '../audit/audit.service';
 import { ConfigRepository } from '../config/config.repository';
 import { OrdersService } from '../orders/orders.service';
@@ -197,6 +198,8 @@ export class PaymentsService {
     const trip = await this.paymentsRepository.resolveByTripId(tripId);
     if (!trip) throw new DomainException(404, 'NOT_FOUND', `Unknown trip: ${tripId}`);
 
+    const indent = await this.paymentsRepository.resolveIndentById(trip.indent_id);
+    if (!indent) throw new DomainException(404, 'NOT_FOUND', `Trip ${trip.id} has no indent.`);
     const vendor = await this.vendorBeneficiary(trip.vendor_id);
     const chargeCost = await this.paymentsRepository.chargeCostTotal(tripId);
     const billablePaise = trip.buy_rate + Number(chargeCost.total);
@@ -214,6 +217,7 @@ export class PaymentsService {
     return {
       tripId: trip.id,
       tripCode: trip.code,
+      indentCode: indent.code,
       vendorName: vendor.name,
       lane: trip.lane,
       beneficiary: vendor.beneficiary,
@@ -248,73 +252,111 @@ export class PaymentsService {
 
       const trip = await this.paymentsRepository.findTripForUpdate(trx, tripId);
       if (!trip) throw new DomainException(404, 'NOT_FOUND', `Unknown trip: ${tripId}`);
-      if (trip.balance_paid > 0) {
-        throw new DomainException(409, 'BALANCE_ALREADY_RELEASED', 'The balance has already been released for this trip.');
-      }
 
-      const penaltyConfig = await this.penaltyLabelConfig();
-      const ageDays = trip.pod_received_at ? this.daysBetween(trip.pod_received_at, new Date().toISOString()) : 0;
-      // BR-25: past 40 days, nothing is payable — the trip closes.
-      if (ageDays > penaltyConfig.forfeitDays && trip.pod_closure_basis !== 'WAIVED') {
-        await this.paymentsRepository.updateTrip(trx, tripId, {
-          pod_status: 'FORFEITED',
-          pod_closure_basis: 'FORFEITED',
-          stage: 'CLOSED',
-        });
-        await this.auditService.record(trx, actor, {
-          action: 'STATUS_CHANGE',
-          entityType: 'trips',
-          entityId: tripId,
-          after: { podStatus: 'FORFEITED', stage: 'CLOSED' },
-        });
-        throw new DomainException(409, 'POD_FORFEITED', 'This POD is past the forfeiture window; nothing is payable.');
-      }
-
-      const unmet = this.balanceUnmetFor(trip.pod_status, trip.pod_closure_basis);
-      if (unmet.length > 0) {
-        throw new DomainException(409, 'BALANCE_BLOCKED', 'The balance is blocked.', { unmet });
-      }
-
-      indentId = trip.indent_id;
-
-      const chargeCost = await this.paymentsRepository.chargeCostTotal(tripId);
-      const billable = trip.buy_rate + Number(chargeCost.total);
-      const gross = billable - trip.advance_paid;
-      const penalty = trip.pod_closure_basis === 'WAIVED' ? 0 : trip.pod_penalty;
-
-      const payment = await this.paymentsRepository.insertPayment(trx, {
-        tripId: trip.id,
-        indentId: null,
-        kind: 'BALANCE',
-        gross,
-        penalty,
-        mode: dto.mode,
-        transferType: dto.transferType,
-        remittingAccount: dto.remittingAccount,
-        utr: dto.utr,
-        valueDate: dto.valueDate,
-        releasedBy: actor.userId,
-        idempotencyKey,
-      });
-
-      await this.paymentsRepository.updateTrip(trx, tripId, {
-        balance_paid: gross - penalty,
-        billed: true,
-        stage: 'CLOSED',
-      });
-      await this.auditService.record(trx, actor, {
-        action: 'PAYMENT',
-        entityType: 'payments',
-        entityId: payment.id,
-        after: { kind: 'BALANCE', tripId, gross, penalty },
-      });
-
-      return this.paymentDto(payment);
+      const outcome = await this.releaseBalanceForTrip(trx, trip, null, dto, idempotencyKey, actor);
+      indentId = outcome.indentId;
+      return outcome.payment;
     });
     // Step 10, "Balance released" — the last rung. `recompute` stamps
     // `closed_at` when it lands here, which is what makes an order "settled".
     await this.syncOrder(indentId, actor);
     return result;
+  }
+
+  /**
+   * The actual balance-release write — forfeiture check, the unmet-conditions
+   * gate, the billable/gross/penalty computation, the payment insert and the
+   * trip update. Shared by `releaseBalance` (the direct queue) and
+   * `acceptBill` (accepting a transporter's bill releases the same balance,
+   * at either the system-computed or the transporter's own figure) so the
+   * two paths can never again compute two different numbers for the same
+   * trip — before this, accepting a bill only flipped its status and never
+   * actually paid anyone, contradicting both the spec and the dialog's own
+   * "Accept and release" label.
+   *
+   * `billableOverride`, when given, replaces the buy-rate-plus-charges
+   * computation with the transporter's own billed total — "accept at their
+   * figure". The advance deduction and the POD penalty still apply exactly
+   * as they do on the direct release path; only the billable base changes.
+   */
+  private async releaseBalanceForTrip(
+    trx: DbExecutor,
+    trip: {
+      id: string;
+      indent_id: string | null;
+      balance_paid: number;
+      pod_received_at: string | null;
+      pod_closure_basis: string | null;
+      pod_status: string;
+      pod_penalty: number;
+      buy_rate: number;
+      advance_paid: number;
+    },
+    billableOverride: number | null,
+    dto: ReleasePaymentDto,
+    idempotencyKey: string,
+    actor: AuthenticatedUser,
+  ) {
+    if (trip.balance_paid > 0) {
+      throw new DomainException(409, 'BALANCE_ALREADY_RELEASED', 'The balance has already been released for this trip.');
+    }
+
+    const penaltyConfig = await this.penaltyLabelConfig();
+    const ageDays = trip.pod_received_at ? this.daysBetween(trip.pod_received_at, new Date().toISOString()) : 0;
+    // BR-25: past 40 days, nothing is payable — the trip closes.
+    if (ageDays > penaltyConfig.forfeitDays && trip.pod_closure_basis !== 'WAIVED') {
+      await this.paymentsRepository.updateTrip(trx, trip.id, {
+        pod_status: 'FORFEITED',
+        pod_closure_basis: 'FORFEITED',
+        stage: 'CLOSED',
+      });
+      await this.auditService.record(trx, actor, {
+        action: 'STATUS_CHANGE',
+        entityType: 'trips',
+        entityId: trip.id,
+        after: { podStatus: 'FORFEITED', stage: 'CLOSED' },
+      });
+      throw new DomainException(409, 'POD_FORFEITED', 'This POD is past the forfeiture window; nothing is payable.');
+    }
+
+    const unmet = this.balanceUnmetFor(trip.pod_status, trip.pod_closure_basis);
+    if (unmet.length > 0) {
+      throw new DomainException(409, 'BALANCE_BLOCKED', 'The balance is blocked.', { unmet });
+    }
+
+    const chargeCost = await this.paymentsRepository.chargeCostTotal(trip.id);
+    const billable = billableOverride ?? trip.buy_rate + Number(chargeCost.total);
+    const gross = billable - trip.advance_paid;
+    const penalty = trip.pod_closure_basis === 'WAIVED' ? 0 : trip.pod_penalty;
+
+    const payment = await this.paymentsRepository.insertPayment(trx, {
+      tripId: trip.id,
+      indentId: null,
+      kind: 'BALANCE',
+      gross,
+      penalty,
+      mode: dto.mode,
+      transferType: dto.transferType,
+      remittingAccount: dto.remittingAccount,
+      utr: dto.utr,
+      valueDate: dto.valueDate,
+      releasedBy: actor.userId,
+      idempotencyKey,
+    });
+
+    await this.paymentsRepository.updateTrip(trx, trip.id, {
+      balance_paid: gross - penalty,
+      billed: true,
+      stage: 'CLOSED',
+    });
+    await this.auditService.record(trx, actor, {
+      action: 'PAYMENT',
+      entityType: 'payments',
+      entityId: payment.id,
+      after: { kind: 'BALANCE', tripId: trip.id, gross, penalty },
+    });
+
+    return { payment: this.paymentDto(payment), indentId: trip.indent_id };
   }
 
   // ---- Transporter bills --------------------------------------------
@@ -323,13 +365,41 @@ export class PaymentsService {
     return this.paymentsRepository.listBills(status);
   }
 
-  async acceptBill(id: string, dto: AcceptBillDto, actor: AuthenticatedUser) {
+  async getBill(id: string) {
+    const bill = await this.paymentsRepository.findBillById(id);
+    if (!bill) throw new DomainException(404, 'NOT_FOUND', `Unknown bill: ${id}`);
+    return bill;
+  }
+
+  /**
+   * Accepting a bill IS releasing the balance for its trip (docs/api/06-
+   * payments.md: "accept releases at the computed figure" / "accept with
+   * atTheirFigure releases at their figure") — not merely a status flip. See
+   * `releaseBalanceForTrip` for the shared release logic this now calls.
+   */
+  async acceptBill(id: string, dto: AcceptBillDto, idempotencyKey: string, actor: AuthenticatedUser) {
     if (dto.atTheirFigure && !dto.reason) {
       throw new DomainException(400, 'VALIDATION_ERROR', 'A reason is required to accept at the transporter\'s figure.');
     }
-    return this.paymentsRepository.transaction().execute(async (trx) => {
+    this.assertPaymentFields(dto);
+
+    let indentId: string | null = null;
+    const result = await this.paymentsRepository.transaction().execute(async (trx) => {
+      const existing = await this.paymentsRepository.findByIdempotencyKeyForUpdate(trx, idempotencyKey);
+      if (existing) return { id, status: 'ACCEPTED' as const, payment: this.paymentDto(existing) };
+
       const bill = await this.paymentsRepository.findBillForUpdate(trx, id);
       if (!bill) throw new DomainException(404, 'NOT_FOUND', `Unknown bill: ${id}`);
+      if (bill.status !== 'SUBMITTED') {
+        throw new DomainException(409, 'BILL_NOT_SUBMITTED', `Bill ${id} is ${bill.status.toLowerCase()}, not submitted.`);
+      }
+
+      const trip = await this.paymentsRepository.findTripForUpdate(trx, bill.trip_id);
+      if (!trip) throw new DomainException(404, 'NOT_FOUND', `Bill ${id} has no trip.`);
+
+      const billableOverride = dto.atTheirFigure ? bill.total : null;
+      const outcome = await this.releaseBalanceForTrip(trx, trip, billableOverride, dto, idempotencyKey, actor);
+      indentId = outcome.indentId;
 
       const row = await this.paymentsRepository.updateBill(trx, id, { status: 'ACCEPTED' });
       // BR-40: finance owns the released number outright — accepting at the
@@ -340,14 +410,19 @@ export class PaymentsService {
         entityId: id,
         after: { status: 'ACCEPTED', atTheirFigure: Boolean(dto.atTheirFigure), reason: dto.reason },
       });
-      return { id: row.id, status: row.status };
+      return { id: row.id, status: row.status, payment: outcome.payment };
     });
+    await this.syncOrder(indentId, actor);
+    return result;
   }
 
   async queryBill(id: string, note: string, actor: AuthenticatedUser) {
     return this.paymentsRepository.transaction().execute(async (trx) => {
       const bill = await this.paymentsRepository.findBillForUpdate(trx, id);
       if (!bill) throw new DomainException(404, 'NOT_FOUND', `Unknown bill: ${id}`);
+      if (bill.status !== 'SUBMITTED') {
+        throw new DomainException(409, 'BILL_NOT_SUBMITTED', `Bill ${id} is ${bill.status.toLowerCase()}, not submitted.`);
+      }
       const row = await this.paymentsRepository.updateBill(trx, id, { status: 'QUERIED' });
       await this.auditService.record(trx, actor, {
         action: 'PAYMENT',

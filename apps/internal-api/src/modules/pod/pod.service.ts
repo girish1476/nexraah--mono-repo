@@ -68,21 +68,17 @@ export class PodService implements OnModuleInit {
   }
 
   async receiving(branchId?: string) {
-    const [stats, rows, config] = await Promise.all([
+    const [stats, rows, config, receivedToday] = await Promise.all([
       this.podRepository.receivingStats(branchId),
       this.podRepository.receiving(branchId),
       this.penaltyConfig(),
+      this.podRepository.receivedTodayCount(branchId),
     ]);
 
-    let receivedToday = 0;
     let pastTwentyDays = 0;
-    const today = new Date().toDateString();
     const mappedRows = rows.map((r) => {
       const { ageDays } = computePenalty(r.deliveredAt, null, config);
       if (ageDays > config.tatDays) pastTwentyDays += 1;
-      if (r.podStatus === 'RECEIVED' && r.deliveredAt && new Date(r.deliveredAt).toDateString() === today) {
-        receivedToday += 1;
-      }
       return {
         tripId: r.tripId,
         tripCode: r.tripCode,
@@ -131,7 +127,7 @@ export class PodService implements OnModuleInit {
         sentOn: dto.sentOn,
         receivedOn: dto.receivedOn,
         pages: dto.pages ?? null,
-        receivedBy: dto.receivedBy,
+        receivedBy: dto.receivedBy ?? actor.name,
         condition: dto.condition ?? null,
       });
 
@@ -166,7 +162,7 @@ export class PodService implements OnModuleInit {
   }
 
   async getById(tripId: string) {
-    const trip = await this.podRepository.findTripById(tripId);
+    const trip = await this.podRepository.findTripDetailById(tripId);
     if (!trip) throw new DomainException(404, 'NOT_FOUND', `Unknown trip: ${tripId}`);
 
     const [receipt, charges, config] = await Promise.all([
@@ -175,22 +171,34 @@ export class PodService implements OnModuleInit {
       this.penaltyConfig(),
     ]);
 
-    const { ageDays, penaltyPaise } = effectivePenalty(trip, config);
+    const { ageDays, penaltyPaise } = effectivePenalty(
+      { delivered_at: trip.deliveredAt, pod_received_at: trip.podReceivedAt, pod_closure_basis: trip.podClosureBasis },
+      config,
+    );
 
     return {
       tripId: trip.id,
       tripCode: trip.code,
-      deliveredAt: trip.delivered_at,
-      podStatus: trip.pod_status,
-      podReceivedAt: trip.pod_received_at,
+      indentCode: trip.indentCode,
+      lrCode: trip.lrCode,
+      vendorName: trip.vendorName,
+      clientName: trip.clientName,
+      lane: trip.lane,
+      deliveredAt: trip.deliveredAt,
+      podStatus: trip.podStatus,
+      podReceivedAt: trip.podReceivedAt,
       ageDays,
       penaltyPaise,
       receipt: receipt
         ? {
+            id: receipt.id,
             code: receipt.code,
+            tripId: receipt.trip_id,
             courierDocket: receipt.courier_docket,
             sentOn: receipt.sent_on,
             receivedOn: receipt.received_on,
+            pages: receipt.pages,
+            receivedBy: receipt.received_by,
             condition: receipt.condition,
           }
         : null,
@@ -266,6 +274,17 @@ export class PodService implements OnModuleInit {
     const result = await this.podRepository.transaction().execute(async (trx) => {
       const trip = await this.podRepository.findTripForUpdate(trx, tripId);
       if (!trip) throw new DomainException(404, 'NOT_FOUND', `Unknown trip: ${tripId}`);
+      // Mirrors verify()'s NOT_RECEIVED and approve()'s NOT_VERIFIED guards —
+      // without this, an already APPROVED/WAIVED trip could be reopened via
+      // a direct API call, reverting pod_status while leaving approved_by/
+      // approved_at populated inconsistently.
+      if (!['RECEIVED', 'VERIFIED'].includes(trip.pod_status)) {
+        throw new DomainException(
+          409,
+          'NOT_REJECTABLE',
+          'The POD must be received or verified before it can be rejected.',
+        );
+      }
       indentId = trip.indent_id;
 
       const receipt = await this.podRepository.findReceiptForUpdate(trx, tripId);
@@ -281,6 +300,8 @@ export class PodService implements OnModuleInit {
           verified_by: null,
           verified_at: null,
           received_on: null,
+          approved_by: null,
+          approved_at: null,
         });
       }
 

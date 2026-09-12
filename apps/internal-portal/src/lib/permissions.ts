@@ -687,19 +687,22 @@ export const NAV: NavGroup[] = [
         emoji: '⏰',
         note: 'Past the agreed window — a penalty is running on these',
       },
-      /*
-       * An "E-POD pending" row belongs here and is deliberately absent until
-       * it can work. It would list trips whose proof was photographed in the
-       * transporter app but whose paper has not reached a branch — that is
-       * `pod_status = 'ATTACHED'`, and nothing in the system ever writes that
-       * value (the portal has no update grant on `trips` and derives it in the
-       * response only). The row would therefore always be empty, which reads
-       * as "nothing to chase" rather than "not built".
-       *
-       * Restore it once something persists ATTACHED. Same for a "Tickets" row:
-       * `ticket.resolve` exists as a permission, but there is no tickets
-       * endpoint, table or page behind it yet.
-       */
+      {
+        /*
+         * Restored 2026-09-03 with a screen behind it.
+         *
+         * It was pulled on the grounds that nothing stores `pod_status =
+         * 'ATTACHED'`, which is true of the stored column and beside the point
+         * for this row: an e-POD is a proof photographed but not yet received,
+         * and `/pod/receiving` already returns `attachedAt` on every row for
+         * exactly that reason. `?attached=1` narrows the register to those.
+         */
+        label: 'E-POD pending',
+        href: '/pod/receiving?attached=1',
+        module: 'pod',
+        emoji: '📸',
+        note: 'Photographed in the transporter app, physical copy not logged yet',
+      },
     ],
   },
   {
@@ -886,14 +889,23 @@ export const NAV: NavGroup[] = [
         emoji: '✋',
         note: 'Decisions only you can sign off',
       },
-      /*
-       * A "Tickets" row belongs here — open to every desk, since the person who
-       * spots wrong data is whoever was on the screen, with `ticket.resolve`
-       * gating action on somebody else's. It is deliberately absent until it
-       * can work: the permission exists, but there is no tickets endpoint, no
-       * table and no page behind it, so the row was a dead link in the
-       * sidebar of every role. Restore it with the page.
-       */
+      {
+        /*
+         * Restored 2026-09-03 with a table, an endpoint and a page behind it.
+         *
+         * Open to every desk, which is the point: the person who spots wrong
+         * data is whoever happened to be on the screen, so `POST /tickets`
+         * carries no permission at all. Acting on somebody else's report needs
+         * `ticket.resolve`, which the page and the controller both gate on —
+         * and without it this row shows you your own reports and what came of
+         * them, which is worth its place on its own.
+         */
+        label: 'Tickets',
+        href: '/tickets',
+        module: 'tickets',
+        emoji: '🎫',
+        note: 'Report wrong data on any screen, and see what has been done about it',
+      },
       { label: 'Settings', href: '/admin', module: 'admin', emoji: '🎛️' },
       { label: 'Who can do what', href: '/admin/roles', module: 'admin', emoji: '👥' },
       { label: 'Branches', href: '/admin/branches', module: 'admin', emoji: '🏬' },

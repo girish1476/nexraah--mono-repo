@@ -37,6 +37,30 @@ export class LeadsRepository {
     return this.db.selectFrom('leads').selectAll().where('id', '=', id).executeTakeFirst();
   }
 
+  /** Same joined shape as `list()`, scoped to one row — what `create()`/`update()` return, so a lead already converted before this edit doesn't lose its `convertedVendor*` fields in the response. */
+  findByIdJoined(id: string) {
+    return this.db
+      .selectFrom('leads')
+      .leftJoin('vendors', 'vendors.id', 'leads.converted_vendor_id')
+      .select([
+        'leads.id as id',
+        'leads.code as code',
+        'leads.name as name',
+        'leads.city as city',
+        'leads.source as source',
+        'leads.party_type as party_type',
+        'leads.trucks_claimed as trucks_claimed',
+        'leads.phone as phone',
+        'leads.stage as stage',
+        'leads.notes as notes',
+        'leads.converted_vendor_id as converted_vendor_id',
+        'vendors.code as converted_vendor_code',
+        'vendors.legal_name as converted_vendor_name',
+      ])
+      .where('leads.id', '=', id)
+      .executeTakeFirst();
+  }
+
   findByIdForUpdate(db: DbExecutor, id: string) {
     return db.selectFrom('leads').selectAll().where('id', '=', id).forUpdate().executeTakeFirst();
   }

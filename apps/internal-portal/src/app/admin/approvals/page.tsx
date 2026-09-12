@@ -27,6 +27,7 @@ const TONE: Record<string, Tone> = {
   PENALTY_WAIVER: 'flag',
   DOC_OVERRIDE: 'red',
   BRANCH_OVERRIDE: 'blue',
+  RATE_REVISION: 'blue',
 };
 
 const KIND_LABEL: Record<string, string> = {
@@ -36,12 +37,15 @@ const KIND_LABEL: Record<string, string> = {
   PENALTY_WAIVER: 'POD penalty waiver',
   DOC_OVERRIDE: 'Document override',
   BRANCH_OVERRIDE: 'Branch override',
+  // Plain language on purpose: nobody outside this codebase calls it a
+  // "rate revision". It is a price we already agreed, being changed.
+  RATE_REVISION: 'Change to an agreed client rate',
 };
 
 /**
  * Approvals inbox — `/admin/approvals`.
  *
- * Six kinds of request, each raised by a `202 APPROVAL_REQUIRED` somewhere
+ * Seven kinds of request, each raised by a `202 APPROVAL_REQUIRED` somewhere
  * else in the console. Approving replays the original payload; rejecting
  * requires a note.
  */

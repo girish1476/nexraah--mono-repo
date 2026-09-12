@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActionBar,
+  AppHeader,
   Callout,
   ErrorNote,
   Loading,
@@ -13,6 +14,7 @@ import {
 } from '@/components/shell';
 import { inr, inrRange } from '@/lib/format';
 import { BAND_TONE } from '@/lib/status';
+import { newIdempotencyKey } from '@/apis';
 import { getLoad, getQuotableVehicles, placeQuote } from '../../apis';
 import { Load, REPORTING_LABEL, ReportingRule, Vehicle } from '../../types';
 
@@ -38,6 +40,8 @@ export default function QuoteFormPage({ params }: { params: { code: string } }) 
     useState<(typeof REPORTING_OPTIONS)[number]>('Same day');
   const [scheduledDate, setScheduledDate] = useState('');
   const [sending, setSending] = useState(false);
+  // Minted once per mount and reused across a retry of the same submission.
+  const [idempotencyKey] = useState(newIdempotencyKey);
 
   useEffect(() => {
     getLoad(params.code)
@@ -88,13 +92,17 @@ export default function QuoteFormPage({ params }: { params: { code: string } }) 
   const submit = () => {
     if (!load || !canSubmit) return;
     setSending(true);
-    placeQuote(load.code, {
-      amountPaise,
-      vehicleRegistrationNo: vehicleRegNo.trim().toUpperCase(),
-      driverMobile,
-      reportingRule: REPORTING_VALUE[reporting],
-      ...(reporting === 'Scheduled' && scheduledDate ? { scheduledDate } : {}),
-    })
+    placeQuote(
+      load.code,
+      {
+        amountPaise,
+        vehicleRegistrationNo: vehicleRegNo.trim().toUpperCase(),
+        driverMobile,
+        reportingRule: REPORTING_VALUE[reporting],
+        ...(reporting === 'Scheduled' && scheduledDate ? { scheduledDate } : {}),
+      },
+      idempotencyKey,
+    )
       .then(() => router.push('/quotes'))
       .catch((e) => {
         setError(e.message);
@@ -105,6 +113,7 @@ export default function QuoteFormPage({ params }: { params: { code: string } }) 
   if (!load) {
     return (
       <main className="screen">
+      <AppHeader />
         <ScreenHeader
           title="Place a quote"
           what="Getting this load's price range. Nothing is sent until you fill the form and press the button at the bottom."
@@ -118,6 +127,7 @@ export default function QuoteFormPage({ params }: { params: { code: string } }) 
 
   return (
     <main className="screen">
+      <AppHeader />
       <ScreenHeader
         title="Place a quote"
         sub={`${load.code} · ${load.originCity} → ${load.destinationCity}`}
@@ -225,9 +235,10 @@ export default function QuoteFormPage({ params }: { params: { code: string } }) 
 
       <div className="card">
         <p className="muted" style={{ marginBottom: 8 }}>
-          When your truck can reach the pickup point. Nexraah asked for{' '}
-          {REPORTING_LABEL[load.reportingRule]} — you can pick something else, and the desk sees
-          what you picked.
+          When your truck can reach the pickup point.{' '}
+          {load.reportingRule
+            ? `Nexraah asked for ${REPORTING_LABEL[load.reportingRule]} — you can pick something else, and the desk sees what you picked.`
+            : 'Nexraah did not specify a reporting time for this load — pick what suits your truck, and the desk sees what you picked.'}
         </p>
         <Segmented
           options={REPORTING_OPTIONS}

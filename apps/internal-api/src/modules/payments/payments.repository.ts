@@ -31,8 +31,12 @@ export class PaymentsRepository {
         'trips.buy_rate as buyRate',
         'trips.advance_paid as advancePaid',
       ]);
+    // With no status, "the advance queue" means trips genuinely awaiting a
+    // decision — the same `advance_paid = 0` condition as the explicit
+    // 'pending' branch — not every trip ever created. Compare balanceQueue()
+    // above, which always filters `trips.stage = 'DELIVERED'` unconditionally.
     if (status === 'released') query = query.where('trips.advance_paid', '>', 0);
-    if (status === 'pending') query = query.where('trips.advance_paid', '=', 0);
+    else if (status === 'pending' || !status) query = query.where('trips.advance_paid', '=', 0);
     return query.execute();
   }
 
@@ -154,8 +158,13 @@ export class PaymentsRepository {
 
   // ---- Transporter bills --------------------------------------------
 
-  listBills(status?: string) {
-    let query = this.db
+  /**
+   * The bill shape `docs/api/06-payments.md` documents, built in one place so
+   * the list and the detail route cannot drift apart. A second hand-copied
+   * select is exactly how two endpoints end up disagreeing about the same row.
+   */
+  private billQuery() {
+    return this.db
       .selectFrom('vendor_bills')
       .innerJoin('trips', 'trips.id', 'vendor_bills.trip_id')
       .innerJoin('vendors', 'vendors.id', 'vendor_bills.vendor_id')
@@ -177,8 +186,17 @@ export class PaymentsRepository {
         'trips.pod_status as podStatus',
         'vendor_bills.status as status',
       ]);
+  }
+
+  listBills(status?: string) {
+    let query = this.billQuery();
     if (status) query = query.where('vendor_bills.status', 'in', status.split(','));
     return query.orderBy('vendor_bills.submitted_at', 'desc').execute();
+  }
+
+  /** One bill, same shape as the list. `docs/api/06-payments.md` §Transporter bills. */
+  findBillById(id: string) {
+    return this.billQuery().where('vendor_bills.id', '=', id).executeTakeFirst();
   }
 
   findBillForUpdate(db: DbExecutor, id: string) {

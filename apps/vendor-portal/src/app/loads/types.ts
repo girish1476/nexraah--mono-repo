@@ -28,9 +28,24 @@ export interface Load {
   truckType: TruckType;
   weightKg: number;
   goods: string;
-  distanceKm: number;
-  transitDays: number;
-  reportingRule: ReportingRule;
+  /**
+   * Nullable: the API sends `distanceKm: null` on every load and trip today
+   * (`portal-loads.service.ts`, `portal-trips.service.ts` — no distance
+   * provider is wired). Declaring it `number` here made the screens call
+   * `.toLocaleString()` on null and throw; only the fixture, which
+   * hardcodes numbers, kept them standing.
+   */
+  distanceKm: number | null;
+  /**
+   * Nullable: `indents.transit_days` and `indents.reporting_rule` are both
+   * optional columns (`db/types.ts`) and `PortalLoadDto` declares both
+   * `T | null` (`portal.dto.ts`) — an indent posted without either sails
+   * through untouched. Declaring these required here is the same class of
+   * bug `distanceKm` above already documents: the screens rendered the
+   * literal string "null" for an indent missing either field.
+   */
+  transitDays: number | null;
+  reportingRule: ReportingRule | null;
   remarks: string | null;
   pickupAt: string;
   bandLowPaise: number;

@@ -75,13 +75,14 @@ export class ConfigService {
         );
       }
 
-      await this.configRepository.updateSeries(trx, row.id, dto.nextValue, dto.width);
+      const width = dto.width ?? row.width;
+      await this.configRepository.updateSeries(trx, row.id, dto.nextValue, width);
       await this.auditService.record(trx, actor, {
         action: 'NUMBER_SERIES_UPDATED',
         entityType: 'number_series',
         entityId: row.id,
         before: { nextValue: row.next_value, width: row.width },
-        after: { nextValue: dto.nextValue, width: dto.width },
+        after: { nextValue: dto.nextValue, width },
       });
     });
 

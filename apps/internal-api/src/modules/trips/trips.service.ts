@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { DomainException, assertReason } from '../../common/domain-exception';
+import { assertAnyPermission } from '../../common/guards/assert-any-permission';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
 import type { ApprovalRequiredResponse } from '../../common/approval-required.response';
 import { AuditService } from '../audit/audit.service';
@@ -109,6 +110,11 @@ export class TripsService implements OnModuleInit {
       id: trip.id,
       code: trip.code,
       indentId: trip.indent_id,
+      indentCode: trip.indentCode,
+      lrCode: trip.lrCode,
+      clientName: trip.clientName,
+      vendorName: trip.vendorName,
+      branchName: trip.branchName,
       lane: trip.lane,
       vehicleNo: trip.vehicle_no,
       vehicleType: trip.vehicle_type,
@@ -132,6 +138,7 @@ export class TripsService implements OnModuleInit {
       podClosureBasis: trip.pod_closure_basis,
       advancePaidPaise: trip.advance_paid,
       balancePaidPaise: trip.balance_paid,
+      podPenaltyPaise: trip.podPenaltyPaise,
       billed: trip.billed,
       documents,
       charges: charges.map((c) => ({
@@ -321,6 +328,11 @@ export class TripsService implements OnModuleInit {
     reason: string,
     actor: AuthenticatedUser,
   ): Promise<ApprovalRequiredResponse> {
+    // Who may *ask* for an override: the desks that read the papers —
+    // Compliance (`document.verify`) and the Ops desk running the trip
+    // (`indent.manage`), matching what `trips/[id]/documents` offers. The
+    // decision itself is still an approval senior to ops (BR-44, D-28).
+    assertAnyPermission(actor, ['document.verify', 'indent.manage']);
     assertReason(reason);
     const trip = await this.tripsRepository.findById(tripId);
     if (!trip) throw new DomainException(404, 'NOT_FOUND', `Unknown trip: ${tripId}`);
@@ -350,6 +362,11 @@ export class TripsService implements OnModuleInit {
   // BR-45: a billed figure below cost is a warning, not a refusal — the
   // frontend renders it; nothing here blocks it.
   async createCharge(tripId: string, dto: CreateChargeDto, actor: AuthenticatedUser) {
+    // A charge is money on both sides of the trip. Captured by whoever is
+    // reading the document (part 05 §4) — Compliance on advance papers, the
+    // POD desk on delivery papers, Ops on a trip they run — the same three
+    // the portal's `trips/[id]/charges` page offers the form to.
+    assertAnyPermission(actor, ['document.verify', 'pod.verify', 'indent.manage']);
     await this.assertTripExists(tripId);
     const row = await this.tripsRepository.transaction().execute(async (trx) => {
       const inserted = await this.tripsRepository.insertCharge(trx, {

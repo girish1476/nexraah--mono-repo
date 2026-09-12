@@ -135,3 +135,78 @@ export function awardBlockReason(status: string, report: VendorExpiryReport): st
   const kinds = report.expired.map((e) => e.kind.replace(/_/g, ' ').toLowerCase()).join(', ');
   return `This transporter's ${kinds} has expired. Compliance has to see a current one before they can take new work.`;
 }
+
+/** One row of the sweep query: a vendor's document, flattened. */
+export interface SweepRow {
+  vendorId: string;
+  vendorCode: string;
+  vendorName: string;
+  vendorStatus: string;
+  vendorPhone: string | null;
+  branchId: string | null;
+  kind: string;
+  status: string;
+  validTo: string | null;
+}
+
+export interface ExpiryQueueEntry {
+  vendorId: string;
+  code: string;
+  name: string;
+  phone: string | null;
+  branchId: string | null;
+  status: string;
+  expired: DocumentExpiry[];
+  expiringSoon: DocumentExpiry[];
+  /**
+   * Stated on every row rather than left to be inferred from `expired.length`.
+   * It is the consequence that matters, and the one thing about this queue
+   * that is easy to get wrong: a lapse blocks NEW work only. Trips already
+   * moving are untouched and the vendor is not suspended.
+   */
+  blockedFromNewWork: boolean;
+  soonestDaysRemaining: number | null;
+}
+
+/**
+ * The chase queue: which transporters need paperwork, worst first.
+ *
+ * Pure, and separate from the repository call, so the ordering can be tested
+ * without a database. The order IS the feature — a queue sorted alphabetically
+ * is a list, not a queue.
+ */
+export function buildExpiryQueue(rows: SweepRow[], asOf: Date): ExpiryQueueEntry[] {
+  const byVendor = new Map<string, { vendor: SweepRow; docs: SweepRow[] }>();
+  for (const row of rows) {
+    const entry = byVendor.get(row.vendorId) ?? { vendor: row, docs: [] };
+    entry.docs.push(row);
+    byVendor.set(row.vendorId, entry);
+  }
+
+  return [...byVendor.values()]
+    .map(({ vendor, docs }) => {
+      const report = vendorExpiryReport(
+        docs.map((d) => ({ kind: d.kind, status: d.status, validTo: d.validTo })),
+        asOf,
+      );
+      return {
+        vendorId: vendor.vendorId,
+        code: vendor.vendorCode,
+        name: vendor.vendorName,
+        phone: vendor.vendorPhone,
+        branchId: vendor.branchId,
+        status: vendor.vendorStatus,
+        expired: report.expired,
+        expiringSoon: report.expiringSoon,
+        blockedFromNewWork: report.hasExpired,
+        soonestDaysRemaining: report.soonestDaysRemaining,
+      };
+    })
+    .filter((v) => v.expired.length > 0 || v.expiringSoon.length > 0)
+    .sort((a, b) => {
+      // Already blocked first — those are stopping work today. Then soonest to
+      // lapse, so the queue reads in the order it should be worked.
+      if (a.blockedFromNewWork !== b.blockedFromNewWork) return a.blockedFromNewWork ? -1 : 1;
+      return (a.soonestDaysRemaining ?? Number.MAX_SAFE_INTEGER) - (b.soonestDaysRemaining ?? Number.MAX_SAFE_INTEGER);
+    });
+}

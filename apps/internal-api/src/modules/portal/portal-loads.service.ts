@@ -16,6 +16,45 @@ import {
 import type { SubmitQuoteDto } from './portal-write.dto';
 import { PortalWriteResult, type PortalVendor } from './portal.types';
 
+/**
+ * `03-P2` §2 / `04-P3` §2: own fleet, `AVAILABLE` only. Deliberately does not
+ * name the trip the truck is on, and says the same sentence for DOCS_DUE,
+ * ON_TRIP and MAINTENANCE alike.
+ */
+function assertAvailable(status: string): void {
+  if (status !== 'AVAILABLE') {
+    throw portalError('VEHICLE_UNAVAILABLE', 'That vehicle is not available right now. Free one up under Fleet.');
+  }
+}
+
+const REPORTING_TEXT: Record<string, string> = {
+  SAME_DAY: 'Reports same day',
+  NEXT_DAY: 'Reports next day',
+  SCHEDULED: 'Reports on a scheduled date',
+};
+
+/**
+ * `quotes` has one free-text column and the Ops desk reads it on the quote
+ * row. The driver's mobile and the reporting offer are the two things the
+ * form collects that have nowhere else to land, so they are folded into it
+ * — in words, not codes, because the person reading it is placing a truck,
+ * not decoding an enum.
+ */
+function quoteRemarks(dto: SubmitQuoteDto): string | null {
+  const parts: string[] = [];
+  const typed = dto.remarks?.trim();
+  if (typed) parts.push(typed);
+  if (dto.driverMobile) parts.push(`Driver ${dto.driverMobile}`);
+  if (dto.reportingRule) {
+    const when =
+      dto.reportingRule === 'SCHEDULED' && dto.scheduledDate
+        ? `Reports on ${dto.scheduledDate}`
+        : REPORTING_TEXT[dto.reportingRule];
+    if (when) parts.push(when);
+  }
+  return parts.length ? parts.join(' · ') : null;
+}
+
 /** The row shape `PortalLoadsRepository.baseLoadQuery` returns. */
 interface LoadRow {
   code: string;
@@ -209,15 +248,23 @@ export class PortalLoadsService {
       if (dto.vehicleId) {
         const vehicle = await this.fleetRepository.findOwnById(trx, vendor.vendorId, dto.vehicleId);
         if (!vehicle) throw portalError('NOT_FOUND', 'That vehicle is not in your fleet.');
-        if (vehicle.status !== 'AVAILABLE') {
-          // Deliberately does not name the trip the truck is on, and says the
-          // same sentence for DOCS_DUE, ON_TRIP and MAINTENANCE alike.
-          throw portalError(
-            'VEHICLE_UNAVAILABLE',
-            'That vehicle is not available right now. Free one up under Fleet.',
-          );
-        }
+        assertAvailable(vehicle.status);
         truckRegistration = vehicle.registrationNo;
+      } else if (dto.vehicleRegistrationNo) {
+        // The form's path: a plate, typed or picked. When it is one of theirs
+        // the same availability rule applies as for an id — a plate is not a
+        // way round a DOCS_DUE truck. When it is not, it is kept as typed:
+        // the quote form says in so many words that a truck outside Fleet may
+        // still be offered.
+        const typed = dto.vehicleRegistrationNo.trim().toUpperCase();
+        const own = await this.fleetRepository.findByRegistration(trx, vendor.vendorId, typed);
+        if (own) {
+          const vehicle = await this.fleetRepository.findOwnById(trx, vendor.vendorId, own.id);
+          if (vehicle) assertAvailable(vehicle.status);
+          truckRegistration = own.registrationNo;
+        } else {
+          truckRegistration = typed;
+        }
       }
 
       // `quotes` is `unique (indent_id, vendor_id)`. Checked here rather than
@@ -234,7 +281,7 @@ export class PortalLoadsService {
         vendorId: vendor.vendorId,
         amountPaise: dto.amountPaise,
         truckRegistration,
-        remarks: dto.remarks ?? null,
+        remarks: quoteRemarks(dto),
         bandPosition,
       });
 

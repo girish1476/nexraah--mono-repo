@@ -76,13 +76,18 @@ export interface IndentDetail {
   driverLicence: string | null;
   reportedAt: string | null;
   failureCause: string | null;
-  distanceKm: number;
+  /**
+   * No `distance_km` column exists anywhere in the backend schema — this is
+   * genuinely absent data, not a missing join, so it stays optional and the
+   * detail page only renders the Distance row when it's present.
+   */
+  distanceKm?: number;
   quotes: Quote[];
 }
 
 export interface IndentDraft {
   clientId: string;
-  branchId: string;
+  /** No `branchId` — the server derives the branch from `fromCity` (BR-20). */
   fromCity: string;
   toCity: string;
   material: string;

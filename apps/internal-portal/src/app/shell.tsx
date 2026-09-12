@@ -8,6 +8,19 @@ import { Session } from '@/store/atoms';
 import { request } from '@/apis';
 import { signOut } from '@/lib/auth';
 import { Glyph, areaVars } from '@/lib/ui';
+import { ReportProblemButton } from './tickets/report-button';
+
+/**
+ * A nav href without its query string.
+ *
+ * Three delivery-proof rows are presets of two screens — `/pod/pending`,
+ * `/pod/pending?ageing=breached`, `/pod/receiving?attached=1` — so anything
+ * comparing a row against the current path has to drop the query first.
+ */
+function hrefPath(href: string): string {
+  const q = href.indexOf('?');
+  return q === -1 ? href : href.slice(0, q);
+}
 
 /**
  * Sidebar, identity strip and the pending-approvals badge.
@@ -29,6 +42,26 @@ export function Shell({ session, children }: { session: Session | null; children
   const role: RoleCode = session?.role ?? 'OPS';
   const [pendingApprovals, setPendingApprovals] = useState(0);
   const [navOpen, setNavOpen] = useState(false);
+  /*
+   * Which areas the person has opened or closed by hand. Absent means "not
+   * touched", which falls back to opening whichever area holds the page they
+   * are on — so the sidebar never hides the section you are standing in, and a
+   * deliberate close is still respected.
+   */
+  const [openAreas, setOpenAreas] = useState<Record<string, boolean>>({});
+  /*
+   * The current URL including its query, for matching the preset rows.
+   *
+   * From `window.location` in an effect rather than `useSearchParams()`: this
+   * component wraps every page in the console, and reading search params here
+   * would push the whole app behind a Suspense boundary at build time for a
+   * string used only to underline a sidebar row. `pathname` is in the
+   * dependency list so a client-side navigation re-reads it.
+   */
+  const [currentHref, setCurrentHref] = useState('');
+  useEffect(() => {
+    setCurrentHref(`${window.location.pathname}${window.location.search}`);
+  }, [pathname]);
 
   useEffect(() => {
     if (!session) return;
@@ -51,6 +84,16 @@ export function Shell({ session, children }: { session: Session | null; children
   // uses — so a row gated on a permission shows exactly when the page's own
   // button would.
   const groups = navFor(role, session?.permissions?.length ? session.permissions : SEED_GRANTS[role]);
+
+  /**
+   * True when a preset row (one carrying a query string) matches the URL we
+   * are on. While it does, the plain row sharing that path stands down — so
+   * "Delivery proof pending" and "Delivery proof past due" are never both
+   * underlined.
+   */
+  const presetClaims = groups.some((g) =>
+    g.items.some((i) => i.href.includes('?') && i.href === currentHref),
+  );
 
   return (
     <div>
@@ -167,6 +210,19 @@ export function Shell({ session, children }: { session: Session | null; children
             {groups.map((group) => {
               const area: AreaKey = group.area ?? 'desk';
               const { ink, tint } = areaVars(area);
+              /*
+               * Every titled area collapses, at the owner's direction ("show
+               * all the sub-sections with dropdown options").
+               *
+               * **Open by default**, and that is the whole of the decision.
+               * Collapsing them on first load would fold away five of the six
+               * areas for everybody — every screen you were not already
+               * standing on would take two clicks instead of one, on a console
+               * whose stated problem was that people could not find things.
+               * The fold is there for somebody who wants to put an area away,
+               * not a state to arrive in.
+               */
+              const open = !group.label || (openAreas[group.label] ?? true);
               return (
                 <div
                   key={group.label || 'root'}
@@ -174,13 +230,52 @@ export function Shell({ session, children }: { session: Session | null; children
                   style={{ ['--area-ink' as string]: ink, ['--area-tint' as string]: tint }}
                 >
                   {group.label && (
-                    <div className="nav-area-label">
+                    <button
+                      type="button"
+                      className="nav-area-label nav-area-toggle"
+                      aria-expanded={open}
+                      onClick={() =>
+                        setOpenAreas((current) => ({ ...current, [group.label]: !open }))
+                      }
+                    >
                       {group.emoji && <Glyph size={13}>{group.emoji}</Glyph>}
-                      {group.label}
-                    </div>
+                      <span style={{ flex: 1, textAlign: 'left' }}>{group.label}</span>
+                      <span className="nav-area-count">{group.items.length}</span>
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.6"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                        style={{
+                          transform: open ? 'rotate(180deg)' : 'none',
+                          transition: 'transform 140ms ease',
+                          flex: 'none',
+                        }}
+                      >
+                        <path d="M6 9l6 6 6-6" />
+                      </svg>
+                    </button>
                   )}
-                  {group.items.map((item) => {
-                    const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                  {open &&
+                    group.items.map((item) => {
+                    /*
+                     * Three of the delivery-proof rows are presets of two
+                     * screens (`?ageing=breached`, `?attached=1`), so matching
+                     * on pathname alone would light up every row sharing a
+                     * path. An exact match wins; a plain row falls back to the
+                     * path, but only while no preset row has claimed the
+                     * current URL — otherwise "pending" and "past due" would
+                     * both look current at once.
+                     */
+                    const path = hrefPath(item.href);
+                    const active = item.href.includes('?')
+                      ? item.href === currentHref
+                      : (pathname === path || pathname.startsWith(`${path}/`)) && !presetClaims;
                     const badge =
                       item.module === 'approvals' && pendingApprovals > 0 ? pendingApprovals : null;
                     return (
@@ -213,6 +308,36 @@ export function Shell({ session, children }: { session: Session | null; children
 
         <main className="app-main" style={{ flex: 1, minWidth: 0, padding: '24px 30px 72px' }}>
           {children}
+
+          {/*
+            "Ticketing should be available for every dashboard."
+
+            Mounted in the shell rather than added page by page, because a
+            screen that forgot it is exactly the screen somebody will be
+            standing on when they find something wrong. It captures the route
+            itself, so no page has to pass anything for it to be useful.
+
+            Below the content, not in the header: reporting a problem is
+            never the reason you opened a screen, and a control that competes
+            with the page's own actions gets pressed by mistake.
+          */}
+          <div
+            className="no-print"
+            style={{
+              marginTop: 40,
+              paddingTop: 16,
+              borderTop: '1px solid var(--color-divider)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              flexWrap: 'wrap',
+            }}
+          >
+            <span className="hint" style={{ flex: 1, minWidth: 200 }}>
+              Something on this screen wrong or missing? Tell Administration — they can correct it.
+            </span>
+            <ReportProblemButton />
+          </div>
         </main>
       </div>
     </div>

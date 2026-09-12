@@ -29,12 +29,22 @@ export interface VendorListRow {
 
 export interface KycItem {
   kind: 'PAN' | 'AADHAAR' | 'ADDRESS' | 'SELFIE';
-  /** BR-04 — for AADHAAR this is the last four digits and nothing more. */
-  valueMasked: string;
-  route: 'API' | 'MANUAL';
+  /** BR-04 — for AADHAAR this is the last four digits and nothing more. Null while `status === 'MISSING'`. */
+  valueMasked: string | null;
+  /** Null while `status === 'MISSING'` — nothing has been submitted to have a route. */
+  route: 'API' | 'MANUAL' | null;
   status: CheckStatus;
   verifiedBy: string | null;
   verifiedAt: string | null;
+  /** Set only while `status === 'REJECTED'` — cleared on the next re-upload. */
+  rejectReason: string | null;
+  /**
+   * Where the photo was taken — the point of the geo-stamped selfie (BR-23).
+   * Null for kinds that never carry one and for uploads from before the
+   * coordinates were persisted (they were collected and dropped until
+   * 2026-09-02). Optional so older fixtures without the field still typecheck.
+   */
+  geo?: { lat: number; lng: number } | null;
 }
 
 export interface VendorDocument {
@@ -43,6 +53,8 @@ export interface VendorDocument {
   status: CheckStatus;
   validTo: string | null;
   attachmentId: string | null;
+  /** Set only while `status === 'REJECTED'` — cleared on the next re-upload. */
+  rejectReason: string | null;
 }
 
 export interface AdvanceHistoryRow {
@@ -138,6 +150,15 @@ export interface MarketGapRow {
   progressPct: number;
 }
 
+/** What `POST /vendors/issues` accepts — the server names the vendor from the id. */
+export interface IssueDraft {
+  vendorId: string;
+  category: string;
+  severity: Issue['severity'];
+  tripCode?: string | null;
+  note?: string;
+}
+
 export interface Issue {
   id: string;
   code: string;
@@ -160,7 +181,8 @@ export interface ComplianceQueue {
     subject: string;
     note: string;
     ageDays: number;
-    flag: string;
+    /** Null when nothing is ageing enough to warrant a flag — the server omits it, not a placeholder string. */
+    flag: string | null;
     tone: 'mint' | 'flag' | 'red' | 'blue' | 'grey';
     href: string;
     action: string;

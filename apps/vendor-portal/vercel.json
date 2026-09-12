@@ -1,6 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
+  "build": {
+    "env": {
+      "NEXT_PUBLIC_MOCK": "1"
+    }
+  },
   "headers": [
     {
       "source": "/(.*)",

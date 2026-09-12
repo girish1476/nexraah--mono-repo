@@ -4,6 +4,7 @@ import {
   CheckStatus,
   ComplianceQueue,
   Issue,
+  IssueDraft,
   Lead,
   MarketGapRow,
   VendorDetail,
@@ -69,6 +70,43 @@ export function rejectKyc(id: string, kind: string, reason: string) {
 }
 
 /**
+ * GET /vendors/kyc-backfill-queue · `vendor.verify`
+ * Every PAN/AADHAAR row that has a photo on file but no extracted value —
+ * the onboarding wizard captured the card image for both kinds but never
+ * the typed number, until the `needsReference` fix landed (2026-08-26).
+ */
+export interface KycBackfillRow {
+  vendorId: string;
+  vendorCode: string;
+  vendorName: string;
+  kind: 'PAN' | 'AADHAAR';
+  attachmentId: string;
+  status: CheckStatus;
+}
+export function getKycBackfillQueue() {
+  return request<KycBackfillRow[]>({ url: '/vendors/kyc-backfill-queue', method: 'GET' });
+}
+
+/**
+ * PATCH /vendors/:id/kyc/:kind/value · `vendor.verify`
+ * Records the value read off the already-captured photo. Does not touch
+ * verification status — see the backend's own comment on why this is not
+ * `submitKyc`.
+ */
+export function backfillKycValue(id: string, kind: string, value: string) {
+  return request<{ kind: string; valueMasked: string }>({
+    url: `/vendors/${id}/kyc/${kind}/value`,
+    method: 'PATCH',
+    data: { value },
+  });
+}
+
+/** GET /attachments/:id/url — a short-lived signed URL to view an uploaded file. */
+export function getAttachmentUrl(id: string) {
+  return request<{ url: string; expiresAt: string }>({ url: `/attachments/${id}/url`, method: 'GET' });
+}
+
+/**
  * POST /vendors/:id/documents/:kind/verify · `vendor.verify`
  * The legal-file counterpart of `verifyKyc`. `activate` refuses until every
  * mandatory document is VERIFIED, so without this call no vendor can go
@@ -103,9 +141,11 @@ export function uploadVendorDocument(
 /**
  * POST /vendors/:id/submit → PENDING_VERIFICATION
  * 409 VENDOR_INCOMPLETE with `details.unmet[]` when BR-02 or BR-03 is unmet.
+ * The response is narrow, `{ id, status }` — not a full `VendorDetail` — the
+ * same re-fetch pattern as `activateVendor`/`verifyKyc`/`verifyDocument`.
  */
 export function submitVendor(id: string) {
-  return request<VendorDetail>({ url: `/vendors/${id}/submit`, method: 'POST' });
+  return request<{ id: string; status: VendorStatus }>({ url: `/vendors/${id}/submit`, method: 'POST' });
 }
 
 /**
@@ -123,6 +163,27 @@ export function submitVendor(id: string) {
 export function activateVendor(id: string) {
   return request<{ id: string; status: VendorStatus; portalAccountProvisioned: boolean }>({
     url: `/vendors/${id}/activate`,
+    method: 'POST',
+  });
+}
+
+/**
+ * POST /vendors/:id/suspend { reason } · `vendor.activate`. Puts an ACTIVE
+ * transporter on hold: no new awards, portal drops to read-only, running
+ * trips continue. The reason (≥ 20 chars) goes to the audit trail.
+ */
+export function suspendVendor(id: string, reason: string) {
+  return request<{ id: string; status: VendorStatus }>({
+    url: `/vendors/${id}/suspend`,
+    method: 'POST',
+    data: { reason },
+  });
+}
+
+/** POST /vendors/:id/reinstate · `vendor.activate`. Off hold, back to ACTIVE. */
+export function reinstateVendor(id: string) {
+  return request<{ id: string; status: VendorStatus }>({
+    url: `/vendors/${id}/reinstate`,
     method: 'POST',
   });
 }
@@ -166,11 +227,12 @@ export function listIssues(params: { status?: string } = {}) {
   return request<Issue[]>({ url: '/vendors/issues', method: 'GET', params });
 }
 
-export function createIssue(body: Partial<Issue>) {
+export function createIssue(body: IssueDraft) {
   return request<Issue>({ url: '/vendors/issues', method: 'POST', data: body });
 }
 
-export function updateIssue(id: string, patch: Partial<Issue>) {
+/** Only `status` and `note` are writable after the fact (`UpdateIssueDto`). */
+export function updateIssue(id: string, patch: { status?: Issue['status']; note?: string }) {
   return request<Issue>({ url: `/vendors/issues/${id}`, method: 'PATCH', data: patch });
 }
 

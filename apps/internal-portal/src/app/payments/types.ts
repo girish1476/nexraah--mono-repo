@@ -94,7 +94,6 @@ export interface BalanceDetail {
 export interface Payment {
   id: string;
   tripId: string;
-  tripCode: string;
   kind: 'ADVANCE' | 'BALANCE';
   grossPaise: number;
   penaltyPaise: number;

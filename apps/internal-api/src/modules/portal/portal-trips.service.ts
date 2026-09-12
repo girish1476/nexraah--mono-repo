@@ -10,7 +10,11 @@ import {
 import { PortalTripsRepository } from './portal-trips.repository';
 import { PortalAttachmentsRepository } from './portal-attachments.repository';
 import { PortalIdentityRepository } from './portal-identity.repository';
-import { PortalIdempotencyRepository, runIdempotentWrite } from './portal-idempotency.repository';
+import {
+  PortalIdempotencyRepository,
+  checkIdempotentReplay,
+  runIdempotentWrite,
+} from './portal-idempotency.repository';
 import {
   PortalStorageService,
   type PortalStoredFile,
@@ -236,6 +240,20 @@ export class PortalTripsService {
     const trip = await this.repository.findOne(vendor.vendorId, idOrCode);
     if (!trip) throw portalError('NOT_FOUND', 'That trip could not be found.');
 
+    const idempotencyCtx = {
+      idempotency: this.idempotency,
+      vendorId: vendor.vendorId,
+      endpoint,
+      key: idempotencyKey,
+      dto: PortalPodReceiptDto,
+    };
+
+    // The replay check runs BEFORE the upload below, not after: the whole
+    // point of the ledger (`portal-idempotency.repository.ts`) is that a
+    // retry costs one SELECT, not a second upload of the same pages.
+    const replay = await checkIdempotentReplay(idempotencyCtx);
+    if (replay) return replay;
+
     const prepared = files.map((f) => this.storage.prepare(f));
     const stored: PortalStoredFile[] = [];
     // Sequential: these are 10 MB buffers going to object storage, and firing
@@ -244,13 +262,7 @@ export class PortalTripsService {
     for (const p of prepared) stored.push(await this.storage.put('pod', trip.id, p));
 
     return runIdempotentWrite(
-      {
-        idempotency: this.idempotency,
-        vendorId: vendor.vendorId,
-        endpoint,
-        key: idempotencyKey,
-        dto: PortalPodReceiptDto,
-      },
+      idempotencyCtx,
       () =>
         this.repository.transaction().execute(async (trx) => {
           const systemUserId = await this.identity.systemUploaderId();
@@ -338,17 +350,24 @@ export class PortalTripsService {
     const computedBalancePaise = trip.netPayablePaise;
     const billedPaise = dto.billTotalPaise ? Number(dto.billTotalPaise) : computedBalancePaise;
 
+    const idempotencyCtx = {
+      idempotency: this.idempotency,
+      vendorId: vendor.vendorId,
+      endpoint,
+      key: idempotencyKey,
+      dto: PortalVendorBillDto,
+    };
+
+    // Same ordering fix as `attachPod`: check for a replay before the bill
+    // file is uploaded, not after.
+    const replay = await checkIdempotentReplay(idempotencyCtx);
+    if (replay) return replay;
+
     const prepared = this.storage.prepare(file);
     const stored = await this.storage.put('bills', row.id, prepared);
 
     return runIdempotentWrite(
-      {
-        idempotency: this.idempotency,
-        vendorId: vendor.vendorId,
-        endpoint,
-        key: idempotencyKey,
-        dto: PortalVendorBillDto,
-      },
+      idempotencyCtx,
       () =>
         this.repository.transaction().execute(async (trx) => {
           const clash = await this.repository.findBillByNo(trx, vendor.vendorId, billNo);

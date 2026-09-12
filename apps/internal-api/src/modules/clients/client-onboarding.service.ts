@@ -1,6 +1,7 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { DB } from '../../db/tokens';
 import type { InternalDb } from '../../db/kysely';
+import { assertReason } from '../../common/domain-exception';
 import { AuditService } from '../audit/audit.service';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
 import {
@@ -266,9 +267,7 @@ export class ClientOnboardingService {
   }
 
   async reject(clientId: string, reason: string, actor: AuthenticatedUser) {
-    if (!reason?.trim()) {
-      throw new BadRequestException('Say why the client was declined — it is recorded against them.');
-    }
+    assertReason(reason);
     await this.setStatus(clientId, 'REJECTED', reason.trim(), actor);
     return this.detail(clientId);
   }

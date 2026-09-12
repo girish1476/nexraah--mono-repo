@@ -16,12 +16,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
 import { DomainException } from '../../common/domain-exception';
 import { AttachmentsService } from './attachments.service';
-
-interface UploadMetadataBody {
-  kind?: string;
-  entityType?: string;
-  entityId?: string;
-}
+import { UploadMetadataDto } from './dto/upload-metadata.dto';
 
 @Controller('attachments')
 @UseGuards(SupabaseJwtGuard, PermissionsGuard)
@@ -33,14 +28,22 @@ export class AttachmentsController {
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }))
   upload(
     @UploadedFile() file: Express.Multer.File | undefined,
-    @Body() body: UploadMetadataBody,
+    @Body() body: UploadMetadataDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
     if (!file) {
       throw new DomainException(400, 'VALIDATION_ERROR', 'multipart field "file" is required.');
     }
     return this.attachmentsService.upload(
-      { buffer: file.buffer, mime: file.mimetype, kind: body.kind, entityType: body.entityType, entityId: body.entityId },
+      {
+        buffer: file.buffer,
+        mime: file.mimetype,
+        kind: body.kind,
+        entityType: body.entityType,
+        entityId: body.entityId,
+        latitude: body.latitude,
+        longitude: body.longitude,
+      },
       user,
     );
   }

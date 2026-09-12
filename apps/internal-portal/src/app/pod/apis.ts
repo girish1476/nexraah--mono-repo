@@ -20,17 +20,22 @@ export function getPod(tripId: string) {
  * POST /pod/:tripId/receive · `pod.receive`
  * Consumes the PDR- series, which is scoped per branch. **This is what stops
  * the clock** — attachment in the transporter portal does not (BR-49, D-35).
+ *
+ * `sentOn` is required, not optional: `pod_attach_needs_docket` (BR-51) is a
+ * DB CHECK tying it to `courierDocket` — both null or both set — and
+ * `courierDocket` is always sent, so a receipt logged without a sent-on date
+ * fails the constraint. `ReceivePodDto` enforces the same on the server.
  */
 export function receivePod(
   tripId: string,
-  body: { courierDocket: string; sentOn?: string; receivedOn: string; pages: number; receivedBy?: string; condition?: string },
+  body: { courierDocket: string; sentOn: string; receivedOn: string; pages: number; receivedBy?: string; condition?: string },
 ) {
   return request<PodReceipt>({ url: `/pod/${tripId}/receive`, method: 'POST', data: body });
 }
 
 /** POST /pod/:tripId/verify · `pod.verify` — checklist, remarks and charges. */
 export function verifyPod(tripId: string, body: VerifyBody) {
-  return request<{ tripId: string; podStatus: string; verifiedBy: string }>({
+  return request<{ tripId: string; podStatus: string }>({
     url: `/pod/${tripId}/verify`,
     method: 'POST',
     data: body,
@@ -56,7 +61,7 @@ export function rejectPod(tripId: string, reason: string) {
  * rendering.
  */
 export function approvePod(tripId: string) {
-  return request<{ tripId: string; podStatus: string; approvedBy: string }>({
+  return request<{ tripId: string; podStatus: string }>({
     url: `/pod/${tripId}/approve`,
     method: 'POST',
   });
@@ -69,13 +74,4 @@ export function approvePod(tripId: string) {
  */
 export function waivePenalty(tripId: string, reason: string) {
   return request<never>({ url: `/pod/${tripId}/waive`, method: 'POST', data: { reason } });
-}
-
-/** GET /pod/pending/export.csv — honours the active filters. */
-export function pendingExportUrl(params: Record<string, string | undefined>): string {
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4002/api/v1';
-  const query = new URLSearchParams(
-    Object.entries(params).filter(([, v]) => !!v) as [string, string][],
-  ).toString();
-  return `${base}/pod/pending/export.csv${query ? `?${query}` : ''}`;
 }

@@ -1,4 +1,4 @@
-import { ApiResponse, request } from '@/apis';
+import { ApiResponse, idempotent, request } from '@/apis';
 import { USE_MOCK, mock } from '@/lib/mock';
 import {
   AttachPodRequest,
@@ -168,14 +168,21 @@ export function getLorryReceipt(id: string) {
   }).then((r) => r.data);
 }
 
-export function attachPod(id: string, body: AttachPodRequest) {
+/**
+ * `idempotencyKey` must be minted once per submission attempt by the caller
+ * (`newIdempotencyKey()`) and passed unchanged on a retry of that same
+ * attempt — never regenerated per HTTP call. Otherwise a network-drop retry
+ * looks like a fresh request to the server and silently inserts a second
+ * `pod_receipts` row, re-uploading every page.
+ */
+export function attachPod(id: string, body: AttachPodRequest, idempotencyKey: string) {
   if (USE_MOCK) return mock<void>(undefined, 600);
   const form = new FormData();
   body.files.forEach((f) => form.append('files', f));
   form.append('courierDocketNo', body.courierDocketNo);
   form.append('sentOn', body.sentOn);
   if (body.note) form.append('note', body.note);
-  return request<ApiResponse<void>>({
+  return idempotent<ApiResponse<void>>(idempotencyKey, {
     url: `/portal/trips/${id}/pod`,
     method: 'POST',
     data: form,
@@ -205,9 +212,11 @@ export function getBillDraft(id: string) {
   }).then((r) => r.data);
 }
 
+/** Same retry-safety contract as `attachPod` — `idempotencyKey` is the caller's. */
 export function submitBill(
   id: string,
   body: { billNo: string; billDate: string; file: File },
+  idempotencyKey: string,
 ) {
   if (USE_MOCK) {
     const trip = FIXTURES.find((t) => t.id === id)!;
@@ -223,7 +232,7 @@ export function submitBill(
   form.append('billNo', body.billNo);
   form.append('billDate', body.billDate);
   form.append('file', body.file);
-  return request<ApiResponse<BillResult>>({
+  return idempotent<ApiResponse<BillResult>>(idempotencyKey, {
     url: `/portal/trips/${id}/bill`,
     method: 'POST',
     data: form,

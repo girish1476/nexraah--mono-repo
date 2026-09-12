@@ -71,6 +71,10 @@ export class TripsController {
     return this.tripsService.crossCheck(id);
   }
 
+  // Override and charge capture are each open to more than one desk — an
+  // "any of" the single-code decorator can't say — so the service asserts
+  // the permission set itself (`assertAnyPermission`), the way `PnlService`
+  // does for view_all | view_own.
   @Post(':id/cross-check/override')
   overrideCrossCheck(@Param('id') id: string, @Body() dto: CrossCheckOverrideDto, @CurrentUser() user: AuthenticatedUser) {
     return this.tripsService.overrideCrossCheck(id, dto.reason, user);
@@ -107,7 +111,10 @@ export class TripsController {
     return this.tripsService.generateLr(id, user);
   }
 
+  // Sharing is a write on the LR record (`sharedAt`), so it takes the same
+  // permission as the other LR writes above.
   @Post(':id/lr/share')
+  @RequirePermission('indent.manage')
   shareLr(@Param('id') id: string) {
     return this.tripsService.shareLr(id);
   }

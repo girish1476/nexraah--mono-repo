@@ -50,7 +50,7 @@ export default function NewRfqPage() {
     return (
       <ModuleGuard module="rfq">
         <PageHeader path="/rfq/new" title="New rate request" module="rfq" />
-        <Panel>Creating an RFQ belongs to operations, branch management or leadership.</Panel>
+        <Panel>Creating an RFQ belongs to operations, business development or leadership.</Panel>
       </ModuleGuard>
     );
   }

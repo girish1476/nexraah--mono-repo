@@ -134,8 +134,10 @@ test.describe('home — leadership dashboard (LEADERSHIP, unscoped)', () => {
 });
 
 test.describe('home — module-level access', () => {
-  test('OPS gets a read-only badge (VIEW-level on home)', async ({ page }) => {
-    await setRole(page, 'OPS');
+  // Retargeted from OPS, which went VIEW -> EDIT on `home` in the branch-manager
+  // merge. Compliance is the role that still reads this screen without editing it.
+  test('COMPLIANCE gets a read-only badge (VIEW-level on home)', async ({ page }) => {
+    await setRole(page, 'COMPLIANCE');
     await page.goto('/home');
     await expect(page.getByTestId('view-only')).toBeVisible();
   });

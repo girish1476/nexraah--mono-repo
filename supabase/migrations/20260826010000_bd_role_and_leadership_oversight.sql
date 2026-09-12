@@ -36,7 +36,7 @@
 begin;
 
 -- 1 · The role itself. `on conflict do nothing` so a re-run is harmless.
-insert into roles (code, label)
+insert into roles (code, name)
 values ('BD', 'Business development')
 on conflict (code) do nothing;
 

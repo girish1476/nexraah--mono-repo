@@ -182,6 +182,11 @@ export default function VendorsPage() {
               <Link href="/vendors/issues" className="btn btn-secondary">
                 🛠️ Problems
               </Link>
+              {can('vendor.verify') && (
+                <Link href="/vendors/kyc-backfill" className="btn btn-secondary">
+                  🪪 Missing PAN/Aadhaar values
+                </Link>
+              )}
             </div>
           </div>
         </Panel>

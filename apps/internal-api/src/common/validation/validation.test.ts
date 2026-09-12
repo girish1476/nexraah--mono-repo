@@ -5,6 +5,8 @@ import { CreateVendorDto } from '../../modules/vendors/dto/create-vendor.dto';
 import { PatchLrDto } from '../../modules/trips/dto/patch-lr.dto';
 import { CreateIndentDto } from '../../modules/indents/dto/create-indent.dto';
 import { SubmitClientDocumentDto } from '../../modules/clients/dto/submit-client-document.dto';
+import { SubmitQuoteDto } from '../../modules/portal/portal-write.dto';
+import { SuspendVendorDto } from '../../modules/vendors/dto/suspend-vendor.dto';
 
 /**
  * The validation boundary — the layer that decides whether a request is
@@ -25,7 +27,7 @@ import { SubmitClientDocumentDto } from '../../modules/clients/dto/submit-client
  * No database is involved, and none is needed: nothing here reaches a service.
  */
 
-const pipe = new ValidationPipe({ whitelist: true, transform: true });
+const pipe = new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true });
 
 const meta = (metatype: unknown): ArgumentMetadata => ({
   type: 'body',
@@ -164,9 +166,17 @@ describe('the lorry receipt — the contract of carriage', () => {
     }
   });
 
-  it('rejects a negative weight and zero packages on the goods', async () => {
+  it('rejects a negative weight or a negative package count on the goods', async () => {
     expect((await rejectedFields(PatchLrDto, { goods: { weightTn: -3 } })).join(' ')).toBeTruthy();
-    expect((await rejectedFields(PatchLrDto, { goods: { packages: 0 } })).join(' ')).toBeTruthy();
+    expect((await rejectedFields(PatchLrDto, { goods: { packages: -1 } })).join(' ')).toBeTruthy();
+  });
+
+  it('accepts zero packages and zero weight on the goods — the autosave default before either is typed', async () => {
+    // `packages`/`weightTn` used to require `@IsPositive()`, so a freshly
+    // opened draft (which seeds both at 0) 400'd on its very first autosave,
+    // silently, before an operator had typed anything. `@Min(0)` — the same
+    // pattern `valuePaise` already used — lets an incomplete draft save.
+    await expect(run(PatchLrDto, { goods: { packages: 0, weightTn: 0 } })).resolves.toBeTruthy();
   });
 
   it('rejects an e-way bill number that is not twelve digits', async () => {
@@ -214,36 +224,32 @@ describe('indents', () => {
 
 describe('the whitelist itself', () => {
   /*
-   * This is the finding, pinned as a test rather than as prose.
+   * The finding, pinned as a test — and now the proof the fix took effect.
    *
-   * `main.ts` sets `whitelist: true` WITHOUT `forbidNonWhitelisted`, so an
-   * unknown property is not rejected — it is silently removed and the request
-   * succeeds without it. Three instances of the resulting data loss were
-   * confirmed in the vendors module alone in a single day (fleetCount and
-   * truckTypes on vendor update, notes on lead create, tripId on issue
-   * create), each presenting as "200 OK, and the data just vanished".
+   * `main.ts` ran `whitelist: true` WITHOUT `forbidNonWhitelisted` until
+   * 2026-08-30, so an unknown property was silently removed and the request
+   * succeeded without it: "200 OK, and the data just vanished". Four
+   * confirmed instances (fleetCount/truckTypes on vendor update, notes on
+   * lead create, tripId on issue create, and the transporter portal's
+   * truck/driver on every quote) were the argument for turning it on.
    *
-   * The test asserts the CURRENT behaviour deliberately. Changing the pipe is
-   * a decision for the product owner, not something to slip in — every caller
-   * currently sending a stray property starts receiving a 400 the moment it
-   * ships. When that call is made, this test flips to expecting a rejection
-   * and becomes the proof it took effect.
+   * Before the flip every portal write body was audited against its DTO;
+   * the four that carried stray keys (LR autosave, invoice create, indent
+   * create, issue create) were corrected on the portal side first.
    */
-  it('silently strips unknown properties instead of rejecting them', async () => {
-    const result = await run<Record<string, unknown>>(CreateClientDto, {
+  it('rejects an unknown property instead of silently stripping it', async () => {
+    const fields = await rejectedFields(CreateClientDto, {
       ...validClient,
-      thisFieldDoesNotExist: 'and vanishes without a trace',
+      thisFieldDoesNotExist: 'and is now refused, not dropped',
     });
-    expect(result).not.toHaveProperty('thisFieldDoesNotExist');
-    expect(result).toHaveProperty('name', 'Berger Paints');
+    expect(fields.join(' ')).toMatch(/thisFieldDoesNotExist/);
   });
 
-  it('a typo in a real field name is therefore indistinguishable from omitting it', async () => {
-    // `creditDay` instead of `creditDays`. The request succeeds; the value is
-    // gone. This is the whole failure mode in one line.
-    const result = await run<Record<string, unknown>>(CreateClientDto, { ...validClient, creditDay: 45 });
-    expect(result).not.toHaveProperty('creditDay');
-    expect(result).not.toHaveProperty('creditDays');
+  it('a typo in a real field name is therefore a 400, not a silently missing value', async () => {
+    // `creditDay` instead of `creditDays`. Previously the request succeeded
+    // and the value was gone; now the caller is told which key was wrong.
+    const fields = await rejectedFields(CreateClientDto, { ...validClient, creditDay: 45 });
+    expect(fields.join(' ')).toMatch(/creditDay/);
   });
 });
 
@@ -255,5 +261,68 @@ describe('client onboarding documents', () => {
   it('rejects a kind that is not one of the four', async () => {
     const fields = await rejectedFields(SubmitClientDocumentDto, { kind: 'PASSPORT' });
     expect(fields.join(' ')).toMatch(/kind/);
+  });
+});
+
+describe('portal quote — the body the quote form actually sends', () => {
+  // `loads/[code]/quote/page.tsx` posts a plate, a driver mobile and a
+  // reporting offer. Before these were declared on the DTO the whitelist
+  // dropped all three and the request still succeeded — so every portal
+  // bid reached the Ops desk with an empty Truck column and nobody was told.
+  const formBody = {
+    amountPaise: 4020000,
+    vehicleRegistrationNo: 'MH 04 KL 9034',
+    driverMobile: '9822014471',
+    reportingRule: 'SCHEDULED',
+    scheduledDate: '2026-09-01',
+  };
+
+  it('keeps the plate, driver mobile and reporting offer instead of stripping them', async () => {
+    const out = await run<SubmitQuoteDto>(SubmitQuoteDto, formBody);
+    expect(out.vehicleRegistrationNo).toBe('MH 04 KL 9034');
+    expect(out.driverMobile).toBe('9822014471');
+    expect(out.reportingRule).toBe('SCHEDULED');
+    expect(out.scheduledDate).toBe('2026-09-01');
+  });
+
+  it('still accepts the spec-shaped body — vehicleId and remarks only', async () => {
+    const out = await run<SubmitQuoteDto>(SubmitQuoteDto, {
+      amountPaise: 100,
+      vehicleId: '6f1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d',
+      remarks: 'Reporting 06:00',
+    });
+    expect(out.vehicleId).toBe('6f1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d');
+  });
+
+  it('rejects a driver mobile that is not a ten-digit Indian mobile', async () => {
+    expect(await rejectedFields(SubmitQuoteDto, { ...formBody, driverMobile: '12345' })).toEqual([
+      expect.stringContaining('driverMobile'),
+    ]);
+  });
+
+  it('rejects a reporting rule outside the three the load can carry', async () => {
+    expect(await rejectedFields(SubmitQuoteDto, { ...formBody, reportingRule: 'WHENEVER' })).toEqual([
+      expect.stringContaining('reportingRule'),
+    ]);
+  });
+
+  it('rejects a plate that cannot be a registration at all', async () => {
+    expect(await rejectedFields(SubmitQuoteDto, { ...formBody, vehicleRegistrationNo: '!!' })).toEqual([
+      expect.stringContaining('vehicleRegistrationNo'),
+    ]);
+  });
+});
+
+describe('putting a transporter on hold', () => {
+  it('needs a reason of at least twenty characters — it is the audit trail entry', async () => {
+    expect(await rejectedFields(SuspendVendorDto, { reason: 'late again' })).toEqual([
+      expect.stringContaining('20 characters'),
+    ]);
+  });
+
+  it('accepts a real reason', async () => {
+    await expect(
+      run(SuspendVendorDto, { reason: 'Two consecutive no-shows on placed loads this month.' }),
+    ).resolves.toBeTruthy();
   });
 });

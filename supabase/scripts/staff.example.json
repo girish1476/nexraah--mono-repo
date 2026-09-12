@@ -1,0 +1,8 @@
+[
+  { "name": "Your Name",      "email": "you@yourcompany.com",        "role": "ADMIN" },
+  { "name": "Ops Lead",       "email": "ops@yourcompany.com",        "role": "OPS" },
+  { "name": "Compliance",     "email": "compliance@yourcompany.com", "role": "COMPLIANCE" },
+  { "name": "Finance",        "email": "finance@yourcompany.com",    "role": "FINANCE" },
+  { "name": "Business Dev",   "email": "bd@yourcompany.com",         "role": "BD" },
+  { "name": "Leadership",     "email": "md@yourcompany.com",         "role": "LEADERSHIP" }
+]

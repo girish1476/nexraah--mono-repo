@@ -2,8 +2,9 @@
 
 import Link from 'next/link';
 import { useAtom } from 'jotai';
-import { useCallback, useEffect, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import {
+  AppHeader,
   EmptyState,
   ErrorNote,
   Loading,
@@ -14,6 +15,7 @@ import {
 } from '@/components/shell';
 import { inr, dateTime } from '@/lib/format';
 import { QUOTE_TONE } from '@/lib/status';
+import { newIdempotencyKey } from '@/apis';
 import { QuoteFilter, quoteFilterAtom } from '@/store/atoms';
 import { getQuotes, withdrawQuote } from './apis';
 import { Quote, QuoteStatus } from './types';
@@ -82,12 +84,45 @@ export default function QuotesPage() {
 
   useEffect(load, [load]);
 
+  /**
+   * Withdrawing is FINAL, and the old one-tap button did not say so.
+   *
+   * `quotes` is `unique (indent_id, vendor_id)` and a WITHDRAWN row still
+   * occupies that pair, so the server answers QUOTE_EXISTS — "You have already
+   * quoted on this load" — if the same transporter tries again. Withdrawing
+   * therefore forfeits the load for good, while the copy ("use it if your
+   * truck is no longer free") implied it could be undone once the truck freed
+   * up. Confirm first, and say plainly what it costs.
+   */
+  const [confirming, setConfirming] = useState<string | null>(null);
+
+  // One key per quote id, minted the first time that quote is withdrawn and
+  // reused if that same withdrawal is retried — cleared only once it
+  // succeeds, so a retry after a failure never mints a fresh key and a
+  // withdrawal of a *different* quote never reuses this one's.
+  const withdrawKeys = useRef(new Map<string, string>());
+  const keyForWithdraw = (id: string) => {
+    let key = withdrawKeys.current.get(id);
+    if (!key) {
+      key = newIdempotencyKey();
+      withdrawKeys.current.set(id, key);
+    }
+    return key;
+  };
+
   const withdraw = (id: string) => {
-    withdrawQuote(id).then(load).catch((e) => setError(e.message));
+    setConfirming(null);
+    withdrawQuote(id, keyForWithdraw(id))
+      .then(() => {
+        withdrawKeys.current.delete(id);
+        load();
+      })
+      .catch((e) => setError(e.message));
   };
 
   return (
     <main className="screen">
+      <AppHeader />
       <ScreenHeader
         title="My quotes"
         sub={`Showing: ${filter}`}
@@ -173,25 +208,62 @@ export default function QuotesPage() {
           )}
           {q.status === 'SUBMITTED' && (
             <>
-              <button
-                onClick={() => withdraw(q.id)}
-                className="tap"
-                style={{
-                  marginTop: 10,
-                  background: 'none',
-                  border: 'none',
-                  padding: 0,
-                  color: 'var(--red)',
-                  fontSize: 15,
-                  fontWeight: 700,
-                }}
-              >
-                Withdraw quote
-              </button>
-              <p className="muted" style={{ marginTop: 2 }}>
-                Takes your price out of the running for this load. Use it if your truck is no
-                longer free.
-              </p>
+              {confirming === q.id ? (
+                <div style={{ marginTop: 10 }}>
+                  <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--red)' }}>
+                    Withdraw this price for good?
+                  </p>
+                  <p className="muted" style={{ marginTop: 2 }}>
+                    You will not be able to quote on this load again, even if your truck frees up
+                    later. Only withdraw if you are sure you cannot carry it.
+                  </p>
+                  <div style={{ display: 'flex', gap: 16, marginTop: 10 }}>
+                    <button
+                      onClick={() => withdraw(q.id)}
+                      className="tap"
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        padding: 0,
+                        color: 'var(--red)',
+                        fontSize: 15,
+                        fontWeight: 700,
+                      }}
+                    >
+                      Yes, withdraw for good
+                    </button>
+                    <button
+                      onClick={() => setConfirming(null)}
+                      className="tap"
+                      style={{ background: 'none', border: 'none', padding: 0, fontSize: 15 }}
+                    >
+                      Keep my quote
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <button
+                    onClick={() => setConfirming(q.id)}
+                    className="tap"
+                    style={{
+                      marginTop: 10,
+                      background: 'none',
+                      border: 'none',
+                      padding: 0,
+                      color: 'var(--red)',
+                      fontSize: 15,
+                      fontWeight: 700,
+                    }}
+                  >
+                    Withdraw quote
+                  </button>
+                  <p className="muted" style={{ marginTop: 2 }}>
+                    Takes your price out of the running for this load. This cannot be undone — you
+                    will not be able to quote on it again.
+                  </p>
+                </>
+              )}
             </>
           )}
         </div>

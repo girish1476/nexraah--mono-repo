@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { sessionAtom, Session } from '@/store/atoms';
 import { request, errorMessage } from '@/apis';
 import { ensureFreshToken, isSignedIn, signOut } from '@/lib/auth';
+import { ROLES } from '@/lib/permissions';
 import { Toast, ErrorState } from '@/lib/ui';
 import { Shell } from './shell';
 
@@ -93,7 +94,7 @@ function SessionBootstrap({ children }: { children: ReactNode }) {
    */
   useEffect(() => {
     if (!session || pathname !== '/') return;
-    router.replace(session.role === 'ADMIN' ? '/admin' : sessionLanding(session));
+    router.replace(ROLES[session.role].landsOn);
   }, [session, pathname, router]);
 
   // The sign-in screen must never be gated behind the session it exists to
@@ -145,17 +146,6 @@ function SignInError({ message, onRetry }: { message: string | null; onRetry: ()
       </div>
     </div>
   );
-}
-
-function sessionLanding(session: Session): string {
-  const landing: Record<string, string> = {
-    OPS: '/today',
-    COMPLIANCE: '/compliance',
-    FINANCE: '/payments/balance',
-    LEADERSHIP: '/home',
-    ADMIN: '/admin',
-  };
-  return landing[session.role] ?? '/today';
 }
 
 export function Providers({ children }: { children: ReactNode }) {

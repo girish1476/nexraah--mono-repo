@@ -32,6 +32,6 @@ import { IssuesRepository } from './issues.repository';
     IssuesRepository,
   ],
   // IndentsModule reads vendor status/advance_pct at award time (BR-01, BR-30).
-  exports: [VendorsRepository],
+  exports: [VendorsRepository, VendorsService],
 })
 export class VendorsModule {}

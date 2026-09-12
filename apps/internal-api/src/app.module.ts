@@ -9,6 +9,7 @@ import { validateEnv } from './config/env';
 import { InternalDbModule } from './db/internal-db.module';
 import { RequestIdMiddleware } from './common/request-id.middleware';
 import { AuditModule } from './modules/audit/audit.module';
+import { ImportModule } from './modules/import/import.module';
 import { NumberingModule } from './modules/numbering/numbering.module';
 import { ApprovalsModule } from './modules/approvals/approvals.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -21,6 +22,7 @@ import { ComplianceModule } from './modules/compliance/compliance.module';
 import { ClientsModule } from './modules/clients/clients.module';
 import { IndentsModule } from './modules/indents/indents.module';
 import { OrdersModule } from './modules/orders/orders.module';
+import { TicketsModule } from './modules/tickets/tickets.module';
 import { TripsModule } from './modules/trips/trips.module';
 import { PodModule } from './modules/pod/pod.module';
 import { PaymentsModule } from './modules/payments/payments.module';
@@ -51,6 +53,7 @@ import { JobsModule } from './modules/jobs/jobs.module';
     ClientsModule,
     IndentsModule,
     OrdersModule,
+    TicketsModule,
     TripsModule,
     PodModule,
     PaymentsModule,
@@ -61,6 +64,7 @@ import { JobsModule } from './modules/jobs/jobs.module';
     RfqModule,
     PortalModule,
     JobsModule,
+    ImportModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

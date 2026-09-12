@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { errorMessage } from '@/apis';
+import { ApiError, errorMessage, newIdempotencyKey } from '@/apis';
+import { ReleaseDialog } from '@/components/release-dialog';
 import { POD_STATUS_LABEL, POD_TONE } from '@/lib/documents';
 import { fmtDate, inr, pct } from '@/lib/format';
 import {
@@ -25,7 +26,7 @@ import {
   useToast,
 } from '@/lib/ui';
 import { acceptBill, listBills, queryBill } from '../apis';
-import { VendorBill } from '../types';
+import { PaymentCapture, VendorBill } from '../types';
 
 const BILL_STATUS_LABEL: Record<VendorBill['status'], string> = {
   SUBMITTED: 'Waiting on Finance',
@@ -49,6 +50,7 @@ export default function BillsPage() {
   const [accepting, setAccepting] = useState<VendorBill | null>(null);
   const [atTheirFigure, setAtTheirFigure] = useState(false);
   const [reason, setReason] = useState('');
+  const [acceptKey, setAcceptKey] = useState(newIdempotencyKey);
   const [querying, setQuerying] = useState<VendorBill | null>(null);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
@@ -59,22 +61,27 @@ export default function BillsPage() {
   };
   useEffect(load, []);
 
-  const submitAccept = async () => {
+  const submitAccept = async (capture: PaymentCapture) => {
     if (!accepting) return;
     setBusy(true);
     try {
-      await acceptBill(accepting.id, { atTheirFigure, reason: reason || undefined });
-      toast(
-        atTheirFigure
-          ? `Accepted at the transporter’s figure · ${inr(accepting.totalPaise)}`
-          : `Accepted at the computed figure · ${inr(accepting.computedBalancePaise)}`,
-      );
+      const result = await acceptBill(accepting.id, acceptKey, {
+        ...capture,
+        atTheirFigure,
+        reason: reason || undefined,
+      });
+      toast(`Accepted and released · ${inr(result.payment.netPaise)} · UTR ${result.payment.utr}`);
       setAccepting(null);
       setReason('');
       setAtTheirFigure(false);
+      setAcceptKey(newIdempotencyKey());
       load();
     } catch (e) {
-      toast(errorMessage(e));
+      if (e instanceof ApiError && (e.code === 'BALANCE_BLOCKED' || e.code === 'POD_FORFEITED')) {
+        toast('Accept refused — the balance gate closed for this trip since the bill was listed. Refresh and recheck.');
+      } else {
+        toast(errorMessage(e));
+      }
     } finally {
       setBusy(false);
     }
@@ -218,7 +225,7 @@ export default function BillsPage() {
         </Panel>
       </Stack>
 
-      <Dialog
+      <ReleaseDialog
         open={!!accepting}
         title="Accept this bill"
         body="Accepting at the computed figure releases the balance we calculated. Accepting at their figure needs a reason. Only Finance can make this call, and no further approval is required."
@@ -247,7 +254,7 @@ export default function BillsPage() {
             <textarea rows={3} value={reason} onChange={(e) => setReason(e.target.value)} />
           </Field>
         )}
-      </Dialog>
+      </ReleaseDialog>
 
       <Dialog
         open={!!querying}

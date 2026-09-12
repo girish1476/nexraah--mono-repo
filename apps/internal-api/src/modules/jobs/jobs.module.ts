@@ -6,12 +6,13 @@ import { TelematicsModule } from '../telematics/telematics.module';
 import { InvoicingModule } from '../invoicing/invoicing.module';
 import { PnlModule } from '../pnl/pnl.module';
 import { AttachmentsModule } from '../attachments/attachments.module';
+import { VendorsModule } from '../vendors/vendors.module';
 import { JobsController } from './jobs.controller';
 import { JobsService } from './jobs.service';
 import { JobsRepository } from './jobs.repository';
 
 @Module({
-  imports: [ControlPanelModule, PodModule, IndentsModule, TelematicsModule, InvoicingModule, PnlModule, AttachmentsModule],
+  imports: [ControlPanelModule, PodModule, IndentsModule, TelematicsModule, InvoicingModule, PnlModule, AttachmentsModule, VendorsModule],
   controllers: [JobsController],
   providers: [JobsService, JobsRepository],
 })

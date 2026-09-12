@@ -86,10 +86,22 @@ export class PaymentsController {
     return this.paymentsService.listBills(status);
   }
 
+  @Get('bills/:id')
+  @RequirePermission(READ_GATE)
+  getBill(@Param('id') id: string) {
+    return this.paymentsService.getBill(id);
+  }
+
   @Post('bills/:id/accept')
   @RequirePermission(PAYMENT_RELEASE)
-  acceptBill(@Param('id') id: string, @Body() dto: AcceptBillDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.paymentsService.acceptBill(id, dto, user);
+  acceptBill(
+    @Param('id') id: string,
+    @Body() dto: AcceptBillDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    this.assertIdempotencyKey(idempotencyKey);
+    return this.paymentsService.acceptBill(id, dto, idempotencyKey as string, user);
   }
 
   @Post('bills/:id/query')

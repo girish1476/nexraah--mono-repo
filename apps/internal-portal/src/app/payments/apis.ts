@@ -72,11 +72,22 @@ export function getBill(id: string) {
 
 /**
  * POST /payments/bills/:id/accept
- * `atTheirFigure` releases at the transporter's number and requires a reason.
- * Finance owns that decision under BR-40 — it raises no approval.
+ * Accepting a bill releases the balance for its trip — the same five
+ * mandatory payment fields and the same `Idempotency-Key` requirement apply
+ * as a direct balance release. `atTheirFigure` releases at the transporter's
+ * number instead of ours and requires a reason. Finance owns that decision
+ * under BR-40 — it raises no approval.
  */
-export function acceptBill(id: string, body: { atTheirFigure?: boolean; reason?: string }) {
-  return request<VendorBill>({ url: `/payments/bills/${id}/accept`, method: 'POST', data: body });
+export function acceptBill(
+  id: string,
+  key: string,
+  body: PaymentCapture & { atTheirFigure?: boolean; reason?: string },
+) {
+  return idempotent<{ id: string; status: VendorBill['status']; payment: Payment }>(key, {
+    url: `/payments/bills/${id}/accept`,
+    method: 'POST',
+    data: body,
+  });
 }
 
 /** POST /payments/bills/:id/query — notifies the transporter; the bill stays open. */

@@ -83,6 +83,8 @@
   --area-ship-tint: #e4f4f1;
   --area-biz: #7141c9;
   --area-biz-tint: #f0eafc;
+  --area-supply: #12627e;
+  --area-supply-tint: #e2f0f6;
   --area-money: #a2600d;
   --area-money-tint: #fcf1de;
   --area-control: #4a566b;
@@ -193,6 +195,8 @@
   --area-ship-tint: #142a28;
   --area-biz: #b193ea;
   --area-biz-tint: #241d34;
+  --area-supply: #6cb6cf;
+  --area-supply-tint: #142630;
   --area-money: #dfad63;
   --area-money-tint: #2c2416;
   --area-control: #9aa5b3;
@@ -1170,6 +1174,41 @@ table.table tbody tr:nth-child(even):hover {
   text-transform: uppercase;
   font-weight: 700;
   color: var(--area-ink, var(--color-text-soft));
+}
+
+/*
+ * The area heading is a button now — every titled section folds.
+ *
+ * It has to keep looking like a heading rather than a control: six buttons
+ * styled as buttons down the side of the console would compete with the rows
+ * they contain. So it borrows the label's type and colour and earns its
+ * affordance from the chevron and the hover tint alone.
+ */
+.nav-area-toggle {
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-fast);
+}
+
+.nav-area-toggle:hover {
+  background: var(--area-tint, var(--color-surface-sunken));
+}
+
+/* How many rows are folded away, so a closed section is not a dead end. */
+.nav-area-count {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
+  min-width: 17px;
+  padding: 1px 5px;
+  border-radius: var(--radius-pill);
+  background: var(--area-tint, var(--color-surface-sunken));
+  color: var(--area-ink, var(--color-text-soft));
+  flex: none;
 }
 
 .nav-group + .nav-group {

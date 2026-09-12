@@ -6,8 +6,8 @@ import type { InternalDb } from '../../db/kysely';
 export class MarketGapRepository {
   constructor(@Inject(DB) private readonly db: InternalDb) {}
 
-  list(branchId?: string) {
-    let query = this.db
+  private rowQuery() {
+    return this.db
       .selectFrom('market_gap_targets')
       .innerJoin('branches', 'branches.id', 'market_gap_targets.branch_id')
       .select([
@@ -19,11 +19,18 @@ export class MarketGapRepository {
         'market_gap_targets.target as target',
         'market_gap_targets.on_panel as onPanel',
         'market_gap_targets.converted as converted',
-      ])
-      .orderBy('branches.name')
-      .orderBy('market_gap_targets.lane');
+      ]);
+  }
+
+  list(branchId?: string) {
+    let query = this.rowQuery().orderBy('branches.name').orderBy('market_gap_targets.lane');
     if (branchId) query = query.where('market_gap_targets.branch_id', '=', branchId);
     return query.execute();
+  }
+
+  /** Same shape as `list()` for one row — what a write hands back. */
+  findRow(id: string) {
+    return this.rowQuery().where('market_gap_targets.id', '=', id).executeTakeFirst();
   }
 
   findById(id: string) {

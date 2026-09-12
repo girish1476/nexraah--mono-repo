@@ -300,7 +300,10 @@ export default function TelematicsPage() {
     <ModuleGuard module="telematics">
       <PageHeader
         path="/telematics"
-        title="Live vehicle tracking"
+        // Renamed 2026-09-02 at the owner's direction — "Tracking" is what
+        // people call it, and "live" was never true of a screen that also
+        // shows a truck last heard from six hours ago.
+        title="Tracking"
         module="telematics"
         right={
           <div style={{ display: 'flex', gap: 8 }}>

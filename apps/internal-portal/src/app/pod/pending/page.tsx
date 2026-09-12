@@ -155,7 +155,7 @@ export default function PodPendingPage() {
     <ModuleGuard module="pod">
       <PageHeader
         path="/pod/pending"
-        title="Check delivery proof"
+        title="Delivery proof pending"
         sub="Balances held against undelivered proof. ₹100 per day accrues from day 21; past 40 days nothing is payable."
         module="pod"
       />

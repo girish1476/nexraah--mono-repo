@@ -94,6 +94,38 @@ export class PortalIdempotencyRepository {
  */
 export class PortalIdempotencyRaceError extends Error {}
 
+export interface IdempotentWriteContext<T> {
+  idempotency: PortalIdempotencyRepository;
+  vendorId: string;
+  endpoint: string;
+  key: string;
+  dto: new () => T;
+}
+
+/**
+ * The pre-flight half of `runIdempotentWrite`, split out for a handler whose
+ * fresh-request path does real work — a file upload to object storage, most
+ * often — BEFORE the write transaction that `runIdempotentWrite` wraps.
+ *
+ * `portal-idempotency.repository.ts`'s own contract is that a replay costs
+ * one `SELECT`, before any work is done: a handler with a pre-transaction
+ * step must call this FIRST and return its result immediately if it is
+ * defined, so a retried request never re-uploads bytes it already stored the
+ * first time. Only when this returns `undefined` should the caller proceed —
+ * to storage, then to `runIdempotentWrite` for the transactional write.
+ *
+ * The replay is re-`expose()`d rather than returned raw: the stored jsonb was
+ * allow-listed when it was written, and running it through the DTO again means
+ * a field added to the class later cannot smuggle a stale value out of an old
+ * row, nor a removed field survive in one.
+ */
+export async function checkIdempotentReplay<T>(
+  ctx: IdempotentWriteContext<T>,
+): Promise<PortalWriteResult<T> | undefined> {
+  const replay = await ctx.idempotency.findResponse(ctx.vendorId, ctx.endpoint, ctx.key);
+  return replay ? new PortalWriteResult(expose(ctx.dto, replay), true) : undefined;
+}
+
 /**
  * The `11-portal.md` §3 envelope every portal write runs inside:
  *
@@ -104,23 +136,19 @@ export class PortalIdempotencyRaceError extends Error {}
  * 3. if `work()` lost the insert race, its transaction has rolled back and the
  *    winner's response is replayed instead.
  *
- * The replay is re-`expose()`d rather than returned raw: the stored jsonb was
- * allow-listed when it was written, and running it through the DTO again means
- * a field added to the class later cannot smuggle a stale value out of an old
- * row, nor a removed field survive in one.
+ * A handler that has to do pre-transaction work of its own (a storage upload)
+ * should call `checkIdempotentReplay` itself before that work, rather than
+ * rely on step 1 here — by the time this runs, that work has already happened.
+ * This still repeats the same cheap `SELECT`, which is harmless; it exists so
+ * every call to `runIdempotentWrite` keeps the guarantee its own doc comment
+ * describes, whether or not the caller also pre-checked.
  */
 export async function runIdempotentWrite<T>(
-  ctx: {
-    idempotency: PortalIdempotencyRepository;
-    vendorId: string;
-    endpoint: string;
-    key: string;
-    dto: new () => T;
-  },
+  ctx: IdempotentWriteContext<T>,
   work: () => Promise<PortalWriteResult<T>>,
 ): Promise<PortalWriteResult<T>> {
-  const replay = await ctx.idempotency.findResponse(ctx.vendorId, ctx.endpoint, ctx.key);
-  if (replay) return new PortalWriteResult(expose(ctx.dto, replay), true);
+  const replay = await checkIdempotentReplay(ctx);
+  if (replay) return replay;
 
   try {
     return await work();

@@ -1,4 +1,4 @@
-import { ApiResponse, request } from '@/apis';
+import { ApiResponse, idempotent, request } from '@/apis';
 import { USE_MOCK, mock } from '@/lib/mock';
 import { Profile } from './types';
 
@@ -53,9 +53,11 @@ export function getProfile() {
   );
 }
 
+/** Retry-safety contract as `attachPod` — `idempotencyKey` is the caller's. */
 export function uploadDocument(
   kind: string,
   file: File,
+  idempotencyKey: string,
   geo?: { latitude: number; longitude: number },
 ) {
   if (USE_MOCK) return mock<void>(undefined, 500);
@@ -65,7 +67,7 @@ export function uploadDocument(
     form.append('latitude', String(geo.latitude));
     form.append('longitude', String(geo.longitude));
   }
-  return request<ApiResponse<void>>({
+  return idempotent<ApiResponse<void>>(idempotencyKey, {
     url: `/portal/profile/documents/${kind}`,
     method: 'POST',
     data: form,

@@ -104,16 +104,20 @@ test.describe('POD pending list', () => {
     await setRole(page, 'OPS');
     await page.goto('/pod/pending');
 
-    // Branch-scoped to Nashik — only TRP-120881 is visible at all.
-    await expect(page.locator('table.table tbody tr')).toHaveCount(1);
+    // Operations carries no branch, so the whole queue is visible. The point
+    // of this test is the absent waiver button, not the row count — but the
+    // count stays as a guard against branch scoping reappearing by accident.
+    await expect(page.locator('table.table tbody tr')).toHaveCount(3);
     await expect(row(page, 'TRP-120881')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Propose waiver' })).toHaveCount(0);
     // EDIT-level role: no read-only badge.
     await expect(page.getByTestId('view-only')).toHaveCount(0);
   });
 
-  test('OPS (VIEW) sees the read-only badge and no waiver button on any row', async ({ page }) => {
-    await setRole(page, 'OPS');
+  // Retargeted from OPS, which went VIEW -> EDIT on `pod` in the branch-manager
+  // merge. Finance is the role that still reads the queue without acting on it.
+  test('FINANCE (VIEW) sees the read-only badge and no waiver button on any row', async ({ page }) => {
+    await setRole(page, 'FINANCE');
     await page.goto('/pod/pending');
 
     await expect(page.getByTestId('view-only')).toBeVisible();

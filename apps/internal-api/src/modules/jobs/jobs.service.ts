@@ -12,6 +12,7 @@ import { AttachmentsRepository } from '../attachments/attachments.repository';
 import { StorageService } from '../attachments/storage.service';
 import { IDENTITY_KINDS } from '../attachments/attachments.service';
 import { JobsRepository } from './jobs.repository';
+import { VendorsService } from '../vendors/vendors.service';
 
 /**
  * Every job here has no human behind it — `AuditService.recordSystemEvent`
@@ -40,6 +41,7 @@ export const JOB_NAMES = [
   'attachment-retention',
   'identity-image-purge',
   'bank-reconciliation',
+  'vendor-document-expiry',
 ] as const;
 export type JobName = (typeof JOB_NAMES)[number];
 
@@ -59,6 +61,7 @@ export class JobsService {
     private readonly storageService: StorageService,
     private readonly configRepository: ConfigRepository,
     private readonly auditService: AuditService,
+    private readonly vendorsService: VendorsService,
   ) {}
 
   run(name: JobName): Promise<unknown> {
@@ -85,6 +88,8 @@ export class JobsService {
         return this.identityImagePurge();
       case 'bank-reconciliation':
         return this.bankReconciliation();
+      case 'vendor-document-expiry':
+        return this.vendorDocumentExpiry();
     }
   }
 
@@ -291,6 +296,56 @@ export class JobsService {
           after: { vendorsNotified: byVendor.size },
         });
         return { vendorsNotified: byVendor.size };
+      });
+    });
+  }
+
+  // ---- vendor-document-expiry — daily, 03:00 ------------------------------
+
+  /**
+   * The periodic vendor audit. `vendor_documents.valid_to` was captured,
+   * displayed, and read by nothing — so a transporter whose trade licence
+   * lapsed a year ago stayed ACTIVE and kept being given loads.
+   *
+   * Notifies rather than acts. It does NOT suspend anybody: a certificate
+   * lapsing overnight must not strand loads already moving, and flipping a
+   * vendor to SUSPENDED from a nightly job would take a decision that belongs
+   * to Compliance. The award gate in `indents.service.ts` is what actually
+   * stops new work; this is what gives Compliance thirty days' warning so it
+   * rarely has to.
+   */
+  @Cron('0 3 * * *', { name: 'vendor-document-expiry' })
+  async vendorDocumentExpiry() {
+    return this.runOnce('vendor-document-expiry', async () => {
+      const audit = await this.vendorsService.documentExpiryAudit();
+      this.logger.log(
+        `vendor-document-expiry: ${audit.blockedCount} transporter(s) blocked from new work, ` +
+          `${audit.expiringSoonCount} expiring within ${audit.warningDays} days`,
+      );
+
+      return this.jobsRepository.transaction().execute(async (trx) => {
+        for (const vendor of audit.vendors) {
+          await this.jobsRepository.insertNotification(trx, {
+            event: vendor.blockedFromNewWork ? 'VENDOR_DOCUMENT_EXPIRED' : 'VENDOR_DOCUMENT_EXPIRING',
+            channel: 'EMAIL',
+            recipient: vendor.vendorId,
+            template_id: vendor.blockedFromNewWork
+              ? 'vendor_document_expired'
+              : 'vendor_document_expiring',
+            payload: {
+              vendorName: vendor.name,
+              expired: vendor.expired.map((e) => e.kind),
+              expiringSoon: vendor.expiringSoon.map((e) => e.kind),
+              soonestDaysRemaining: vendor.soonestDaysRemaining,
+            },
+          });
+        }
+        await this.auditService.recordSystemEvent(trx, 'VENDOR_DOCUMENT_EXPIRY_JOB', {
+          action: 'STATUS_CHANGE',
+          entityType: 'vendor_documents',
+          after: { blocked: audit.blockedCount, expiringSoon: audit.expiringSoonCount },
+        });
+        return { blocked: audit.blockedCount, expiringSoon: audit.expiringSoonCount };
       });
     });
   }

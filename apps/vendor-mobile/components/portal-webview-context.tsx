@@ -3,7 +3,11 @@ import type WebView from 'react-native-webview';
 import type { NativeToWebMessage } from '@/lib/bridge-types';
 
 interface PortalWebViewContextValue {
-  webviewRef: React.RefObject<WebView>;
+  // `WebView | null`, because React 19's `useRef<T>(null)` returns
+  // `RefObject<T | null>` — the ref is genuinely null until the view mounts,
+  // and the old non-nullable type was asserting otherwise. Every consumer
+  // already goes through `webviewRef.current?.`, so nothing else changes.
+  webviewRef: React.RefObject<WebView | null>;
   activePath: string;
   setActivePath: (path: string) => void;
   sendToWeb: (message: NativeToWebMessage) => void;

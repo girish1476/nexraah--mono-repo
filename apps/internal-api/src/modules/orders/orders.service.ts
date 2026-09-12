@@ -177,8 +177,20 @@ export class OrdersService {
     return this.repo.countsByStatus(branchId);
   }
 
-  async getById(id: string) {
-    const order = await this.repo.getById(id);
+  /**
+   * `ref` is deliberately whatever the caller has on hand — the order's own
+   * id, its indent's id, or its indent's code — matching the flexible `ref`
+   * resolution `payments.service.ts` already uses for the same reason: a
+   * "View order" link is built from whatever identifier the linking screen
+   * happens to be holding (trip/POD/payment pages pass indentCode; the
+   * indent detail page passes its own id), never the order's own id, which
+   * no other screen knows.
+   */
+  async getById(ref: string) {
+    const order =
+      (await this.repo.getById(ref)) ??
+      (await this.repo.getByIndentId(ref)) ??
+      (await this.repo.getByIndentCode(ref));
     if (!order) throw new NotFoundException('Order not found');
     const events = await this.repo.events(order.id);
     return {
@@ -200,6 +212,15 @@ export class OrdersService {
       invoiceCode: order.invoiceCode,
       failureCause: order.failureCause,
       closedAt: order.closedAt,
+      material: order.material,
+      weightTn: order.weightKg / 1000,
+      truckType: order.truckType,
+      vendorName: order.vendorName,
+      vehicleNo: order.vehicleNo,
+      driverName: order.driverName,
+      buyRatePaise: order.buyRatePaise,
+      advancePaidPaise: order.advancePaidPaise ?? 0,
+      balancePaidPaise: order.balancePaidPaise ?? 0,
       events,
     };
   }

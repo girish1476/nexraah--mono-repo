@@ -92,13 +92,15 @@ One `apis.ts` and `types.ts` per **feature folder**, not per route file — sub-
 
 **Both frontends are built** — every route in `docs/specs/internal-spec/01-C1-foundation.md` §1.1 exists, typechecks and builds, plus an `/orders` lifecycle hub added since.
 
-**`internal-api` is now real, not a stub.** Twenty-one modules are implemented and the app builds clean: `auth`, `roles`, `branches`, `config`, `numbering`, `approvals`, `attachments`, `audit`, `vendors` (with leads, market gap, issues), `compliance`, `clients`, `indents`, `trips`, `pod`, `payments`, `invoicing`, `rfq`, `reports`, `pnl`, `telematics`, and `portal`.
+**`internal-api` is now real, not a stub.** Twenty-four modules are implemented and the app builds clean: `auth`, `roles`, `branches`, `config`, `numbering`, `approvals`, `attachments`, `audit`, `vendors` (with leads, market gap, issues), `compliance`, `clients`, `indents`, `orders`, `trips`, `pod`, `payments`, `invoicing`, `rfq`, `reports`, `pnl`, `telematics`, `portal`, `jobs`, and `import`.
 
-**The transporter surface (`/api/v1/portal/*`) is half-built.** Its eight read routes are live — loads (list and detail), quotes, trips (list, detail, lorry receipt), fleet and profile. The writes — quote submit and withdraw, POD upload, vendor bills, fleet mutations, document upload — are the next wave; they need the idempotency ledger and the multipart pipeline, neither of which a read path touches.
+**Every route the two portals call is served.** A route audit — each `apis.ts` call site against each controller decorator — reports no gaps in either direction. One exception is worth knowing before go-live: the `opening-balances` import validates and reconciles, but refuses to commit, because an advance, an unbilled trip and an open invoice each need fields no `kind,reference,amount` line carries. See `modules/import/import.service.ts`.
+
+**The transporter surface (`/api/v1/portal/*`) is complete.** The reads — loads (list and detail), quotes, trips (list, detail, lorry receipt), fleet and profile — and the writes: quote submit and withdraw, POD upload, vendor bills, fleet mutations and document upload. The writes carry the idempotency ledger and the multipart pipeline a read path never needed.
 
 `PortalModule` imports `PortalDbModule` and no other database module. That single line is layer one of the redaction contract: it rebinds the `DB` token to `portalPool` (role `vendor_api`) for everything constructed in that module's context. Adding `InternalDbModule` there — or importing any module whose repositories it feeds — voids the layer *silently*: the queries keep working, and the columns that were supposed to raise start returning data. The module asserts its own pool role at boot and logs at error level if it is not `vendor_api`.
 
-**Both portals still default to fixture data**, because the write half of the portal surface is not there yet. The fixture adapter returns the exact shapes the real API returns, so no page changes when you flip the flag:
+**Both portals still default to fixture data**, which is now a convenience for local work rather than a necessity. The fixture adapter returns the exact shapes the real API returns, so no page changes when you flip the flag:
 
 ```bash
 # apps/internal-portal/.env.local

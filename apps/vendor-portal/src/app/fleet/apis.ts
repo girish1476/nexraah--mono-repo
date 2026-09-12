@@ -1,4 +1,4 @@
-import { ApiResponse, request } from '@/apis';
+import { ApiResponse, idempotent, request } from '@/apis';
 import { USE_MOCK, mock } from '@/lib/mock';
 import { FleetVehicle, VehicleInput } from './types';
 
@@ -56,7 +56,8 @@ export function getFleet() {
   );
 }
 
-export function addVehicle(body: VehicleInput) {
+/** Retry-safety contract as `attachPod` — `idempotencyKey` is the caller's. */
+export function addVehicle(body: VehicleInput, idempotencyKey: string) {
   if (USE_MOCK) {
     // Static mock, same contract as every other apis.ts (e.g.
     // loads/apis.ts's placeQuote): resolves a synthetic result without
@@ -74,18 +75,19 @@ export function addVehicle(body: VehicleInput) {
     };
     return mock<FleetVehicle>(vehicle);
   }
-  return request<ApiResponse<FleetVehicle>>({
+  return idempotent<ApiResponse<FleetVehicle>>(idempotencyKey, {
     url: '/portal/fleet',
     method: 'POST',
     data: body,
   }).then((r) => r.data);
 }
 
-export function updateVehicle(id: string, body: Partial<VehicleInput>) {
+/** Retry-safety contract as `attachPod` — `idempotencyKey` is the caller's. */
+export function updateVehicle(id: string, body: Partial<VehicleInput>, idempotencyKey: string) {
   if (USE_MOCK) {
     return mock<void>(undefined);
   }
-  return request<ApiResponse<FleetVehicle>>({
+  return idempotent<ApiResponse<FleetVehicle>>(idempotencyKey, {
     url: `/portal/fleet/${id}`,
     method: 'PATCH',
     data: body,

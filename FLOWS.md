@@ -505,7 +505,7 @@ The photo goes **straight from the phone to the backend**. It is never relayed b
 
 Three kinds go through this path: **PAN card**, **Aadhaar card**, and the **geo-stamped selfie at the yard** — which is why location travels with the upload. Everything else the transporter does happens in the web view, unchanged.
 
-> **Status today.** The transporter's read screens are served by the real backend. The writes — quote, withdraw, delivery-note upload, bill, fleet changes, document upload — are the next wave, so both portals still run on fixture data by default. See [section 15](#15-running-it).
+> **Status today.** The whole transporter surface is served by the real backend — the reads and all seven writes: quote, withdraw, delivery-note upload, bill, add and update a vehicle, upload a document. Both apps still *default* to fixture data locally, but that is now a convenience rather than a gap. See [section 15](#15-running-it).
 
 ---
 
@@ -682,19 +682,22 @@ Worth being precise about what the open decision is. The written contract for ac
 
 ## 13. Your day, by role
 
-Five roles. A module you cannot act on is **absent from the sidebar entirely**, never greyed out — if you do not see Payments as Operations, that is correct, not a bug.
+Six roles. A module you cannot act on is **absent from the sidebar entirely**, never greyed out — if you do not see Payments as Operations, that is correct, not a bug.
 
 > **There used to be a sixth: the branch manager.** It has been folded into Operations, because the two were never separated by what they could *do* — only by how much they could *see*. An operator now raises indents, receives and approves delivery notes, and reviews branch margin, all of which the branch manager used to own.
 >
 > **Seeing less is now a property of the person, not the job title.** Anyone whose record carries a branch sees only that branch; anyone without one sees the whole company. So a branch manager who becomes an operator keeps exactly the view they had this morning, and nothing was taken from operators who already saw everything.
 >
 > One consequence worth naming: Operations also inherited the ability to **approve exceptions**. Compliance and Leadership still hold it, so a second desk can still review — but it is no longer guaranteed to be a different desk from the one that raised the request.
+>
+> **A different sixth role has since arrived: business development.** It owns rate cards, quote-request pricing and lane build-up. It deliberately *cannot* submit a price to the client — that stays with Leadership — so the desk that proposes a rate is never also the desk that sends it.
 
 | Role | Lands on | Opens with | Hands off to |
 |---|---|---|---|
 | **Operations** | Today's queue | Orders with no quotes, placements that failed overnight | Compliance (documents), Finance (payment) |
 | **Compliance** | Compliance desk | Transporters awaiting clearance, documents awaiting verification, delivery notes awaiting approval | Operations (rejections go back), Finance (cleared documents open the advance) |
 | **Finance** | Payments → Balance | Balances ready to release, then advances, then invoicing and collections | Nobody — Finance is the end of both money chains |
+| **Business development** | Quote requests | Lanes to price and rate cards to keep current | Leadership, who submits the price to the client |
 | **Leadership** | Monthly overview | Approvals waiting on them, quote requests to submit, the business review | Whoever raised the approval — it replays on its own |
 | **Administrator** | Control panel | Configuration, branches, roles, imports. **Not** day-to-day decisions | Everyone, by configuration |
 
@@ -745,7 +748,7 @@ pnpm dev            # everything
 
 The old role switcher — a prototype control in the sidebar that changed your role by writing to browser storage — **is gone**, along with the `/dev-login` screen of one button per role. Those buttons were backed by tokens hand-signed months earlier that had quietly expired, so every sign-in against a real backend failed with "Invalid or expired token" and no hint that a stale constant was the cause.
 
-**Both apps run on fixture data by default**, because the transporter *write* routes — submitting a quote, uploading a delivery note, raising a bill — are not built yet. The fixtures return the exact shapes the real backend returns, so no screen behaves differently.
+**Both apps run on fixture data by default** — a convenience for local work, not a gap. The transporter write routes are built. The fixtures return the exact shapes the real backend returns, so no screen behaves differently either way.
 
 **On a phone:** the transporter portal is phone-first by design. The internal console collapses its sidebar into a drawer below 900px and turns every table into stacked cards rather than forcing sideways scrolling.
 

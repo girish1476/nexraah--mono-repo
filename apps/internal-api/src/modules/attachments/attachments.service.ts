@@ -4,6 +4,7 @@ import { DomainException } from '../../common/domain-exception';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
 import { AttachmentsRepository } from './attachments.repository';
 import { StorageService } from './storage.service';
+import { parseGeo } from './geo';
 
 const MAX_BYTES = 10 * 1024 * 1024; // 10MB — part 01 §7, part 14 §7
 
@@ -27,6 +28,9 @@ export interface UploadInput {
   kind?: string;
   entityType?: string;
   entityId?: string;
+  /** Multipart text parts — where the photo was taken. Sent with the KYC selfie (BR-23). */
+  latitude?: string;
+  longitude?: string;
 }
 
 @Injectable()
@@ -48,6 +52,10 @@ export class AttachmentsService {
     if (input.buffer.byteLength > MAX_BYTES) {
       throw new DomainException(400, 'FILE_TOO_LARGE', `File exceeds the ${MAX_BYTES / (1024 * 1024)}MB limit.`);
     }
+
+    // The geotag the wizard sends with a selfie. It was accepted and dropped
+    // here for as long as this endpoint existed — see geo.ts.
+    const geo = parseGeo(input.latitude, input.longitude);
 
     const sha256 = createHash('sha256').update(input.buffer).digest('hex');
     const entityType = input.entityType ?? 'misc';
@@ -71,6 +79,8 @@ export class AttachmentsService {
       bytes: input.buffer.byteLength,
       sha256,
       uploadedBy: actor.userId,
+      geoLat: geo?.lat ?? null,
+      geoLng: geo?.lng ?? null,
     });
 
     return { id: row.id, sha256: row.sha256, uploadedAt: row.uploaded_at };

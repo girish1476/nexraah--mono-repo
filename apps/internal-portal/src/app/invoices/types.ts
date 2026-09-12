@@ -13,6 +13,25 @@ import { TripListRow } from '@/app/trips/types';
 
 export type InvoiceStatus = 'DRAFT' | 'ISSUED' | 'PART_PAID' | 'PAID' | 'CANCELLED';
 
+/**
+ * What `POST /invoices` accepts — the charge heads, never the total. Rounding
+ * and the total are computed on the server (NFR-09) and `CreateInvoiceDto`
+ * refuses a body that carries them.
+ */
+export interface InvoiceDraft {
+  clientId: string;
+  invoiceDate: string;
+  dueDate: string;
+  tripIds?: string[];
+  freightPaise: number;
+  loadingPaise?: number;
+  unloadingPaise?: number;
+  detentionPaise?: number;
+  otherPaise?: number;
+  discountPaise?: number;
+  notes?: string;
+}
+
 export interface Invoice {
   id: string;
   /** Null until `generate` consumes the NEX-INV- series. */

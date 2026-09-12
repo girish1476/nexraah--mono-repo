@@ -308,9 +308,28 @@ test.describe('P&L', () => {
     await page.goto('/pnl');
 
     await expect(page.getByTestId('view-only')).toBeVisible();
+    // `All branches` is the assertion that matters: it is the server's own
+    // description of the scope it applied, so it goes red the moment this
+    // caller starts being narrowed. A `tbody tr` count was tried here and is
+    // deliberately not used — the locator spans more than one table on this
+    // page, so the number it returns says nothing a reader can check.
     await expect(page.getByText('All branches', { exact: true })).toBeVisible();
-    await expect(page.locator('table.table tbody tr')).toHaveCount(5);
 
-    await expect(page.getByText(/overstate margin/)).toHaveCount(0);
+    // Asserted positively, and it used to read `toHaveCount(0)`.
+    //
+    // That zero was inherited verbatim from the BRANCH_MGR test this one
+    // replaced, where it held for one reason only: Nashik scoping. The
+    // fixture's two zero-charge trips are Pune (TRP-120874) and Hosur
+    // (TRP-120869), so a Nashik reader saw none of them. `setRole(page,'OPS')`
+    // signs in the *unscoped* Operations account, which sees every branch —
+    // as the `All branches` assertion directly above already says. The two
+    // lines were asserting opposite things about the same caller.
+    //
+    // Nothing gates this panel on role or level: `pnl/page.tsx` renders it on
+    // `exceptions.length > 0`, and the endpoint narrows by the caller's own
+    // branch. So the honest assertion for an unscoped reader is that both
+    // exceptions ARE there — the same pair the FINANCE test above pins — and
+    // it goes red if this caller ever starts being narrowed.
+    await expect(page.getByText('2 trip(s) overstate margin')).toBeVisible();
   });
 });

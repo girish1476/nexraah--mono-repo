@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { errorMessage } from '@/apis';
+import { errorMessage, newIdempotencyKey } from '@/apis';
 import { getReceivables, recordReceipt } from '@/app/invoices/apis';
 import { AgeingBucket, ReceivablesResponse, ReceivablesRow } from '@/app/invoices/types';
 import { PAYMENT_MODES } from '@/lib/documents';
@@ -79,7 +79,7 @@ export default function ReceivablesPage() {
     if (!receipting) return;
     setBusy(true);
     try {
-      const receipt = await recordReceipt({
+      const receipt = await recordReceipt(newIdempotencyKey(), {
         invoiceId: receipting.invoiceId,
         amountPaise: Math.round(form.amountRupees * 100),
         receivedOn: form.receivedOn,

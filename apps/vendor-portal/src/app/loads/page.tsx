@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useAtom } from 'jotai';
 import { useEffect, useState } from 'react';
-import { EmptyState, ErrorNote, Loading, Pill, ScreenHeader, TabBar } from '@/components/shell';
+import { AppHeader, EmptyState, ErrorNote, Loading, Pill, ScreenHeader, TabBar } from '@/components/shell';
 import { inr, inrRange, dateTime } from '@/lib/format';
 import { LOAD_TONE } from '@/lib/status';
 import { loadTypeFilterAtom } from '@/store/atoms';
@@ -28,6 +28,7 @@ export default function LoadsPage() {
 
   return (
     <main className="screen">
+      <AppHeader />
       <ScreenHeader
         title="Available loads"
         sub={types.length ? `Showing ${types.length} truck type${types.length > 1 ? 's' : ''}` : 'Showing all truck types'}
@@ -140,7 +141,8 @@ export default function LoadsPage() {
             </Pill>
           </div>
           <p className="muted">
-            {l.truckType} · {l.weightKg / 1000} MT {l.goods} · {l.distanceKm.toLocaleString('en-IN')} km
+            {l.truckType} · {l.weightKg / 1000} MT {l.goods}
+            {l.distanceKm !== null && ` · ${l.distanceKm.toLocaleString('en-IN')} km`}
           </p>
           <div className="row-between" style={{ marginTop: 10 }}>
             <span style={{ fontSize: 14, fontWeight: 600 }}>

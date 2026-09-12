@@ -1,4 +1,10 @@
-export type InternalRole = 'OPS' | 'COMPLIANCE' | 'FINANCE' | 'LEADERSHIP' | 'ADMIN';
+/**
+ * Kept in step with `INTERNAL_ROLES` in `modules/roles/roles.constants.ts`.
+ * `SupabaseJwtGuard` casts whatever `roles.code` holds to this, so a role
+ * missing here (BD was, after 2026-08-26) is a type lie rather than a runtime
+ * rejection — but every `switch` over it would silently skip that desk.
+ */
+export type InternalRole = 'OPS' | 'COMPLIANCE' | 'FINANCE' | 'BD' | 'LEADERSHIP' | 'ADMIN';
 
 export type PermissionLevel = 'NONE' | 'VIEW' | 'EDIT';
 

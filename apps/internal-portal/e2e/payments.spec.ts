@@ -3,9 +3,11 @@ import { setRole, statValue } from './helpers';
 
 /**
  * Payments — `/payments/advance`, `/payments/balance`, `/payments/bills`
- * (part 07). Module `payments`: FINANCE alone is EDIT; OPS and
- * LEADERSHIP are VIEW; OPS and COMPLIANCE are NONE (already covered by the
- * lock-panel tests in rbac-nav.spec.ts). `payment.release` is a fixed
+ * (part 07). Module `payments`: COMPLIANCE, FINANCE and LEADERSHIP are EDIT;
+ * OPS and BD are VIEW; no internal role is NONE. (This previously read
+ * "FINANCE alone is EDIT; OPS and LEADERSHIP are VIEW; OPS and COMPLIANCE are
+ * NONE" — which named OPS twice at two different levels, residue of the
+ * mechanical BRANCH_MGR→OPS rename.) `payment.release` is a fixed
  * permission (BR-40) that only FINANCE ever holds, so these tests focus on
  * what FINANCE can actually do — including the cases where FINANCE, too, is
  * blocked by the gate — and what a VIEW role sees instead.
@@ -181,10 +183,16 @@ test.describe('Balance', () => {
     await expect(statValue(page, 'balance-ready')).toHaveText('0');
   });
 
-  test('LEADERSHIP (VIEW, not branch-scoped) sees all four rows and the gate, with no release control', async ({
+  // Re-pointed from LEADERSHIP to BD. Leadership was deliberately raised to
+  // EDIT on payments so it can work the advance and balance gates, so the
+  // read-only badge is genuinely absent for them — but relaxing the assertion
+  // would have left the badge on this module covered by nothing at all.
+  // BD is VIEW here and unscoped (`u-bd`, branch: null), so every assertion
+  // below holds verbatim: four rows, the badge, and no release control.
+  test('BD (VIEW, not branch-scoped) sees all four rows and the gate, with no release control', async ({
     page,
   }) => {
-    await setRole(page, 'LEADERSHIP');
+    await setRole(page, 'BD');
     await page.goto('/payments/balance');
 
     await expect(page.getByTestId('view-only')).toBeVisible();
@@ -192,6 +200,36 @@ test.describe('Balance', () => {
 
     await row(page, 'TRP-120881').getByRole('button', { name: 'Open' }).click();
     await expect(page.getByText('Balance blocked')).toBeVisible();
+    await expect(page.getByRole('button', { name: /Release/ })).toHaveCount(0);
+    await expect(
+      page.getByText('Release is a FINANCE action. Approving the proof of delivery is what unblocks it.'),
+    ).toBeVisible();
+  });
+
+  /**
+   * BR-40 in the shape the Leadership widening gave it, which nothing else
+   * covers.
+   *
+   * Before, Leadership was VIEW on payments and the screen itself was the
+   * barrier — "can they even open it" and "can they pay" were the same
+   * question. Now they hold EDIT: the screen unlocks, the rows are all there,
+   * and the *only* thing standing between Leadership and releasing money is
+   * `payment.release` being absent from their grants. That is a strictly more
+   * dangerous arrangement than the one it replaced, and it deserves to be
+   * asserted by name rather than inferred from a badge that is now absent for
+   * an unrelated reason.
+   */
+  test('LEADERSHIP holds EDIT on payments but still cannot release', async ({ page }) => {
+    await setRole(page, 'LEADERSHIP');
+    await page.goto('/payments/balance');
+
+    // EDIT, so no read-only badge and the screen is fully open to them.
+    await expect(page.getByTestId('view-only')).toHaveCount(0);
+    await expect(page.locator('table.table tbody tr')).toHaveCount(4);
+
+    await row(page, 'TRP-120881').getByRole('button', { name: 'Open' }).click();
+    await expect(page.getByText('Balance blocked')).toBeVisible();
+    // The line that matters: open screen, no release control.
     await expect(page.getByRole('button', { name: /Release/ })).toHaveCount(0);
     await expect(
       page.getByText('Release is a FINANCE action. Approving the proof of delivery is what unblocks it.'),
@@ -270,7 +308,9 @@ test.describe('Transporter bills', () => {
   });
 
   test('a VIEW-only role sees the bills but no accept or query controls', async ({ page }) => {
-    await setRole(page, 'LEADERSHIP');
+    // BD, not LEADERSHIP — see the balance test above. `/payments/bills` is
+    // not branch-scoped, so the two-row count holds for any unscoped caller.
+    await setRole(page, 'BD');
     await page.goto('/payments/bills');
 
     await expect(page.getByTestId('view-only')).toBeVisible();

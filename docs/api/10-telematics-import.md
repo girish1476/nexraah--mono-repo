@@ -138,6 +138,72 @@ Every imported row carries `source = 'IMPORT'` and the batch id, so a bad batch 
 
 ---
 
+## File formats
+
+Header names are matched case-insensitively with spaces and hyphens treated as
+underscores, so `Legal Name`, `legal_name` and `LEGAL NAME` are one column. A
+column that is absent from the header and a column that is present but blank
+mean the same thing: not supplied. Quoted fields, embedded commas and newlines,
+`""` as a literal quote, CRLF and Excel's byte-order mark are all handled.
+
+### `clients`
+
+| Column | Required | Notes |
+|---|---|---|
+| `code` `name` `billing_city` | yes | `code` must be unique within the file |
+| `engagement` | yes | `SPOT` or `CONTRACT` |
+| `credit_days` | no | Whole days, defaults to `0` |
+| `gstin` `contact` `phone` `email` `agreement_no` `service_level` | no | Stored as given |
+| `lane_origin` `lane_destination` `lane_truck_type` `lane_rate_paise` `lane_valid_from` | as a group | Supply all five or none. Any one present makes the rest required, so a client never imports with half a rate |
+| `lane_valid_to` | no | Open-ended when blank |
+
+A row carrying lane columns creates the rate card lane against a synthetic
+closed RFQ referenced `IMPORT/<batch id>`, one per client per batch.
+
+### `vendors`
+
+| Column | Required | Notes |
+|---|---|---|
+| `code` `legal_name` `party_type` `base_city` `phone` | yes | `party_type` is `OWNER` or `VENDOR`; `code` and `phone` must each be unique within the file |
+| `tds_declaration` | yes | `y` / `yes` / `true` / `1`. Anything else rejects the row — `BR-03` |
+| `status` | no | Defaults to `DRAFT`. Anything other than `DRAFT` or `PENDING_VERIFICATION` is **written as `PENDING_VERIFICATION`** and reported — `BR-01` |
+| `advance_pct` | no | 0–100 |
+| `gstin` `pan` `bank_account` `ifsc` `account_holder` | no | Stored as given |
+
+### `opening-balances`
+
+| Column | Required | Notes |
+|---|---|---|
+| `kind` | yes | `ADVANCE`, `UNBILLED`, `INVOICE`, or `CONTROL_TOTAL` |
+| `reference` | yes | Ignored on the control-total row |
+| `amount_paise` | yes | Whole paise |
+| `ageing_days` | no | |
+
+**Exactly one `CONTROL_TOTAL` row is required.** Its `amount_paise` is compared
+against the sum of every other row; a mismatch — or a missing control total —
+aborts the whole file, and nothing is carried forward to a commit.
+
+> **This set validates but does not yet commit.** An advance, an unbilled trip
+> and an open invoice land in three different tables and each needs fields
+> (trip, UTR, value date; client, invoice dates, line totals) that a
+> `kind,reference,amount` line cannot supply, and no format here carries them.
+> Committing returns `501 IMPORT_SET_NOT_WRITABLE` rather than writing an
+> invented mapping into the ledger. Extend the format above before wiring it.
+
+## Reading the report
+
+`rejects[]` holds every row that needed a human to look, and `rejected` counts
+its entries. Two different outcomes share that list:
+
+- **not written** — a required value is missing or contradictory, and no safe
+  default exists.
+- **written, but changed** — the `status = ACTIVE` downgrade is the case this
+  exists for. Part 12 requires the row to land at `PENDING_VERIFICATION` *and*
+  the report to say so, so neither dropping it nor importing it silently is
+  correct.
+
+---
+
 ## Done when
 
 - [ ] All five alert kinds raise against configured thresholds (`BR-19`)

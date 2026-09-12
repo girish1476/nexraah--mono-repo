@@ -23,7 +23,15 @@ export interface TelematicsThresholds {
 export interface AlertRuleInput {
   now: number; // Date.now()-shaped epoch ms
   latestPing: PingSample | undefined;
-  /** Every ping at or after `now - haltMinutes`, any order. */
+  /**
+   * Pings for the LONG_HALT check, any order. Deliberately covers MORE than
+   * `now - haltMinutes` — the caller (`telematics.service.ts`'s
+   * `haltQuerySinceIso`) fetches further back on purpose, so that
+   * `windowFullyCovered` below can find a ping older than the raw
+   * `haltMinutes` boundary and prove the vehicle was covered by pings for the
+   * whole window, rather than being structurally unable to ever satisfy that
+   * comparison.
+   */
   pingsInHaltWindow: PingSample[];
   ewayValidTill: string | null;
   thresholds: TelematicsThresholds;

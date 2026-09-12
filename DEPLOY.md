@@ -72,8 +72,12 @@ NEXT_PUBLIC_MOCK = 1
 
 ### 4 · Check both
 
-Open each URL. The console should land on `/signin`; the transporter portal on
-its Loads tab.
+Open each URL. Both land on a sign-in screen.
+
+The console signs in by **email**; the transporter portal signs in by **mobile
+number**, because that is what a transporter has on their vendor record and
+many will not have an email. Demo login there is `9876543210` / `nexraah`, and
+the screen has a "Fill it in for me" button that enters both.
 
 ---
 
@@ -132,9 +136,11 @@ Worth stating plainly before anyone assumes otherwise.
   release a payment — and every change is lost on refresh. It is a working
   model of the app, not the app.
 - **No real data exists, and none can be entered.** The figures are fixtures.
-- **The transporter side is read-only in production anyway.** Quote submission,
-  delivery-note upload and billing are not built yet on the real backend, so
-  the demo shows more than production currently does. Do not promise those.
+- **The transporter side is fully built on the real backend** — quote submit
+  and withdraw, delivery-note upload, billing, fleet changes and document
+  upload all exist. The demo exercises them against fixtures, so what a
+  stakeholder sees a transporter do here is a fair representation of what the
+  real system does, not a mock-up of something unbuilt.
 - **Two decisions are still open** and both are visible in the demo: transporter
   logins are not created on activation (see [`FLOWS.md`](FLOWS.md) §12), and
   whether a losing transporter is told why they lost is contradicted between the

@@ -1,4 +1,4 @@
-import { ApiResponse, request } from '@/apis';
+import { ApiResponse, idempotent, request } from '@/apis';
 import { USE_MOCK, mock } from '@/lib/mock';
 import { Quote, QuoteStatus } from './types';
 
@@ -64,10 +64,13 @@ export function getQuotes(statuses: QuoteStatus[] = []) {
   }).then((r) => r.data);
 }
 
-/** Only while SUBMITTED — the API is the authority, the button is a courtesy. */
-export function withdrawQuote(id: string) {
+/**
+ * Only while SUBMITTED — the API is the authority, the button is a courtesy.
+ * Retry-safety contract as `attachPod` — `idempotencyKey` is the caller's.
+ */
+export function withdrawQuote(id: string, idempotencyKey: string) {
   if (USE_MOCK) return mock<void>(undefined);
-  return request<ApiResponse<void>>({
+  return idempotent<ApiResponse<void>>(idempotencyKey, {
     url: `/portal/quotes/${id}`,
     method: 'DELETE',
   }).then(() => undefined);

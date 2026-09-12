@@ -9,7 +9,6 @@ import { ApprovalsRegistry } from '../approvals/approvals.registry';
 import {
   ALWAYS_MANDATORY_DOCUMENT_KINDS,
   DOCUMENT_KINDS,
-  IDENTITY_KYC_KINDS,
   KYC_KINDS,
   LEGAL_DOCUMENT_KINDS,
   MANDATORY_KYC_KINDS,
@@ -17,6 +16,14 @@ import {
 import { VendorsRepository, type VendorListFilters } from './vendors.repository';
 import { VendorPortalAccountService } from './vendor-portal-account.service';
 import { LeadsRepository } from './leads.repository';
+import { AADHAAR_LAST4_RE, FORMAT_MESSAGE, PAN_RE } from '../../common/validation/formats';
+import type { BackfillKycValueDto } from './dto/backfill-kyc-value.dto';
+import {
+  EXPIRING_DOCUMENT_KINDS,
+  EXPIRY_WARNING_DAYS,
+  buildExpiryQueue,
+  vendorExpiryReport,
+} from './vendor-document-expiry';
 import type { CreateVendorDto } from './dto/create-vendor.dto';
 import type { UpdateVendorDto } from './dto/update-vendor.dto';
 import type { SubmitKycDto } from './dto/submit-kyc.dto';
@@ -81,6 +88,37 @@ export class VendorsService implements OnModuleInit {
     });
   }
 
+  // ---- Periodic document audit ---------------------------------------
+
+  /**
+   * Which ACTIVE transporters have legal papers that have lapsed, or are about
+   * to.
+   *
+   * `vendor_documents.valid_to` has been captured and displayed since day one
+   * and read by nothing — so a transporter whose trade licence expired a year
+   * ago stayed ACTIVE, passed BR-01 at award, and kept being given loads. The
+   * award gate in `indents.service.ts` now refuses that. This is the other
+   * half: the queue that lets Compliance chase the paper *before* it stops a
+   * truck, rather than finding out when an award is refused.
+   *
+   * Expired first, then soonest-to-expire — the order the work should be done
+   * in, not alphabetical.
+   */
+  async documentExpiryAudit(asOf: Date = new Date()) {
+    const rows = await this.vendorsRepository.documentsForExpirySweep(EXPIRING_DOCUMENT_KINDS);
+    const vendors = buildExpiryQueue(
+      rows.map((r) => ({ ...r, vendorPhone: r.vendorPhone ?? null, branchId: r.branchId ?? null })),
+      asOf,
+    );
+
+    return {
+      warningDays: EXPIRY_WARNING_DAYS,
+      blockedCount: vendors.filter((v) => v.blockedFromNewWork).length,
+      expiringSoonCount: vendors.filter((v) => !v.blockedFromNewWork).length,
+      vendors,
+    };
+  }
+
   // ---- List / detail -----------------------------------------------
 
   async list(filters: VendorListFilters) {
@@ -126,6 +164,13 @@ export class VendorsService implements OnModuleInit {
         status: row?.status ?? 'MISSING',
         verifiedBy: row?.verified_by ?? null,
         verifiedAt: row?.verified_at ?? null,
+        rejectReason: row?.reject_reason ?? null,
+        // Where the photo was taken — null for every upload from before the
+        // geotag was persisted, and for kinds that never carry one.
+        geo:
+          row?.geoLat != null && row?.geoLng != null
+            ? { lat: Number(row.geoLat), lng: Number(row.geoLng) }
+            : null,
       };
     });
 
@@ -138,6 +183,7 @@ export class VendorsService implements OnModuleInit {
         status: row?.status ?? 'MISSING',
         validTo: row?.valid_to ?? null,
         attachmentId: row?.attachment_id ?? null,
+        rejectReason: row?.reject_reason ?? null,
       };
     });
 
@@ -152,6 +198,7 @@ export class VendorsService implements OnModuleInit {
       altPhone: vendor.alt_phone,
       baseCity: vendor.base_city,
       branchId: vendor.branch_id,
+      branchName: vendor.branchName,
       fleetBase: vendor.fleet_base,
       truckTypes: vendor.truck_types,
       operatingStates: vendor.operating_states,
@@ -275,7 +322,52 @@ export class VendorsService implements OnModuleInit {
     return this.getById(row.id);
   }
 
-  async update(id: string, dto: UpdateVendorDto, actor: AuthenticatedUser) {
+  async update(
+    id: string,
+    dto: UpdateVendorDto,
+    actor: AuthenticatedUser,
+  ): Promise<ApprovalRequiredResponse | ReturnType<VendorsService['getById']>> {
+    // BR-47: a branch reassignment on a vendor whose file has already been
+    // decided (anything past PENDING_VERIFICATION) is the heavier "override"
+    // action `deriveBranch`'s doc comment describes, not the draft-stage
+    // direct write below — it has to go through the approval engine instead
+    // of writing branch_id straight to the row. Checked and (when it fires)
+    // raised BEFORE the update transaction opens, mirroring
+    // `patchAdvancePolicy`: a plain, non-locking read decides whether this
+    // request turns into an approval instead of a write, and if it does, the
+    // whole request is deferred — not just the branch_id field — the same
+    // all-or-nothing shape as the ADVANCE_POLICY_CHANGE gate below.
+    if (dto.branchId || dto.baseCity) {
+      const preCheck = await this.vendorsRepository.findById(id);
+      if (!preCheck) {
+        throw new DomainException(404, 'NOT_FOUND', `Unknown vendor: ${id}`);
+      }
+      const NOT_YET_DECIDED_STATUSES = new Set(['DRAFT', 'PENDING_VERIFICATION']);
+      if (!NOT_YET_DECIDED_STATUSES.has(preCheck.status)) {
+        const derived = await this.deriveBranch(
+          dto.baseCity ?? preCheck.base_city,
+          dto.branchId,
+          dto.branchOverrideReason,
+        );
+        if (derived.branchId !== preCheck.branch_id) {
+          const action: BranchOverrideAction = { vendorId: id, branchId: derived.branchId };
+          return this.approvalsService.raise(
+            {
+              kind: 'BRANCH_OVERRIDE',
+              entityType: 'vendors',
+              entityId: id,
+              reason: dto.branchOverrideReason ?? '',
+              title: `Branch override · ${preCheck.legal_name}`,
+              detail: `${preCheck.branchName ?? preCheck.branch_id} → ${derived.branchId}`,
+              amountPaise: null,
+              action,
+            },
+            actor,
+          );
+        }
+      }
+    }
+
     await this.vendorsRepository.transaction().execute(async (trx) => {
       const existing = await this.vendorsRepository.findByIdForUpdate(trx, id);
       if (!existing) {
@@ -375,6 +467,7 @@ export class VendorsService implements OnModuleInit {
         kind,
         approve ? 'VERIFIED' : 'REJECTED',
         actor.userId,
+        approve ? null : (reason ?? null),
       );
       await this.auditService.record(trx, actor, {
         action: 'VENDOR_KYC_VERIFIED',
@@ -384,6 +477,65 @@ export class VendorsService implements OnModuleInit {
         after: { status: row.status, reason: approve ? undefined : reason },
       });
       return { kind: row.kind, status: row.status };
+    });
+  }
+
+  // ---- KYC value backfill (PAN/AADHAAR captured photo-only, pre-fix) ----
+
+  /**
+   * `GET /vendors/kyc-backfill-queue` — every PAN/AADHAAR row with a photo
+   * on file but no extracted value, left behind by the onboarding wizard's
+   * `needsReference: false` bug (fixed 2026-08-26). Compliance works this
+   * list by opening each photo and typing what it actually says.
+   */
+  async kycBackfillQueue() {
+    const rows = await this.vendorsRepository.findKycValueGaps();
+    return rows.map((r) => ({
+      vendorId: r.vendorId,
+      vendorCode: r.vendorCode,
+      vendorName: r.vendorName,
+      kind: r.kind,
+      attachmentId: r.attachmentId,
+      status: r.status,
+    }));
+  }
+
+  /**
+   * `PATCH /vendors/:id/kyc/:kind/value` — records the value read off an
+   * already-captured photo. Deliberately not `submitKyc`: that upserts and
+   * resets verification to PENDING on every call (BR-31 — a re-upload must
+   * not carry forward a stale verification), which is correct for a real
+   * re-upload but wrong here — the photo hasn't changed, only the typed
+   * value catching up to it, so an already-VERIFIED row stays VERIFIED.
+   */
+  async backfillKycValue(vendorId: string, kind: string, dto: BackfillKycValueDto, actor: AuthenticatedUser) {
+    if (kind !== 'PAN' && kind !== 'AADHAAR') {
+      throw new DomainException(400, 'VALIDATION_ERROR', 'Only PAN and AADHAAR values can be backfilled.');
+    }
+
+    const valueMasked = kind === 'AADHAAR' ? dto.value.replace(/\D/g, '').slice(-4) : dto.value.trim().toUpperCase();
+    const re = kind === 'AADHAAR' ? AADHAAR_LAST4_RE : PAN_RE;
+    if (!re.test(valueMasked)) {
+      throw new DomainException(400, 'VALIDATION_ERROR', kind === 'AADHAAR' ? FORMAT_MESSAGE.aadhaar : FORMAT_MESSAGE.pan);
+    }
+
+    return this.vendorsRepository.transaction().execute(async (trx) => {
+      const updated = await this.vendorsRepository.backfillKycValue(trx, vendorId, kind, valueMasked);
+      if (!updated) {
+        throw new DomainException(
+          409,
+          'ALREADY_BACKFILLED',
+          `${kind} already has a value on file, or does not have a photo to back-fill from.`,
+        );
+      }
+
+      await this.auditService.record(trx, actor, {
+        action: 'VENDOR_KYC_VALUE_BACKFILLED',
+        entityType: 'vendor_kyc',
+        entityId: vendorId,
+        after: { kind },
+      });
+      return { kind, valueMasked };
     });
   }
 
@@ -433,6 +585,7 @@ export class VendorsService implements OnModuleInit {
         kind,
         approve ? 'VERIFIED' : 'REJECTED',
         actor.userId,
+        approve ? null : (reason ?? null),
       );
       await this.auditService.record(trx, actor, {
         action: 'VENDOR_DOCUMENT_VERIFIED',
@@ -500,6 +653,70 @@ export class VendorsService implements OnModuleInit {
 
     const provisioning = await this.portalAccountService.provision(result.id, result.phone);
     return { id: result.id, status: result.status, portalAccountProvisioned: provisioning.provisioned };
+  }
+
+  // ---- On hold / off hold ----------------------------------------------
+  //
+  // What SUSPENDED already means elsewhere, none of it new here: the award
+  // gate refuses anything but ACTIVE (BR-01, `indents.service.ts`), the
+  // transporter portal drops to read-only (`portal-write.guard.ts`) while
+  // still letting them see their running trips
+  // (`PORTAL_READABLE_VENDOR_STATUSES`). Trips already moving are not
+  // touched — the same reasoning as the document-expiry sweep: a hold stops
+  // *new* work, it does not strand a loaded truck.
+
+  async suspend(vendorId: string, reason: string, actor: AuthenticatedUser) {
+    assertReason(reason);
+    return this.vendorsRepository.transaction().execute(async (trx) => {
+      const vendor = await this.vendorsRepository.findByIdForUpdate(trx, vendorId);
+      if (!vendor) throw new DomainException(404, 'NOT_FOUND', `Unknown vendor: ${vendorId}`);
+      if (vendor.status !== 'ACTIVE') {
+        throw new DomainException(
+          409,
+          'VENDOR_NOT_ACTIVE',
+          'Only an active transporter can be put on hold — this one is not active.',
+        );
+      }
+      const row = await this.vendorsRepository.update(trx, vendorId, { status: 'SUSPENDED' });
+      await this.auditService.record(trx, actor, {
+        action: 'STATUS_CHANGE',
+        entityType: 'vendors',
+        entityId: vendorId,
+        before: { status: vendor.status },
+        after: { status: row.status, reason },
+      });
+      return { id: row.id, status: row.status };
+    });
+  }
+
+  /**
+   * Back to ACTIVE with the original clearance intact — `verified_by` is not
+   * rewritten, because the paperwork was never un-verified; only the desk's
+   * willingness to give them loads was withdrawn. A hold on a vendor whose
+   * papers have since lapsed still comes back ACTIVE here, and the expiry
+   * gate at award keeps refusing them until the paper is renewed.
+   */
+  async reinstate(vendorId: string, actor: AuthenticatedUser) {
+    return this.vendorsRepository.transaction().execute(async (trx) => {
+      const vendor = await this.vendorsRepository.findByIdForUpdate(trx, vendorId);
+      if (!vendor) throw new DomainException(404, 'NOT_FOUND', `Unknown vendor: ${vendorId}`);
+      if (vendor.status !== 'SUSPENDED') {
+        throw new DomainException(
+          409,
+          'VENDOR_NOT_ON_HOLD',
+          'This transporter is not on hold, so there is nothing to take them off.',
+        );
+      }
+      const row = await this.vendorsRepository.update(trx, vendorId, { status: 'ACTIVE' });
+      await this.auditService.record(trx, actor, {
+        action: 'STATUS_CHANGE',
+        entityType: 'vendors',
+        entityId: vendorId,
+        before: { status: vendor.status },
+        after: { status: row.status },
+      });
+      return { id: row.id, status: row.status };
+    });
   }
 
   // ---- Advance policy -----------------------------------------------

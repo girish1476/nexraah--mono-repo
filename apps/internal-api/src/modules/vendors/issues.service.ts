@@ -15,9 +15,23 @@ export class IssuesService {
     private readonly numberingService: NumberingService,
   ) {}
 
-  async list() {
-    const rows = await this.issuesRepository.list();
-    return rows;
+  async list(status?: string) {
+    if (status && !STATUSES.includes(status)) {
+      throw new DomainException(400, 'VALIDATION_ERROR', `Unknown issue status: ${status}`);
+    }
+    return this.issuesRepository.list(status);
+  }
+
+  /**
+   * Every write answers with the same row shape `list()` returns. The screen
+   * swaps the returned object in for the row it has, so a bare `{ id, status }`
+   * here blanked the vendor, category and code the moment somebody changed a
+   * status — only against the real API, since the mock returned the full row.
+   */
+  private async row(id: string) {
+    const row = await this.issuesRepository.findRow(id);
+    if (!row) throw new DomainException(404, 'NOT_FOUND', `Unknown issue: ${id}`);
+    return row;
   }
 
   async create(dto: CreateIssueDto, actor: AuthenticatedUser) {
@@ -40,7 +54,7 @@ export class IssuesService {
         note: dto.note ?? null,
       });
     });
-    return { id: row.id, code: row.code, status: row.status };
+    return this.row(row.id);
   }
 
   async update(id: string, dto: UpdateIssueDto) {
@@ -54,7 +68,7 @@ export class IssuesService {
     if (dto.status !== undefined) patch.status = dto.status;
     if (dto.note !== undefined) patch.note = dto.note;
 
-    const row = await this.issuesRepository.update(id, patch);
-    return { id: row.id, status: row.status };
+    await this.issuesRepository.update(id, patch);
+    return this.row(id);
   }
 }

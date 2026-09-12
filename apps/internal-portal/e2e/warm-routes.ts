@@ -91,19 +91,42 @@ export default async function warmRoutes(config: FullConfig): Promise<void> {
   // arrives, since the tests themselves will report that far more clearly.
   const deadline = Date.now() + 60_000;
   while (!(await get(`${base}/signin`, 5_000))) {
-    if (Date.now() > deadline) return;
+    if (Date.now() > deadline) {
+      // Loudly, because a silent skip here resurfaces much later as a random
+      // `toHaveURL` timeout in whichever spec happened to touch a cold route
+      // first — which reads as a flaky test rather than as warming not having
+      // run at all.
+      // eslint-disable-next-line no-console
+      console.warn('WARNING: dev server never came up — route warming SKIPPED');
+      return;
+    }
     await new Promise((r) => setTimeout(r, 1_000));
   }
 
   const queue = [...ROUTES];
+  const failed: string[] = [];
   const started = Date.now();
   await Promise.all(
     Array.from({ length: LANES }, async () => {
       for (let route = queue.shift(); route; route = queue.shift()) {
-        await get(`${base}${route}`, 90_000);
+        if (!(await get(`${base}${route}`, 90_000))) failed.push(route);
       }
     }),
   );
+
+  // The count used to be reported unconditionally, whether or not any route
+  // actually compiled — `get()`'s result was discarded. So a run could print
+  // "warmed 40 routes" having warmed none of them, and the cost showed up
+  // later as a navigation assertion timing out on a route the log had just
+  // claimed was ready. Naming the misses makes that impossible to misread.
+  const seconds = Math.round((Date.now() - started) / 1000);
   // eslint-disable-next-line no-console
-  console.log(`warmed ${ROUTES.length} routes in ${Math.round((Date.now() - started) / 1000)}s`);
+  console.log(`warmed ${ROUTES.length - failed.length}/${ROUTES.length} routes in ${seconds}s`);
+  if (failed.length) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `WARNING: ${failed.length} route(s) did not warm: ${failed.join(', ')} — ` +
+        'navigation assertions against these may time out.',
+    );
+  }
 }

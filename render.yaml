@@ -1,0 +1,62 @@
+# Render Blueprint — the two NestJS services behind the hosted portals.
+#
+# New → Blueprint → pick this repo. Render creates both services and asks
+# for every `sync: false` value below; paste them from the staging env sheet.
+# Both portals stay on Vercel (see DEPLOY.md); only the APIs live here.
+#
+# internal-api is the only process that holds database credentials.
+# vendor-api is the transporter edge: it forwards /portal/* to internal-api
+# with the shared service key and must never receive a DATABASE_URL or any
+# SUPABASE_* value (docs/specs/internal-spec/14-supabase-setup.md §9).
+services:
+  - type: web
+    name: nexraah-internal-api
+    runtime: node
+    plan: free
+    region: singapore
+    rootDir: .
+    buildCommand: corepack enable && pnpm install --frozen-lockfile --filter internal-api... && pnpm --filter internal-api build
+    startCommand: node apps/internal-api/dist/src/main.js
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: PORT
+        value: "10000"
+      - key: STORAGE_BUCKET
+        value: nexraah
+      - key: DATABASE_URL_INTERNAL
+        sync: false
+      - key: DATABASE_URL_PORTAL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_JWT_ISSUER
+        sync: false
+      - key: PORTAL_SERVICE_KEY
+        sync: false
+
+  - type: web
+    name: nexraah-vendor-api
+    runtime: node
+    plan: free
+    region: singapore
+    rootDir: .
+    buildCommand: corepack enable && pnpm install --frozen-lockfile --filter vendor-api... && pnpm --filter vendor-api build
+    startCommand: node apps/vendor-api/dist/main.js
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: PORT
+        value: "10000"
+      - key: INTERNAL_API_URL
+        fromService:
+          type: web
+          name: nexraah-internal-api
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: CORS_ORIGIN
+        value: https://nexraah-vendor-portal.vercel.app
+      - key: PORTAL_SERVICE_KEY
+        sync: false

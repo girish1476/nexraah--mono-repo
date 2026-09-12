@@ -6,12 +6,29 @@ export type ApprovalKind =
   | 'ADVANCE_POLICY_CHANGE'
   | 'PENALTY_WAIVER'
   | 'DOC_OVERRIDE'
-  | 'BRANCH_OVERRIDE';
+  | 'BRANCH_OVERRIDE'
+  | 'RATE_REVISION';
 
 export interface ApprovalRow {
   id: string;
   kind: ApprovalKind;
-  entityType: 'indent' | 'trip' | 'vendor' | 'client';
+  /*
+   * The API sends these plural ('indents', 'clients') — `raise()`'s
+   * `entityType` is the table name, and the approvals registry keys handlers
+   * on `kind:entityType`. The singular forms below are what the fixture has
+   * always sent. Both are listed rather than one silently corrected, because
+   * nothing in the portal switches on this field and quietly changing it would
+   * break the fixture for no gain; the mismatch is worth a look on its own.
+   */
+  entityType:
+    | 'indent'
+    | 'trip'
+    | 'vendor'
+    | 'client'
+    | 'indents'
+    | 'trips'
+    | 'vendors'
+    | 'clients';
   entityId: string;
   title: string;
   detail: string;

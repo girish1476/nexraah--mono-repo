@@ -50,14 +50,15 @@ pnpm dev
 |---|---|---|
 | `internal-portal` | http://localhost:3002 | ops console |
 | `vendor-portal` | http://localhost:3001 | transporter portal |
-| `internal-api` | http://localhost:4002/api/v1 | 21 modules live; transporter surface is read-only so far |
+| `internal-api` | http://localhost:4002/api/v1 | 24 modules live; every route either portal calls is served |
 | `vendor-api` | http://localhost:4001/api/v1 | proxies `/portal/*` to internal-api only |
 
 `internal-api` is a working backend now — every internal module is implemented,
-and the transporter surface serves its eight read routes (loads, quotes, trips,
-lorry receipt, fleet, profile). What it does *not* yet serve is the transporter
-**writes**: submitting or withdrawing a quote, uploading proof of delivery,
-raising a bill, changing fleet, uploading a document.
+and the transporter surface serves both halves: the reads (loads, quotes, trips,
+lorry receipt, fleet, profile) and the **writes** — submitting or withdrawing a
+quote, uploading proof of delivery, raising a bill, changing fleet, uploading a
+document. Each write carries an idempotency key and, where it takes a file, the
+multipart pipeline.
 
 So both frontends still run against fixture data by default, and will until
 those writes land:

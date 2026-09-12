@@ -462,7 +462,9 @@ test.describe('Vendor issues — /vendors/issues', () => {
 
     const is43 = rows.filter({ hasText: 'IS-0043' });
     await expect(is43).toContainText('Rathod Roadlines');
-    await expect(is43).toContainText('driver conduct');
+    // Same as IS-0041 above: the category is a named choice, not the stored
+    // code lower-cased. I fixed that row and missed this one.
+    await expect(is43).toContainText('A problem with the driver');
     await expect(is43).toContainText('—'); // no related trip
   });
 

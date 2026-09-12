@@ -133,6 +133,11 @@ export class ReportsRepository {
         'trips.pod_status as podStatus',
         'trips.pod_received_at as podReceivedAt',
         'trips.pod_penalty as podPenaltyPaise',
+        // `payments.service.ts`'s `releaseBalanceForTrip` zeroes the penalty
+        // when the POD closed WAIVED — this is the column `home()` needs to
+        // match that same rule for `pod.penaltyAccruedPaise`, instead of
+        // counting a waived penalty as accrued.
+        'trips.pod_closure_basis as podClosureBasis',
         eb
           .selectFrom('trip_charges')
           .select((e) => e.fn.coalesce(e.fn.sum<number>('cost_amount'), sql<number>`0`).as('c'))
@@ -187,14 +192,30 @@ export class ReportsRepository {
     return query.executeTakeFirstOrThrow();
   }
 
-  /** Delivered trips with money still owed on the balance leg. */
+  /**
+   * Delivered trips with money still owed on the balance leg — matches
+   * `payments.service.ts`'s `releaseBalanceForTrip` formula exactly, so this
+   * dashboard total is the same number that release would actually pay:
+   * `billable = buy_rate + trip_charges cost` (a correlated per-trip
+   * subquery, same shape as `homeTrips()`'s `chargeCostPaise` above, since a
+   * plain join here would fan a trip out once per charge row and double-count
+   * `buy_rate`), `gross = billable - advance_paid`, and the penalty is
+   * zeroed whenever `pod_closure_basis = 'WAIVED'` rather than always
+   * subtracted.
+   */
   balancePending(branchId: string | null) {
     let query = this.db
       .selectFrom('trips')
       .select((eb) =>
         eb.fn
           .coalesce(
-            eb.fn.sum<number>(sql<number>`trips.buy_rate - trips.advance_paid - trips.pod_penalty - trips.balance_paid`),
+            eb.fn.sum<number>(sql<number>`
+              trips.buy_rate
+              + coalesce((select sum(tc.cost_amount) from trip_charges tc where tc.trip_id = trips.id), 0)
+              - trips.advance_paid
+              - trips.balance_paid
+              - case when trips.pod_closure_basis = 'WAIVED' then 0 else trips.pod_penalty end
+            `),
             sql<number>`0`,
           )
           .as('total'),

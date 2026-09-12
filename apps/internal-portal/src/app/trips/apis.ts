@@ -85,9 +85,38 @@ export function getLr(id: string) {
   return request<LorryReceipt | null>({ url: `/trips/${id}/lr`, method: 'GET' });
 }
 
-/** PATCH /trips/:id/lr — draft autosave, every 3 seconds. */
+/**
+ * The half of the lorry receipt the desk edits. `code`, `status`, `lrDate`,
+ * `bookedAt` and `sharedAt` are the server's — set by generate/share, never
+ * by autosave — and `PatchLrDto` does not declare them.
+ */
+const LR_DRAFT_KEYS = [
+  'consignor',
+  'consignee',
+  'goods',
+  'invoice',
+  'eway',
+  'vehicle',
+  'driver',
+  'transitDays',
+  'remarks',
+  'chargeHeads',
+] as const;
+
+/**
+ * PATCH /trips/:id/lr — draft autosave, every 3 seconds.
+ *
+ * The screen hands over the whole receipt, server-owned fields included, so
+ * only the editable keys go on the wire. With the API refusing undeclared
+ * properties, sending `code`/`status` would 400 every autosave — and the LR
+ * page swallows autosave failures, so the desk would lose work silently.
+ */
 export function patchLr(id: string, patch: Partial<LorryReceipt>) {
-  return request<LorryReceipt>({ url: `/trips/${id}/lr`, method: 'PATCH', data: patch });
+  const draft: Partial<LorryReceipt> = {};
+  for (const key of LR_DRAFT_KEYS) {
+    if (key in patch) (draft as Record<string, unknown>)[key] = patch[key];
+  }
+  return request<LorryReceipt>({ url: `/trips/${id}/lr`, method: 'PATCH', data: draft });
 }
 
 /**

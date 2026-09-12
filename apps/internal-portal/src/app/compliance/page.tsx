@@ -110,7 +110,7 @@ export default function CompliancePage() {
       key: 'flag',
       label: 'Status',
       render: (r) => (
-        <Tag tone={r.tone as Tone} reason={FLAG_REASON[r.flag]}>
+        <Tag tone={r.tone as Tone} reason={r.flag ? FLAG_REASON[r.flag] : undefined}>
           {r.flag}
         </Tag>
       ),

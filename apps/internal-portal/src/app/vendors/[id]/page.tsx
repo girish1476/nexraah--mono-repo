@@ -30,9 +30,11 @@ import {
   activateVendor,
   changeAdvancePolicy,
   getVendor,
+  reinstateVendor,
   rejectDocument,
   rejectKyc,
   submitKyc,
+  suspendVendor,
   uploadVendorDocument,
   verifyDocument,
   verifyKyc,
@@ -82,6 +84,8 @@ export default function VendorDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [unmet, setUnmet] = useState<UnmetCondition[]>([]);
   const [confirmActivate, setConfirmActivate] = useState(false);
+  const [holdOpen, setHoldOpen] = useState(false);
+  const [holdReason, setHoldReason] = useState('');
   const [policyOpen, setPolicyOpen] = useState(false);
   const [policyPct, setPolicyPct] = useState(40);
   const [policyReason, setPolicyReason] = useState('');
@@ -125,6 +129,35 @@ export default function VendorDetailPage() {
       } else {
         toast(errorMessage(e));
       }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Hold and off-hold answer with `{ id, status }` — re-fetch for the record.
+  const onHold = async () => {
+    setBusy(true);
+    try {
+      await suspendVendor(id, holdReason.trim());
+      setHoldOpen(false);
+      setHoldReason('');
+      load();
+      toast('On hold · no new loads until taken off hold · running trips continue');
+    } catch (e) {
+      toast(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onOffHold = async () => {
+    setBusy(true);
+    try {
+      await reinstateVendor(id);
+      load();
+      toast('Off hold · awardable again');
+    } catch (e) {
+      toast(errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -256,9 +289,36 @@ export default function VendorDetailPage() {
 
   const kycColumns: Column<KycItem>[] = [
     { key: 'kind', label: 'Check', render: (r) => r.kind },
-    { key: 'value', label: 'Reference', mono: true, render: (r) => r.valueMasked },
+    {
+      key: 'value',
+      label: 'Reference',
+      mono: true,
+      render: (r) => (
+        <>
+          {r.valueMasked}
+          {r.geo && (
+            <div>
+              <a
+                className="muted"
+                style={{ fontSize: 11.5 }}
+                href={`https://maps.google.com/?q=${r.geo.lat},${r.geo.lng}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <span aria-hidden>📍</span> Where it was taken — opens the map
+              </a>
+            </div>
+          )}
+        </>
+      ),
+    },
     { key: 'route', label: 'Route', render: (r) => <Tag tone="grey">{r.route}</Tag> },
-    { key: 'status', label: 'State', render: (r) => <Tag tone={CHECK_TONE[r.status]}>{r.status}</Tag> },
+    {
+      key: 'status',
+      label: 'State',
+      render: (r) => <Tag tone={CHECK_TONE[r.status]}>{r.status}</Tag>,
+      sub: (r) => (r.status === 'REJECTED' ? r.rejectReason : undefined),
+    },
     {
       key: 'by',
       label: 'Verified by',
@@ -310,7 +370,12 @@ export default function VendorDetailPage() {
     { key: 'kind', label: 'Document', render: (r) => r.kind.replace(/_/g, ' ') },
     { key: 'ref', label: 'Reference', mono: true, render: (r) => r.reference ?? '—' },
     { key: 'valid', label: 'Valid to', render: (r) => fmtDate(r.validTo) },
-    { key: 'status', label: 'State', render: (r) => <Tag tone={CHECK_TONE[r.status]}>{r.status}</Tag> },
+    {
+      key: 'status',
+      label: 'State',
+      render: (r) => <Tag tone={CHECK_TONE[r.status]}>{r.status}</Tag>,
+      sub: (r) => (r.status === 'REJECTED' ? r.rejectReason : undefined),
+    },
     {
       key: 'act',
       label: '',
@@ -439,6 +504,29 @@ export default function VendorDetailPage() {
         {vendor.status === 'ACTIVE' ? (
           <Banner tone="mint" title="Vendor active">
             Cleared by {vendor.verifiedBy ?? 'compliance'} · may be awarded indents on any branch
+            {can('vendor.activate') && (
+              <div style={{ marginTop: 8 }}>
+                <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => setHoldOpen(true)}>
+                  Put on hold
+                </button>
+              </div>
+            )}
+          </Banner>
+        ) : vendor.status === 'SUSPENDED' ? (
+          <Banner tone="red" title="On hold — no new loads">
+            Compliance has put this transporter on hold. They cannot be awarded a load and their portal is
+            read-only; trips already on the road carry on. The reason is on the audit trail.
+            {can('vendor.activate') && (
+              <div style={{ marginTop: 8 }}>
+                <button className="btn btn-sm" disabled={busy} onClick={onOffHold}>
+                  Take off hold
+                </button>
+              </div>
+            )}
+          </Banner>
+        ) : vendor.status === 'BLACKLISTED' ? (
+          <Banner tone="red" title="Blacklisted">
+            This transporter is not to be used again. There is no way back from here in the console.
           </Banner>
         ) : (
           <BlockedPanel
@@ -538,6 +626,28 @@ export default function VendorDetailPage() {
         onConfirm={onActivate}
         onClose={() => setConfirmActivate(false)}
       />
+
+      <Dialog
+        open={holdOpen}
+        title="Put this transporter on hold"
+        body="From now until they are taken off hold: no new loads can be awarded to them, and their portal becomes read-only. Trips already moving are not affected. This is not a blacklist — it can be undone from this page."
+        facts={[
+          ['Transporter', vendor.legalName],
+          ['Cleared by', vendor.verifiedBy ?? '—'],
+        ]}
+        confirmLabel="Put on hold"
+        confirmDisabled={holdReason.trim().length < 20}
+        busy={busy}
+        onConfirm={onHold}
+        onClose={() => {
+          setHoldOpen(false);
+          setHoldReason('');
+        }}
+      >
+        <Field label="Reason" required hint="At least 20 characters — it is written to the audit trail.">
+          <textarea rows={3} value={holdReason} onChange={(e) => setHoldReason(e.target.value)} />
+        </Field>
+      </Dialog>
 
       <Dialog
         open={policyOpen}

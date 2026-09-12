@@ -2,10 +2,12 @@ import { describe, it, expect } from 'vitest';
 import {
   EXPIRY_WARNING_DAYS,
   awardBlockReason,
+  buildExpiryQueue,
   canBeAwardedWork,
   daysUntil,
   expiryStateOf,
   vendorExpiryReport,
+  type SweepRow,
 } from './vendor-document-expiry';
 
 /**
@@ -106,5 +108,73 @@ describe('what a lapse actually does', () => {
       asOf,
     );
     expect(report.soonestDaysRemaining).toBe(15);
+  });
+});
+
+describe('the chase queue', () => {
+  /*
+   * The order IS the feature. A queue sorted alphabetically is a list — it
+   * does not tell Compliance what to do first, which is the only reason to
+   * build a queue rather than a report.
+   */
+  const row = (over: Partial<SweepRow>): SweepRow => ({
+    vendorId: 'v1',
+    vendorCode: 'VEN-1',
+    vendorName: 'Rathod Roadlines',
+    vendorStatus: 'ACTIVE',
+    vendorPhone: '9876543210',
+    branchId: 'br-1',
+    kind: 'TRADE_LICENCE',
+    status: 'VERIFIED',
+    validTo: '2027-01-01',
+    ...over,
+  });
+
+  it('puts transporters already blocked ahead of ones merely expiring', () => {
+    const queue = buildExpiryQueue(
+      [
+        row({ vendorId: 'soon', vendorName: 'Expiring next week', validTo: '2026-09-02' }),
+        row({ vendorId: 'blocked', vendorName: 'Already lapsed', validTo: '2025-01-01' }),
+      ],
+      asOf,
+    );
+    expect(queue.map((v) => v.vendorId)).toEqual(['blocked', 'soon']);
+    expect(queue[0].blockedFromNewWork).toBe(true);
+    expect(queue[1].blockedFromNewWork).toBe(false);
+  });
+
+  it('orders the rest by soonest to lapse', () => {
+    const queue = buildExpiryQueue(
+      [
+        row({ vendorId: 'later', validTo: '2026-09-20' }),
+        row({ vendorId: 'sooner', validTo: '2026-09-01' }),
+      ],
+      asOf,
+    );
+    expect(queue.map((v) => v.vendorId)).toEqual(['sooner', 'later']);
+  });
+
+  it('groups one transporter’s documents onto a single row', () => {
+    // Two lapsed papers is one phone call, not two queue entries.
+    const queue = buildExpiryQueue(
+      [
+        row({ kind: 'TRADE_LICENCE', validTo: '2025-01-01' }),
+        row({ kind: 'LABOUR_LICENCE', validTo: '2025-02-01' }),
+      ],
+      asOf,
+    );
+    expect(queue).toHaveLength(1);
+    expect(queue[0].expired.map((e) => e.kind).sort()).toEqual(['LABOUR_LICENCE', 'TRADE_LICENCE']);
+  });
+
+  it('leaves out transporters whose papers are all current', () => {
+    // A queue that lists everybody is a directory. Only what needs doing.
+    expect(buildExpiryQueue([row({ validTo: '2030-01-01' })], asOf)).toEqual([]);
+  });
+
+  it('carries the phone number, because the next step is ringing them', () => {
+    const queue = buildExpiryQueue([row({ validTo: '2025-01-01' })], asOf);
+    expect(queue[0].phone).toBe('9876543210');
+    expect(queue[0].code).toBe('VEN-1');
   });
 });

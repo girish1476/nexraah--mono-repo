@@ -35,7 +35,14 @@ export class PortalAttachmentsRepository {
   async insert(
     db: DbExecutor,
     file: PortalStoredFile,
-    row: { kind: string; entityType: string; entityId: string; uploadedBy: string },
+    row: {
+      kind: string;
+      entityType: string;
+      entityId: string;
+      uploadedBy: string;
+      geoLat?: number | null;
+      geoLng?: number | null;
+    },
   ): Promise<string> {
     const inserted = await db
       .insertInto('attachments')
@@ -53,6 +60,8 @@ export class PortalAttachmentsRepository {
         sha256: file.sha256,
         uploaded_by: row.uploadedBy,
         retain_until: file.retainUntil,
+        geo_lat: row.geoLat != null ? String(row.geoLat) : null,
+        geo_lng: row.geoLng != null ? String(row.geoLng) : null,
       })
       .returning(['id'])
       .executeTakeFirstOrThrow();

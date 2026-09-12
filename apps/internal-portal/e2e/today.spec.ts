@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { setRole, statValue } from './helpers';
+import { scopedOperations, setRole, statValue } from './helpers';
 
 /**
  * `/today` — three working queues plus a POD/issue panel (part 10 §1). Fixture
@@ -122,9 +122,65 @@ test.describe('today — stat strip and queues (OPS, unscoped)', () => {
   });
 });
 
-// The branch-scoping empty-state block that used to live here proved that a
-// branch manager saw narrowed queues. Branch scoping is now a property of the
-// user's own record rather than of a role, and no fixture user carries a
-// branch — so there is nothing left for it to assert. Restoring that coverage
-// needs a branch claim on the minted token plus a second Operations fixture
-// account; see `scopedBranch` in src/mocks/index.ts.
+/**
+ * Branch scoping, restored after the BRANCH_MGR merge.
+ *
+ * The point is no longer "a branch manager sees less" — that role is gone.
+ * It is that **two people of the same role see different things**, because
+ * scoping now hangs off the user record and rides on the token's `branch`
+ * claim. The `OPS, unscoped` block above and this one are the same role, so
+ * any difference between them is the scoping and nothing else.
+ *
+ * Sunita Rao is Nashik-scoped and Nashik has no open indents, so the two
+ * indent-derived panels disappear entirely — while the panels that are not
+ * branch-derived stay exactly as they are for everyone. Both halves matter:
+ * a scope that emptied *everything* would pass a test that only checked for
+ * absence, and would be just as wrong.
+ */
+test.describe('today — branch scoping (a scoped Operations user)', () => {
+  test('Nashik has no open indents: allocation and failure panels go empty, POD/issues do not', async ({
+    page,
+  }) => {
+    await setRole(page, scopedOperations());
+    await page.goto('/today');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    await expect(
+      page.locator('.surface', {
+        has: page.getByRole('heading', { name: 'Loads waiting for a transporter' }),
+      }),
+    ).toHaveCount(0);
+    await expect(
+      page.locator('.surface', { has: page.getByRole('heading', { name: 'Loads we could not place' }) }),
+    ).toHaveCount(0);
+
+    // Not narrowed to nothing: the POD-overdue trip is Nashik's own, and the
+    // vendor issues queue is not branch-derived at all.
+    const podPanel = page.locator('.surface', {
+      has: page.getByRole('heading', { name: 'still missing their signed paperwork' }),
+    });
+    await expect(podPanel.locator('tbody tr')).toHaveCount(1);
+    await expect(podPanel.getByText('TRP-120881')).toBeVisible();
+
+    const issuesPanel = page.locator('.surface', {
+      has: page.getByRole('heading', { name: 'Open problems with transporters' }),
+    });
+    await expect(issuesPanel.locator('tbody tr')).toHaveCount(2);
+  });
+
+  test('the session carries the branch, and the unscoped user of the same role does not', async ({
+    page,
+  }) => {
+    // Guards the seam itself. If `setRole` ever stopped minting the branch
+    // claim, every assertion above would still pass — the scoped user would
+    // simply see everything, and "no narrowing" reads identically to "no bug"
+    // unless something checks the claim actually arrived.
+    await setRole(page, scopedOperations());
+    await page.goto('/today');
+    await expect(page.getByText('Nashik branch')).toBeVisible();
+
+    await setRole(page, 'OPS');
+    await page.goto('/today');
+    await expect(page.getByText('All branches')).toBeVisible();
+  });
+});

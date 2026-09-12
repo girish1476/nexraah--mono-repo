@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { ActionBar, ErrorNote, Facts, Loading, ScreenHeader, TabBar } from '@/components/shell';
+import { ActionBar, AppHeader, ErrorNote, Facts, Loading, ScreenHeader, TabBar } from '@/components/shell';
 import { inr, inrRange, dateTime } from '@/lib/format';
 import { getLoad } from '../apis';
 import { Load, REPORTING_LABEL } from '../types';
@@ -21,6 +21,7 @@ export default function LoadDetailPage({ params }: { params: { code: string } })
   if (error) {
     return (
       <main className="screen">
+      <AppHeader />
         <ScreenHeader
           title={params.code}
           what="This load did not open. Nothing you have already quoted or booked is affected."
@@ -34,6 +35,7 @@ export default function LoadDetailPage({ params }: { params: { code: string } })
   if (!load) {
     return (
       <main className="screen">
+      <AppHeader />
         <ScreenHeader
           title={params.code}
           what="Getting the details of this load and the price range you can quote."
@@ -47,6 +49,7 @@ export default function LoadDetailPage({ params }: { params: { code: string } })
 
   return (
     <main className="screen">
+      <AppHeader />
       <ScreenHeader
         title={load.code}
         sub={`${load.originCity} → ${load.destinationCity}`}
@@ -77,9 +80,20 @@ export default function LoadDetailPage({ params }: { params: { code: string } })
           ['Truck type', load.truckType],
           ['Weight', `${load.weightKg / 1000} MT`],
           ['Goods', load.goods],
-          ['Distance', `${load.distanceKm.toLocaleString('en-IN')} km`],
-          ['Time allowed for transit', `${load.transitDays} days`],
-          ['When to report', REPORTING_LABEL[load.reportingRule]],
+          [
+            'Distance',
+            load.distanceKm === null
+              ? 'Not recorded'
+              : `${load.distanceKm.toLocaleString('en-IN')} km`,
+          ],
+          [
+            'Time allowed for transit',
+            load.transitDays === null ? 'Not specified' : `${load.transitDays} days`,
+          ],
+          [
+            'When to report',
+            load.reportingRule === null ? 'Not specified' : REPORTING_LABEL[load.reportingRule],
+          ],
           ['Pickup', dateTime(load.pickupAt)],
           ['Advance paid up front', `${load.advancePct}% of freight`],
         ]}

@@ -1,7 +1,17 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { Callout, ErrorNote, Facts, Loading, Pill, ScreenHeader, TabBar } from '@/components/shell';
+import {
+  AppHeader,
+  Callout,
+  ErrorNote,
+  Facts,
+  Loading,
+  Pill,
+  ScreenHeader,
+  TabBar,
+} from '@/components/shell';
 import { code39 } from '@/lib/code39';
 import { inr, dateTime } from '@/lib/format';
 import { getLorryReceipt } from '../../apis';
@@ -40,6 +50,7 @@ export default function LorryReceiptPage({ params }: { params: { id: string } })
   if (!lr) {
     return (
       <main className="screen">
+      <AppHeader />
         <ScreenHeader title="Lorry receipt" back={params.id} />
         {error ? <ErrorNote message={error} /> : <Loading />}
         <TabBar />
@@ -48,19 +59,24 @@ export default function LorryReceiptPage({ params }: { params: { id: string } })
   }
 
   const share = () => {
+    // Also `lr.pdfUrl` until now, which meant this shared the literal string
+    // '#' — a share sheet offering nothing, or a clipboard containing one
+    // character. The printable copy is a real, openable address.
+    const url = `${window.location.origin}/print/lr/${params.id}`;
     const nav = navigator as Navigator & { share?: (d: ShareData) => Promise<void> };
     if (nav.share) {
-      nav.share({ title: lr.lrNo, url: lr.pdfUrl }).catch(() => {});
+      nav.share({ title: lr.lrNo, url }).catch(() => {});
       return;
     }
-    navigator.clipboard?.writeText(lr.pdfUrl).then(
+    navigator.clipboard?.writeText(url).then(
       () => setShared('Link copied — paste it into WhatsApp or a message'),
-      () => setShared('Could not copy the link. Use Download PDF and send the file instead.'),
+      () => setShared('Could not copy the link. Open the printable copy and share it from there.'),
     );
   };
 
   return (
     <main className="screen">
+      <AppHeader />
       <ScreenHeader
         title="Lorry receipt"
         what="The transport document for this load. Print it and keep it in the cab — checkposts and the receiving party both ask for it, and it is the paper the receiver signs at delivery."
@@ -95,13 +111,16 @@ export default function LorryReceiptPage({ params }: { params: { id: string } })
         rows={[
           ['Route', `${lr.originCity} → ${lr.destinationCity}`],
           ['Goods', lr.goods],
-          ['Weight loaded', `${lr.weightKg / 1000} MT`],
-          ['Truck type', lr.truckType],
+          ['Weight loaded', lr.weightKg === null ? 'Not recorded' : `${lr.weightKg / 1000} MT`],
+          ['Truck type', lr.truckType ?? 'Not recorded'],
           ['Vehicle', lr.vehicleRegistrationNo],
-          ['Driver', `${lr.driverName} · ${lr.driverLicenceNo}`],
-          ['Days allowed for the trip', String(lr.transitDays)],
-          ['E-way bill', lr.ewayBillNo],
-          ['E-way bill valid until', dateTime(lr.ewayValidUpto)],
+          ['Driver', `${lr.driverName ?? 'Not recorded'} · ${lr.driverLicenceNo ?? 'Not recorded'}`],
+          [
+            'Days allowed for the trip',
+            lr.transitDays === null ? 'Not recorded' : String(lr.transitDays),
+          ],
+          ['E-way bill', lr.ewayBillNo ?? 'Not recorded'],
+          ['E-way bill valid until', lr.ewayValidUpto ? dateTime(lr.ewayValidUpto) : 'Not recorded'],
         ]}
       />
 
@@ -146,10 +165,16 @@ export default function LorryReceiptPage({ params }: { params: { id: string } })
       </p>
 
       <div style={{ display: 'grid', gap: 8, marginBottom: 24 }}>
-        <a
-          href={lr.pdfUrl}
-          target="_blank"
-          rel="noreferrer"
+        {/*
+          * Was `href={lr.pdfUrl} target="_blank"`, which could not work:
+          * `pdfUrl` is '#' in the fixture and null from the real API, so this
+          * opened a blank tab instead of downloading anything. It now opens
+          * the printable copy, where the browser's own dialog offers "Save as
+          * PDF". Deliberately same-tab — the vendor app runs this inside an
+          * Android WebView, which drops `target="_blank"` on the floor.
+          */}
+        <Link
+          href={`/print/lr/${params.id}`}
           className="tap"
           style={{
             justifyContent: 'center',
@@ -162,8 +187,8 @@ export default function LorryReceiptPage({ params }: { params: { id: string } })
             textDecoration: 'none',
           }}
         >
-          Download PDF to print
-        </a>
+          Open the printable copy
+        </Link>
         <button
           onClick={share}
           className="tap"

@@ -2,15 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import {
-  AccountLink,
-  EmptyState,
-  ErrorNote,
-  Loading,
-  Pill,
-  ScreenHeader,
-  TabBar,
-} from '@/components/shell';
+import { AppHeader, EmptyState, ErrorNote, Loading, Pill, ScreenHeader, TabBar } from '@/components/shell';
 import { inr, dateTime } from '@/lib/format';
 import { POD_TONE, TRIP_TONE } from '@/lib/status';
 import { getTrips } from './apis';
@@ -103,11 +95,11 @@ export default function TripsPage() {
 
   return (
     <main className="screen">
+      <AppHeader />
       <ScreenHeader
         title="Trips"
         sub="Every load you are carrying or have carried"
         what="Each trip below shows the money still to reach you and the one thing holding it up. Money is paid in two parts: an advance, then the balance once your signed delivery paper reaches our branch."
-        right={<AccountLink />}
       />
 
       {error && <ErrorNote message={error} />}

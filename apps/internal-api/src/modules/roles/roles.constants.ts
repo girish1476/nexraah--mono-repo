@@ -50,7 +50,16 @@ export const SEED_GRANTS: Record<InternalRoleCode, string[]> = {
     'approve.contract',
     'approve.exception',
   ],
-  FINANCE: ['payment.release', 'invoice.create', 'receipt.record', 'client.manage', 'pnl.view_all', 'indent.view'],
+  FINANCE: [
+    'payment.release',
+    'invoice.create',
+    'receipt.record',
+    'client.manage',
+    'rate.revise',
+    'audit.view',
+    'pnl.view_all',
+    'indent.view',
+  ],
   // Business development — rate management only. `rfq.submit` is deliberately
   // absent: it is a fixed permission held by Leadership, so the desk that
   // builds a price is never the desk that sends it to the client.
@@ -78,7 +87,42 @@ export const SEED_GRANTS: Record<InternalRoleCode, string[]> = {
     'approve.waiver',
     'approve.exception',
     'approve.contract',
+    'audit.view',
     'pnl.view_all',
   ],
-  ADMIN: ['config.manage'],
+  /*
+   * Drifted from the portal's list until 2026-08-26: this file said
+   * `['config.manage']` while `permissions.ts` — which this file's own header
+   * names as authoritative — granted admin nineteen permissions, and the
+   * migration seeded it that way too. `GET /admin/roles` reports `grants` from
+   * here, so it was reporting an admin that could do one thing. Synced, and
+   * `permissions-drift.test.ts` in the portal now fails if the two diverge
+   * again.
+   *
+   * `approve.*` stays out deliberately (the inbox is an audit view for admin,
+   * never a decision), as do the fixed permissions other than `config.manage`.
+   */
+  ADMIN: [
+    'config.manage',
+    'indent.create',
+    'indent.manage',
+    'indent.view',
+    'document.verify',
+    'vendor.edit',
+    'vendor.verify',
+    'vendor.activate',
+    'vendor.advance_policy',
+    'client.manage',
+    'client.onboard',
+    'rate.revise',
+    'pod.receive',
+    'pod.verify',
+    'pod.approve',
+    'rfq.edit',
+    'invoice.create',
+    'receipt.record',
+    'audit.view',
+    'ticket.resolve',
+    'pnl.view_all',
+  ],
 };

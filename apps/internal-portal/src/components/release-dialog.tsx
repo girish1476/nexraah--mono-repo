@@ -16,18 +16,24 @@ export function ReleaseDialog({
   body,
   facts,
   confirmLabel,
+  confirmDisabled,
   busy,
   onConfirm,
   onClose,
+  children,
 }: {
   open: boolean;
   title: string;
   body: ReactNode;
   facts: [string, ReactNode][];
   confirmLabel: string;
+  /** Extra condition beyond "all five payment fields filled" — e.g. a reason required for a non-standard release. */
+  confirmDisabled?: boolean;
   busy: boolean;
   onConfirm: (capture: PaymentCapture) => void;
   onClose: () => void;
+  /** Rendered above the payment-capture fields — a checkbox, a reason field, whatever the caller needs first. */
+  children?: ReactNode;
 }) {
   const [capture, setCapture] = useState<PaymentCapture>({
     mode: 'NEFT',
@@ -47,11 +53,12 @@ export function ReleaseDialog({
       body={body}
       facts={facts}
       confirmLabel={confirmLabel}
-      confirmDisabled={!complete}
+      confirmDisabled={!complete || confirmDisabled}
       busy={busy}
       onConfirm={() => onConfirm(capture)}
       onClose={onClose}
     >
+      {children}
       <FormGrid>
         <Field label="Mode" required>
           <select value={capture.mode} onChange={(e) => set({ mode: e.target.value })}>

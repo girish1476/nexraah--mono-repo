@@ -72,7 +72,8 @@ export interface PodDetail {
   ageDays: number;
   penaltyPaise: number;
   receipt: PodReceipt | null;
-  pages: number;
+  /** Null before a receipt is logged — mirrors `receipt?.pages`, not a separately captured value. */
+  pages: number | null;
   attachmentIds: string[];
   /** BR-50 — the approver may not be this person. */
   verifiedBy: string | null;

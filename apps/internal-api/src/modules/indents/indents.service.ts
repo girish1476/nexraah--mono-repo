@@ -563,7 +563,7 @@ export class IndentsService implements OnModuleInit {
     if (reportingRule === 'NEXT_DAY') {
       const nextDay = new Date(pickup);
       nextDay.setDate(nextDay.getDate() + 1);
-      return reported > nextDay;
+      return reported.toDateString() !== nextDay.toDateString() && reported > nextDay;
     }
     // SCHEDULED (or unset): no server-checkable deadline stored beyond the
     // reporting rule itself — nothing to compare against.

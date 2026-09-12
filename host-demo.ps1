@@ -11,7 +11,9 @@
     internal-portal → sign in with any fixture account, password "nexraah"
                       e.g. anil@nexraah.in (Ops), meera@nexraah.in (Compliance),
                       krishnan@nexraah.in (Admin)
-    vendor-portal   → no sign-in, lands on /loads
+    vendor-portal   → sign in by MOBILE NUMBER, not email — transporters are
+                      identified by the number on their vendor record.
+                      Demo login: 9876543210 / "nexraah", then lands on /loads
 
   The public *.trycloudflare.com links are free "quick tunnels": they only
   work while this laptop is on and this script's processes are running, and

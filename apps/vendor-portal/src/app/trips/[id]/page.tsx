@@ -2,7 +2,16 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { Callout, ErrorNote, Facts, Loading, Pill, ScreenHeader, TabBar } from '@/components/shell';
+import {
+  AppHeader,
+  Callout,
+  ErrorNote,
+  Facts,
+  Loading,
+  Pill,
+  ScreenHeader,
+  TabBar,
+} from '@/components/shell';
 import { inr, dateTime } from '@/lib/format';
 import { TRIP_TONE } from '@/lib/status';
 import { getTrip } from '../apis';
@@ -36,6 +45,7 @@ export default function TripPage({ params }: { params: { id: string } }) {
   if (!trip) {
     return (
       <main className="screen">
+      <AppHeader />
         <ScreenHeader title={params.id} back="Trips" />
         {error ? <ErrorNote message={error} /> : <Loading />}
         <TabBar />
@@ -50,9 +60,12 @@ export default function TripPage({ params }: { params: { id: string } }) {
 
   return (
     <main className="screen">
+      <AppHeader />
       <ScreenHeader
         title={trip.id}
-        sub={`${trip.originCity} → ${trip.destinationCity} · ${trip.distanceKm.toLocaleString('en-IN')} km`}
+        sub={`${trip.originCity} → ${trip.destinationCity}${
+          trip.distanceKm === null ? '' : ` · ${trip.distanceKm.toLocaleString('en-IN')} km`
+        }`}
         what="One trip, and all its money in one place: what has already been paid to you, what is still to come, and the exact thing holding the rest up."
         back="Trips"
         right={
@@ -83,21 +96,40 @@ export default function TripPage({ params }: { params: { id: string } }) {
             Upload them in Profile →
           </Link>
         </Callout>
-      ) : (
+      ) : trip.advanceReleasedAt ? (
         <Callout tone="mint" title={`${inr(trip.advancePaise)} advance released`}>
           This part is already paid to you. Nothing to do here.
-          {trip.advanceReleasedAt && (
-            <p style={{ marginTop: 6 }}>
-              Sent {dateTime(trip.advanceReleasedAt)}
-              {trip.advanceUtr ? ` · UTR ${trip.advanceUtr}` : ''}
-            </p>
-          )}
+          <p style={{ marginTop: 6 }}>
+            Sent {dateTime(trip.advanceReleasedAt)}
+            {trip.advanceUtr ? ` · UTR ${trip.advanceUtr}` : ''}
+          </p>
           {trip.advanceUtr && (
             <p className="muted" style={{ marginTop: 4 }}>
               UTR is the bank&rsquo;s reference for that transfer. Give it to your bank if you need
               to trace the money.
             </p>
           )}
+        </Callout>
+      ) : (
+        /*
+         * Neither blocked nor confirmed paid — and we must not guess.
+         *
+         * `advanceBlockers` is always `[]` and `advanceReleasedAt` always null
+         * on this surface: both `trip_documents` and `payments` are revoked
+         * from the transporter database pool, so this app genuinely cannot see
+         * whether the advance has been released (`portal-trips.service.ts`).
+         *
+         * An empty blocker list used to fall through to "already paid to you",
+         * which told every transporter on every trip that they had been paid
+         * whether or not they had. Saying less is the only honest option here.
+         */
+        <Callout tone="grey" title={`${inr(trip.advancePaise)} advance on this trip`}>
+          That is the advance agreed for this load — {trip.advancePct}% of your rate. Whether it has
+          been sent yet is not shown here.
+          <p className="muted" style={{ marginTop: 6 }}>
+            Your own bank record is the reliable answer. If it has not arrived, call your Nexraah
+            branch contact — they can see the exact reason and clear it.
+          </p>
         </Callout>
       )}
 
@@ -147,7 +179,12 @@ export default function TripPage({ params }: { params: { id: string } }) {
           ['Trip status', TRIP_STATUS_LABEL[trip.status]],
           ['Delivery paper', POD_STATUS_LABEL[trip.podStatus]],
           ['Vehicle', trip.vehicleRegistrationNo],
-          ['Driver', `${trip.driverName} · ${trip.driverPhone}`],
+          [
+            'Driver',
+            trip.driverName || trip.driverPhone
+              ? `${trip.driverName ?? 'Not recorded yet'} · ${trip.driverPhone ?? 'Not recorded yet'}`
+              : 'Not recorded yet',
+          ],
           ['Freight agreed', inr(trip.freightPaise)],
           [`Advance ${trip.advancePct}%`, inr(trip.advancePaise)],
           ['Balance after advance', inr(trip.balancePaise)],

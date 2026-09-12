@@ -54,6 +54,9 @@ export class PortalProfileRepository {
           status: 'PENDING',
           verified_by: null,
           verified_at: null,
+          // A fresh photo makes the old rejection stale — see `reject_reason`
+          // on this table and `getProfile`'s use of it.
+          reject_reason: null,
           updated_at: sql`now()`,
         }),
       )
@@ -92,6 +95,7 @@ export class PortalProfileRepository {
           valid_to: row.validTo,
           status: 'PENDING',
           verified_by: null,
+          reject_reason: null,
           updated_at: sql`now()`,
         }),
       )
@@ -124,7 +128,13 @@ export class PortalProfileRepository {
   findKyc(vendorId: string) {
     return this.db
       .selectFrom('vendor_kyc')
-      .select(['kind', 'value_masked as valueMasked', 'status', 'verified_at as decidedAt'])
+      .select([
+        'kind',
+        'value_masked as valueMasked',
+        'status',
+        'verified_at as decidedAt',
+        'reject_reason as rejectReason',
+      ])
       .where('vendor_id', '=', vendorId)
       .execute();
   }
@@ -132,7 +142,7 @@ export class PortalProfileRepository {
   findDocuments(vendorId: string) {
     return this.db
       .selectFrom('vendor_documents')
-      .select(['kind', 'status', 'valid_to as validTo'])
+      .select(['kind', 'status', 'valid_to as validTo', 'reject_reason as rejectReason'])
       .where('vendor_id', '=', vendorId)
       .execute();
   }

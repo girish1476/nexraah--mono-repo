@@ -53,8 +53,13 @@ export interface FixtureAccount {
  * exactly that reason.
  *
  * Sunita Rao is the scoped Operations account. She was the BRANCH_MGR the
- * merge reassigned, so keeping her as the branched one matches what
- * `supabase/seed.sql` now does with the same person.
+ * merge reassigned, and `supabase/seed.sql` makes the same person the one
+ * carrying a branch — deliberately the only one, since with passthrough a
+ * stray branch silently narrows somebody.
+ *
+ * Her branch differs from the seed's on purpose: `HYD` there, `NSK` here,
+ * because these fixtures' trips and indents are Nashik's. Scoping her to a
+ * branch with no rows would prove only that an empty list is empty.
  */
 export const ACCOUNTS: FixtureAccount[] = [
   { userId: 'u-ops', name: 'Anil Deshmukh', email: 'anil@nexraah.in', role: 'OPS', branch: null },
@@ -363,7 +368,7 @@ export const db = {
         { kind: 'PAN', valueMasked: 'AAKCR2148L', route: 'MANUAL', status: 'VERIFIED', verifiedBy: 'Meera Iyer', verifiedAt: daysAgo(4) },
         { kind: 'AADHAAR', valueMasked: '4471', route: 'API', status: 'VERIFIED', verifiedBy: 'Meera Iyer', verifiedAt: daysAgo(4) },
         { kind: 'ADDRESS', valueMasked: 'Electricity bill · Jul 26', route: 'MANUAL', status: 'VERIFIED', verifiedBy: 'Meera Iyer', verifiedAt: daysAgo(4) },
-        { kind: 'SELFIE', valueMasked: '19.9975, 73.7898', route: 'MANUAL', status: 'VERIFIED', verifiedBy: 'Meera Iyer', verifiedAt: daysAgo(4) },
+        { kind: 'SELFIE', valueMasked: '19.9975, 73.7898', geo: { lat: 19.9975, lng: 73.7898 }, route: 'MANUAL', status: 'VERIFIED', verifiedBy: 'Meera Iyer', verifiedAt: daysAgo(4) },
       ],
       documents: [
         { kind: 'RC', reference: 'MH15GT4482', status: 'VERIFIED', validTo: '2027-06-30', attachmentId: 'att-v-rc' },
@@ -423,7 +428,7 @@ export const db = {
         { kind: 'PAN', valueMasked: 'AALCS8841P', route: 'MANUAL', status: 'VERIFIED', verifiedBy: 'Meera Iyer', verifiedAt: daysAgo(2) },
         { kind: 'AADHAAR', valueMasked: '8841', route: 'API', status: 'VERIFIED', verifiedBy: 'Meera Iyer', verifiedAt: daysAgo(2) },
         { kind: 'ADDRESS', valueMasked: 'Rent agreement · Sep 25', route: 'MANUAL', status: 'PENDING', verifiedBy: null, verifiedAt: null },
-        { kind: 'SELFIE', valueMasked: '18.5204, 73.8567', route: 'MANUAL', status: 'VERIFIED', verifiedBy: 'Meera Iyer', verifiedAt: daysAgo(2) },
+        { kind: 'SELFIE', valueMasked: '18.5204, 73.8567', geo: { lat: 18.5204, lng: 73.8567 }, route: 'MANUAL', status: 'VERIFIED', verifiedBy: 'Meera Iyer', verifiedAt: daysAgo(2) },
       ],
       documents: [
         { kind: 'RC', reference: 'MH12QR8841', status: 'VERIFIED', validTo: '2028-01-31', attachmentId: 'att-v2-rc' },
@@ -471,7 +476,7 @@ export const db = {
         { kind: 'PAN', valueMasked: 'AAFCB2019H', route: 'API', status: 'VERIFIED', verifiedBy: 'Meera Iyer', verifiedAt: daysAgo(120) },
         { kind: 'AADHAAR', valueMasked: '2019', route: 'API', status: 'VERIFIED', verifiedBy: 'Meera Iyer', verifiedAt: daysAgo(120) },
         { kind: 'ADDRESS', valueMasked: 'Electricity bill · Jan 25', route: 'MANUAL', status: 'VERIFIED', verifiedBy: 'Meera Iyer', verifiedAt: daysAgo(120) },
-        { kind: 'SELFIE', valueMasked: '12.7409, 77.8253', route: 'MANUAL', status: 'VERIFIED', verifiedBy: 'Meera Iyer', verifiedAt: daysAgo(120) },
+        { kind: 'SELFIE', valueMasked: '12.7409, 77.8253', geo: { lat: 12.7409, lng: 77.8253 }, route: 'MANUAL', status: 'VERIFIED', verifiedBy: 'Meera Iyer', verifiedAt: daysAgo(120) },
       ],
       documents: [
         { kind: 'RC', reference: 'MH04TT2019', status: 'VERIFIED', validTo: '2029-04-30', attachmentId: 'att-v3-rc' },
@@ -627,8 +632,15 @@ export const db = {
       { id: 'rc-1', rfqLaneId: 'rl-1', origin: 'Kolkata', destination: 'Nashik', truckType: '32 ft SXL', ratePaise: 6420000, transitDays: 5, reportingRule: 'NEXT_DAY', validFrom: '2026-04-01', validTo: '2027-03-31' },
       { id: 'rc-2', rfqLaneId: 'rl-2', origin: 'Kolkata', destination: 'Guwahati', truckType: '22 ft container', ratePaise: 3880000, transitDays: 3, reportingRule: 'SAME_DAY', validFrom: '2026-04-01', validTo: '2027-03-31' },
     ],
+    /*
+     * Two rows for one route, and that is the point. `rc-3` is the rate agreed
+     * in January, closed on 30 June; `rc-4` is what replaced it from 1 July.
+     * The periods abut and never overlap, so "what did we agree for a pickup
+     * on this date" has exactly one answer — see `rate-revision.ts`.
+     */
     'c-0090': [
-      { id: 'rc-3', rfqLaneId: 'rl-9', origin: 'Mundra', destination: 'Jaipur', truckType: '40 ft trailer', ratePaise: 5210000, transitDays: 2, reportingRule: 'SAME_DAY', validFrom: '2026-01-01', validTo: '2026-12-31' },
+      { id: 'rc-3', rfqLaneId: 'rl-9', origin: 'Mundra', destination: 'Jaipur', truckType: '40 ft trailer', ratePaise: 5210000, transitDays: 2, reportingRule: 'SAME_DAY', validFrom: '2026-01-01', validTo: '2026-06-30' },
+      { id: 'rc-4', rfqLaneId: 'rl-9', origin: 'Mundra', destination: 'Jaipur', truckType: '40 ft trailer', ratePaise: 5390000, transitDays: 2, reportingRule: 'SAME_DAY', validFrom: '2026-07-01', validTo: '2026-12-31' },
     ],
   } as Record<string, any[]>,
 
@@ -729,10 +741,14 @@ export const db = {
       transitDays: 2,
       reportingRule: 'SAME_DAY',
       remarks: '',
-      sellRatePaise: 5210000,
+      // Picks up in two days, so it is priced under the CURRENT rate — `rc-4`,
+      // the successor the July revision created — not the closed `rc-3` it
+      // used to point at. `rate-cross-check.ts` measures against the lane in
+      // force on the pickup date, and would refuse this indent otherwise.
+      sellRatePaise: 5390000,
       buyRatePaise: null,
       rateSource: 'CONTRACT',
-      rateCardLaneId: 'rc-3',
+      rateCardLaneId: 'rc-4',
       sourcingRatePaise: null,
       spotConfirmationAttachmentId: null,
       bidMinPaise: 4200000,
@@ -1170,6 +1186,202 @@ export const db = {
     { vehicleNo: 'GJ 12 AT 7745', tripCode: 'TRP-120855', vendorName: 'Anand Roadways', lane: 'Gandhidham → Jaipur', progressPct: 100, speedKmph: 0, fuelPct: 21, lastPingAt: new Date(Date.now() - 40 * 60000).toISOString(), lat: 26.9124, lng: 75.7873, ewayValidTill: daysAgo(1), alerts: ['LONG_HALT', 'EWAY_EXPIRED'] },
   ] as Record<string, any>[],
 
+  /**
+   * Rate changes asked for on a client's agreed lane price.
+   *
+   * Two seeded rows on purpose. `rr-1` is APPLIED and its successor lane
+   * (`rc-4`) is live in `rateCards` beside the closed `rc-3`, so the screen
+   * shows what a completed change actually leaves behind: two rows for one
+   * route, with abutting periods and no overlap. `rr-2` is PENDING, so the
+   * "waiting for sign-off" path has something in it without anybody having to
+   * raise one first.
+   */
+  rateRevisions: [
+    {
+      id: 'rr-1',
+      clientId: 'c-0092',
+      fromLaneId: 'rc-2',
+      toLaneId: null,
+      status: 'PENDING',
+      oldRatePaise: 3880000,
+      newRatePaise: 4120000,
+      effectiveFrom: daysAhead(7).slice(0, 10),
+      reason: 'Diesel up 9% since April and the return load on this leg dried up after the Guwahati depot closed.',
+      lane: 'Kolkata → Guwahati',
+      truckType: '22 ft container',
+      requestedByName: 'R. Iyer · Finance',
+      createdAt: daysAgo(2),
+    },
+    {
+      id: 'rr-2',
+      clientId: 'c-0090',
+      fromLaneId: 'rc-3',
+      toLaneId: 'rc-4',
+      status: 'APPLIED',
+      oldRatePaise: 5210000,
+      newRatePaise: 5390000,
+      effectiveFrom: '2026-07-01',
+      reason: 'Toll revision on the Mundra corridor from 1 July, passed through at cost as agreed.',
+      lane: 'Mundra → Jaipur',
+      truckType: '40 ft trailer',
+      requestedByName: 'R. Iyer · Finance',
+      createdAt: daysAgo(38),
+    },
+  ] as Record<string, any>[],
+
+  /**
+   * The audit trail. Written on every mutation in the real API since day one
+   * and, until now, read by nothing — so the fixture never carried any.
+   *
+   * Seeded across four desks and both sides of the fence: one entry made by a
+   * transporter through their own portal (`actorVendorId` set), one creation
+   * with no `before`, and one money movement. Enough that the screen shows
+   * what it is for rather than an empty state, and enough that the "who did
+   * this, us or them" distinction is visible on arrival.
+   */
+  /**
+   * Tickets — problems reported from the screen they were spotted on.
+   *
+   * Three seeded so the queue demonstrates its own shape rather than an empty
+   * state: one blocking somebody's work, one being looked at, and one already
+   * sorted with a note saying what was done. The closed one matters — a queue
+   * that only ever shows open work does not show what an answer looks like.
+   */
+  tickets: [
+    {
+      id: 'tkt-1',
+      code: 'TKT-0003',
+      subject: 'Client name is spelt wrong on this bill',
+      detail:
+        'On invoice NEX-INV-000214 the client reads Bergar Paints. It should be Berger Paints, as on CLT-0092. The client has queried it.',
+      kind: 'WRONG_DATA',
+      severity: 'BLOCKING',
+      status: 'OPEN',
+      raisedOnPath: '/invoices',
+      entityType: 'invoices',
+      entityId: 'inv-214',
+      resolution: null,
+      resolvedAt: null,
+      resolvedByName: null,
+      createdAt: daysAgo(1),
+      raisedBy: 'u-fin',
+      raisedByName: 'Rakesh Nair',
+      branchName: 'Nashik',
+    },
+    {
+      id: 'tkt-2',
+      code: 'TKT-0002',
+      subject: 'Truck shows as available but it is off the road',
+      detail:
+        'MH 12 RB 7721 is still being offered on quotes. Its fitness certificate expired on 2 August and the transporter has not sent the new one.',
+      kind: 'WRONG_DATA',
+      severity: 'NORMAL',
+      status: 'IN_PROGRESS',
+      raisedOnPath: '/vendors',
+      entityType: 'vendors',
+      entityId: 'v-2214',
+      resolution: null,
+      resolvedAt: null,
+      resolvedByName: null,
+      createdAt: daysAgo(4),
+      raisedBy: 'u-ops',
+      raisedByName: 'Anil Deshmukh',
+      branchName: 'Nashik',
+    },
+    {
+      id: 'tkt-3',
+      code: 'TKT-0001',
+      subject: 'Pickup date on this load request is a day out',
+      detail:
+        'IND-4474 says pickup on the 30th. The client asked for the 29th and the truck is booked for the 29th.',
+      kind: 'WRONG_DATA',
+      severity: 'MINOR',
+      status: 'RESOLVED',
+      raisedOnPath: '/indents',
+      entityType: 'indents',
+      entityId: 'i-4474',
+      resolution: 'Corrected the pickup date on IND-4474 to the 29th and told the branch.',
+      resolvedAt: daysAgo(6),
+      resolvedByName: 'S. Krishnan',
+      createdAt: daysAgo(7),
+      raisedBy: 'u-ops',
+      raisedByName: 'Sunita Rao',
+      branchName: 'Nashik',
+    },
+  ] as Record<string, any>[],
+
+  auditEvents: [
+    {
+      id: 'ae-1',
+      at: daysAgo(0),
+      actorId: 'u-fin',
+      actorName: 'R. Iyer',
+      actorRole: 'FINANCE',
+      actorVendorId: null,
+      action: 'PAYMENT_RELEASED',
+      entityType: 'payments',
+      entityId: 'pay-2201',
+      before: { status: 'PENDING' },
+      after: { status: 'RELEASED', utr: 'HDFC0099231144' },
+    },
+    {
+      id: 'ae-2',
+      at: daysAgo(0),
+      actorId: null,
+      actorName: 'Rathod Roadlines',
+      actorRole: 'VENDOR',
+      // Done by a transporter on their own portal, not by one of our desks.
+      // The first question asked of a disputed entry is which of the two it
+      // was, so the fixture carries an example from the start.
+      actorVendorId: 'v-2214',
+      action: 'DOCUMENT_UPLOADED',
+      entityType: 'trip_documents',
+      entityId: 'td-88',
+      before: null,
+      after: { kind: 'LR_COPY', status: 'PENDING' },
+    },
+    {
+      id: 'ae-3',
+      at: daysAgo(1),
+      actorId: 'u-cmp',
+      actorName: 'S. Krishnan',
+      actorRole: 'COMPLIANCE',
+      actorVendorId: null,
+      action: 'DOCUMENT_VERIFIED',
+      entityType: 'vendor_documents',
+      entityId: 'vd-14',
+      before: { status: 'PENDING' },
+      after: { status: 'VERIFIED' },
+    },
+    {
+      id: 'ae-4',
+      at: daysAgo(2),
+      actorId: 'u-ops',
+      actorName: 'Sunita Rao',
+      actorRole: 'OPS',
+      actorVendorId: null,
+      action: 'CREATE',
+      entityType: 'indents',
+      entityId: 'i-4474',
+      // A creation has no `before` — every field reads as newly set.
+      before: null,
+      after: { code: 'IND-4474', fromCity: 'Mundra', toCity: 'Jaipur', sellRatePaise: 5390000 },
+    },
+    {
+      id: 'ae-5',
+      at: daysAgo(30),
+      actorId: 'u-lead',
+      actorName: 'A. Menon',
+      actorRole: 'LEADERSHIP',
+      actorVendorId: null,
+      action: 'RATE_REVISION_APPLIED',
+      entityType: 'rate_card_lanes',
+      entityId: 'rc-4',
+      before: { laneId: 'rc-3', rate: 5210000, validTo: null },
+      after: { laneId: 'rc-4', rate: 5390000, validFrom: '2026-07-01' },
+    },
+  ] as Record<string, any>[],
+
   importBatches: [
     { id: 'imp-1', set: 'clients', fileName: 'clients-2026-08.csv', fileHash: 'e3b0c44298fc1c14', rows: 38, rejected: 0, actor: 'S. Krishnan', committedAt: daysAgo(9), status: 'COMMITTED' },
   ] as Record<string, any>[],
@@ -1181,7 +1393,7 @@ export const helpers = { now, daysAgo, daysAhead };
 const TRANSACTIONAL_KEYS = [
   'approvals', 'vendors', 'leads', 'marketGap', 'issues', 'clients', 'indents',
   'trips', 'podReceipts', 'payments', 'vendorBills', 'invoices', 'receipts',
-  'rfqs', 'telematics', 'importBatches',
+  'rfqs', 'telematics', 'importBatches', 'rateRevisions', 'auditEvents', 'tickets',
 ] as const;
 
 /**

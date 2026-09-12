@@ -1,5 +1,5 @@
-import { request } from '@/apis';
-import { Invoice, InvoiceDetail, InvoiceStatus, Receipt, ReceivablesResponse } from './types';
+import { idempotent, request } from '@/apis';
+import { Invoice, InvoiceDetail, InvoiceDraft, InvoiceStatus, Receipt, ReceivablesResponse } from './types';
 
 /** GET /invoices?q=&status=&from=&to= */
 export function listInvoices(params: { q?: string; status?: InvoiceStatus; from?: string; to?: string } = {}) {
@@ -12,7 +12,7 @@ export function getInvoice(id: string) {
 }
 
 /** POST /invoices · `invoice.create` — creates the draft. */
-export function createInvoice(body: Partial<Invoice>) {
+export function createInvoice(body: InvoiceDraft) {
   return request<Invoice>({ url: '/invoices', method: 'POST', data: body });
 }
 
@@ -32,17 +32,22 @@ export function cancelInvoice(id: string, reason: string) {
 /**
  * POST /receipts · `receipt.record`
  * Full receipt closes the invoice; a lesser amount part-pays it and the
- * balance stays in the ageing (BR-16).
+ * balance stays in the ageing (BR-16). `Idempotency-Key` is mandatory — a
+ * double-submitted receipt must not double-credit the invoice, the same
+ * guarantee `payments/apis.ts` gives advance/balance release.
  */
-export function recordReceipt(body: {
-  invoiceId: string;
-  amountPaise: number;
-  receivedOn: string;
-  mode: string;
-  reference: string;
-  remarks?: string;
-}) {
-  return request<Receipt>({ url: '/receipts', method: 'POST', data: body });
+export function recordReceipt(
+  key: string,
+  body: {
+    invoiceId: string;
+    amountPaise: number;
+    receivedOn: string;
+    mode: string;
+    reference: string;
+    remarks?: string;
+  },
+) {
+  return idempotent<Receipt>(key, { url: '/receipts', method: 'POST', data: body });
 }
 
 /** GET /receivables?ageing=&client= */

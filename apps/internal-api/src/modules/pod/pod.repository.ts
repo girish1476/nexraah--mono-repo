@@ -15,6 +15,37 @@ export class PodRepository {
     return this.db.selectFrom('trips').selectAll().where('id', '=', id).executeTakeFirst();
   }
 
+  /**
+   * Trip + the display joins the POD detail page needs (vendor, client,
+   * lane, LR and indent code) — `findTripById` stays a bare `selectAll` for
+   * callers (e.g. `waive`) that only need trip columns; this mirrors the
+   * join pattern `receiving()`/`pending()` already use.
+   */
+  findTripDetailById(id: string) {
+    return this.db
+      .selectFrom('trips')
+      .innerJoin('vendors', 'vendors.id', 'trips.vendor_id')
+      .innerJoin('clients', 'clients.id', 'trips.client_id')
+      .innerJoin('indents', 'indents.id', 'trips.indent_id')
+      .leftJoin('lorry_receipts', 'lorry_receipts.trip_id', 'trips.id')
+      .select([
+        'trips.id as id',
+        'trips.code as code',
+        'trips.delivered_at as deliveredAt',
+        'trips.pod_status as podStatus',
+        'trips.pod_received_at as podReceivedAt',
+        'trips.pod_closure_basis as podClosureBasis',
+        'trips.pod_penalty as podPenalty',
+        'lorry_receipts.code as lrCode',
+        'vendors.legal_name as vendorName',
+        'clients.name as clientName',
+        'trips.lane as lane',
+        'indents.code as indentCode',
+      ])
+      .where('trips.id', '=', id)
+      .executeTakeFirst();
+  }
+
   findTripForUpdate(db: DbExecutor, id: string) {
     return db.selectFrom('trips').selectAll().where('id', '=', id).forUpdate().executeTakeFirst();
   }
@@ -172,6 +203,24 @@ export class PodRepository {
       .select(['id', 'charge_type as chargeType', 'cost_amount as costAmountPaise', 'billed_amount as billedAmountPaise'])
       .where('trip_id', '=', tripId)
       .execute();
+  }
+
+  /**
+   * Receipts actually logged today, by `received_on` (BR-49, the date that
+   * stops the clock) — not `deliveredAt`. Deliberately independent of
+   * `receiving()`: that query is filtered to `pod_status in ('PENDING',
+   * 'ATTACHED')`, so a row it returns can never be `RECEIVED` and can't be
+   * used to count today's receipts.
+   */
+  async receivedTodayCount(branchId?: string) {
+    let query = this.db
+      .selectFrom('pod_receipts')
+      .innerJoin('trips', 'trips.id', 'pod_receipts.trip_id')
+      .select((eb) => eb.fn.countAll<string>().as('count'))
+      .where('pod_receipts.received_on', '=', sql<string>`current_date`);
+    if (branchId) query = query.where('trips.branch_id', '=', branchId);
+    const row = await query.executeTakeFirstOrThrow();
+    return Number(row.count);
   }
 
   /** Aggregate stats for the receiving register / chase list headers. */

@@ -153,7 +153,10 @@ export class ReportsService {
         withinTat: withinTat.length,
         breached: collected.length - withinTat.length,
         collectionPct: trips.length ? Number(((collected.length / trips.length) * 100).toFixed(1)) : 0,
-        penaltyAccruedPaise: trips.reduce((a, t) => a + t.podPenaltyPaise, 0),
+        // Matches `payments.service.ts`'s `releaseBalanceForTrip`: a POD
+        // closed WAIVED has its penalty zeroed at release, so it must not
+        // still count as "accrued" here.
+        penaltyAccruedPaise: trips.reduce((a, t) => a + (t.podClosureBasis === 'WAIVED' ? 0 : t.podPenaltyPaise), 0),
       },
       standing: {
         advanceOutstandingPaise: Number(advanceOutstanding.total),

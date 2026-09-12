@@ -113,9 +113,6 @@ export default function IssuesPage() {
     try {
       const created = await createIssue({
         vendorId: form.vendorId,
-        // The server derives the name from the id; sending the one on screen
-        // only keeps the new row readable where it does not echo it back.
-        vendorName: vendor?.legalName,
         category: form.category,
         severity: form.severity,
         tripCode: form.tripCode.trim() || null,

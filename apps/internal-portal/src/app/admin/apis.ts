@@ -20,6 +20,7 @@ export function getNumberSeries() {
  * PATCH /config/number-series/:key
  * 409 SERIES_LOWERED when nextValue is below a consumed value.
  */
-export function patchNumberSeries(key: string, patch: Partial<NumberSeries>) {
+/** `PatchNumberSeriesDto`: `nextValue` (never lower than consumed), `width` optional. */
+export function patchNumberSeries(key: string, patch: { nextValue: number; width?: number }) {
   return request<NumberSeries>({ url: `/config/number-series/${key}`, method: 'PATCH', data: patch });
 }

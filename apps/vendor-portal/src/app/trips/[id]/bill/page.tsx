@@ -1,8 +1,17 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ActionBar, Callout, ErrorNote, Loading, ScreenHeader, TabBar } from '@/components/shell';
+import {
+  ActionBar,
+  AppHeader,
+  Callout,
+  ErrorNote,
+  Loading,
+  ScreenHeader,
+  TabBar,
+} from '@/components/shell';
 import { inr } from '@/lib/format';
+import { newIdempotencyKey } from '@/apis';
 import { getBillDraft, submitBill } from '../../apis';
 import { BillDraft, BillResult } from '../../types';
 
@@ -16,6 +25,8 @@ export default function BillPage({ params }: { params: { id: string } }) {
   const [billDate, setBillDate] = useState(today());
   const [file, setFile] = useState<File | null>(null);
   const [sending, setSending] = useState(false);
+  // Minted once per mount and reused across a retry of the same submission.
+  const [idempotencyKey] = useState(newIdempotencyKey);
 
   useEffect(() => {
     getBillDraft(params.id)
@@ -26,6 +37,7 @@ export default function BillPage({ params }: { params: { id: string } }) {
   if (!draft) {
     return (
       <main className="screen">
+      <AppHeader />
         <ScreenHeader title="Raise your bill" back={params.id} />
         {error ? <ErrorNote message={error} /> : <Loading />}
         <TabBar />
@@ -36,6 +48,7 @@ export default function BillPage({ params }: { params: { id: string } }) {
   if (result) {
     return (
       <main className="screen">
+      <AppHeader />
         <ScreenHeader
           title="Bill received"
           what="Your bill is with us. Nothing more is needed from you on this trip."
@@ -62,7 +75,7 @@ export default function BillPage({ params }: { params: { id: string } }) {
   const submit = () => {
     if (!valid || !file) return;
     setSending(true);
-    submitBill(params.id, { billNo: billNo.trim(), billDate, file })
+    submitBill(params.id, { billNo: billNo.trim(), billDate, file }, idempotencyKey)
       .then(setResult)
       .catch((e) => {
         setError(e.message);
@@ -72,6 +85,7 @@ export default function BillPage({ params }: { params: { id: string } }) {
 
   return (
     <main className="screen">
+      <AppHeader />
       <ScreenHeader
         title="Raise your bill"
         sub={`${params.id} · your own bill to Nexraah`}

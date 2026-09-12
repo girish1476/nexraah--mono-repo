@@ -10,7 +10,8 @@ export class IssuesRepository {
     return this.db.transaction();
   }
 
-  list() {
+  /** The one row shape the screen knows — `list()` and every write return it. */
+  private rowQuery() {
     return this.db
       .selectFrom('issues')
       .innerJoin('vendors', 'vendors.id', 'issues.vendor_id')
@@ -28,9 +29,17 @@ export class IssuesRepository {
         'issues.raised_at as raisedAt',
         'issues.status as status',
         'issues.note as note',
-      ])
-      .orderBy('issues.raised_at', 'desc')
-      .execute();
+      ]);
+  }
+
+  list(status?: string) {
+    let query = this.rowQuery().orderBy('issues.raised_at', 'desc');
+    if (status) query = query.where('issues.status', '=', status);
+    return query.execute();
+  }
+
+  findRow(id: string) {
+    return this.rowQuery().where('issues.id', '=', id).executeTakeFirst();
   }
 
   findById(id: string) {

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { parseGeo } from '../attachments/geo';
 import { AuditService } from '../audit/audit.service';
 import { portalError } from './portal.errors';
 import {
@@ -12,7 +13,11 @@ import {
 import { PortalProfileRepository } from './portal-profile.repository';
 import { PortalAttachmentsRepository } from './portal-attachments.repository';
 import { PortalIdentityRepository } from './portal-identity.repository';
-import { PortalIdempotencyRepository, runIdempotentWrite } from './portal-idempotency.repository';
+import {
+  PortalIdempotencyRepository,
+  checkIdempotentReplay,
+  runIdempotentWrite,
+} from './portal-idempotency.repository';
 import { PortalStorageService, type PortalUploadFile } from './portal-storage.service';
 import { PortalDocumentUploadedDto, PortalProfileDto, expose } from './portal.dto';
 import type { UploadDocumentDto } from './portal-write.dto';
@@ -73,18 +78,29 @@ export class PortalProfileService {
         'This photo needs your location. Allow location access and take it again.',
       );
     }
+    // Range-checked and KEPT — this service used to validate the coordinates
+    // were present and then write neither of them anywhere (geo.ts).
+    const geo = parseGeo(latitude, longitude);
+
+    const idempotencyCtx = {
+      idempotency: this.idempotency,
+      vendorId: vendor.vendorId,
+      endpoint,
+      key: idempotencyKey,
+      dto: PortalDocumentUploadedDto,
+    };
+
+    // Same ordering fix as the trip endpoints: check for a replay before the
+    // document is uploaded, not after — a retried upload must cost one
+    // SELECT, not a second file in storage.
+    const replay = await checkIdempotentReplay(idempotencyCtx);
+    if (replay) return replay;
 
     const prepared = this.storage.prepare(file);
     const stored = await this.storage.put(isIdentity ? 'kyc' : 'documents', vendor.vendorId, prepared);
 
     return runIdempotentWrite(
-      {
-        idempotency: this.idempotency,
-        vendorId: vendor.vendorId,
-        endpoint,
-        key: idempotencyKey,
-        dto: PortalDocumentUploadedDto,
-      },
+      idempotencyCtx,
       () =>
         this.repository.transaction().execute(async (trx) => {
           const systemUserId = await this.identity.systemUploaderId();
@@ -93,6 +109,8 @@ export class PortalProfileService {
             entityType: isIdentity ? 'vendor_kyc' : 'vendor_documents',
             entityId: vendor.vendorId,
             uploadedBy: systemUserId,
+            geoLat: geo?.lat ?? null,
+            geoLng: geo?.lng ?? null,
           });
 
           const saved = isIdentity
@@ -180,6 +198,7 @@ export class PortalProfileService {
               status: found?.status,
               decidedAt: found?.decidedAt ?? null,
               validTo: null,
+              rejectReason: found?.rejectReason ?? null,
               today,
             });
           }),
@@ -192,6 +211,7 @@ export class PortalProfileService {
               status: found?.status,
               decidedAt: null,
               validTo: found?.validTo ?? null,
+              rejectReason: found?.rejectReason ?? null,
               today,
             });
           }),
@@ -202,7 +222,13 @@ export class PortalProfileService {
 
   private toDocument(
     kind: string,
-    input: { status?: string; decidedAt: string | null; validTo: string | null; today: string },
+    input: {
+      status?: string;
+      decidedAt: string | null;
+      validTo: string | null;
+      rejectReason: string | null;
+      today: string;
+    },
   ) {
     const expired =
       input.status === 'VERIFIED' && input.validTo !== null && input.validTo < input.today;
@@ -212,12 +238,15 @@ export class PortalProfileService {
       kind,
       label: DOCUMENT_LABEL[kind] ?? kind,
       status,
-      // `08-P7` §1 calls the rejection reason "the whole point of this screen",
-      // and neither `vendor_kyc` nor `vendor_documents` has a column to hold
-      // one — the console records the decision, not the sentence. Null until a
-      // migration adds one; inventing a generic sentence here would be worse
-      // than an honest blank, because it would be re-uploaded identically.
-      rejectionReason: null,
+      // `08-P7` §1 calls the rejection reason "the whole point of this screen".
+      // `20260830000000_c2_vendor_document_reject_reason.sql` added the column
+      // that `vendor_kyc` and `vendor_documents` were the only document tables
+      // to lack, so this is a real sentence now rather than an honest blank.
+      //
+      // Scoped to REJECTED, matching `rejectedOn` below: a re-upload clears the
+      // column, but reading a stale reason against any other status would
+      // describe a decision that no longer stands.
+      rejectionReason: input.status === 'REJECTED' ? input.rejectReason : null,
       rejectedOn: input.status === 'REJECTED' ? dateOnly(input.decidedAt) : null,
       expiredOn: expired ? input.validTo : null,
       // No `vendor_documents` row names a vehicle — see portal-fleet.service.ts.

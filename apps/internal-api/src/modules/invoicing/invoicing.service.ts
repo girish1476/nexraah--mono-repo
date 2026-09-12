@@ -50,7 +50,12 @@ export class InvoicingService {
       company: this.companyDetails(),
       client,
       trips,
-      receipts: receipts.map((r) => this.receiptRowDto(r)),
+      // `findReceiptsForInvoice` selects raw `receipts` columns only (no join),
+      // so `invoiceCode`/`clientName` must be filled in from the invoice we
+      // already have in scope — every receipt here belongs to this invoice.
+      receipts: receipts.map((r) =>
+        this.receiptRowDto({ ...r, invoiceCode: this.publicCode(row.code), clientName: row.clientName }),
+      ),
     };
   }
 
@@ -188,10 +193,27 @@ export class InvoicingService {
 
   // ---- Receipts -------------------------------------------------------------
 
-  async recordReceipt(dto: RecordReceiptDto, actor: AuthenticatedUser) {
+  async recordReceipt(dto: RecordReceiptDto, idempotencyKey: string, actor: AuthenticatedUser) {
     return this.invoicingRepository.transaction().execute(async (trx) => {
+      const existing = await this.invoicingRepository.findReceiptByIdempotencyKeyForUpdate(trx, idempotencyKey);
+      if (existing) {
+        const existingInvoice = await this.invoicingRepository.findById(existing.invoice_id);
+        return this.receiptRowDto({
+          ...existing,
+          invoiceCode: existingInvoice ? this.publicCode(existingInvoice.code) : null,
+          clientName: existingInvoice?.clientName ?? '',
+        });
+      }
+
       const invoice = await this.invoicingRepository.findByIdForUpdate(trx, dto.invoiceId);
       if (!invoice) throw new DomainException(404, 'NOT_FOUND', `Unknown invoice: ${dto.invoiceId}`);
+      if (invoice.status === 'DRAFT' || invoice.status === 'CANCELLED') {
+        throw new DomainException(
+          409,
+          'INVOICE_NOT_RECEIVABLE',
+          `Invoice ${invoice.code} is ${invoice.status.toLowerCase()}; a receipt cannot be recorded against it.`,
+        );
+      }
 
       const balance = invoice.total - invoice.received;
       if (dto.amountPaise > balance) {
@@ -214,6 +236,7 @@ export class InvoicingService {
         mode: dto.mode,
         reference: dto.reference,
         remarks: dto.remarks ?? null,
+        idempotency_key: idempotencyKey,
       });
 
       const newReceived = invoice.received + dto.amountPaise;
@@ -230,19 +253,8 @@ export class InvoicingService {
         after: { invoiceId: dto.invoiceId, amountPaise: dto.amountPaise, newStatus },
       });
 
-      return {
-        id: receipt.id,
-        code: receipt.code,
-        invoiceId: receipt.invoice_id,
-        invoiceCode: this.publicCode(invoice.code),
-        clientId: receipt.client_id,
-        clientName: (await this.invoicingRepository.findClientById(receipt.client_id))?.name ?? '',
-        amountPaise: receipt.amount,
-        receivedOn: receipt.received_on,
-        mode: receipt.mode,
-        reference: receipt.reference,
-        remarks: receipt.remarks ?? '',
-      };
+      const clientName = (await this.invoicingRepository.findClientById(receipt.client_id))?.name ?? '';
+      return this.receiptRowDto({ ...receipt, invoiceCode: this.publicCode(invoice.code), clientName });
     });
   }
 

@@ -36,15 +36,29 @@ export class TelematicsService {
       throw new DomainException(422, 'VEHICLE_NOT_ON_OPEN_TRIP', `${dto.vehicleNo} is not on any open trip.`);
     }
 
-    await this.repository.insertPing({
-      vehicleNo: dto.vehicleNo,
-      at: dto.at,
-      lat: dto.lat ?? null,
-      lng: dto.lng ?? null,
-      speedKmph: dto.speedKmph ?? null,
-      fuelPct: dto.fuelPct ?? null,
-      raw: rawBody,
-    });
+    try {
+      await this.repository.insertPing({
+        vehicleNo: dto.vehicleNo,
+        at: dto.at,
+        lat: dto.lat ?? null,
+        lng: dto.lng ?? null,
+        speedKmph: dto.speedKmph ?? null,
+        fuelPct: dto.fuelPct ?? null,
+        raw: rawBody,
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        // `telematics_pings_vehicle_at_key` (vehicle_no, at) —
+        // `TelematicsHmacGuard` verifies the signature and a clock-skew
+        // window, but not that `at` hasn't been seen before, so a captured,
+        // validly-signed ping replayed inside that window carries the
+        // identical `at` it was originally signed with and lands here.
+        // Idempotent no-op: the ping is already on file, so there is nothing
+        // new for `reconcileAlerts` to derive.
+        return;
+      }
+      throw error;
+    }
 
     await this.reconcileAlerts(dto.vehicleNo, trip.id, trip.ewayValidTill);
   }
@@ -72,11 +86,11 @@ export class TelematicsService {
   private async reconcileAlerts(vehicleNo: string, tripId: string | null, ewayValidTill: string | null): Promise<void> {
     const thresholds = await this.thresholds();
     const now = Date.now();
-    const haltWindowStart = new Date(now - thresholds.haltMinutes * 60_000).toISOString();
+    const haltPingsSinceIso = haltQuerySinceIso(now, thresholds.haltMinutes);
 
     const [latest, pingsInHaltWindow, active] = await Promise.all([
       this.repository.latestPing(vehicleNo),
-      this.repository.recentPings(vehicleNo, haltWindowStart),
+      this.repository.recentPings(vehicleNo, haltPingsSinceIso),
       this.repository.activeAlerts(vehicleNo),
     ]);
 
@@ -189,10 +203,10 @@ export class TelematicsService {
     thresholds: TelematicsThresholds,
     now: number,
   ) {
-    const haltWindowStart = new Date(now - thresholds.haltMinutes * 60_000).toISOString();
+    const haltPingsSinceIso = haltQuerySinceIso(now, thresholds.haltMinutes);
     const [latest, pingsInHaltWindow] = await Promise.all([
       this.repository.latestPing(t.vehicleNo),
-      this.repository.recentPings(t.vehicleNo, haltWindowStart),
+      this.repository.recentPings(t.vehicleNo, haltPingsSinceIso),
     ]);
     if (!latest) return null; // no signal ever received — not shown, not fabricated
 
@@ -241,6 +255,34 @@ function manualAlerts(raw: unknown): AlertKind[] {
   const r = raw as { source?: unknown; alerts?: unknown };
   if (r.source !== 'MANUAL' || !Array.isArray(r.alerts)) return [];
   return r.alerts.filter((a): a is AlertKind => (ALERT_KINDS as string[]).includes(String(a)));
+}
+
+/** pg `unique_violation` — same idiom as `portal-fleet.service.ts`'s `isUniqueViolation`. */
+function isUniqueViolation(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && (error as { code?: unknown }).code === '23505';
+}
+
+/**
+ * How far back to query `telematics_pings` for the LONG_HALT check only —
+ * deliberately wider than the raw `haltMinutes` window it is checking.
+ *
+ * `alert-rules.ts`'s `windowFullyCovered` needs the OLDEST ping it is given
+ * to be at least `haltMinutes` old, to prove the vehicle sat still for the
+ * whole window rather than just showing a couple of recent slow pings. A
+ * query pre-filtered to exactly `now - haltMinutes` can structurally never
+ * return anything older than that same boundary, so that comparison could
+ * only ever pass on an exact-millisecond coincidence — never with real
+ * ping data. Fetching 50% further back lets a genuinely continuously-
+ * stationary vehicle produce a ping that falls outside the raw window and
+ * proves coverage back to its edge. `deriveAlerts` itself still only
+ * *requires* `haltMinutes` of coverage (the `>=` comparison is unchanged) —
+ * this only widens what data it is given to decide with. `pingsInHaltWindow`
+ * is consumed solely by the halt check (OVERSPEED/DARK_VEHICLE/EWAY_* all
+ * key off `latestPing`/`now` instead), so widening this query for the halt
+ * call sites does not affect any other alert kind.
+ */
+function haltQuerySinceIso(now: number, haltMinutes: number): string {
+  return new Date(now - haltMinutes * 60_000 * 1.5).toISOString();
 }
 
 function estimateProgressPct(tripCreatedAt: string, transitDaysRequired: number | null, now: number): number {

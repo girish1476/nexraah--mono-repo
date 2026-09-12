@@ -1,9 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  AccountLink,
+  AppHeader,
   EmptyState,
   ErrorNote,
   Loading,
@@ -16,6 +16,7 @@ import { TRUCK_TYPES, TruckType } from '@/app/loads/types';
 import { capitalizeWords } from '@/lib/format';
 import { CITIES } from '@/lib/geo';
 import { VEHICLE_TONE } from '@/lib/status';
+import { newIdempotencyKey } from '@/apis';
 import { addVehicle, getFleet, updateVehicle } from './apis';
 import {
   FleetVehicle,
@@ -58,6 +59,20 @@ export default function FleetPage() {
   const [statusLabel, setStatusLabel] = useState(VEHICLE_STATUS_LABEL.AVAILABLE);
   const [freeFrom, setFreeFrom] = useState('');
   const [saving, setSaving] = useState(false);
+  // Stable across a retry of the same "add" submission; regenerated once that
+  // submission succeeds, so the next truck added gets a key of its own.
+  const [addKey, setAddKey] = useState(newIdempotencyKey);
+  // One key per vehicle id for status updates, on the same reuse-until-success
+  // rule as `addKey` — see quotes/page.tsx's withdrawKeys for the same pattern.
+  const statusKeys = useRef(new Map<string, string>());
+  const keyForStatusUpdate = (id: string) => {
+    let key = statusKeys.current.get(id);
+    if (!key) {
+      key = newIdempotencyKey();
+      statusKeys.current.set(id, key);
+    }
+    return key;
+  };
 
   const load = useCallback(() => {
     getFleet()
@@ -76,14 +91,17 @@ export default function FleetPage() {
   const save = () => {
     if (!valid) return;
     setSaving(true);
-    addVehicle({
-      registrationNo: registrationNo.trim().toUpperCase(),
-      truckType,
-      capacityKg: Math.round(Number(capacityTonnes) * 1000),
-      currentCity: currentCity.trim() || undefined,
-      status,
-      freeFrom: status === 'ON_TRIP' ? freeFrom : undefined,
-    })
+    addVehicle(
+      {
+        registrationNo: registrationNo.trim().toUpperCase(),
+        truckType,
+        capacityKg: Math.round(Number(capacityTonnes) * 1000),
+        currentCity: currentCity.trim() || undefined,
+        status,
+        freeFrom: status === 'ON_TRIP' ? freeFrom : undefined,
+      },
+      addKey,
+    )
       .then(() => {
         setAdding(false);
         setRegistrationNo('');
@@ -91,6 +109,7 @@ export default function FleetPage() {
         setCurrentCity('');
         setFreeFrom('');
         setSaving(false);
+        setAddKey(newIdempotencyKey());
         load();
       })
       .catch((e) => {
@@ -101,21 +120,28 @@ export default function FleetPage() {
 
   const setVehicleStatus = (v: FleetVehicle, label: string) => {
     const next = statusFromLabel(label);
-    updateVehicle(v.id, {
-      status: next,
-      freeFrom: next === 'ON_TRIP' ? (v.freeFrom ?? undefined) : undefined,
-    })
-      .then(load)
+    updateVehicle(
+      v.id,
+      {
+        status: next,
+        freeFrom: next === 'ON_TRIP' ? (v.freeFrom ?? undefined) : undefined,
+      },
+      keyForStatusUpdate(v.id),
+    )
+      .then(() => {
+        statusKeys.current.delete(v.id);
+        load();
+      })
       .catch((e) => setError(e.message));
   };
 
   return (
     <main className="screen">
+      <AppHeader />
       <ScreenHeader
         title="Fleet"
         sub="Your trucks"
         what="The trucks you run. Nexraah only offers you loads that suit a truck on this list, so keep it correct."
-        right={<AccountLink />}
       />
 
       {error && <ErrorNote message={error} />}
