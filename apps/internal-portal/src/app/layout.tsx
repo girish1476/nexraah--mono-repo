@@ -12,6 +12,15 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <head>
+        {/* Applies a stored dark-mode preference to <html> before the first
+            paint, so switching pages (or reloading) never flashes the light
+            theme first. See `lib/theme.ts` for the toggle this reads back. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "try{if(localStorage.getItem('nexraah-theme')==='dark'){document.documentElement.setAttribute('data-theme','dark');}}catch(e){}",
+          }}
+        />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
         {/* Falls back to system fonts offline — the console must still be usable. */}

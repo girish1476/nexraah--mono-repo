@@ -200,7 +200,7 @@ export default function IssuesPage() {
     <ModuleGuard module="vendors">
       <PageHeader
         path="/vendors/issues"
-        title="Transporter problems"
+        title="Transporter issues"
         sub="Open → In progress → Resolved"
         module="vendors"
         right={

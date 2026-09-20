@@ -8,6 +8,7 @@ import { Session } from '@/store/atoms';
 import { request } from '@/apis';
 import { signOut } from '@/lib/auth';
 import { Glyph, areaVars } from '@/lib/ui';
+import { useTheme } from '@/lib/theme';
 import { ReportProblemButton } from './tickets/report-button';
 
 /**
@@ -358,6 +359,7 @@ function RoleStrip({ role, session }: { role: RoleCode; session: Session | null 
   // keeps the same module instance, so anything created during a test pass
   // survives.
   const router = useRouter();
+  const [theme, toggleTheme] = useTheme();
   const endSession = () => {
     signOut();
     router.push('/signin');
@@ -418,8 +420,18 @@ function RoleStrip({ role, session }: { role: RoleCode; session: Session | null 
 
       <button
         className="btn btn-secondary btn-sm"
+        onClick={toggleTheme}
+        aria-pressed={theme === 'dark'}
+        style={{ width: '100%', marginTop: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}
+      >
+        <Glyph size={13}>{theme === 'dark' ? '☀️' : '🌙'}</Glyph>
+        {theme === 'dark' ? 'Light mode' : 'Dark mode'}
+      </button>
+
+      <button
+        className="btn btn-secondary btn-sm"
         onClick={endSession}
-        style={{ width: '100%', marginTop: 14, marginBottom: 14 }}
+        style={{ width: '100%', marginTop: 8, marginBottom: 14 }}
       >
         Sign out
       </button>

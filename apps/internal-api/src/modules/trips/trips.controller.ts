@@ -39,6 +39,15 @@ export class TripsController {
     return this.tripsService.listDocuments(id);
   }
 
+  // Uploading is open to whoever can act on this trip's documents at all —
+  // the same `document.verify | indent.manage` set `overrideCrossCheck` and
+  // `createCharge` below assert, and what the frontend's own upload button
+  // already gates on (`trips/[id]/documents/page.tsx`). A single-code
+  // `@RequirePermission` can't express an "any of", so — like those two —
+  // this is enforced in the service. It was the one route in this
+  // controller with no check anywhere, so any signed-in internal principal,
+  // any role, could attach a document (including advance-doc and
+  // POD-adjacent kinds) to any trip.
   @Post(':id/documents/:kind')
   submitDocument(
     @Param('id') id: string,

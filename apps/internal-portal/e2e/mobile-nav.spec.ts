@@ -17,7 +17,8 @@ test.describe('mobile nav drawer', () => {
 
     await page.getByRole('button', { name: 'Open menu' }).click();
     await expect(sidebar).toHaveClass(/open/);
-    await expect(page.getByRole('link', { name: /^Today/ })).toBeVisible();
+    // "Today" was renamed "My desk" in the 2026-09-19 label pass.
+    await expect(page.getByRole('link', { name: /^My desk/ })).toBeVisible();
   });
 
   test('tapping the backdrop closes the drawer', async ({ page }) => {
@@ -42,10 +43,14 @@ test.describe('mobile nav drawer', () => {
     await setRole(page, 'OPS');
     await page.goto('/today');
     await page.getByRole('button', { name: 'Open menu' }).click();
-    // Vendors is VIEW-only for OPS, so it's not in the drawer — Trips is one
-    // of the modules OPS actually holds EDIT on.
-    await page.getByRole('link', { name: /^Trips/ }).click();
-    await expect(page).toHaveURL(/\/trips$/);
+    // The standalone "Trips on the road" row this used to click was pulled
+    // for every role in the 2026-09-02 nav rebuild — a trip is reached
+    // through search, orders or its own load request now, never a sidebar
+    // shortcut (see the note on `ALL_ROUTES` in rbac-nav.spec.ts). Load
+    // requests is one of the rows OPS still holds EDIT on. Scoped to the
+    // drawer itself — "My desk" also links a same-named quick-card to it.
+    await page.locator('aside.sidebar').getByRole('link', { name: /^Load requests/ }).click();
+    await expect(page).toHaveURL(/\/indents$/);
     await expect(page.locator('aside.sidebar')).not.toHaveClass(/open/);
   });
 

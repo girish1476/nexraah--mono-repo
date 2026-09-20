@@ -215,7 +215,7 @@ export default function TodayPage() {
 
       <SectionHead
         emoji="📌"
-        title="What to do today"
+        title="Today's action"
         note="In the order they cost us money"
       />
 
@@ -329,14 +329,14 @@ export default function TodayPage() {
         )}
       </Stack>
 
-      <SectionHead emoji="⚡" title="Jump to" note="The screens this desk uses most" />
+      <SectionHead emoji="⚡" title="Quick links" note="The screens this desk uses most" />
       <QuickLinks items={shortcuts} />
 
       {total > 0 && (
         <>
           <SectionHead
             emoji="📋"
-            title="The full lists"
+            title="All shipments"
             note="Everything behind the cards above"
           />
 
@@ -369,7 +369,7 @@ export default function TodayPage() {
                 />
                 <div style={{ marginTop: 12 }}>
                   <Panel
-                    title="🚨 Loads we could not place"
+                    title="🚨 Unassigned loads"
                     right={
                       <Link href="/vendors/market-gap" className="btn btn-secondary btn-sm">
                         Where we are short of trucks →
@@ -441,7 +441,7 @@ export default function TodayPage() {
                   ]}
                 />
                 <div style={{ marginTop: 12 }}>
-                  <Panel title="📝 Loads waiting for a transporter" pad={false}>
+                  <Panel title="📝 Awaiting transporter" pad={false}>
                     <DataTable
                       columns={allocationColumns}
                       rows={data.pendingAllocation.rows}
@@ -455,7 +455,7 @@ export default function TodayPage() {
 
             {podsOut > 0 && (
               <div id="pods">
-                <Panel title="📸 Deliveries still missing their signed paperwork" pad={false}>
+                <Panel title="📸 Missing documents" pad={false}>
                   <DataTable
                     columns={[
                       {
@@ -512,7 +512,7 @@ export default function TodayPage() {
 
             {issues > 0 && (
               <div id="issues">
-                <Panel title="🛠️ Open problems with transporters" pad={false}>
+                <Panel title="🛠️ Transporter issues" pad={false}>
                   <DataTable
                     columns={[
                       {

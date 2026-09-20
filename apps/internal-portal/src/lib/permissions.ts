@@ -406,19 +406,19 @@ export const MODULE_LABEL: Record<ModuleKey, string> = {
   home: 'Business snapshot',
   orders: 'Orders',
   vendors: 'Transporters',
-  compliance: 'Document checks',
+  compliance: 'Document verification',
   clients: 'Clients',
   indents: 'Load requests',
   trips: 'Trips on the road',
   pod: 'Delivery proof',
   payments: 'Payments to transporters',
   invoices: 'Client bills',
-  receivables: 'Money to collect',
+  receivables: 'Receivables',
   rfq: 'Rate requests',
   telematics: 'Tracking',
   pnl: 'Profit & loss',
   approvals: 'Approvals',
-  records: 'Record of what happened',
+  records: 'Activity log',
   search: 'Global search',
   tickets: 'Tickets',
   admin: 'Settings',
@@ -647,6 +647,17 @@ export const NAV: NavGroup[] = [
     emoji: '🚚',
     items: [
       {
+        // The group's own namesake page had no row here at all — every
+        // shipment's status lived one click away from everything else in
+        // this group, but never from the group itself. Reachable before only
+        // by clicking through from an indent, trip, invoice or POD page.
+        label: 'All orders',
+        href: '/orders',
+        module: 'orders',
+        emoji: '📦',
+        note: 'Where every shipment stands, placement to payment',
+      },
+      {
         label: 'Load requests',
         href: '/indents',
         module: 'indents',
@@ -667,7 +678,7 @@ export const NAV: NavGroup[] = [
        * somebody arrives looking for.
        */
       {
-        label: 'Delivery proof pending',
+        label: 'Check POD status',
         href: '/pod/pending',
         module: 'pod',
         emoji: '🔍',
@@ -702,6 +713,17 @@ export const NAV: NavGroup[] = [
         module: 'pod',
         emoji: '📸',
         note: 'Photographed in the transporter app, physical copy not logged yet',
+      },
+      {
+        // The plain register lost its own row somewhere in the 2026-09-02
+        // rebuild — only the `?attached=1` preset above survived. Without
+        // this, a courier's physical copy for a load with no e-POD photo had
+        // no sidebar path at all, only the URL bar.
+        label: 'Log delivery receipt',
+        href: '/pod/receiving',
+        module: 'pod',
+        emoji: '📥',
+        note: 'Record a physical copy as it comes in, e-POD or not',
       },
     ],
   },
@@ -742,7 +764,7 @@ export const NAV: NavGroup[] = [
         permission: 'client.onboard',
       },
       {
-        label: 'Change an agreed rate',
+        label: 'Rate revision',
         href: '/clients/rate-changes',
         module: 'clients',
         emoji: '⚖️',
@@ -805,14 +827,14 @@ export const NAV: NavGroup[] = [
         note: 'Routes where nobody quoted — recruit here',
       },
       {
-        label: 'Problems with transporters',
+        label: 'Transporter issues',
         href: '/vendors/issues',
         module: 'vendors',
         emoji: '🛠️',
         note: 'Complaints and incidents logged against a transporter',
       },
       {
-        label: 'Document checks',
+        label: 'Document verification',
         href: '/compliance',
         module: 'compliance',
         emoji: '🛡️',
@@ -862,7 +884,7 @@ export const NAV: NavGroup[] = [
         permission: 'invoice.create',
       },
       {
-        label: 'Money to collect',
+        label: 'Receivables',
         href: '/receivables',
         module: 'receivables',
         emoji: '📥',
@@ -907,17 +929,17 @@ export const NAV: NavGroup[] = [
         note: 'Report wrong data on any screen, and see what has been done about it',
       },
       { label: 'Settings', href: '/admin', module: 'admin', emoji: '🎛️' },
-      { label: 'Who can do what', href: '/admin/roles', module: 'admin', emoji: '👥' },
+      { label: 'Access control', href: '/admin/roles', module: 'admin', emoji: '👥' },
       { label: 'Branches', href: '/admin/branches', module: 'admin', emoji: '🏬' },
       {
-        label: 'Record of what happened',
+        label: 'Activity log',
         href: '/records',
         module: 'records',
         emoji: '🧭',
         note: 'Every change anyone made, who made it, and when',
         permission: 'audit.view',
       },
-      { label: 'Bulk upload', href: '/admin/import', module: 'admin', emoji: '⬆️' },
+      { label: 'Data import', href: '/admin/import', module: 'admin', emoji: '⬆️' },
     ],
   },
 ];

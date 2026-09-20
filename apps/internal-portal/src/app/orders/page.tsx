@@ -155,7 +155,7 @@ export default function OrdersPage() {
       count: counts[p] ?? 0,
       tone: p === 'NEEDS_YOU' ? ('flag' as const) : undefined,
     })),
-    { key: 'ALL', label: '📦 All', count: countedTotal || rows.length },
+    { key: 'ALL', label: '📦 All shipments', count: countedTotal || rows.length },
   ];
 
   return (

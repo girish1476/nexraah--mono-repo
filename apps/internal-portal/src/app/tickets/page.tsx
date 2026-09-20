@@ -178,7 +178,7 @@ export default function TicketsPage() {
             : 'Administration answers these. You can raise one from the bottom of any screen.'
         }
       >
-        The record of what happened proves what changed and cannot be edited by anyone. This is the
+        The Activity log proves what changed and cannot be edited by anyone. This is the
         other half — the way a person who spots something wrong gets it corrected.
       </PageIntro>
 

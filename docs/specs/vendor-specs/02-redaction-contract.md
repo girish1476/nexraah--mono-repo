@@ -120,7 +120,7 @@ Assertion 4 was one line under `ADR-01` — "console routes are not served by th
 | Screen | Wrong | Right |
 |---|---|---|
 | Load filled by another vendor | *"You lost to a lower bid"* | Card silently removed from the list (part 03) |
-| Rejected quote | *"Rejected — winning bid ₹39,800"* | **Rejected**, no reason ever (part 03) |
+| Rejected quote | *"Rejected — winning bid ₹39,800"* | **Rejected — [fixed-enum reason]**, e.g. "This lane was awarded elsewhere. The load went to someone else." Never the winning amount or the winning transporter's identity, and never free text — only one of the three enum sentences (part 03; confirmed 2026-09-19, superseding the earlier "no reason ever" position) |
 | Below-band quote refused | *"The client is only paying ₹41,500"* | *"Nexraah will not award this lane below ₹38,000 — it would run at a loss for you and for the desk"* (part 03) |
 
 The refusal message quotes `bidMin`, which the transporter is already entitled to see. It never quotes `sellRate`, which they are not.

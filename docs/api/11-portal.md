@@ -129,7 +129,7 @@ Permission is `portal.self` unless named otherwise. **Every response is scoped `
 | `GET /portal/loads?truckType=&branch=` | `PortalLoadDTO[]`. `BR-55`. 120/hour, log outliers. **Not** `GET /indents` with fields removed — a separate handler, a separate DTO, a separate pool. Filtered to open indents the vendor may bid, minus any awarded elsewhere |
 | `GET /portal/loads/:code` | One `PortalLoadDTO`. `code` is the `IND-` series, never `LD-` |
 | `POST /portal/loads/:code/quote` | `{ amountPaise, vehicleId?, remarks? }` → the created quote. `BR-05` band check against `bidMin`/`bidMax`, **the same band service the RFQ award path calls**. Below band → `422 BELOW_BAND` with `details.bidMin`, nothing persisted. Above band → `202` approval (`D-39`, `00-conventions.md` §7). Existing quote → `409 QUOTE_EXISTS`. A `DOCS_DUE` vehicle cannot be offered. 30/hour |
-| `GET /portal/quotes?status=` | Their quotes only. A rejected quote carries **no reason and no winning amount**, ever |
+| `GET /portal/quotes?status=` | Their quotes only. A rejected quote carries `lostReason`, a **fixed enum** (`AWARDED_ELSEWHERE` \| `INDENT_CANCELLED` \| `EXPIRED`), never free text — mapped client-side to one plain sentence per value. Confirmed 2026-09-19: the *category* of loss may be shown; the **winning amount and the winning transporter's identity may never be**, under any status |
 | `DELETE /portal/quotes/:id` | Withdraw. Only while `SUBMITTED`; otherwise `409` |
 
 **A load awarded to someone else disappears from the list.** It does not appear as lost, outbid, or filled. `vendor-specs/02-redaction-contract.md` §5 — copy is part of the contract.

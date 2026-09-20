@@ -121,7 +121,7 @@ export default function ImportPage() {
 
   return (
     <ModuleGuard module="admin">
-      <PageHeader path="/admin/import" title="Bulk upload" module="admin" />
+      <PageHeader path="/admin/import" title="Data import" module="admin" />
       <PageIntro
         what="Load your existing vendors, clients and lanes in bulk from a spreadsheet, instead of keying them in one at a time."
         who="Administrators, usually once when going live."

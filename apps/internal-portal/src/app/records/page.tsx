@@ -139,7 +139,7 @@ export default function RecordsPage() {
   return (
     <ModuleGuard module="records">
       <PageHeader
-        title="Record of what happened"
+        title="Activity log"
         sub="Every change anyone made, who made it, and when"
         module="records"
       />

@@ -74,6 +74,12 @@ export class InvoicingService {
         for (const tripId of tripIds) {
           const trip = found.get(tripId);
           if (!trip) throw new DomainException(404, 'NOT_FOUND', `Unknown trip: ${tripId}`);
+          // Deliberately lighter than `payments.service.ts`'s `balanceGate()`,
+          // which additionally requires POD `APPROVED`/`WAIVED` before a
+          // transporter can be paid. Confirmed with the user 2026-09-19: the
+          // client may be billed the moment the load is delivered; the
+          // transporter's payment stays gated on delivery proof separately.
+          // Not a gap to close — bill early, pay once proof is confirmed.
           if (trip.stage !== 'DELIVERED') {
             throw new DomainException(409, 'TRIP_NOT_DELIVERED', `Trip ${trip.code} has not been delivered yet.`);
           }

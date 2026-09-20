@@ -26,6 +26,12 @@ interface RoleCase {
   hidden: string[];
 }
 
+// `/trips` is deliberately absent: the nav rebuild (2026-09-02) pulled the
+// standalone "Trips on the road" row for every role in favour of reaching a
+// trip through search, orders or its own load request — the page is still
+// real and still linked from those three, just never a sidebar shortcut. So
+// it belongs in no role's `visible` list, and not here either: `allBut()`
+// only needs to check routes that are ever a nav candidate for someone.
 const ALL_ROUTES = [
   '/today',
   '/home',
@@ -36,7 +42,6 @@ const ALL_ROUTES = [
   '/clients',
   '/rfq',
   '/indents',
-  '/trips',
   '/pod/receiving',
   '/pod/pending',
   '/payments/advance',
@@ -66,7 +71,6 @@ const CASES: RoleCase[] = [
       '/orders',
       '/vendors',
       '/indents',
-      '/trips',
       '/pod/receiving',
       '/pod/pending',
       '/rfq',
@@ -80,6 +84,11 @@ const CASES: RoleCase[] = [
     landsOn: '/compliance',
     visible: [
       '/today',
+      // `home`'s module access was widened to EDIT for every role on
+      // 2026-08-30 (see the comment on `MODULE_ACCESS.home`) — this list
+      // predates that and never picked up the row, same class of gap as
+      // `/today` on the FINANCE case above.
+      '/home',
       '/orders',
       '/compliance',
       '/vendors',
@@ -90,7 +99,6 @@ const CASES: RoleCase[] = [
       // still needs `client.manage`, which Compliance does not hold.
       '/clients',
       '/indents',
-      '/trips',
       '/pod/receiving',
       '/pod/pending',
       // Compliance holds EDIT on payments so it can clear the advance
@@ -105,6 +113,11 @@ const CASES: RoleCase[] = [
     role: 'FINANCE',
     landsOn: '/payments/balance',
     visible: [
+      // `today`'s module access was widened to EDIT for every role in the
+      // 2026-09-02 nav rebuild (My desk is common ground now, not an
+      // Operations-only screen) — this list predates that and never picked
+      // up the row.
+      '/today',
       '/home',
       '/orders',
       '/clients',

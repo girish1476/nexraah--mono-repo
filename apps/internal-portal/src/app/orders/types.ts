@@ -105,11 +105,11 @@ export const ORDER_STATUS_SEQUENCE: OrderStatus[] = [
 export type OrderPhase = 'NEEDS_YOU' | 'PLACING' | 'MOVING' | 'DELIVERED' | 'SETTLED';
 
 export const ORDER_PHASE_LABEL: Record<OrderPhase, string> = {
-  NEEDS_YOU: 'Needs you',
-  PLACING: 'Finding a vehicle',
-  MOVING: 'On the move',
+  NEEDS_YOU: 'Action required',
+  PLACING: 'Vehicle assignment',
+  MOVING: 'In transit',
   DELIVERED: 'Delivered',
-  SETTLED: 'Paid and closed',
+  SETTLED: 'Payment',
 };
 
 /**
@@ -137,10 +137,6 @@ const AWAITING_A_PERSON: OrderStatus[] = ['FAILED', 'ADVANCE_DOCS_UPLOADED', 'PO
 
 export function phaseFor(status: OrderStatus): OrderPhase {
   if (AWAITING_A_PERSON.includes(status)) return 'NEEDS_YOU';
-  // Closed, though not happily — nobody can act on it, so it does not belong
-  // in a work queue. Its red tone and "Balance forfeited" label carry the bad
-  // news; burying it in a phase called "Needs you" would be worse, because
-  // there is nothing anyone can do about it now.
   if (status === 'BALANCE_RELEASED' || status === 'POD_FORFEITED') return 'SETTLED';
   if (status === 'INDENT_CREATED' || status === 'TRIP_GENERATED') return 'PLACING';
   if (status === 'UNLOADED' || status === 'POD_VERIFIED') return 'DELIVERED';

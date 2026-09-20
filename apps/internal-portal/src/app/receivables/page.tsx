@@ -133,7 +133,7 @@ export default function ReceivablesPage() {
 
   return (
     <ModuleGuard module="receivables">
-      <PageHeader path="/receivables" title="Money to collect" module="receivables" />
+      <PageHeader path="/receivables" title="Receivables" module="receivables" />
       <PageIntro
         what="Money your clients still owe you, grouped by how overdue it is."
         who="Finance chases these and records the payments as they come in."

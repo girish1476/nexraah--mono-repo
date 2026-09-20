@@ -129,7 +129,7 @@ export default function CompliancePage() {
 
   return (
     <ModuleGuard module="compliance">
-      <PageHeader path="/compliance" title="Document checks" module="compliance" />
+      <PageHeader path="/compliance" title="Document verification" module="compliance" />
       <PageIntro
         what="Check the vendor papers and client contracts sitting here and decide whether each one passes — a transporter cannot be given loads, and their advance cannot be paid, until you do."
         who="The compliance desk works this queue; finance can watch it."

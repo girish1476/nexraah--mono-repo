@@ -2,11 +2,11 @@
   "cookies": [],
   "origins": [
     {
-      "origin": "http://localhost:3045",
+      "origin": "http://localhost:3001",
       "localStorage": [
         {
           "name": "token",
-          "value": "mock.9876543210.1788389800426"
+          "value": "mock.9876543210.1789810749897"
         },
         {
           "name": "refreshToken",
@@ -14,7 +14,7 @@
         },
         {
           "name": "tokenExpiresAt",
-          "value": "1788393400426"
+          "value": "1789814349897"
         }
       ]
     }

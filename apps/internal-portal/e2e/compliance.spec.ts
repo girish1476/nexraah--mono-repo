@@ -47,7 +47,7 @@ test.describe('Compliance desk — COMPLIANCE role', () => {
 
   test('renders all three queues with the seeded row counts', async ({ page }) => {
     const main = page.locator('main');
-    await expect(main.getByRole('heading', { name: 'Document checks' })).toBeVisible();
+    await expect(main.getByRole('heading', { name: 'Document verification' })).toBeVisible();
     await expect(panel(main, 'Vendor files').locator('table.table tbody tr')).toHaveCount(EXPECTED.vendorFiles());
     await expect(panel(main, 'Client contracts').locator('table.table tbody tr')).toHaveCount(EXPECTED.clientContracts());
     await expect(panel(main, 'Trip documents awaiting verification').locator('table.table tbody tr')).toHaveCount(EXPECTED.tripDocuments());
@@ -124,7 +124,12 @@ test.describe('Compliance desk — FINANCE (VIEW) role', () => {
 
     // The desk only ever offers navigation (`<Link>`s styled as buttons) to
     // go act elsewhere — never an in-place mutating <button> — for any role.
-    await expect(main.locator('button')).toHaveCount(0);
+    // "Report a problem" (`ReportProblemButton`) is excluded: it was mounted
+    // in the shell's footer on every screen for every role after this
+    // assertion was written, and it opens a ticket, not a mutation of
+    // anything on this desk.
+    const mutatingButtons = main.locator('button').filter({ hasNotText: 'Report a problem' });
+    await expect(mutatingButtons).toHaveCount(0);
 
     await expect(panel(main, 'Vendor files').locator('table.table tbody tr')).toHaveCount(EXPECTED.vendorFiles());
     await expect(panel(main, 'Client contracts').locator('table.table tbody tr')).toHaveCount(EXPECTED.clientContracts());

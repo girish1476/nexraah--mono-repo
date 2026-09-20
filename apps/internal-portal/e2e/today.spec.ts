@@ -44,14 +44,14 @@ test.describe('today — stat strip and queues (OPS, unscoped)', () => {
     await expect(statValue(page, 'today-freight-lost')).toHaveText('₹39,000');
     await expect(statValue(page, 'today-never-quoted')).toHaveText('0');
 
-    const panel = page.locator('.surface', { has: page.getByRole('heading', { name: 'Loads we could not place' }) });
+    const panel = page.locator('.surface', { has: page.getByRole('heading', { name: 'Unassigned loads' }) });
     await expect(panel.getByText('IND-4468')).toBeVisible();
     await expect(panel.getByText('Every quote came in above our price limit')).toBeVisible();
     await expect(panel.getByText('recruit on that route')).toBeVisible();
   });
 
   test('trips pending allocation lists the three open indents with the right columns', async ({ page }) => {
-    const panel = page.locator('.surface', { has: page.getByRole('heading', { name: 'Loads waiting for a transporter' }) });
+    const panel = page.locator('.surface', { has: page.getByRole('heading', { name: 'Awaiting transporter' }) });
     const headers = panel.locator('thead th');
     await expect(headers).toHaveText([
       'Client and route',
@@ -70,7 +70,7 @@ test.describe('today — stat strip and queues (OPS, unscoped)', () => {
   });
 
   test('POD overdue lists the three trips still open on POD, not the approved one', async ({ page }) => {
-    const panel = page.locator('.surface', { has: page.getByRole('heading', { name: 'still missing their signed paperwork' }) });
+    const panel = page.locator('.surface', { has: page.getByRole('heading', { name: 'Missing documents' }) });
     const rows = panel.locator('tbody tr');
     await expect(rows).toHaveCount(3);
     await expect(panel.getByText('TRP-120881')).toBeVisible();
@@ -80,7 +80,7 @@ test.describe('today — stat strip and queues (OPS, unscoped)', () => {
   });
 
   test('vendor issues lists the two open issues, not the resolved one', async ({ page }) => {
-    const panel = page.locator('.surface', { has: page.getByRole('heading', { name: 'Open problems with transporters' }) });
+    const panel = page.locator('.surface', { has: page.getByRole('heading', { name: 'Transporter issues' }) });
     const rows = panel.locator('tbody tr');
     await expect(rows).toHaveCount(2);
     await expect(panel.getByText('IS-0041')).toBeVisible();
@@ -97,7 +97,7 @@ test.describe('today — stat strip and queues (OPS, unscoped)', () => {
 
   test('a row in the waiting queue opens the load request behind it', async ({ page }) => {
     const panel = page.locator('.surface', {
-      has: page.getByRole('heading', { name: 'Loads waiting for a transporter' }),
+      has: page.getByRole('heading', { name: 'Awaiting transporter' }),
     });
     await panel.locator('tbody tr').filter({ hasText: 'IND-4471' }).getByRole('link', { name: 'Open' }).click();
     // Plain `waitForURL`, on the config's own timeout.
@@ -114,7 +114,7 @@ test.describe('today — stat strip and queues (OPS, unscoped)', () => {
 
   test('a row in the delivery-paperwork queue opens the trip behind it', async ({ page }) => {
     const panel = page.locator('.surface', {
-      has: page.getByRole('heading', { name: 'still missing their signed paperwork' }),
+      has: page.getByRole('heading', { name: 'Missing documents' }),
     });
     await panel.locator('tbody tr').filter({ hasText: 'TRP-120881' }).getByRole('link', { name: 'Open' }).click();
     await page.waitForURL(/\/trips\/t-120881$/);
@@ -147,23 +147,23 @@ test.describe('today — branch scoping (a scoped Operations user)', () => {
 
     await expect(
       page.locator('.surface', {
-        has: page.getByRole('heading', { name: 'Loads waiting for a transporter' }),
+        has: page.getByRole('heading', { name: 'Awaiting transporter' }),
       }),
     ).toHaveCount(0);
     await expect(
-      page.locator('.surface', { has: page.getByRole('heading', { name: 'Loads we could not place' }) }),
+      page.locator('.surface', { has: page.getByRole('heading', { name: 'Unassigned loads' }) }),
     ).toHaveCount(0);
 
     // Not narrowed to nothing: the POD-overdue trip is Nashik's own, and the
     // vendor issues queue is not branch-derived at all.
     const podPanel = page.locator('.surface', {
-      has: page.getByRole('heading', { name: 'still missing their signed paperwork' }),
+      has: page.getByRole('heading', { name: 'Missing documents' }),
     });
     await expect(podPanel.locator('tbody tr')).toHaveCount(1);
     await expect(podPanel.getByText('TRP-120881')).toBeVisible();
 
     const issuesPanel = page.locator('.surface', {
-      has: page.getByRole('heading', { name: 'Open problems with transporters' }),
+      has: page.getByRole('heading', { name: 'Transporter issues' }),
     });
     await expect(issuesPanel.locator('tbody tr')).toHaveCount(2);
   });

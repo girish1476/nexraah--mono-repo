@@ -195,6 +195,7 @@ export class TripsService implements OnModuleInit {
   }
 
   async submitDocument(tripId: string, kind: string, dto: SubmitTripDocumentDto, actor: AuthenticatedUser) {
+    assertAnyPermission(actor, ['document.verify', 'indent.manage']);
     this.assertKnownKind(kind);
     const trip = await this.assertTripExists(tripId);
 

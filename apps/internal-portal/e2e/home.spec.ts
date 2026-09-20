@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { setRole, statValue } from './helpers';
+import { ROLE_CODES } from '../src/lib/permissions';
 
 /**
  * `/home` — the reporting dashboard (part 10 §2). `GET /reports/home` in
@@ -22,7 +23,7 @@ import { setRole, statValue } from './helpers';
  */
 
 /**
- * Opens "Show the full monthly detail".
+ * Opens "Monthly performance".
  *
  * The snapshot leads with four figures and folds everything else — the month,
  * the branches, the delivery paperwork, the money and the top clients — into
@@ -37,7 +38,7 @@ async function showFullDetail(page: Page) {
   // turned this into a silent no-op — the caller then failed much later,
   // looking like a missing panel rather than a fold nobody opened. Clicking
   // directly lets Playwright auto-wait for the summary to exist.
-  await page.getByText('Show the full monthly detail').first().click();
+  await page.getByText('Monthly performance').first().click();
 }
 
 
@@ -67,7 +68,7 @@ test.describe('home — leadership dashboard (LEADERSHIP, unscoped)', () => {
   });
 
   test('branches table lists all five branches with the right columns', async ({ page }) => {
-    const panel = page.locator('.surface', { has: page.getByRole('heading', { name: 'How each branch did' }) });
+    const panel = page.locator('.surface', { has: page.getByRole('heading', { name: 'Branch performance' }) });
     const headers = panel.locator('thead th');
     await expect(headers).toHaveText([
       'Branch',
@@ -108,7 +109,7 @@ test.describe('home — leadership dashboard (LEADERSHIP, unscoped)', () => {
   });
 
   test('top clients panel lists the three seeded clients by revenue', async ({ page }) => {
-    const panel = page.locator('.surface', { has: page.getByRole('heading', { name: 'Our biggest clients this month' }) });
+    const panel = page.locator('.surface', { has: page.getByRole('heading', { name: 'Top clients' }) });
     const rows = panel.locator('tbody tr');
     await expect(rows).toHaveCount(3);
     await expect(panel.getByText('Berger Paints')).toBeVisible();
@@ -134,13 +135,22 @@ test.describe('home — leadership dashboard (LEADERSHIP, unscoped)', () => {
 });
 
 test.describe('home — module-level access', () => {
-  // Retargeted from OPS, which went VIEW -> EDIT on `home` in the branch-manager
-  // merge. Compliance is the role that still reads this screen without editing it.
-  test('COMPLIANCE gets a read-only badge (VIEW-level on home)', async ({ page }) => {
-    await setRole(page, 'COMPLIANCE');
-    await page.goto('/home');
-    await expect(page.getByTestId('view-only')).toBeVisible();
-  });
+  /*
+   * `home` (and `today`, `search`) is EDIT for every role at the owner's
+   * direction — see the comment on `MODULE_ACCESS.home` in permissions.ts.
+   * COMPLIANCE was VIEW here at one point and this suite pinned that with a
+   * badge assertion; the permission changed on 2026-08-30 but this test kept
+   * asserting the old state until it was caught in a 2026-09-19 UI audit.
+   * No role is VIEW-level on `home` any more, so the invariant worth pinning
+   * is that none of them ever gets the badge here.
+   */
+  for (const role of ROLE_CODES) {
+    test(`${role} has no read-only badge on home`, async ({ page }) => {
+      await setRole(page, role);
+      await page.goto('/home');
+      await expect(page.getByTestId('view-only')).toHaveCount(0);
+    });
+  }
 
   // Operations went VIEW -> EDIT on `home` when it absorbed the branch
   // manager, so it gets the monthly review with no read-only badge — and,
@@ -151,7 +161,7 @@ test.describe('home — module-level access', () => {
     await expect(page.getByTestId('view-only')).toHaveCount(0);
     await showFullDetail(page);
 
-    const panel = page.locator('.surface', { has: page.getByRole('heading', { name: 'How each branch did' }) });
+    const panel = page.locator('.surface', { has: page.getByRole('heading', { name: 'Branch performance' }) });
     await expect(panel.locator('tbody tr')).toHaveCount(5);
     await expect(panel.getByText('Nashik', { exact: true })).toBeVisible();
     await expect(panel.getByText('Pune', { exact: true })).toBeVisible();

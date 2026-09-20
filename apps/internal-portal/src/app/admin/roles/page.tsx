@@ -92,7 +92,7 @@ export default function RolesMatrixPage() {
 
   return (
     <ModuleGuard module="admin">
-      <PageHeader path="/admin/roles" title="Who can do what" module="admin" />
+      <PageHeader path="/admin/roles" title="Access control" module="admin" />
       <PageIntro
         what="Which screens each job can open, and which actions each one is allowed to take."
         who="Administrators only."

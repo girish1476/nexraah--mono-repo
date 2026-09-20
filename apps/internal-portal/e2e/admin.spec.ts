@@ -218,8 +218,8 @@ test.describe('roles matrix', () => {
     await expect(moduleCell(modules, 'Settings', 'ADMIN')).toHaveText('✓');
     await expect(moduleCell(modules, 'Settings', 'LEADERSHIP')).toHaveText('◐');
     await expect(moduleCell(modules, 'Settings', 'OPS')).toHaveText('—');
-    await expect(moduleCell(modules, 'Document checks', 'COMPLIANCE')).toHaveText('✓');
-    await expect(moduleCell(modules, 'Document checks', 'FINANCE')).toHaveText('◐');
+    await expect(moduleCell(modules, 'Document verification', 'COMPLIANCE')).toHaveText('✓');
+    await expect(moduleCell(modules, 'Document verification', 'FINANCE')).toHaveText('◐');
 
     const permissions = page.locator('table.table').nth(1);
     const paymentRelease = permissionRow(permissions, 'payment.release');

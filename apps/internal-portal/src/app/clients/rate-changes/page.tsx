@@ -221,7 +221,7 @@ export default function RateChangesPage() {
   return (
     <ModuleGuard module="clients">
       <PageHeader
-        title="Change an agreed rate"
+        title="Rate revision"
         sub="Move the price on a lane we have already agreed, with a reason and a sign-off"
         module="clients"
       />

@@ -146,7 +146,7 @@ export default function HomePage() {
       </div>
 
       <Stack gap={20}>
-        <Panel title="📌 The four numbers that matter">
+        <Panel title="📌 Key metrics">
           <StatStrip
             stats={[
               {
@@ -164,7 +164,7 @@ export default function HomePage() {
                 tone: data.pod.breached > 0 ? 'red' : undefined,
               },
               {
-                k: 'Loads we could not place', id: 'home-failures',
+                k: 'Unassigned loads', id: 'home-failures',
                 v: data.month.failures,
                 emoji: '🚨',
                 note: 'No vehicle went against them at all',
@@ -193,12 +193,12 @@ export default function HomePage() {
               userSelect: 'none',
             }}
           >
-            Show the full monthly detail
+            Monthly performance
           </summary>
           <div style={{ marginTop: 16 }}>
             <Stack gap={20}>
               <div id="this-month">
-                <Panel title="📅 What we moved and what we made">
+                <Panel title="📅 Volume & revenue">
                   <StatStrip
                     stats={[
                       { k: 'Loads moved', id: 'month-loads', v: data.month.trips, emoji: '🚚' },
@@ -244,7 +244,7 @@ export default function HomePage() {
                           emoji: '✅',
                         },
                         {
-                          k: 'Loads we could not place', id: 'month-failures',
+                          k: 'Unassigned loads', id: 'month-failures',
                           v: data.month.failures,
                           emoji: '🚨',
                           tone: data.month.failures > 0 ? 'red' : undefined,
@@ -256,12 +256,12 @@ export default function HomePage() {
                 </Panel>
               </div>
 
-              <Panel title="🏬 How each branch did" pad={false}>
+              <Panel title="🏬 Branch performance" pad={false}>
                 <DataTable columns={branchColumns} rows={data.branches} rowKey={(r) => r.branchName} />
               </Panel>
 
               <div id="pod-collection">
-                <Panel title="📸 Signed delivery paperwork">
+                <Panel title="📸 Delivery documents">
                   <div className="hint" style={{ marginBottom: 12 }}>
                     A load is only finished once the signed paper comes back from the delivery
                     point. Until it does, we cannot bill the client and the transporter&apos;s final
@@ -307,7 +307,7 @@ export default function HomePage() {
               </div>
 
               <div id="standing">
-                <Panel title="💰 Money in and money out">
+                <Panel title="💰 Cash flow">
                   <StatStrip
                     stats={[
                       {
@@ -341,7 +341,7 @@ export default function HomePage() {
                 </Panel>
               </div>
 
-              <Panel title="🏢 Our biggest clients this month" pad={false}>
+              <Panel title="🏢 Top clients" pad={false}>
                 <DataTable
                   columns={[
                     { key: 'client', label: 'Client', primary: true, render: (r: HomeResponse['topClients'][number]) => r.clientName },

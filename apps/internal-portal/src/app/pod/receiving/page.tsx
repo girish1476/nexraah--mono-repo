@@ -153,7 +153,7 @@ export default function PodReceivingPage() {
     <ModuleGuard module="pod">
       <PageHeader
         path="/pod/receiving"
-        title={attachedOnly ? 'E-POD pending' : 'Collect delivery proof'}
+        title={attachedOnly ? 'E-POD pending' : 'Collect POD'}
         sub="A photo attached in the transporter app does not stop the penalty clock — only logging the physical copy here does."
         module="pod"
       />
