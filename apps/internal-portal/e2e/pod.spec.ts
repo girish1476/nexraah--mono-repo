@@ -29,9 +29,28 @@ function row(page: Page, tripCode: string) {
   return page.locator('table.table tbody tr').filter({ hasText: tripCode });
 }
 
-/** `Field` renders a bare `<label>` with no `for`/`id` (no `getByLabel` support). */
+/**
+ * `Field` renders a bare `<label>` with no `for`/`id` (no `getByLabel` support).
+ *
+ * Matches against the `<label>` element specifically, not a `hasText`
+ * substring of the whole `.field` div: the "Sent on" field's own hint text
+ * ("Required together with the courier docket (BR-51)") contains the words
+ * "courier docket", so a substring match against `Courier docket` anywhere
+ * in the field resolved to two fields once that hint was added — this one
+ * and the field it was actually naming. The hint renders in a `<span>`, only
+ * the real label in a `<label>`, so narrowing the match to that tag is
+ * enough to tell them apart.
+ *
+ * The `has` locator is built from `page`, never from `scope` itself —
+ * confirmed by hand against the live dialog: `scope.locator(...)` as the
+ * `has` clause resolves to zero matches even when the element is plainly in
+ * the DOM, while the identical selector rooted at `page` resolves correctly.
+ * `indents.spec.ts`'s analogous `fieldControl()` already does it this way;
+ * this one just hadn't been written against a case that exposed it.
+ */
 function field(scope: Page | Locator, label: string) {
-  return scope.locator('.field').filter({ hasText: label });
+  const rootPage = (scope as Locator).page ? (scope as Locator).page() : (scope as Page);
+  return scope.locator('.field').filter({ has: rootPage.locator('label', { hasText: label }) });
 }
 
 /** The Dialog's content box is the heading's immediate parent — modal, so only one is ever open. */
@@ -188,6 +207,11 @@ test.describe('POD receiving register', () => {
     await expect(confirm).toBeDisabled();
 
     await field(dialog, 'Courier docket').locator('input').fill('CN-99182');
+    // BR-51: courier docket and sent-on are required together — "Received
+    // on" and "Pages" already default filled, so this is the one other
+    // field standing between here and enabled.
+    await expect(confirm).toBeDisabled();
+    await field(dialog, 'Sent on').locator('input').fill('2026-09-18');
     await expect(confirm).toBeEnabled();
     await confirm.click();
 

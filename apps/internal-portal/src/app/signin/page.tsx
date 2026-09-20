@@ -62,7 +62,31 @@ export default function SignInPage() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24 }}>
+    <div className="auth-shell">
+      <div className="auth-brand">
+        <div className="auth-brand-head">
+          <img src="/logo.png" alt="" aria-hidden className="auth-brand-logo" />
+          <div>
+            <div className="auth-brand-name">Nexraah</div>
+            <div className="auth-brand-tag">Built to move. Born to deliver.</div>
+          </div>
+        </div>
+        <ul className="auth-brand-points">
+          <li>
+            <span aria-hidden>🚚</span>
+            <span>Every shipment, ten steps, one place — from the first quote to the final payment.</span>
+          </li>
+          <li>
+            <span aria-hidden>🛡️</span>
+            <span>Compliance clears every transporter before a load ever reaches them.</span>
+          </li>
+          <li>
+            <span aria-hidden>💰</span>
+            <span>Advances, balances and receivables tracked to the rupee.</span>
+          </li>
+        </ul>
+      </div>
+      <div className="auth-form-col">
       <div style={{ maxWidth: 440, width: '100%' }}>
         <div className="surface" style={{ padding: 22 }}>
           <h1 style={{ fontSize: 18, marginBottom: 4 }}>Sign in</h1>
@@ -168,6 +192,7 @@ export default function SignInPage() {
             </button>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

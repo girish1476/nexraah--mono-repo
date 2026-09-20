@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { errorMessage } from '@/apis';
@@ -18,7 +17,6 @@ import {
   StatStrip,
   Tag,
   Tone,
-  useLevel,
 } from '@/lib/ui';
 import { listRfqs } from './apis';
 import { RfqListResponse, RfqStatus } from './types';
@@ -36,7 +34,6 @@ const TONE: Record<RfqStatus, Tone> = {
 /** RFQ list — `/rfq` (part 09 §1). Win lanes at a price that can be served. */
 export default function RfqPage() {
   const router = useRouter();
-  const level = useLevel('rfq');
   const [data, setData] = useState<RfqListResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -65,18 +62,7 @@ export default function RfqPage() {
 
   return (
     <ModuleGuard module="rfq">
-      <PageHeader
-        path="/rfq"
-        title="Rate requests"
-        module="rfq"
-        right={
-          level === 'EDIT' && (
-            <Link href="/rfq/new" className="btn">
-              New RFQ
-            </Link>
-          )
-        }
-      />
+      <PageHeader path="/rfq" title="Rate requests" module="rfq" />
       <PageIntro
         what="Winning a lane — a route you'll run for a client again and again — at a price that still works once a transporter is paid."
         who="Operations builds these; leadership submits them to the client."

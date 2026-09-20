@@ -7,6 +7,12 @@ export interface CompanyDetails {
   cin: string;
   address: string;
   bank: string;
+  /** SAC — the GST service code printed on the invoice (996511 for a goods
+   *  transport agency's road transport service). */
+  sac: string;
+  /** The name/title printed under the signature line on a printed invoice
+   *  — e.g. "Authorised Signatory", or a specific person once designated. */
+  signatory: string;
 }
 
 export interface Config {

@@ -565,12 +565,20 @@ export function AppHeader() {
         href="/loads"
         style={{
           display: 'inline-flex',
-          alignItems: 'baseline',
+          alignItems: 'center',
           gap: 7,
           textDecoration: 'none',
           color: 'var(--color-text)',
         }}
       >
+        <img
+          src="/logo.png"
+          alt=""
+          aria-hidden
+          width={24}
+          height={24}
+          style={{ borderRadius: 7, flex: 'none' }}
+        />
         <span
           style={{
             fontFamily: 'var(--font-heading)',

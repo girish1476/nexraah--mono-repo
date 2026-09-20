@@ -70,7 +70,14 @@ export default function BillsPage() {
         atTheirFigure,
         reason: reason || undefined,
       });
-      toast(`Accepted and released · ${inr(result.payment.netPaise)} · UTR ${result.payment.utr}`);
+      // Names which figure was actually released, not just that something
+      // was: after a manually-justified "their figure" release, "Accepted
+      // and released" alone would tell Finance the money moved but not
+      // which of the two numbers it moved at — the one thing this whole
+      // dialog exists to make a deliberate, visible choice about. UTR stays
+      // on the end, matching the balance-release toast's own pattern.
+      const figureNote = atTheirFigure ? 'Accepted at the transporter’s figure' : 'Accepted at the computed figure';
+      toast(`${figureNote} · ${inr(result.payment.netPaise)} · UTR ${result.payment.utr}`);
       setAccepting(null);
       setReason('');
       setAtTheirFigure(false);

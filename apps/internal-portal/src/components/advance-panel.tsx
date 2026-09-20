@@ -17,7 +17,17 @@ import { ReleaseDialog } from './release-dialog';
  *
  * The blocking list is the server's; nothing here decides what is missing.
  */
-export function AdvancePanel({ indentId, onReleased }: { indentId: string; onReleased?: () => void }) {
+export function AdvancePanel({
+  indentId,
+  onReleased,
+  hideOrderLink,
+}: {
+  indentId: string;
+  onReleased?: () => void;
+  /** The order page renders this panel itself — a link back to the page
+      you're already on is dead weight, not navigation. */
+  hideOrderLink?: boolean;
+}) {
   const can = useCan();
   const toast = useToast();
   const [detail, setDetail] = useState<AdvanceDetail | null>(null);
@@ -62,7 +72,7 @@ export function AdvancePanel({ indentId, onReleased }: { indentId: string; onRel
   if (error) return <Banner tone="grey" title="Advance">{error}</Banner>;
   if (!detail) return <Loading what="Checking the advance gate" />;
 
-  const orderLink = (
+  const orderLink = !hideOrderLink && (
     <div style={{ marginBottom: 10 }}>
       <Link href={`/orders/${detail.indentCode}`} className="btn btn-secondary btn-sm">
         View order

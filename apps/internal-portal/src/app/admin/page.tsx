@@ -55,6 +55,8 @@ const COMPANY_LABELS: Record<string, string> = {
   name: 'Company name',
   address: 'Registered address',
   bank: 'Bank details',
+  sac: 'SAC code',
+  signatory: 'Signatory (name printed under the signature line)',
 };
 
 export default function ControlPanelPage() {

@@ -6,7 +6,7 @@
       "localStorage": [
         {
           "name": "token",
-          "value": "mock.9876543210.1789810749897"
+          "value": "mock.9876543210.1789887728750"
         },
         {
           "name": "refreshToken",
@@ -14,7 +14,7 @@
         },
         {
           "name": "tokenExpiresAt",
-          "value": "1789814349897"
+          "value": "1789891328750"
         }
       ]
     }

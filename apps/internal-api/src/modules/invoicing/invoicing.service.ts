@@ -4,8 +4,10 @@ import { DomainException, assertReason } from '../../common/domain-exception';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
 import { AuditService } from '../audit/audit.service';
 import { NumberingService } from '../numbering/numbering.service';
+import { ConfigRepository } from '../config/config.repository';
 import { InvoicingRepository, type InvoiceListFilters } from './invoicing.repository';
 import type { CreateInvoiceDto } from './dto/create-invoice.dto';
+import type { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import type { CancelInvoiceDto } from './dto/cancel-invoice.dto';
 import type { RecordReceiptDto } from './dto/record-receipt.dto';
 
@@ -18,6 +20,7 @@ export class InvoicingService {
     private readonly invoicingRepository: InvoicingRepository,
     private readonly numberingService: NumberingService,
     private readonly auditService: AuditService,
+    private readonly configRepository: ConfigRepository,
   ) {}
 
   // ---- Invoices -----------------------------------------------------------
@@ -39,15 +42,16 @@ export class InvoicingService {
     const row = await this.invoicingRepository.findById(id);
     if (!row) throw new DomainException(404, 'NOT_FOUND', `Unknown invoice: ${id}`);
 
-    const [trips, receipts, client] = await Promise.all([
+    const [trips, receipts, client, company] = await Promise.all([
       this.invoicingRepository.findTripsForInvoice(id),
       this.invoicingRepository.findReceiptsForInvoice(id),
       this.clientDto(row.clientId),
+      this.companyDetails(),
     ]);
 
     return {
       ...this.invoiceDto(row, trips.map((t) => t.id)),
-      company: this.companyDetails(),
+      company,
       client,
       trips,
       // `findReceiptsForInvoice` selects raw `receipts` columns only (no join),
@@ -119,6 +123,125 @@ export class InvoicingService {
       });
 
       return this.invoiceDto(this.rawInvoiceToJoined(row, client.name), tripIds);
+    });
+  }
+
+  /**
+   * Edit a not-yet-paid invoice — draft or issued (part 08, added 2026-09-20
+   * so a mistake caught after "Generate invoice" doesn't force a
+   * cancel-and-reissue for something as small as a wrong charge amount).
+   *
+   * Two invariants a `PATCH` here must not be allowed to break:
+   *
+   *  - **Once a receipt exists, the total is locked.** `recordReceipt`
+   *    computes `PART_PAID`/`PAID` against `total` at the moment it runs; an
+   *    edit afterwards would silently desync what was actually collected
+   *    from what the invoice now claims. `cancel()` (which keeps the number
+   *    and a reason) is the only way to correct a receipted invoice.
+   *  - **The consignments on an issued invoice are locked.** Swapping trips
+   *    after `generate()` has already flipped `trips.billed = true` on the
+   *    old set would need the same billed-flag bookkeeping `generate()`
+   *    does, against a number a client may already be reconciling their own
+   *    books to. A draft carries no such flag yet — `create()` never calls
+   *    `markTripsBilled` — so its trip selection is free to change.
+   */
+  async update(id: string, dto: UpdateInvoiceDto, actor: AuthenticatedUser) {
+    return this.invoicingRepository.transaction().execute(async (trx) => {
+      const row = await this.invoicingRepository.findByIdForUpdate(trx, id);
+      if (!row) throw new DomainException(404, 'NOT_FOUND', `Unknown invoice: ${id}`);
+      if (row.status === 'CANCELLED') {
+        throw new DomainException(409, 'ALREADY_CANCELLED', 'This invoice has already been cancelled.');
+      }
+      if (row.received > 0) {
+        throw new DomainException(
+          409,
+          'INVOICE_HAS_RECEIPTS',
+          'A receipt has already been recorded against this invoice. Cancel and raise a new one instead of editing it.',
+        );
+      }
+
+      const isDraft = row.status === 'DRAFT';
+      const currentTripIds = (await this.invoicingRepository.invoiceTripIds(id)).map((l) => l.trip_id);
+
+      let tripIds = currentTripIds;
+      let freight = row.freight;
+
+      if (dto.tripIds) {
+        const same =
+          dto.tripIds.length === currentTripIds.length &&
+          dto.tripIds.every((t) => currentTripIds.includes(t));
+        if (!same) {
+          if (!isDraft) {
+            throw new DomainException(
+              409,
+              'INVOICE_LOCKED',
+              'The consignments on an issued invoice can’t be changed. Cancel this one and raise a new one instead.',
+            );
+          }
+          if (dto.freightPaise === undefined) {
+            throw new DomainException(
+              400,
+              'VALIDATION_ERROR',
+              'freightPaise is required when the selected consignments change.',
+            );
+          }
+          const trips = await this.invoicingRepository.findTripsByIdsForUpdate(trx, dto.tripIds);
+          const found = new Map(trips.map((t) => [t.id, t]));
+          for (const tripId of dto.tripIds) {
+            const trip = found.get(tripId);
+            if (!trip) throw new DomainException(404, 'NOT_FOUND', `Unknown trip: ${tripId}`);
+            if (trip.stage !== 'DELIVERED') {
+              throw new DomainException(409, 'TRIP_NOT_DELIVERED', `Trip ${trip.code} has not been delivered yet.`);
+            }
+            // A trip already on *this* draft is fine to keep; one billed
+            // onto some other invoice is not up for grabs.
+            if (trip.billed && !currentTripIds.includes(tripId)) {
+              throw new DomainException(409, 'TRIP_ALREADY_BILLED', `Trip ${trip.code} is already on another invoice.`);
+            }
+          }
+          tripIds = dto.tripIds;
+          freight = dto.freightPaise;
+          await this.invoicingRepository.deleteInvoiceTrips(trx, id);
+          await this.invoicingRepository.insertInvoiceTrips(trx, id, tripIds);
+        }
+      }
+
+      const heads = {
+        freight,
+        loading: dto.loadingPaise ?? row.loading,
+        unloading: dto.unloadingPaise ?? row.unloading,
+        detention: dto.detentionPaise ?? row.detention,
+        other: dto.otherPaise ?? row.other,
+        discount: dto.discountPaise ?? row.discount,
+      };
+      const { totalPaise, roundOffPaise } = this.computeTotals(heads);
+
+      const updated = await this.invoicingRepository.updateInvoice(trx, id, {
+        // The client itself only ever changes on a draft — once issued, the
+        // invoice belongs to whichever client it was cut for.
+        client_id: isDraft && dto.clientId ? dto.clientId : row.client_id,
+        invoice_date: dto.invoiceDate ?? row.invoice_date,
+        due_date: dto.dueDate ?? row.due_date,
+        freight: heads.freight,
+        loading: heads.loading,
+        unloading: heads.unloading,
+        detention: heads.detention,
+        other: heads.other,
+        discount: heads.discount,
+        round_off: roundOffPaise,
+        total: totalPaise,
+        notes: dto.notes ?? row.notes,
+      });
+
+      await this.auditService.record(trx, actor, {
+        action: 'INVOICE_UPDATED',
+        entityType: 'invoices',
+        entityId: id,
+        after: { totalPaise, tripIds },
+      });
+
+      const client = await this.invoicingRepository.findClientById(updated.client_id);
+      return this.invoiceDto(this.rawInvoiceToJoined(updated, client?.name ?? ''), tripIds);
     });
   }
 
@@ -343,12 +466,47 @@ export class InvoicingService {
     return code.startsWith('DRAFT-') ? null : code;
   }
 
-  private companyDetails() {
-    // Reserved for `config.company` (patch-config.dto.ts) once a company
-    // profile screen ships — every field the frontend's CompanyDetails type
-    // needs (`name`, `gstin`, `pan`, `cin`, `address`, `bank`) already lives
-    // in config.company, mirroring how PaymentsService reads ConfigRepository.
-    return { name: '', gstin: '', pan: '', cin: '', address: '', bank: '' };
+  /**
+   * `config.company` — seeded by `20260814090400` and editable from
+   * `/admin` (part 08's printed company block: name, GSTIN, PAN, CIN,
+   * address, bank, SAC — the GST service code for a goods transport agency,
+   * added by `20260920000000` — and `signatory`, the name/title printed
+   * under the signature line, added by `20260920010000` so an administrator
+   * can name a real person there instead of the generic default).
+   *
+   * This used to return a hard-coded blank for every field, which was never
+   * true of the data — `config.company` has carried the real values since
+   * the very first migration. Every invoice printed against a real database
+   * had an empty company header as a result; nothing in mocks or tests
+   * caught it because `mocks/index.ts` hard-codes the same values `config`
+   * seeds, so the two never had a chance to disagree.
+   */
+  private async companyDetails() {
+    const config = await this.configRepository.findAll();
+    const company = (config.get('company') ?? {}) as Partial<{
+      name: string;
+      gstin: string;
+      pan: string;
+      cin: string;
+      address: string;
+      bank: string;
+      sac: string;
+      signatory: string;
+    }>;
+    return {
+      name: company.name ?? '',
+      gstin: company.gstin ?? '',
+      pan: company.pan ?? '',
+      cin: company.cin ?? '',
+      address: company.address ?? '',
+      bank: company.bank ?? '',
+      // 996511 — "Services provided by a goods transport agency in relation
+      // to transport of goods by road" — falls back only if the config row
+      // somehow predates the 20260920000000 migration that added it.
+      sac: company.sac ?? '996511',
+      // Falls back only if the config row somehow predates 20260920010000.
+      signatory: company.signatory ?? 'Authorised Signatory',
+    };
   }
 
   private async clientDto(clientId: string) {

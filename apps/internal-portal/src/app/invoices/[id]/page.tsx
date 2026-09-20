@@ -100,6 +100,13 @@ export default function InvoiceDetailPage() {
                 Download PDF
               </button>
             )}
+            {/* Same two conditions the edit page itself guards on — no
+                sense offering a door that only leads to a blocked screen. */}
+            {invoice.status !== 'CANCELLED' && invoice.receivedPaise === 0 && can('invoice.create') && (
+              <Link href={`/invoices/${id}/edit`} className="btn btn-secondary">
+                Edit
+              </Link>
+            )}
             {!invoice.code && can('invoice.create') && (
               <button className="btn" onClick={issue} disabled={busy}>
                 Generate invoice

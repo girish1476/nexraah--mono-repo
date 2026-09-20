@@ -42,7 +42,6 @@ const ALL_ROUTES = [
   '/clients',
   '/rfq',
   '/indents',
-  '/pod/receiving',
   '/pod/pending',
   '/payments/advance',
   '/payments/balance',
@@ -62,7 +61,10 @@ const allBut = (visible: string[]) => ALL_ROUTES.filter((r) => !visible.includes
 const CASES: RoleCase[] = [
   {
     // Operations absorbed the branch manager, so its module set is the union
-    // of the two: home, both POD queues and the approvals inbox came across.
+    // of the two: home, the POD queue (one sidebar row — "Check POD status"
+    // — since the 2026-09-20 consolidation; the e-POD and past-due registers
+    // are now tabs inside it rather than sibling nav rows) and the approvals
+    // inbox came across.
     role: 'OPS',
     landsOn: '/today',
     visible: [
@@ -71,7 +73,6 @@ const CASES: RoleCase[] = [
       '/orders',
       '/vendors',
       '/indents',
-      '/pod/receiving',
       '/pod/pending',
       '/rfq',
       '/telematics',
@@ -99,7 +100,6 @@ const CASES: RoleCase[] = [
       // still needs `client.manage`, which Compliance does not hold.
       '/clients',
       '/indents',
-      '/pod/receiving',
       '/pod/pending',
       // Compliance holds EDIT on payments so it can clear the advance
       // document checklist. `payment.release` still lives only with Finance.
@@ -232,6 +232,9 @@ test('role switcher persists across a client-side navigation', async ({ page }, 
   // FINANCE holds EDIT on clients (unlike indents, which is VIEW-only and no
   // longer offered in the sidebar) — a client-side route change carries the
   // same role forward, so the create control is there, not a lock panel.
+  // Areas collapse by default (2026-09-20), so Clients has to be opened
+  // before its own row is reachable.
+  await page.getByRole('button', { name: /^Clients/ }).click();
   await page.locator('nav a[href="/clients"]').click();
   await expect(page).toHaveURL(/\/clients$/);
   await expect(page.getByRole('link', { name: 'New client' })).toBeVisible();

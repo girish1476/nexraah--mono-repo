@@ -14,9 +14,11 @@ import { ReportProblemButton } from './tickets/report-button';
 /**
  * A nav href without its query string.
  *
- * Three delivery-proof rows are presets of two screens — `/pod/pending`,
- * `/pod/pending?ageing=breached`, `/pod/receiving?attached=1` — so anything
- * comparing a row against the current path has to drop the query first.
+ * No row in `NAV` currently carries one, but a row that pointed at a preset
+ * of another screen — `/pod/pending?ageing=breached` was one, before the
+ * delivery-proof rows collapsed into the single "Check POD status" row —
+ * would need this to match against the current path, so it stays rather
+ * than being re-added the next time one does.
  */
 function hrefPath(href: string): string {
   const q = href.indexOf('?');
@@ -122,7 +124,10 @@ export function Shell({ session, children }: { session: Session | null; children
             <path d="M4 7h16M4 12h16M4 17h16" />
           </svg>
         </button>
-        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17 }}>Nexraah</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <img src="/logo.png" alt="" aria-hidden width={24} height={24} style={{ borderRadius: 7, flex: 'none' }} />
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17 }}>Nexraah</div>
+        </div>
         {/* On a phone the sidebar is behind a hamburger, so the one badge that
             means "somebody is waiting on you" has to survive out here too. */}
         {pendingApprovals > 0 && (
@@ -156,25 +161,21 @@ export function Shell({ session, children }: { session: Session | null; children
           }}
         >
           <div style={{ padding: '2px 16px 16px', display: 'flex', alignItems: 'center', gap: 11 }}>
-            <div
+            <img
+              src="/logo.png"
+              alt=""
               aria-hidden
+              width={36}
+              height={36}
               style={{
                 width: 36,
                 height: 36,
                 borderRadius: 11,
                 flex: 'none',
-                display: 'grid',
-                placeItems: 'center',
-                background: 'linear-gradient(150deg, var(--color-accent-400), var(--color-accent-700))',
-                color: '#fff',
-                fontFamily: 'var(--font-heading)',
-                fontWeight: 800,
-                fontSize: 17,
                 boxShadow: 'var(--shadow-sm)',
+                objectFit: 'cover',
               }}
-            >
-              N
-            </div>
+            />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 19, lineHeight: 1.15 }}>
                 Nexraah
@@ -215,15 +216,15 @@ export function Shell({ session, children }: { session: Session | null; children
                * Every titled area collapses, at the owner's direction ("show
                * all the sub-sections with dropdown options").
                *
-               * **Open by default**, and that is the whole of the decision.
-               * Collapsing them on first load would fold away five of the six
-               * areas for everybody — every screen you were not already
-               * standing on would take two clicks instead of one, on a console
-               * whose stated problem was that people could not find things.
-               * The fold is there for somebody who wants to put an area away,
-               * not a state to arrive in.
+               * **Closed by default**, reversed 2026-09-20 from the original
+               * open-by-default call — the owner wants a short, scannable
+               * list of areas to arrive on, expanding only the one they click
+               * into, not five open accordions stacked on top of each other.
+               * The three ungrouped desk rows (`!group.label`) are exempt —
+               * there is nothing to fold there, and they should always be one
+               * click away regardless of this default.
                */
-              const open = !group.label || (openAreas[group.label] ?? true);
+              const open = !group.label || (openAreas[group.label] ?? false);
               return (
                 <div
                   key={group.label || 'root'}
@@ -262,43 +263,55 @@ export function Shell({ session, children }: { session: Session | null; children
                       </svg>
                     </button>
                   )}
-                  {open &&
-                    group.items.map((item) => {
-                    /*
-                     * Three of the delivery-proof rows are presets of two
-                     * screens (`?ageing=breached`, `?attached=1`), so matching
-                     * on pathname alone would light up every row sharing a
-                     * path. An exact match wins; a plain row falls back to the
-                     * path, but only while no preset row has claimed the
-                     * current URL — otherwise "pending" and "past due" would
-                     * both look current at once.
-                     */
-                    const path = hrefPath(item.href);
-                    const active = item.href.includes('?')
-                      ? item.href === currentHref
-                      : (pathname === path || pathname.startsWith(`${path}/`)) && !presetClaims;
-                    const badge =
-                      item.module === 'approvals' && pendingApprovals > 0 ? pendingApprovals : null;
-                    return (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        className={active ? 'nav-item is-active' : 'nav-item'}
-                        aria-current={active ? 'page' : undefined}
-                        title={item.note}
-                      >
-                        <Glyph chip tint={tint} size={15}>
-                          {item.emoji ?? '•'}
-                        </Glyph>
-                        <span className="nav-item-label">{item.label}</span>
-                        {badge && (
-                          <span className="nav-badge" aria-label={`${badge} waiting`}>
-                            {badge}
-                          </span>
-                        )}
-                      </Link>
-                    );
-                  })}
+                  {/*
+                    CSS-hidden rather than left unrendered when closed: a
+                    permission gate (`rbac-nav.spec.ts`) checks a role's
+                    offered routes by finding the `<a href>` in the sidebar,
+                    which a collapsed-away group would make indistinguishable
+                    from a route the role simply doesn't hold — the very
+                    thing that test exists to catch. `hidden` keeps every row
+                    real and reachable by a direct link or a script, just not
+                    painted, which is also what stops the group from losing
+                    its scroll position or remounting each time it opens.
+                  */}
+                  <div hidden={!open}>
+                    {group.items.map((item) => {
+                      /*
+                       * Three of the delivery-proof rows are presets of two
+                       * screens (`?ageing=breached`, `?attached=1`), so matching
+                       * on pathname alone would light up every row sharing a
+                       * path. An exact match wins; a plain row falls back to the
+                       * path, but only while no preset row has claimed the
+                       * current URL — otherwise "pending" and "past due" would
+                       * both look current at once.
+                       */
+                      const path = hrefPath(item.href);
+                      const active = item.href.includes('?')
+                        ? item.href === currentHref
+                        : (pathname === path || pathname.startsWith(`${path}/`)) && !presetClaims;
+                      const badge =
+                        item.module === 'approvals' && pendingApprovals > 0 ? pendingApprovals : null;
+                      return (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          className={active ? 'nav-item is-active' : 'nav-item'}
+                          aria-current={active ? 'page' : undefined}
+                          title={item.note}
+                        >
+                          <Glyph chip tint={tint} size={15}>
+                            {item.emoji ?? '•'}
+                          </Glyph>
+                          <span className="nav-item-label">{item.label}</span>
+                          {badge && (
+                            <span className="nav-badge" aria-label={`${badge} waiting`}>
+                              {badge}
+                            </span>
+                          )}
+                        </Link>
+                      );
+                    })}
+                  </div>
                 </div>
               );
             })}

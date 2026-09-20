@@ -632,13 +632,6 @@ export const NAV: NavGroup[] = [
         emoji: '📊',
         note: 'How the month is going',
       },
-      {
-        label: 'Global search',
-        href: '/search',
-        module: 'search',
-        emoji: '🔎',
-        note: 'Find any load, trip, client, transporter or bill by one code',
-      },
     ],
   },
   {
@@ -671,59 +664,22 @@ export const NAV: NavGroup[] = [
         emoji: '📍',
         note: 'Where the trucks are right now',
       },
-      /*
-       * Three delivery-proof rows where there were two, and they are cut by
-       * what is wrong rather than by who acts. "Collect" and "Check" named the
-       * desk's own verbs; these name the state of the paper, which is what
-       * somebody arrives looking for.
-       */
       {
+        /*
+         * The sidebar's one door into the whole delivery-proof area. It used
+         * to be four rows — this plain view, plus a "past due" preset, an
+         * "e-POD pending" preset and the plain receiving register — which
+         * read as four separate places to look for what is really one
+         * question ("where is the paper"). The page itself now carries
+         * "Delivery proof past due" and "E-POD pending" as its own tabs, so
+         * both destinations are still one click away, just inside the page
+         * rather than duplicated in the sidebar.
+         */
         label: 'Check POD status',
         href: '/pod/pending',
         module: 'pod',
         emoji: '🔍',
         note: 'Delivered loads whose signed paper has not reached us',
-      },
-      {
-        /*
-         * A preset of the row above, not a screen of its own. `/pod/pending`
-         * already carries the ageing filter and the backend already accepts
-         * `within | breached | forfeited`, so this needed a link rather than a
-         * second copy of the same table. It pointed at `/pod/breached`, which
-         * has no page — a dead row in the sidebar.
-         */
-        label: 'Delivery proof past due',
-        href: '/pod/pending?ageing=breached',
-        module: 'pod',
-        emoji: '⏰',
-        note: 'Past the agreed window — a penalty is running on these',
-      },
-      {
-        /*
-         * Restored 2026-09-03 with a screen behind it.
-         *
-         * It was pulled on the grounds that nothing stores `pod_status =
-         * 'ATTACHED'`, which is true of the stored column and beside the point
-         * for this row: an e-POD is a proof photographed but not yet received,
-         * and `/pod/receiving` already returns `attachedAt` on every row for
-         * exactly that reason. `?attached=1` narrows the register to those.
-         */
-        label: 'E-POD pending',
-        href: '/pod/receiving?attached=1',
-        module: 'pod',
-        emoji: '📸',
-        note: 'Photographed in the transporter app, physical copy not logged yet',
-      },
-      {
-        // The plain register lost its own row somewhere in the 2026-09-02
-        // rebuild — only the `?attached=1` preset above survived. Without
-        // this, a courier's physical copy for a load with no e-POD photo had
-        // no sidebar path at all, only the URL bar.
-        label: 'Log delivery receipt',
-        href: '/pod/receiving',
-        module: 'pod',
-        emoji: '📥',
-        note: 'Record a physical copy as it comes in, e-POD or not',
       },
     ],
   },
@@ -733,6 +689,10 @@ export const NAV: NavGroup[] = [
     emoji: '🏢',
     items: [
       {
+        // "Add a client" used to be its own row pointing at the same
+        // `/clients/new` the page's own "Add a client" button already opens
+        // — a second door to the room this row leads into. The button stays;
+        // this row doesn't.
         label: 'Clients',
         href: '/clients',
         module: 'clients',
@@ -740,15 +700,10 @@ export const NAV: NavGroup[] = [
         note: 'Who we move goods for',
       },
       {
-        label: 'Add a client',
-        href: '/clients/new',
-        module: 'clients',
-        emoji: '🪪',
-        note: 'Sign up a new client — company, agreement, credit terms',
-        permission: 'client.manage',
-      },
-      {
-        label: 'Client onboarding',
+        // Renamed from "Client onboarding" — the label the page's own
+        // permission (`client.onboard`) still follows, but "Client Directory"
+        // is what the desk actually calls this queue.
+        label: 'Client Directory',
         href: '/clients/onboarding',
         module: 'clients',
         emoji: '📋',
@@ -777,18 +732,14 @@ export const NAV: NavGroup[] = [
         permission: 'rate.revise',
       },
       {
+        // "New rate request" used to sit here, and the page it led to
+        // (`/rfq/new`) also carried its own "New RFQ" button — both gone now,
+        // so starting one is a direct-URL action rather than a UI one.
         label: 'Rate requests',
         href: '/rfq',
         module: 'rfq',
         emoji: '💬',
         note: 'Pricing a client has asked us to quote',
-      },
-      {
-        label: 'New rate request',
-        href: '/rfq/new',
-        module: 'rfq',
-        emoji: '📣',
-        note: 'Start pricing a client’s lanes for a new period',
       },
     ],
   },
@@ -798,19 +749,15 @@ export const NAV: NavGroup[] = [
     emoji: '🚛',
     items: [
       {
+        // "Add a transporter" used to be its own row pointing at the same
+        // `/vendors/new` the page's own "Add a transporter" button already
+        // opens. The button stays, gated the same way (`vendor.edit`); this
+        // row doesn't.
         label: 'Transporters',
         href: '/vendors',
         module: 'vendors',
         emoji: '🚛',
         note: 'The fleet owners who carry the loads',
-      },
-      {
-        label: 'Add a transporter',
-        href: '/vendors/new',
-        module: 'vendors',
-        emoji: '➕',
-        note: 'Bring a new fleet owner on — papers, fleet, bank details',
-        permission: 'vendor.edit',
       },
       {
         label: 'Transporter leads',
@@ -820,7 +767,7 @@ export const NAV: NavGroup[] = [
         note: 'Fleet owners we have met but not signed up yet',
       },
       {
-        label: 'Lanes short of trucks',
+        label: 'Market gap',
         href: '/vendors/market-gap',
         module: 'vendors',
         emoji: '🧭',
@@ -869,19 +816,15 @@ export const NAV: NavGroup[] = [
         note: 'Match what a transporter billed against what the trip earned',
       },
       {
+        // "Raise a client bill" used to be its own row pointing at the same
+        // `/invoices/new` the page's own "New invoice" button already opens.
+        // The button stays, gated the same way (`invoice.create`); this row
+        // doesn't.
         label: 'Client bills',
         href: '/invoices',
         module: 'invoices',
         emoji: '🧾',
         note: 'What we have invoiced clients for',
-      },
-      {
-        label: 'Raise a client bill',
-        href: '/invoices/new',
-        module: 'invoices',
-        emoji: '➕',
-        note: 'Bill a client for trips that have been delivered',
-        permission: 'invoice.create',
       },
       {
         label: 'Receivables',

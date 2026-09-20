@@ -52,32 +52,11 @@ export default function OrderDetailPage() {
       <Split
         aside={
           <>
-            <Panel title="Order" pad={false}>
-              <FactList
-                facts={[
-                  ['Client', order.clientName],
-                  ['Lane', order.lane],
-                  ['Material', order.material],
-                  ['Weight', `${order.weightTn} MT`],
-                  ['Truck type', order.truckType],
-                  ['Pickup date', fmtDate(order.pickupDate)],
-                  ['Branch', order.branchName],
-                  ['Freight (sell)', inr(order.sellRatePaise)],
-                  ['Freight (buy)', order.buyRatePaise !== null ? inr(order.buyRatePaise) : 'not awarded yet'],
-                ]}
-              />
-            </Panel>
-
-            {order.vendorName && (
-              <Panel title="Vendor and vehicle" pad={false}>
-                <FactList
-                  facts={[
-                    ['Vendor', order.vendorName],
-                    ['Vehicle', order.vehicleNo ?? 'not placed yet'],
-                    ['Driver', order.driverName ?? '—'],
-                  ]}
-                />
-              </Panel>
+            {order.tripId && (
+              <>
+                <AdvancePanel indentId={order.indentId} onReleased={load} hideOrderLink />
+                <BalancePanel tripId={order.tripId} onReleased={load} hideOrderLink />
+              </>
             )}
 
             <Panel title="Related records">
@@ -111,11 +90,32 @@ export default function OrderDetailPage() {
           </>
         }
       >
-        {order.tripId && (
-          <>
-            <AdvancePanel indentId={order.indentId} onReleased={load} />
-            <BalancePanel tripId={order.tripId} onReleased={load} />
-          </>
+        <Panel title="Order" pad={false}>
+          <FactList
+            facts={[
+              ['Client', order.clientName],
+              ['Lane', order.lane],
+              ['Material', order.material],
+              ['Weight', `${order.weightTn} MT`],
+              ['Truck type', order.truckType],
+              ['Pickup date', fmtDate(order.pickupDate)],
+              ['Branch', order.branchName],
+              ['Freight (sell)', inr(order.sellRatePaise)],
+              ['Freight (buy)', order.buyRatePaise !== null ? inr(order.buyRatePaise) : 'not awarded yet'],
+            ]}
+          />
+        </Panel>
+
+        {order.vendorName && (
+          <Panel title="Vendor and vehicle" pad={false}>
+            <FactList
+              facts={[
+                ['Vendor', order.vendorName],
+                ['Vehicle', order.vehicleNo ?? 'not placed yet'],
+                ['Driver', order.driverName ?? '—'],
+              ]}
+            />
+          </Panel>
         )}
 
         {/*

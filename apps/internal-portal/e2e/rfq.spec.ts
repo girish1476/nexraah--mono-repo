@@ -49,17 +49,20 @@ test.describe('RFQ list', () => {
     await expect(row2.locator('td[data-label="Client"]')).toHaveText('Apex Ceramics');
     await expect(row2.locator('td[data-label="Routes"]')).toHaveText('1');
     await expect(row2.getByText('SUBMITTED')).toBeVisible();
-
-    await expect(page.getByRole('link', { name: 'New RFQ' })).toBeVisible();
   });
 
-  test('COMPLIANCE (VIEW-only) has no New RFQ control and is turned away from the create page', async ({ page }) => {
+  /*
+   * The list page's own "New RFQ" button, and the sidebar's "New rate
+   * request" row that duplicated it, are both gone — `/rfq/new` is reachable
+   * only by URL now. What still has to hold is the page-level guard: a role
+   * without `rfq.edit` is turned away from that page even so.
+   */
+  test('COMPLIANCE (VIEW-only) is turned away from the create page', async ({ page }) => {
     await setRole(page, 'COMPLIANCE');
-    await page.goto('/rfq');
-    await expect(page.getByRole('link', { name: 'New RFQ' })).toHaveCount(0);
-
     await page.goto('/rfq/new');
-    await expect(page.getByText('Creating an RFQ belongs to operations, branch management or leadership.')).toBeVisible();
+    // "Branch management" was the role name before BRANCH_MGR was merged
+    // into Operations and BD was added (2026-08-26) — the copy moved with it.
+    await expect(page.getByText('Creating an RFQ belongs to operations, business development or leadership.')).toBeVisible();
     await expect(page.locator('main select')).toHaveCount(0);
   });
 });

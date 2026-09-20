@@ -17,6 +17,19 @@ export function createInvoice(body: InvoiceDraft) {
 }
 
 /**
+ * PATCH /invoices/:id · `invoice.create` — edits a not-yet-paid invoice,
+ * draft or issued. Every field optional; only what's sent changes. Send
+ * `tripIds` together with `freightPaise` (the sum of the trips' own
+ * `sellRatePaise`, same as the create form computes) when the selection
+ * changes — the server refuses a `tripIds` change on an already-issued
+ * invoice or one with a receipt recorded against it (`INVOICE_LOCKED` /
+ * `INVOICE_HAS_RECEIPTS`).
+ */
+export function updateInvoice(id: string, body: Partial<InvoiceDraft>) {
+  return request<Invoice>({ url: `/invoices/${id}`, method: 'PATCH', data: body });
+}
+
+/**
  * POST /invoices/:id/generate · `invoice.create`
  * Consumes the NEX-INV- series inside the issuing transaction → ISSUED.
  */

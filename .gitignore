@@ -23,3 +23,4 @@ playwright/.cache
 # every run, and never a real credential.
 e2e/.auth
 
+.env*

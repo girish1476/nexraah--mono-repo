@@ -47,7 +47,27 @@ export default function SignInPage() {
   };
 
   return (
-    <main className="screen signin-screen">
+    <div className="signin-shell">
+      <div className="signin-brand-panel">
+        <img src="/logo.png" alt="" aria-hidden className="signin-brand-panel-logo" />
+        <div className="signin-brand-panel-name">Nexraah</div>
+        <div className="signin-brand-panel-tag">Built to move. Born to deliver.</div>
+        <ul className="signin-brand-panel-points">
+          <li>
+            <span aria-hidden>📦</span>
+            <span>Loads matched to the truck types you run, with a clear price range before you quote.</span>
+          </li>
+          <li>
+            <span aria-hidden>📝</span>
+            <span>Upload your delivery proof and get paid without chasing anyone.</span>
+          </li>
+          <li>
+            <span aria-hidden>🚛</span>
+            <span>Your trips, your fleet, your billing — all in one place.</span>
+          </li>
+        </ul>
+      </div>
+      <main className="screen signin-screen">
       <div className="signin-card">
         <div className="signin-brand">
           <span className="signin-mark" aria-hidden>
@@ -144,6 +164,7 @@ export default function SignInPage() {
           created by them, not here.
         </p>
       </div>
-    </main>
+      </main>
+    </div>
   );
 }

@@ -20,6 +20,12 @@ class CompanyDto {
   @IsString() cin!: string;
   @IsString() address!: string;
   @IsString() bank!: string;
+  /** SAC — the GST service code printed on the invoice, e.g. 996511 for a
+   *  goods transport agency's road transport service. */
+  @IsString() sac!: string;
+  /** The name/title printed under the signature line on a printed invoice
+   *  — e.g. "Authorised Signatory", or a specific person once designated. */
+  @IsString() signatory!: string;
 }
 
 /** `docs/api/01-foundation.md` `PATCH /config` — partial patches accepted. */

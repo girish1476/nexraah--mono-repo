@@ -18,7 +18,17 @@ import { ReleaseDialog } from './release-dialog';
  * transporter shown the working argues about the penalty — which is a
  * conversation the system can answer.
  */
-export function BalancePanel({ tripId, onReleased }: { tripId: string; onReleased?: () => void }) {
+export function BalancePanel({
+  tripId,
+  onReleased,
+  hideOrderLink,
+}: {
+  tripId: string;
+  onReleased?: () => void;
+  /** The order page renders this panel itself — a link back to the page
+      you're already on is dead weight, not navigation. */
+  hideOrderLink?: boolean;
+}) {
   const can = useCan();
   const toast = useToast();
   const [detail, setDetail] = useState<BalanceDetail | null>(null);
@@ -71,7 +81,7 @@ export function BalancePanel({ tripId, onReleased }: { tripId: string; onRelease
   const b = detail.breakdown;
   const isFinance = can('payment.release');
 
-  const orderLink = (
+  const orderLink = !hideOrderLink && (
     <div style={{ marginBottom: 10 }}>
       <Link href={`/orders/${detail.indentCode}`} className="btn btn-secondary btn-sm">
         View order

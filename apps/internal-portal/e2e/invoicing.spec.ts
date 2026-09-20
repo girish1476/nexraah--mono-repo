@@ -158,6 +158,56 @@ test.describe('new invoice form', () => {
     const consignmentRows = page.locator('table.table tbody tr');
     await expect(consignmentRows.filter({ hasText: 'TRP-120881' })).toBeVisible();
     await expect(consignmentRows.filter({ hasText: 'TRP-120874' })).toBeVisible();
+
+    // A no-yet-generated draft is fully editable — dropping one of the two
+    // consignments and adding a charge changes the total on save.
+    await page.getByRole('link', { name: 'Edit' }).click();
+    await expect(page).toHaveURL(/\/invoices\/inv-.*\/edit/);
+    await expect(fieldControl(page, 'Client')).toHaveValue(/./); // client pre-filled, not blank
+    const editRows = page.locator('table.table tbody tr');
+    await expect(editRows.filter({ hasText: 'TRP-120881' }).locator('input[type="checkbox"]')).toBeChecked();
+    await expect(editRows.filter({ hasText: 'TRP-120874' }).locator('input[type="checkbox"]')).toBeChecked();
+    await editRows.filter({ hasText: 'TRP-120874' }).locator('input[type="checkbox"]').uncheck();
+    await fieldControl(page, 'Loading (₹)').fill('500');
+
+    await page.getByRole('button', { name: 'Save changes' }).click();
+    await expect(page.getByText('Invoice updated')).toBeVisible();
+    await expect(page).toHaveURL(/\/invoices\/inv-[^/]+$/);
+    const afterEditRows = page.locator('table.table tbody tr');
+    await expect(afterEditRows.filter({ hasText: 'TRP-120881' })).toBeVisible();
+    await expect(afterEditRows.filter({ hasText: 'TRP-120874' })).toHaveCount(0);
+  });
+
+  /*
+   * inv-410 is ISSUED with no receipt against it (`receivedPaise: 0`) —
+   * editable, but its one consignment (TRP-120855) is locked: `generate()`
+   * already marked it `billed`, so the checkbox table doesn't render at all
+   * on this screen, only a read-only row and a note saying why.
+   */
+  test('FINANCE can edit an issued, unreceipted invoice — charges and dates, never its consignments', async ({
+    page,
+  }) => {
+    await setRole(page, 'FINANCE');
+    await page.goto('/invoices/inv-410');
+    await page.getByRole('link', { name: 'Edit' }).click();
+    await expect(page).toHaveURL('/invoices/inv-410/edit');
+
+    await expect(page.getByText("Locked — an issued invoice's consignments can't change.")).toBeVisible();
+    await expect(page.locator('input[type="checkbox"]')).toHaveCount(0);
+    await expect(fieldControl(page, 'Client')).toBeDisabled();
+
+    await fieldControl(page, 'Detention (₹)').fill('750');
+    await page.getByRole('button', { name: 'Save changes' }).click();
+    await expect(page.getByText('Invoice updated')).toBeVisible();
+    await expect(page).toHaveURL('/invoices/inv-410');
+  });
+
+  // inv-411 already has a receipt recorded — the edit door isn't offered at
+  // all, matching the server's own `INVOICE_HAS_RECEIPTS` refusal.
+  test('a receipted invoice offers no Edit control', async ({ page }) => {
+    await setRole(page, 'FINANCE');
+    await page.goto('/invoices/inv-411');
+    await expect(page.getByRole('link', { name: 'Edit' })).toHaveCount(0);
   });
 });
 
@@ -199,6 +249,34 @@ test.describe('invoice detail', () => {
     await expect(page.getByRole('button', { name: 'Download PDF' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Cancel' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Generate invoice' })).toHaveCount(0);
+  });
+});
+
+test.describe('printed invoice', () => {
+  /*
+   * `/print/invoice/[invoiceId]` reads `invoice.company` straight from
+   * `GET /invoices/:id` — on the real backend that was a hard-coded blank
+   * for every field (name, GSTIN, PAN, CIN, address, bank) until
+   * `InvoicingService.companyDetails()` was wired up to `config.company`,
+   * the same seeded source the admin Settings screen edits. Nothing caught
+   * it before because the mock adapter (what this suite runs against) reads
+   * `db.config.company` directly and never had the bug — so this pins the
+   * printed values against the seed in `mocks/db.ts`, which now matches
+   * `config.company`'s real shape field for field, SAC code included.
+   */
+  test('company header prints the real company details and the SAC code, not blanks', async ({ page }) => {
+    await setRole(page, 'FINANCE');
+    await page.goto('/print/invoice/inv-411');
+
+    // Exact: the company name also appears in the signature line at the foot
+    // of the sheet ("For Nexraah Logistics Private Limited · authorised
+    // signatory"), which a substring match catches too.
+    await expect(page.getByText('Nexraah Logistics Private Limited', { exact: true })).toBeVisible();
+    await expect(page.getByText('GSTIN 27AABCN4471K1ZV', { exact: false })).toBeVisible();
+    await expect(page.getByText('PAN AABCN4471K', { exact: false })).toBeVisible();
+    await expect(page.getByText('CIN U63030MH2019PTC332211', { exact: false })).toBeVisible();
+    // 996511 — a goods transport agency's road transport service.
+    await expect(page.getByText('SAC 996511')).toBeVisible();
   });
 });
 

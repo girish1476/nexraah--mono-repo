@@ -27,6 +27,7 @@ import {
 } from '@/lib/ui';
 import { getReceiving, receivePod } from '../apis';
 import { ReceivingResponse, ReceivingRow } from '../types';
+import { PodTabs } from '../pod-tabs';
 
 /**
  * Receiving register — `/pod/receiving` · `pod.receive` (part 06 §2).
@@ -165,6 +166,8 @@ export default function PodReceivingPage() {
         }
         who="Branch logs each receipt as the physical copy arrives; the photo alone never stops the clock."
       />
+
+      <PodTabs active="epod" />
 
       {attachedOnly && (
         <p className="hint" style={{ margin: '-4px 0 16px' }}>

@@ -27,6 +27,7 @@ import {
 } from '@/lib/ui';
 import { getPending, waivePenalty } from '../apis';
 import { PendingResponse, PendingRow } from '../types';
+import { PodTabs } from '../pod-tabs';
 
 /**
  * Chase list — `/pod/pending` (part 06 §4).
@@ -163,6 +164,8 @@ export default function PodPendingPage() {
         what="Every trip still missing its proof of delivery, oldest first, with the balance being held and the penalty accruing against each one."
         who="Compliance can propose a penalty waiver here; leadership has to approve it before it actually applies."
       />
+
+      <PodTabs active={ageing === 'breached' ? 'past-due' : null} />
 
       <Stack>
         <StatStrip

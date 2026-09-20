@@ -132,6 +132,13 @@ export class InvoicingRepository {
       .execute();
   }
 
+  /** Used by `update()` when a draft's trip selection changes — the old
+   *  links are dropped and `insertInvoiceTrips` reinserts the new set,
+   *  rather than diffing row by row. */
+  deleteInvoiceTrips(db: DbExecutor, invoiceId: string) {
+    return db.deleteFrom('invoice_trips').where('invoice_id', '=', invoiceId).execute();
+  }
+
   invoiceTripIds(invoiceId: string) {
     return this.db.selectFrom('invoice_trips').select('trip_id').where('invoice_id', '=', invoiceId).execute();
   }

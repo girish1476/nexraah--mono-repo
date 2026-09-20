@@ -265,6 +265,11 @@ test.describe('Transporter bills', () => {
     const dialog = dialogFor(page, 'Accept this bill');
     await expect(dialog).toContainText('Anand Roadways');
     const confirm = dialog.getByRole('button', { name: 'Accept and release' });
+    // Accepting a bill reuses `ReleaseDialog` (2026-08-30) — same BR-09 gate
+    // as any other release, so it stays disabled until the payment-capture
+    // fields are filled, UTR included.
+    await expect(confirm).toBeDisabled();
+    await field(dialog, 'UTR').locator('input').fill('UTR990011');
     await expect(confirm).toBeEnabled();
     await confirm.click();
 
@@ -280,6 +285,11 @@ test.describe('Transporter bills', () => {
     await row(page, 'BL/26/1180').getByRole('button', { name: 'Accept' }).click();
     const dialog = dialogFor(page, 'Accept this bill');
     const confirm = dialog.getByRole('button', { name: 'Accept and release' });
+    // Same BR-09 gate as the computed-figure test above: disabled until the
+    // payment is fully captured, UTR included, independently of the reason
+    // this test is actually about.
+    await expect(confirm).toBeDisabled();
+    await field(dialog, 'UTR').locator('input').fill('UTR445566');
     await expect(confirm).toBeEnabled();
 
     await dialog.getByText('Accept at their figure instead of ours').click();

@@ -1221,6 +1221,35 @@ table.table tbody tr:nth-child(even):hover {
   align-self: stretch;
 }
 
+/*
+ * `position: sticky` only has room to stick if its own box is taller than
+ * the viewport — otherwise the box already *is* the viewport and there is
+ * nothing to stick within, so on a page with more content than fits on
+ * screen (`/today`, most list pages), `align-self: stretch` stretched the
+ * sidebar to match `<main>`'s full scrolled height, and it scrolled away
+ * with everything else exactly like a normal block would. The nav and the
+ * identity strip at its foot both disappeared off the top of the screen,
+ * leaving blank space where they had been — not a missing background, a
+ * sidebar that was never actually staying put.
+ *
+ * The fix is what the mobile drawer already does one rule down: pin the
+ * sidebar to the exact viewport height instead of asking it to match a
+ * taller sibling. `<nav>` already scrolls its own overflow (`overflowY:
+ * 'auto'` in shell.tsx) and the identity strip sits after it in the same
+ * flex column, so nothing here needs to change to keep the nav internally
+ * scrollable and the identity strip pinned at the foot — only `<main>`
+ * should ever need a scrollbar.
+ */
+@media (min-width: 901px) {
+  .sidebar {
+    height: 100vh;
+  }
+  .app-main {
+    height: 100vh;
+    overflow-y: auto;
+  }
+}
+
 /* Below the console breakpoint the sidebar becomes an off-canvas drawer
    behind a hamburger toggle (`.mobile-topbar`) — same nav, same permission
    filtering, just reachable on an operator's phone (NFR-06). */
@@ -2059,6 +2088,118 @@ details[open] > summary::before {
 @media (prefers-reduced-motion: reduce) {
   .skeleton {
     animation: none;
+  }
+}
+
+/* ---- auth shell -----------------------------------------------------------
+   The sign-in screen used to be a bare white card floating on flat grey —
+   nothing on it said this was Nexraah before you read the fine print, and
+   it's the first thing every stakeholder and new hire sees. On a wide screen
+   a brand panel now carries the mark, the name and one sentence of what this
+   place is, on the same gradient `.hero` already uses inside the console —
+   so signed-out and signed-in read as the same product. Below the console's
+   own breakpoint the panel folds to a slim strip above the form: nobody
+   should have to scroll past a hero to reach a password field on a phone. */
+
+.auth-shell {
+  min-height: 100vh;
+  display: flex;
+}
+.auth-brand {
+  flex: 1 1 420px;
+  max-width: 460px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: var(--space-8) var(--space-7);
+  color: #fff;
+  background: linear-gradient(150deg, var(--color-accent-800), var(--color-accent-600) 55%, #3f77d8);
+}
+.auth-brand-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+/* Big, and lifted off the gradient with a glow rather than just a shadow —
+   the one mark on this screen that has to read as the brand before anyone
+   reads a word, so it gets more presence than a favicon-sized chip would. */
+.auth-brand-logo {
+  width: 128px;
+  height: 128px;
+  border-radius: var(--radius-lg);
+  object-fit: cover;
+  box-shadow:
+    0 0 0 6px rgba(255, 255, 255, 0.12),
+    0 0 40px 6px rgba(255, 255, 255, 0.22),
+    var(--shadow-lg);
+}
+.auth-brand-name {
+  font-family: var(--font-heading);
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-top: var(--space-5);
+}
+.auth-brand-tag {
+  font-size: var(--text-md);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: rgba(255, 255, 255, 0.78);
+  margin-top: 4px;
+}
+.auth-brand-points {
+  list-style: none;
+  margin: var(--space-7) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.auth-brand-points li {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  font-size: var(--text-base);
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.92);
+}
+.auth-brand-points li span:first-child {
+  font-size: 19px;
+  flex: none;
+  font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
+}
+.auth-form-col {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6) var(--space-4);
+}
+@media (max-width: 900px) {
+  .auth-shell {
+    flex-direction: column;
+  }
+  .auth-brand {
+    max-width: none;
+    flex: none;
+    padding: var(--space-5);
+  }
+  .auth-brand-head {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-3);
+  }
+  .auth-brand-logo {
+    width: 40px;
+    height: 40px;
+  }
+  .auth-brand-name {
+    margin-top: 0;
+    font-size: 19px;
+  }
+  .auth-brand-tag,
+  .auth-brand-points {
+    display: none;
   }
 }
 

@@ -93,52 +93,54 @@ describe('navFor', () => {
     expect(hrefs).not.toContain('/admin');
   });
   /*
-   * The "start something" rows follow the permission the page behind them
-   * checks, not just the module level — Compliance can open Transporters to
-   * verify and activate, but has no `vendor.edit`, so the onboarding wizard
-   * must not be offered to them.
+   * The "start something" rows — Add a client, Add a transporter, New
+   * invoice, New RFQ — used to each carry their own sidebar row alongside
+   * the identical button the destination page already offers (all gated on
+   * the same permission the page checks). Every one of those rows is gone
+   * now: the button is the one door into each of those rooms, not a button
+   * plus a second one in the sidebar. `/clients/rate-changes` (`rate.revise`)
+   * is the one surviving row of this shape, so it is what these tests stand
+   * on — the rule they protect ("the row appears exactly where the
+   * permission behind it is held") is unchanged.
    */
-  it('offers the onboarding wizard to the roles that hold vendor.edit and nobody else', () => {
+  it('offers rate revision to the roles that hold rate.revise and nobody else', () => {
     /*
      * Derived from `SEED_GRANTS`, not a hand-listed set of roles. The rule this
      * protects is "the row appears exactly where the permission behind it is
      * held" — spelling out the roles instead restates today's grants, so the
      * test fails whenever the matrix is retuned even though the rule still
-     * holds. It did exactly that when Leadership gained `vendor.edit`.
+     * holds.
      */
     const sees = (role: (typeof ROLE_CODES)[number]) =>
-      navFor(role).some((g) => g.items.some((i) => i.href === '/vendors/new'));
+      navFor(role).some((g) => g.items.some((i) => i.href === '/clients/rate-changes'));
     for (const role of ROLE_CODES) {
-      expect(sees(role), `${role} nav row vs vendor.edit grant`).toBe(
-        SEED_GRANTS[role].includes('vendor.edit'),
+      expect(sees(role), `${role} nav row vs rate.revise grant`).toBe(
+        SEED_GRANTS[role].includes('rate.revise'),
       );
     }
     // The rule is only meaningful while the permission is actually split.
-    const holders = ROLE_CODES.filter((r) => SEED_GRANTS[r].includes('vendor.edit'));
+    const holders = ROLE_CODES.filter((r) => SEED_GRANTS[r].includes('rate.revise'));
     expect(holders.length).toBeGreaterThan(0);
     expect(holders.length).toBeLessThan(ROLE_CODES.length);
   });
   it('gates creation rows on the permission of each page, per role', () => {
     const hrefs = (role: (typeof ROLE_CODES)[number]) =>
       navFor(role).flatMap((g) => g.items.map((i) => i.href));
-    expect(hrefs('FINANCE')).toEqual(expect.arrayContaining(['/clients/new', '/invoices/new']));
-    expect(hrefs('OPS')).not.toContain('/clients/new');
+    expect(hrefs('FINANCE')).toContain('/clients/rate-changes');
+    expect(hrefs('OPS')).not.toContain('/clients/rate-changes');
     expect(hrefs('COMPLIANCE')).toContain('/vendors/leads');
     /*
-     * `/indents/new` used to be asserted here and is deliberately gone: the
-     * 2026-09-02 rebuild removed the row because Load requests carries its own
-     * "Raise an indent" button, and a sidebar row for it was a second door to
-     * one room. `/vendors/new` carries the same rule — a creation row that
-     * appears only where the permission behind the page is held — and it still
-     * has a row, so it is what the assertion stands on now.
+     * `/indents/new`, `/vendors/new`, `/clients/new` and `/invoices/new` used
+     * to be asserted here and are deliberately gone: each one's destination
+     * page already carries its own identically-gated "Add"/"New" button, so
+     * the sidebar row was a second door to one room.
      */
-    expect(hrefs('OPS')).toContain('/vendors/new');
   });
   it('uses the grants the session actually carries over the role seed', () => {
-    const withGrant = navFor('COMPLIANCE', ['vendor.edit']).flatMap((g) => g.items.map((i) => i.href));
-    expect(withGrant).toContain('/vendors/new');
+    const withGrant = navFor('COMPLIANCE', ['rate.revise']).flatMap((g) => g.items.map((i) => i.href));
+    expect(withGrant).toContain('/clients/rate-changes');
     const withoutGrant = navFor('OPS', []).flatMap((g) => g.items.map((i) => i.href));
-    expect(withoutGrant).not.toContain('/vendors/new');
+    expect(withoutGrant).not.toContain('/clients/rate-changes');
     expect(withoutGrant).toContain('/vendors');
   });
   /*
@@ -151,9 +153,9 @@ describe('navFor', () => {
    * What it checks instead is the rule that actually matters for this row:
    * onboarding is Compliance's queue, so it follows `client.onboard` rather
    * than the `clients` module level. Finance holds EDIT on the module — they
-   * own the commercial record and the "Add a client" row — but not the
-   * clearance decision, and offering them a queue of decisions they cannot
-   * make is exactly what the permission filter exists to prevent.
+   * own the commercial record — but not the clearance decision, and offering
+   * them a queue of decisions they cannot make is exactly what the permission
+   * filter exists to prevent.
    */
   it('offers client onboarding to the desk that can actually clear a client', () => {
     const compliance = navFor('COMPLIANCE').flatMap((g) => g.items.map((i) => i.href));
@@ -161,8 +163,6 @@ describe('navFor', () => {
 
     const finance = navFor('FINANCE').flatMap((g) => g.items.map((i) => i.href));
     expect(finance).not.toContain('/clients/onboarding');
-    // Finance keeps its own half of the split.
-    expect(finance).toContain('/clients/new');
   });
 
   it('every nav row points at a page that exists', () => {

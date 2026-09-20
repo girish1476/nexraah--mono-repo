@@ -2771,13 +2771,34 @@ const routes: [string, RegExp, Handler][] = [
   [
     'POST',
     /^\/payments\/bills\/([^/]+)\/accept$/,
-    ({ params, body }) => {
+    ({ params, body, role }) => {
       const bill = db.vendorBills.find((b) => b.id === params[0]) ?? fail(404, 'NOT_FOUND', 'Bill not found');
       if (body?.atTheirFigure && !body?.reason?.trim())
         fail(400, 'REASON_REQUIRED', 'Accepting a transporter’s own figure needs a reason.');
+      for (const field of ['mode', 'transferType', 'remittingAccount', 'utr', 'valueDate'])
+        if (!body?.[field]) fail(400, 'PAYMENT_FIELD_REQUIRED', `${field} is required on every payment (BR-09).`);
+      const netPaise = body?.atTheirFigure ? bill.totalPaise : bill.computedBalancePaise;
       bill.status = 'ACCEPTED';
-      bill.acceptedAtFigurePaise = body?.atTheirFigure ? bill.totalPaise : bill.computedBalancePaise;
-      return ok(bill);
+      bill.acceptedAtFigurePaise = netPaise;
+      // `internal-api`'s real `acceptBill()` returns `{ id, status, payment }`
+      // (`payments.service.ts`) — this used to return the bare bill row,
+      // which has no `payment` at all, so `result.payment.netPaise` in
+      // `bills/page.tsx` threw the moment anyone actually accepted a bill
+      // through the mock. Never caught before because no working e2e test
+      // had ever driven this far into the flow.
+      const payment = {
+        id: `pay-${Date.now()}`,
+        tripId: bill.tripId,
+        kind: 'BALANCE' as const,
+        grossPaise: netPaise,
+        penaltyPaise: 0,
+        netPaise,
+        tdsPaise: 0,
+        releasedBy: USERS[role].name,
+        releasedAt: helpers.now(),
+        utr: body.utr,
+      };
+      return ok({ id: bill.id, status: bill.status, payment });
     },
   ],
   [
@@ -2810,6 +2831,19 @@ const routes: [string, RegExp, Handler][] = [
     'POST',
     /^\/invoices$/,
     ({ body }) => {
+      // `invoices/new/page.tsx` deliberately never sends `roundOffPaise` or
+      // `totalPaise` — its own comment says the server computes both from
+      // the heads (NFR-09) and refuses a body that carries them. This mock
+      // used to just spread `...body` and stop, so neither field was ever
+      // set at all: not zero, genuinely `undefined`, which is why the
+      // printed invoice's Total row rendered blank rather than ₹0. Computed
+      // here the same way the form previews it, minus the discount head.
+      const freightPaise = body.freightPaise ?? 0;
+      const extrasPaise =
+        (body.loadingPaise ?? 0) + (body.unloadingPaise ?? 0) + (body.detentionPaise ?? 0) + (body.otherPaise ?? 0) -
+        (body.discountPaise ?? 0);
+      const subtotalPaise = freightPaise + extrasPaise;
+      const roundOffPaise = Math.round(subtotalPaise / 100) * 100 - subtotalPaise;
       const invoice = {
         id: `inv-${db.invoices.length + 500}`,
         code: null,
@@ -2819,8 +2853,88 @@ const routes: [string, RegExp, Handler][] = [
         cancelReason: null,
         clientName: db.clients.find((c) => c.id === body.clientId)?.name ?? '—',
         ...body,
+        roundOffPaise,
+        totalPaise: subtotalPaise + roundOffPaise,
       };
       db.invoices.unshift(invoice);
+      return ok(invoice);
+    },
+  ],
+  [
+    'PATCH',
+    /^\/invoices\/([^/]+)$/,
+    ({ params, body }) => {
+      // Mirrors `internal-api`'s `InvoicingService.update()` — same two
+      // invariants: a receipted invoice is locked (cancel and reissue
+      // instead), and an issued invoice's trip selection is locked (only a
+      // draft's `tripIds` — never marked `billed` yet — is free to change).
+      const invoice = findInvoice(params[0]);
+      if (invoice.status === 'CANCELLED') fail(409, 'ALREADY_CANCELLED', 'This invoice has already been cancelled.');
+      if (invoice.receivedPaise > 0)
+        fail(
+          409,
+          'INVOICE_HAS_RECEIPTS',
+          'A receipt has already been recorded against this invoice. Cancel and raise a new one instead of editing it.',
+        );
+
+      const isDraft = invoice.status === 'DRAFT';
+      const currentTripIds: string[] = invoice.tripIds ?? [];
+      let tripIds = currentTripIds;
+      let freightPaise = invoice.freightPaise;
+
+      if (body.tripIds) {
+        const same =
+          body.tripIds.length === currentTripIds.length &&
+          body.tripIds.every((t: string) => currentTripIds.includes(t));
+        if (!same) {
+          if (!isDraft)
+            fail(
+              409,
+              'INVOICE_LOCKED',
+              'The consignments on an issued invoice can’t be changed. Cancel this one and raise a new one instead.',
+            );
+          if (body.freightPaise === undefined)
+            fail(400, 'VALIDATION_ERROR', 'freightPaise is required when the selected consignments change.');
+          for (const tripId of body.tripIds) {
+            const trip = db.trips.find((t) => t.id === tripId);
+            if (!trip) fail(404, 'NOT_FOUND', `Unknown trip: ${tripId}`);
+            if (trip.stage !== 'DELIVERED')
+              fail(409, 'TRIP_NOT_DELIVERED', `Trip ${trip.code} has not been delivered yet.`);
+            if (trip.billed && !currentTripIds.includes(tripId))
+              fail(409, 'TRIP_ALREADY_BILLED', `Trip ${trip.code} is already on another invoice.`);
+          }
+          tripIds = body.tripIds;
+          freightPaise = body.freightPaise;
+        }
+      }
+
+      const loadingPaise = body.loadingPaise ?? invoice.loadingPaise ?? 0;
+      const unloadingPaise = body.unloadingPaise ?? invoice.unloadingPaise ?? 0;
+      const detentionPaise = body.detentionPaise ?? invoice.detentionPaise ?? 0;
+      const otherPaise = body.otherPaise ?? invoice.otherPaise ?? 0;
+      const discountPaise = body.discountPaise ?? invoice.discountPaise ?? 0;
+      const subtotalPaise = freightPaise + loadingPaise + unloadingPaise + detentionPaise + otherPaise - discountPaise;
+      const roundOffPaise = Math.round(subtotalPaise / 100) * 100 - subtotalPaise;
+
+      Object.assign(invoice, {
+        clientId: isDraft && body.clientId ? body.clientId : invoice.clientId,
+        clientName:
+          isDraft && body.clientId
+            ? (db.clients.find((c) => c.id === body.clientId)?.name ?? invoice.clientName)
+            : invoice.clientName,
+        invoiceDate: body.invoiceDate ?? invoice.invoiceDate,
+        dueDate: body.dueDate ?? invoice.dueDate,
+        tripIds,
+        freightPaise,
+        loadingPaise,
+        unloadingPaise,
+        detentionPaise,
+        otherPaise,
+        discountPaise,
+        roundOffPaise,
+        totalPaise: subtotalPaise + roundOffPaise,
+        notes: body.notes ?? invoice.notes,
+      });
       return ok(invoice);
     },
   ],

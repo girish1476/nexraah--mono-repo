@@ -49,7 +49,12 @@ test.describe('mobile nav drawer', () => {
     // shortcut (see the note on `ALL_ROUTES` in rbac-nav.spec.ts). Load
     // requests is one of the rows OPS still holds EDIT on. Scoped to the
     // drawer itself — "My desk" also links a same-named quick-card to it.
-    await page.locator('aside.sidebar').getByRole('link', { name: /^Load requests/ }).click();
+    //
+    // Areas collapse by default (2026-09-20) — Orders has to be opened
+    // before its rows are reachable at all, the same as a real tap would.
+    const drawer = page.locator('aside.sidebar');
+    await drawer.getByRole('button', { name: /^Orders/ }).click();
+    await drawer.getByRole('link', { name: /^Load requests/ }).click();
     await expect(page).toHaveURL(/\/indents$/);
     await expect(page.locator('aside.sidebar')).not.toHaveClass(/open/);
   });
