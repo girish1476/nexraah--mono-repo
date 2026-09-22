@@ -86,9 +86,12 @@ describe('navFor', () => {
     const hrefs = navFor('OPS').flatMap((g) => g.items.map((i) => i.href));
     // `/trips` was here until the 2026-09-02 nav rebuild retired the row —
     // finding a trip is Global search's job now, and the page is still
-    // reachable from a search result. The rule being protected is which
-    // *areas* Operations reaches, so the row it stands on can change.
-    expect(hrefs).toEqual(expect.arrayContaining(['/today', '/indents', '/rfq', '/pod/pending']));
+    // reachable from a search result. `/rfq` left the same way on
+    // 2026-09-20 — still real, no longer a sidebar shortcut for anyone. The
+    // rule being protected is which *areas* Operations reaches, so the row
+    // it stands on can change.
+    expect(hrefs).toEqual(expect.arrayContaining(['/today', '/indents', '/pod/pending']));
+    expect(hrefs).not.toContain('/rfq');
     expect(hrefs).not.toContain('/payments/advance');
     expect(hrefs).not.toContain('/admin');
   });

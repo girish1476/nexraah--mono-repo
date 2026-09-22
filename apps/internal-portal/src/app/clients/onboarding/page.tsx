@@ -160,7 +160,7 @@ export default function ClientOnboardingPage() {
   return (
     <ModuleGuard module="clients">
       <PageHeader
-        title="Client onboarding"
+        title="Client verification"
         sub="Check a new client’s papers before we carry for them"
         module="clients"
       />

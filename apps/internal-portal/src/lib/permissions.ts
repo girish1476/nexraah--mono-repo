@@ -700,10 +700,13 @@ export const NAV: NavGroup[] = [
         note: 'Who we move goods for',
       },
       {
-        // Renamed from "Client onboarding" — the label the page's own
-        // permission (`client.onboard`) still follows, but "Client Directory"
-        // is what the desk actually calls this queue.
-        label: 'Client Directory',
+        // Renamed twice: "Client onboarding" → "Client Directory" →
+        // "Client verification" (2026-09-20) — the label the page's own
+        // permission (`client.onboard`) still follows, but this queue is
+        // Compliance checking a new client's papers, not a directory of
+        // existing ones, and now reads the same way "Document verification"
+        // already does for the equivalent vendor-side work.
+        label: 'Client verification',
         href: '/clients/onboarding',
         module: 'clients',
         emoji: '📋',
@@ -731,16 +734,12 @@ export const NAV: NavGroup[] = [
          */
         permission: 'rate.revise',
       },
-      {
-        // "New rate request" used to sit here, and the page it led to
-        // (`/rfq/new`) also carried its own "New RFQ" button — both gone now,
-        // so starting one is a direct-URL action rather than a UI one.
-        label: 'Rate requests',
-        href: '/rfq',
-        module: 'rfq',
-        emoji: '💬',
-        note: 'Pricing a client has asked us to quote',
-      },
+      // "Rate requests" used to sit here, pointing at `/rfq` — pulled
+      // 2026-09-20 at the owner's direction, the same treatment "Trips on
+      // the road" already got in the 2026-09-02 rebuild: the page is still
+      // real, for every role including BD (who still lands on it right
+      // after signing in — see `landsOn` in rbac-nav.spec.ts), just no
+      // longer a sidebar shortcut.
     ],
   },
   {

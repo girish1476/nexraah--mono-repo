@@ -32,6 +32,10 @@ interface RoleCase {
 // real and still linked from those three, just never a sidebar shortcut. So
 // it belongs in no role's `visible` list, and not here either: `allBut()`
 // only needs to check routes that are ever a nav candidate for someone.
+//
+// `/rfq` is absent for the same reason, pulled 2026-09-20: BD (whose job is
+// pricing these) still lands there right after signing in — see `landsOn`
+// below — it just no longer has a sidebar row to get back to it with.
 const ALL_ROUTES = [
   '/today',
   '/home',
@@ -40,7 +44,6 @@ const ALL_ROUTES = [
   '/vendors',
   '/telematics',
   '/clients',
-  '/rfq',
   '/indents',
   '/pod/pending',
   '/payments/advance',
@@ -74,7 +77,6 @@ const CASES: RoleCase[] = [
       '/vendors',
       '/indents',
       '/pod/pending',
-      '/rfq',
       '/telematics',
       '/admin/approvals',
     ],
@@ -162,8 +164,11 @@ const CASES: RoleCase[] = [
      * spends money. No trips, no POD, no payments, no invoices.
      */
     role: 'BD',
+    // Still where BD lands right after signing in — `/rfq` losing its
+    // sidebar row (2026-09-20) didn't change that, only how you get back to
+    // it once you've navigated away.
     landsOn: '/rfq',
-    visible: ['/today', '/home', '/orders', '/clients', '/rfq'],
+    visible: ['/today', '/home', '/orders', '/clients'],
     hidden: [],
   },
   {
