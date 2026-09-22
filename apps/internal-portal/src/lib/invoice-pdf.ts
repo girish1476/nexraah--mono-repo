@@ -4,11 +4,20 @@ import { barcodeBars } from './barcode-pattern';
 import { fmtDate } from './format';
 
 /**
- * A single downloadable copy of the tax invoice (part 08 §2.1) — same
- * content as `/print/invoice/[invoiceId]`, built directly as a PDF instead
- * of relying on the browser's print-to-PDF dialog. jsPDF's built-in fonts
- * have no ₹ glyph, so money here reads "Rs." instead of the symbol used
- * on-screen.
+ * A single downloadable copy of the tax invoice (part 08 §2.1) — meant to be
+ * the same content as `/print/invoice/[invoiceId]`, built directly as a PDF
+ * instead of relying on the browser's print-to-PDF dialog. jsPDF's built-in
+ * fonts have no ₹ glyph and no → glyph, so money and lanes here read "Rs."
+ * and "->" instead of the characters used on-screen (`clean()`, below) — that
+ * part is a deliberate, permanent difference, not a bug to chase.
+ *
+ * The rest was not deliberate: this file is a hand-drawn duplicate of the
+ * print page, not a shared renderer, so every field added to that page since
+ * — the SAC code, the watermark, the editable signatory — had to be added
+ * here separately, and had not been. "Download PDF" and the printed page
+ * disagreed on all three until this pass. There is still no single source
+ * for either; the next field added to one has to be added to the other by
+ * hand, same as this one was.
  */
 
 const rs = (paise: number | null | undefined): string => {
@@ -31,12 +40,34 @@ const clean = (s: string): string =>
     .replace(/·/g, '|');
 
 const PAGE_W = 210;
+const PAGE_H = 297;
 const MARGIN_X = 15;
 const CONTENT_W = PAGE_W - MARGIN_X * 2;
 const RIGHT_X = MARGIN_X + CONTENT_W;
 
+/**
+ * A faint centred "NEXRAAH" behind the whole page, drawn first so everything
+ * else paints over it — jsPDF has no CSS blend modes, so the print page's
+ * trick (invert + multiply the actual logo image to fake a transparent mark
+ * out of a solid-navy PNG) has no equivalent here. Large, light-grey,
+ * rotated text is the standard fallback for exactly this case, and needs no
+ * image processing to get right: nothing to invert, nothing that can pick up
+ * a stray colour cast the way the HTML version briefly did.
+ */
+function watermark(doc: jsPDF): void {
+  doc.saveGraphicsState();
+  doc.setGState(doc.GState({ opacity: 0.07 }));
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(72);
+  doc.setTextColor(80, 80, 80);
+  doc.text('NEXRAAH', PAGE_W / 2, PAGE_H / 2, { align: 'center', angle: 35 });
+  doc.restoreGraphicsState();
+  doc.setTextColor(0, 0, 0);
+}
+
 export function downloadInvoicePdf(invoice: InvoiceDetail): void {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  watermark(doc);
   let y = 16;
 
   doc.setFont('helvetica', 'bold');
@@ -56,6 +87,9 @@ export function downloadInvoicePdf(invoice: InvoiceDetail): void {
   doc.text(`Dated ${fmtDate(invoice.invoiceDate)}  |  due ${fmtDate(invoice.dueDate)}`, RIGHT_X, y, { align: 'right' });
   y += 4.5;
   doc.text(`GSTIN ${invoice.company.gstin}  |  PAN ${invoice.company.pan}  |  CIN ${invoice.company.cin}`, MARGIN_X, y);
+  // SAC — the GST service code for a goods transport agency's road transport
+  // service (996511), same field and same placement as the printed page.
+  doc.text(`SAC ${invoice.company.sac}`, RIGHT_X, y, { align: 'right' });
 
   if (invoice.code) {
     const narrow = 0.35;
@@ -166,10 +200,16 @@ export function downloadInvoicePdf(invoice: InvoiceDetail): void {
   doc.text(wrapped, MARGIN_X, y);
   y += wrapped.length * 3.4 + 22;
 
+  // Company name above a blank space left for a pen signature, the title
+  // below a rule under it — same layout and same editable
+  // `config.company.signatory` field (default "Authorised Signatory") as
+  // the printed page, rather than the fixed text this used to draw.
   doc.setFontSize(7.5);
+  doc.text(`For ${clean(invoice.company.name)}`, RIGHT_X - 27.5, y, { align: 'center' });
+  y += 14;
   doc.line(RIGHT_X - 55, y, RIGHT_X, y);
-  doc.text(`For ${clean(invoice.company.name)}`, RIGHT_X - 27.5, y + 4, { align: 'center' });
-  doc.text('authorised signatory', RIGHT_X - 27.5, y + 8, { align: 'center' });
+  y += 4;
+  doc.text(clean(invoice.company.signatory), RIGHT_X - 27.5, y, { align: 'center' });
 
   doc.save(`${invoice.code ?? 'invoice-draft'}.pdf`);
 }
