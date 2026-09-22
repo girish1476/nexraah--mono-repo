@@ -72,7 +72,7 @@ test.describe('signing in', () => {
   test('an unauthenticated visitor is sent to the sign-in screen', async ({ page }) => {
     await page.goto('/today');
     await expect(page).toHaveURL(/\/signin$/, { timeout: NAV_TIMEOUT });
-    await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible({ timeout: NAV_TIMEOUT });
+    await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible({ timeout: NAV_TIMEOUT });
   });
 
   test('a correct password lands on the role’s own screen', async ({ page }) => {

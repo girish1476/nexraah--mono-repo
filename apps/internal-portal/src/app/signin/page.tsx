@@ -65,7 +65,9 @@ export default function SignInPage() {
     <div className="auth-shell">
       <div className="auth-brand">
         <div className="auth-brand-head">
-          <img src="/logo.png" alt="" aria-hidden className="auth-brand-logo" />
+          <div className="auth-brand-logo-plate">
+            <img src="/logo.png" alt="" aria-hidden className="auth-brand-logo" />
+          </div>
           <div>
             <div className="auth-brand-name">Nexraah</div>
             <div className="auth-brand-tag">Built to move. Born to deliver.</div>
@@ -88,11 +90,10 @@ export default function SignInPage() {
       </div>
       <div className="auth-form-col">
       <div style={{ maxWidth: 440, width: '100%' }}>
-        <div className="surface" style={{ padding: 22 }}>
-          <h1 style={{ fontSize: 18, marginBottom: 4 }}>Sign in</h1>
-          <p className="muted" style={{ fontSize: 12.5, marginBottom: 18 }}>
-            Nexraah operations console.
-          </p>
+        <div className="surface auth-card">
+          <p className="auth-card-eyebrow">Nexraah operations console</p>
+          <h1>Welcome back</h1>
+          <p className="auth-card-sub">Sign in with your work email to pick up where you left off.</p>
 
           <form onSubmit={submit} noValidate>
             {/* `Field` renders its <label> without an htmlFor, so nothing
@@ -101,21 +102,25 @@ export default function SignInPage() {
                 properly associated label is a change to the shared component
                 and its own piece of work. */}
             <Field label="Email" required>
-              <input
-                type="email"
-                name="email"
-                aria-label="Email"
-                autoComplete="username"
-                autoFocus
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@nexraah.in"
-                disabled={busy}
-              />
+              <div className="auth-input-wrap">
+                <span className="auth-input-icon" aria-hidden>✉️</span>
+                <input
+                  type="email"
+                  name="email"
+                  aria-label="Email"
+                  autoComplete="username"
+                  autoFocus
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@nexraah.in"
+                  disabled={busy}
+                />
+              </div>
             </Field>
 
             <Field label="Password" required>
-              <div style={{ display: 'flex', gap: 6 }}>
+              <div className="auth-input-wrap">
+                <span className="auth-input-icon" aria-hidden>🔒</span>
                 <input
                   type={reveal ? 'text' : 'password'}
                   name="password"
@@ -124,14 +129,13 @@ export default function SignInPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   disabled={busy}
-                  style={{ flex: 1, minWidth: 0 }}
+                  className="auth-input-has-toggle"
                 />
                 <button
                   type="button"
-                  className="btn btn-secondary"
+                  className="auth-input-toggle"
                   onClick={() => setReveal((r) => !r)}
                   aria-label={reveal ? 'Hide password' : 'Show password'}
-                  style={{ flex: 'none', padding: '0 12px' }}
                 >
                   {reveal ? '🙈' : '👁️'}
                 </button>
@@ -142,22 +146,22 @@ export default function SignInPage() {
                 after a failed attempt — not a toast that has faded by the
                 time the password is retyped. */}
             {error && (
-              <p
-                role="alert"
-                className="err"
-                style={{ fontSize: 12.5, marginTop: 2, marginBottom: 10 }}
-              >
+              <p role="alert" className="auth-error">
+                <span aria-hidden>⚠️</span>
                 {error}
               </p>
             )}
 
             <button
               type="submit"
-              className="btn"
-              style={{ width: '100%', marginTop: 6 }}
+              className="btn btn-lg auth-submit"
               disabled={busy || !email.trim() || !password}
             >
-              {busy ? 'Signing in…' : 'Sign in'}
+              {busy ? 'Signing in…' : (
+                <>
+                  Sign in <span aria-hidden>→</span>
+                </>
+              )}
             </button>
           </form>
         </div>
@@ -173,8 +177,9 @@ export default function SignInPage() {
         )}
 
         {MOCKS_ENABLED && (
-          <div className="surface" style={{ padding: 16, marginTop: 12 }}>
-            <p className="muted" style={{ fontSize: 11.5, marginBottom: 8 }}>
+          <div className="surface auth-reset-panel">
+            <p className="auth-reset-copy">
+              <span aria-hidden>🧹</span>
               Testing from scratch? This clears every seeded vendor, client, indent, trip, invoice,
               approval and RFQ so you can build your own data end to end. The six accounts above, the
               branch list and system config stay — you still need somewhere to sign in.
@@ -198,6 +203,22 @@ export default function SignInPage() {
   );
 }
 
+/** Deterministic accent per role for the demo-account avatar — reuses the
+ * console's own area hues rather than inventing new colour meaning. */
+const ROLE_AVATAR_COLOR: Record<string, string> = {
+  OPS: 'var(--area-desk)',
+  COMPLIANCE: 'var(--area-supply)',
+  FINANCE: 'var(--area-money)',
+  BD: 'var(--area-biz)',
+  LEADERSHIP: 'var(--area-control)',
+  ADMIN: 'var(--area-control)',
+};
+
+function initials(name: string) {
+  const parts = name.trim().split(/\s+/);
+  return ((parts[0]?.[0] ?? '') + (parts[parts.length - 1]?.[0] ?? '')).toUpperCase();
+}
+
 /**
  * Present only with mocks on, where these six accounts are the only ones that
  * exist. Picking one *fills the form* rather than signing in: the password is
@@ -206,24 +227,31 @@ export default function SignInPage() {
  */
 function DemoAccounts({ onPick }: { onPick: (email: string) => void }) {
   return (
-    <div className="surface" style={{ padding: 16, marginTop: 12 }}>
-      <p className="muted" style={{ fontSize: 11.5, marginBottom: 10 }}>
+    <div className="surface auth-demo-panel">
+      <p className="auth-demo-copy">
         Demo accounts — sample data only. Pick one to fill the form, then sign in. The password for
         all six is <strong>{DEMO_PASSWORD}</strong>.
       </p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div className="auth-demo-list">
         {mockAccounts().map((account) => (
           <button
             key={account.email}
             type="button"
-            className="btn btn-secondary"
-            style={{ display: 'flex', justifyContent: 'space-between', width: '100%', gap: 10 }}
+            className="auth-demo-card"
             onClick={() => onPick(account.email)}
           >
-            <span>{account.name}</span>
-            <span className="muted" style={{ fontSize: 11 }}>
-              {ROLES[account.role].label}
+            <span
+              className="auth-demo-avatar"
+              style={{ background: ROLE_AVATAR_COLOR[account.role] ?? 'var(--color-accent)' }}
+              aria-hidden
+            >
+              {initials(account.name)}
             </span>
+            <span className="auth-demo-info">
+              <span className="auth-demo-name">{account.name}</span>
+              <span className="auth-demo-role">{ROLES[account.role].label}</span>
+            </span>
+            <span className="auth-demo-arrow" aria-hidden>→</span>
           </button>
         ))}
       </div>
