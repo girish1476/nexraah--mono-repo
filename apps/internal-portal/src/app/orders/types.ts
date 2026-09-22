@@ -235,6 +235,8 @@ export interface OrderDetail extends OrderListRow {
   buyRatePaise: number | null;
   advancePaidPaise: number;
   balancePaidPaise: number;
+  /** The indent's own special instructions, carried unchanged from raising it. Null when none were given. */
+  remarks: string | null;
   /** Recorded step history, oldest first. Replaces the old computed milestones. */
   events: OrderEvent[];
 }

@@ -184,18 +184,40 @@ export const DOC_LABEL: Record<string, string> = {
   TRANSPORTER_AGREEMENT: 'Transporter agreement',
 };
 
-function tripDocs(): Doc[] {
+/**
+ * `advanceCleared` mirrors what the trip's own `advancePaidPaise` already
+ * says: every kind in `ADVANCE_DOCUMENT_SET` gates the advance release
+ * (`AdvancePanel`'s own gate), so a trip whose advance is already paid must,
+ * to be internally consistent, already have all eight verified — otherwise
+ * this tab would show missing documents for a gate the app itself already
+ * treated as cleared. `podStatus` mirrors the trip's own `podStatus` the
+ * same way: a trip whose proof of delivery is already approved shouldn't
+ * show this checklist's POD row as still missing.
+ *
+ * `lrDocStatus` defaults to `VERIFIED` — the shape every trip had before the
+ * "upload an LR manually, instead of generating one" path existed, when this
+ * row was just informational. It is no longer just informational: a trip
+ * whose own `lr` is `null` (no E-LR generated) must NOT also claim a
+ * verified LR document here, or `LorryReceiptContent` reads that as "a
+ * manual upload already happened" and skips straight past the choice
+ * screen to a document that doesn't exist. Every call below that has no real
+ * `lr` passes `lrDocStatus: 'MISSING'` explicitly for exactly this reason.
+ */
+function tripDocs(opts?: { advanceCleared?: boolean; podStatus?: DocState; lrDocStatus?: DocState }): Doc[] {
+  const advanceCleared = opts?.advanceCleared ?? false;
+  const podStatus = opts?.podStatus ?? 'MISSING';
+  const lrDocStatus = opts?.lrDocStatus ?? 'VERIFIED';
   const base: [string, Doc['group'], DocState][] = [
     ['CLIENT_INVOICE_OR_PO', 'CLIENT', 'VERIFIED'],
-    ['EWAY_BILL', 'CLIENT', 'MISSING'],
-    ['RC', 'VEHICLE', 'PENDING'],
+    ['EWAY_BILL', 'CLIENT', advanceCleared ? 'VERIFIED' : 'MISSING'],
+    ['RC', 'VEHICLE', advanceCleared ? 'VERIFIED' : 'PENDING'],
     ['INSURANCE', 'VEHICLE', 'VERIFIED'],
     ['FITNESS', 'VEHICLE', 'VERIFIED'],
     ['PERMIT', 'VEHICLE', 'VERIFIED'],
     ['PUC', 'VEHICLE', 'VERIFIED'],
-    ['DRIVING_LICENCE', 'DRIVER', 'MISSING'],
-    ['LR', 'LR', 'VERIFIED'],
-    ['POD', 'POD', 'MISSING'],
+    ['DRIVING_LICENCE', 'DRIVER', advanceCleared ? 'VERIFIED' : 'MISSING'],
+    ['LR', 'LR', lrDocStatus],
+    ['POD', 'POD', podStatus],
   ];
   return base.map(([kind, group, status]) => ({
     kind,
@@ -1029,7 +1051,7 @@ export const db = {
       advancePaidPaise: 744000,
       balancePaidPaise: 0,
       billed: false,
-      documents: [],
+      documents: tripDocs({ advanceCleared: true, podStatus: 'PENDING', lrDocStatus: 'MISSING' }),
       charges: [],
       lr: null,
     },
@@ -1071,7 +1093,7 @@ export const db = {
       advancePaidPaise: 2884000,
       balancePaidPaise: 0,
       billed: false,
-      documents: [],
+      documents: tripDocs({ advanceCleared: true, podStatus: 'PENDING', lrDocStatus: 'MISSING' }),
       charges: [],
       lr: null,
     },
@@ -1113,7 +1135,7 @@ export const db = {
       advancePaidPaise: 1176000,
       balancePaidPaise: 0,
       billed: false,
-      documents: [],
+      documents: tripDocs({ advanceCleared: true, podStatus: 'VERIFIED', lrDocStatus: 'MISSING' }),
       charges: [
         { id: 'ch-2', chargeType: 'UNLOADING', costAmountPaise: 140000, billedAmountPaise: 175000, capturedBy: 'Sunita Rao', capturedAt: daysAgo(2) },
       ],

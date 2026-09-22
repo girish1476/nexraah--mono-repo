@@ -221,6 +221,11 @@ export class OrdersService {
       buyRatePaise: order.buyRatePaise,
       advancePaidPaise: order.advancePaidPaise ?? 0,
       balancePaidPaise: order.balancePaidPaise ?? 0,
+      // The indent's own special instructions ("stack no more than three
+      // high", a gate-closing time) — carried unchanged into the lorry
+      // receipt's own Remarks field already; surfaced here too as the order
+      // page's Comments tab, so it doesn't take opening the LR to read it.
+      remarks: order.remarks,
       events,
     };
   }

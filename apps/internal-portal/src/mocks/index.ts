@@ -2032,6 +2032,7 @@ const routes: [string, RegExp, Handler][] = [
         buyRatePaise: indent.buyRatePaise ?? null,
         advancePaidPaise: trip?.advancePaidPaise ?? 0,
         balancePaidPaise: trip?.balancePaidPaise ?? 0,
+        remarks: indent.remarks ?? null,
         events: orderEvents(row),
       });
     },

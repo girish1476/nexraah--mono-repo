@@ -21,6 +21,7 @@ import {
   Panel,
   StageTabs,
   Stack,
+  Tag,
   Toolbar,
   useCan,
 } from '@/lib/ui';
@@ -30,6 +31,7 @@ import {
   ORDER_PHASE_EMOJI,
   ORDER_PHASE_LABEL,
   ORDER_PHASE_SEQUENCE,
+  ORDER_STATUS_LABEL,
   ORDER_STATUS_TONE,
   OrderCounts,
   OrderListRow,
@@ -119,7 +121,18 @@ export default function OrdersPage() {
       label: 'Order',
       primary: true,
       render: (r) => r.clientName,
-      sub: (r) => `${r.lane} · ${r.orderNo} · ${r.indentCode}`,
+      sub: (r) => r.lane,
+    },
+    // Order ID, trip ID and status as their own columns — an order
+    // management system a dispatcher scans by number, not just by client
+    // name, so the codes get a column each instead of living in a sub-line.
+    { key: 'orderId', label: 'Order ID', mono: true, render: (r) => r.orderNo },
+    { key: 'indentId', label: 'Indent ID', mono: true, render: (r) => r.indentCode },
+    { key: 'tripId', label: 'Trip ID', mono: true, render: (r) => r.tripCode ?? <span className="muted">—</span> },
+    {
+      key: 'status',
+      label: 'Status',
+      render: (r) => <Tag tone={ORDER_STATUS_TONE[r.status]}>{ORDER_STATUS_LABEL[r.status]}</Tag>,
     },
     {
       key: 'next',

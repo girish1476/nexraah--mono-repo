@@ -59,6 +59,7 @@ export class OrdersRepository {
         'indents.material as material',
         'indents.weight_kg as weightKg',
         'indents.truck_type as truckType',
+        'indents.remarks as remarks',
         'clients.name as clientName',
         'branches.name as branchName',
         'trips.id as tripId',

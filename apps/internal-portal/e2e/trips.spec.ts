@@ -249,9 +249,18 @@ test.describe('trip detail — TRP-120855 (fully cleared money gates)', () => {
     await expect(page.getByRole('button', { name: /^Release/ })).toHaveCount(0);
   });
 
+  /*
+   * 2026-09-21: a trip with neither an E-LR generated nor an LR document
+   * uploaded now lands on a choice screen first — generate one in this
+   * system, or attach the transporter's own. "Generate an E-LR" reveals the
+   * exact form this test used to land on directly.
+   */
   test('a placed but not-yet-issued trip offers Generate LR to OPS', async ({ page }) => {
     await setRole(page, 'OPS');
     await page.goto('/trips/t-120855/lr');
+    await expect(page.getByRole('heading', { name: "How is this trip's lorry receipt coming?" })).toBeVisible();
+    await page.getByRole('button', { name: 'Generate an E-LR' }).click();
+
     await expect(page.getByRole('heading', { name: 'Lorry receipt — draft' })).toBeVisible();
     await expect(page.getByText('Autosaves every three seconds')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Generate LR' })).toBeEnabled();
