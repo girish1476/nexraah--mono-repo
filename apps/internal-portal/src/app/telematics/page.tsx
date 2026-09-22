@@ -126,9 +126,14 @@ export default function TelematicsPage() {
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<VehicleRow | null>(null);
-  const [form, setForm] = useState<{ speedKmph: number; fuelPct: number; ewayValidTill: string; alerts: AlertKind[] }>(
-    { speedKmph: 0, fuelPct: 0, ewayValidTill: '', alerts: [] },
-  );
+  const [form, setForm] = useState<{
+    speedKmph: number;
+    fuelPct: number;
+    lat: number;
+    lng: number;
+    ewayValidTill: string;
+    alerts: AlertKind[];
+  }>({ speedKmph: 0, fuelPct: 0, lat: 0, lng: 0, ewayValidTill: '', alerts: [] });
   const [saving, setSaving] = useState(false);
 
   const load = () => {
@@ -178,6 +183,8 @@ export default function TelematicsPage() {
     setForm({
       speedKmph: r.speedKmph,
       fuelPct: r.fuelPct,
+      lat: r.lat,
+      lng: r.lng,
       ewayValidTill: r.ewayValidTill ? r.ewayValidTill.slice(0, 10) : '',
       alerts: r.alerts.filter((a) => (EDITABLE_ALERTS as string[]).includes(a)),
     });
@@ -193,6 +200,8 @@ export default function TelematicsPage() {
       const updated = await updateVehicleTelematics(editing.vehicleNo, {
         speedKmph: form.speedKmph,
         fuelPct: form.fuelPct,
+        lat: form.lat,
+        lng: form.lng,
         ewayValidTill: form.ewayValidTill ? `${form.ewayValidTill}T23:59:00+05:30` : null,
         alerts: form.alerts,
       });
@@ -361,6 +370,37 @@ export default function TelematicsPage() {
             min={0}
             value={form.speedKmph}
             onChange={(e) => setForm((f) => ({ ...f, speedKmph: Number(e.target.value) || 0 }))}
+          />
+        </Field>
+        {/*
+          The board's own body copy above ("Ops updates a truck's position
+          and status by hand") promised this and never had a field for it —
+          speed and fuel were the only two things this dialog could actually
+          change. `lat`/`lng` were always accepted by the server
+          (`ManualUpdateDto`) and always shown on the board's own map data;
+          they just had no way in from here. Paste-friendly: a driver's
+          shared-location link or a Google Maps right-click both hand you a
+          plain "lat, lng" pair, so typing two separate boxes is the
+          realistic path, not a map widget nobody asked for.
+        */}
+        <Field label="Latitude" hint="e.g. 19.997454, from wherever the driver last shared a pin.">
+          <input
+            type="number"
+            step="0.000001"
+            min={-90}
+            max={90}
+            value={form.lat}
+            onChange={(e) => setForm((f) => ({ ...f, lat: Number(e.target.value) || 0 }))}
+          />
+        </Field>
+        <Field label="Longitude" hint="e.g. 73.789803">
+          <input
+            type="number"
+            step="0.000001"
+            min={-180}
+            max={180}
+            value={form.lng}
+            onChange={(e) => setForm((f) => ({ ...f, lng: Number(e.target.value) || 0 }))}
           />
         </Field>
         <Field label="Fuel %">
