@@ -120,6 +120,18 @@ export class PodRepository {
         'trips.buy_rate as buyRatePaise',
         'trips.advance_paid as advancePaidPaise',
       ])
+      // Whether a courier docket has been recorded for this delivery, by the
+      // transporter (their upload carries one) or by whoever tracks the POD.
+      .select((eb) => [
+        eb
+          .selectFrom('pod_receipts')
+          .select('pod_receipts.courier_docket')
+          .whereRef('pod_receipts.trip_id', '=', 'trips.id')
+          .where('pod_receipts.courier_docket', 'is not', null)
+          .orderBy('pod_receipts.created_at', 'desc')
+          .limit(1)
+          .as('docketNo'),
+      ])
       .where('trips.pod_status', 'not in', ['APPROVED', 'FORFEITED']);
     if (filters.branchId) query = query.where('trips.branch_id', '=', filters.branchId);
     if (filters.vendorId) query = query.where('trips.vendor_id', '=', filters.vendorId);
@@ -170,6 +182,69 @@ export class PodRepository {
       })
       .returningAll()
       .executeTakeFirstOrThrow();
+  }
+
+  /** A docket with no paper yet: the courier reference only, nothing received. */
+  insertDocketOnly(db: DbExecutor, row: { code: string; tripId: string; docketNo: string; sentOn: string; note: string }) {
+    return db
+      .insertInto('pod_receipts')
+      .values({
+        code: row.code,
+        trip_id: row.tripId,
+        courier_docket: row.docketNo,
+        sent_on: row.sentOn,
+        condition: row.note,
+      })
+      .returning(['id', 'code'])
+      .executeTakeFirstOrThrow();
+  }
+
+  insertWaiver(
+    db: DbExecutor,
+    row: {
+      kind: string;
+      tripId: string;
+      sdrId?: string | null;
+      amount: number;
+      mailSubject: string;
+      mailAttachmentId?: string | null;
+      note?: string | null;
+      waivedBy: string;
+    },
+  ) {
+    return db
+      .insertInto('penalty_waivers')
+      .values({
+        kind: row.kind,
+        trip_id: row.tripId,
+        sdr_id: row.sdrId ?? null,
+        amount: row.amount,
+        mail_subject: row.mailSubject,
+        mail_attachment_id: row.mailAttachmentId ?? null,
+        note: row.note ?? null,
+        waived_by: row.waivedBy,
+      })
+      .returning(['id'])
+      .executeTakeFirstOrThrow();
+  }
+
+  /** Corrects the docket on record for a delivery. */
+  updateDocket(db: DbExecutor, tripId: string, docketNo: string, sentOn: string) {
+    return db
+      .updateTable('pod_receipts')
+      .set({ courier_docket: docketNo, sent_on: sentOn, updated_at: new Date().toISOString() })
+      .where('trip_id', '=', tripId)
+      .where('courier_docket', 'is not', null)
+      .execute();
+  }
+
+  findDocket(db: DbExecutor, tripId: string) {
+    return db
+      .selectFrom('pod_receipts')
+      .select(['courier_docket as docketNo'])
+      .where('trip_id', '=', tripId)
+      .where('courier_docket', 'is not', null)
+      .executeTakeFirst();
   }
 
   decideReceipt(db: DbExecutor, tripId: string, patch: Record<string, unknown>) {

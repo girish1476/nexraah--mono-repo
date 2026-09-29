@@ -13,6 +13,12 @@ export const APPROVAL_KINDS = [
   // `20260826000000_rate_revision.sql`, because a kind this file knows about
   // and the database does not fails on insert at runtime, not at build.
   'RATE_REVISION',
+  // `20260926010000_lane_band_and_advance_override.sql` — same rule as above:
+  // the database CHECK has to list it too or the insert fails at runtime.
+  'LANE_BAND_CHANGE',
+  // `20260926120000_rate_card_lane_approval.sql` — a lane added to a client's
+  // rate card outside an RFQ. Same rule: the database CHECK lists it too.
+  'RATE_CARD_LANE',
 ] as const;
 
 export type ApprovalKind = (typeof APPROVAL_KINDS)[number];
@@ -40,6 +46,13 @@ export const REQUIRED_PERMISSION_BY_KIND: Record<ApprovalKind, string> = {
   DOC_OVERRIDE: 'approve.exception',
   BRANCH_OVERRIDE: 'approve.exception',
   RATE_REVISION: 'approve.contract',
+  // The bid band is the price floor and ceiling on a client's lane. Moving one
+  // that is already in force is Leadership's call, the same desk that clears
+  // an above-band award.
+  LANE_BAND_CHANGE: 'approve.above_band',
+  // A new agreed price IS the contract, exactly as a revision is — so the same
+  // two desks countersign, and neither holds `rate.revise` to propose it.
+  RATE_CARD_LANE: 'approve.contract',
 };
 
 /** Part 01 §3's literal approver column — a display label, not a permission check. */
@@ -51,6 +64,8 @@ export const APPROVER_ROLE_LABEL_BY_KIND: Record<ApprovalKind, string> = {
   DOC_OVERRIDE: 'Senior to OPS',
   BRANCH_OVERRIDE: 'LEADERSHIP',
   RATE_REVISION: 'COMPLIANCE',
+  LANE_BAND_CHANGE: 'LEADERSHIP',
+  RATE_CARD_LANE: 'COMPLIANCE',
 };
 
 /**

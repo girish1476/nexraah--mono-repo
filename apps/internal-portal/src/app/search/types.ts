@@ -5,7 +5,7 @@ export type SearchKind = 'order' | 'trip' | 'indent' | 'client' | 'vendor' | 'in
 
 export interface SearchHit {
   kind: SearchKind;
-  /** The code a person would have typed to find this — ORD-, TRP-, LR-, CLT-. */
+  /** The code a person would have typed to find this — indent or trip number, LR-, CLT-. */
   code: string;
   title: string;
   /** One line of context, so two similar codes are distinguishable at a glance. */

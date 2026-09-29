@@ -1,4 +1,4 @@
-import { IsDateString, IsInt, IsString, IsUUID, Min, MinLength } from 'class-validator';
+import { IsBoolean, IsDateString, IsInt, IsOptional, IsString, IsUUID, Min, MinLength } from 'class-validator';
 
 export class ProposeRateRevisionDto {
   /** The lane in force whose rate is changing — not the client, not the route. */
@@ -20,4 +20,14 @@ export class ProposeRateRevisionDto {
    * of the mistake rather than after the lane lookup.
    */
   @IsString() @MinLength(20) reason!: string;
+
+  /** The subject line of the BD/Leadership approval mail. Compliance signs off against it. */
+  @IsString() @MinLength(5) approvalMailSubject!: string;
+
+  /** A screenshot of that mail, when there is one. */
+  @IsOptional() @IsUUID() approvalMailAttachmentId?: string;
+
+  /** Change the lane's late-delivery penalty with the rate. Left out, the lane's own carries across. */
+  @IsOptional() @IsBoolean() transitPenaltyApplies?: boolean;
+  @IsOptional() @IsInt() @Min(1) transitPenaltyPerDayPaise?: number;
 }

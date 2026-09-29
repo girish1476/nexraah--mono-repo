@@ -10,6 +10,8 @@ import { ApprovalsRegistry } from '../approvals/approvals.registry';
 import { ConfigRepository } from '../config/config.repository';
 import { OrdersService } from '../orders/orders.service';
 import { PodRepository } from './pod.repository';
+import type { AddDocketDto } from './dto/add-docket.dto';
+import type { WaivePenaltyDto } from './dto/waive-pod.dto';
 import type { ReceivePodDto } from './dto/receive-pod.dto';
 import type { VerifyPodDto } from './dto/verify-pod.dto';
 
@@ -107,12 +109,74 @@ export class PodService implements OnModuleInit {
     };
   }
 
+  /**
+   * The courier docket for a delivery, entered by whoever tracks the POD when
+   * the transporter has not attached one themselves. It does not move the POD's
+   * status — the paper has not arrived, only its courier reference — but it
+   * takes the delivery off the hard-copy follow-up list.
+   */
+  async addDocket(tripId: string, dto: AddDocketDto, actor: AuthenticatedUser) {
+    await this.podRepository.transaction().execute(async (trx) => {
+      const trip = await this.podRepository.findTripForUpdate(trx, tripId);
+      if (!trip) throw new DomainException(404, 'NOT_FOUND', `Unknown trip: ${tripId}`);
+      if (!trip.delivered_at) {
+        throw new DomainException(409, 'NOT_DELIVERED', 'A docket can only be recorded once the load has been delivered.');
+      }
+      if (trip.pod_status === 'APPROVED' || trip.pod_status === 'FORFEITED') {
+        throw new DomainException(409, 'POD_CLOSED', 'This delivery proof is already closed.');
+      }
+      // A docket is optional and can be corrected: entering one again replaces the
+      // number on record rather than adding a second.
+      const existingDocket = await this.podRepository.findDocket(trx, tripId);
+      if (existingDocket) {
+        await this.podRepository.updateDocket(
+          trx,
+          tripId,
+          dto.docketNo.trim(),
+          dto.sentOn ?? new Date().toISOString().slice(0, 10),
+        );
+        await this.auditService.record(trx, actor, {
+          action: 'POD_DOCKET_CHANGED',
+          entityType: 'trips',
+          entityId: tripId,
+          before: { docketNo: existingDocket.docketNo },
+          after: { docketNo: dto.docketNo.trim() },
+        });
+        return;
+      }
+      await this.podRepository.ensureSeriesForBranch(trx, trip.branch_id);
+      const code = await this.numberingService.issue(trx, 'POD_RECEIPT', trip.branch_id);
+      await this.podRepository.insertDocketOnly(trx, {
+        code,
+        tripId,
+        docketNo: dto.docketNo.trim(),
+        sentOn: dto.sentOn ?? new Date().toISOString().slice(0, 10),
+        note: `Docket added by ${actor.name}`,
+      });
+      await this.auditService.record(trx, actor, {
+        action: 'POD_DOCKET_ADDED',
+        entityType: 'trips',
+        entityId: tripId,
+        after: { docketNo: dto.docketNo.trim() },
+      });
+    });
+    return { tripId, docketNo: dto.docketNo.trim() };
+  }
+
   async receive(tripId: string, dto: ReceivePodDto, actor: AuthenticatedUser) {
     let indentId: string | null = null;
     const receipt = await this.podRepository.transaction().execute(async (trx) => {
       const trip = await this.podRepository.findTripForUpdate(trx, tripId);
       if (!trip) throw new DomainException(404, 'NOT_FOUND', `Unknown trip: ${tripId}`);
       indentId = trip.indent_id;
+      // The paper can only arrive for a delivery still waiting on it: not before
+      // delivery, and not once the proof is approved or written off.
+      if (!trip.delivered_at) {
+        throw new DomainException(409, 'NOT_DELIVERED', 'A delivery proof can only be received once the load has been delivered.');
+      }
+      if (!['PENDING', 'ATTACHED', 'REJECTED'].includes(trip.pod_status)) {
+        throw new DomainException(409, 'POD_NOT_AWAITED', `This delivery proof is ${trip.pod_status.toLowerCase()}; there is nothing left to receive.`);
+      }
       if (!dto.courierDocket) {
         throw new DomainException(400, 'VALIDATION_ERROR', 'courierDocket is required.');
       }
@@ -389,6 +453,9 @@ export class PodService implements OnModuleInit {
           penaltyPaise,
           balanceHeldPaise: Math.max(0, r.buyRatePaise - r.advancePaidPaise),
           forfeited,
+          // Once a docket is on record the paper is on its way and the delivery
+          // drops out of the follow-up ("hard copy pending") list.
+          docketNo: r.docketNo ?? null,
         };
       })
       .filter((r) => {
@@ -409,27 +476,51 @@ export class PodService implements OnModuleInit {
     };
   }
 
-  async waive(tripId: string, reason: string, actor: AuthenticatedUser): Promise<ApprovalRequiredResponse> {
-    if (!reason || reason.length < 30) {
-      throw new DomainException(400, 'REASON_TOO_SHORT', 'The waiver reason must be at least 30 characters.');
-    }
-    const trip = await this.podRepository.findTripById(tripId);
-    if (!trip) throw new DomainException(404, 'NOT_FOUND', `Unknown trip: ${tripId}`);
+  /**
+   * Waives a penalty on Leadership's say-so. Leadership agrees it by mail;
+   * Compliance (`pod.waive`) records it here with the mail's subject as the
+   * evidence, and it takes effect at once. Covers the paperwork (POD) penalty and
+   * the late-delivery (transit) penalty; what is still owed on an SDR is waived
+   * from the SDR itself.
+   */
+  async waive(tripId: string, dto: WaivePenaltyDto, actor: AuthenticatedUser) {
+    const result = await this.podRepository.transaction().execute(async (trx) => {
+      const trip = await this.podRepository.findTripForUpdate(trx, tripId);
+      if (!trip) throw new DomainException(404, 'NOT_FOUND', `Unknown trip: ${tripId}`);
 
-    const action: PenaltyWaiverAction = { tripId };
-    return this.approvalsService.raise(
-      {
-        kind: 'PENALTY_WAIVER',
+      let amount = 0;
+      if (dto.kind === 'POD_PENALTY') {
+        if (trip.pod_closure_basis === 'WAIVED') {
+          throw new DomainException(409, 'ALREADY_WAIVED', 'The delivery-proof penalty is already waived for this trip.');
+        }
+        amount = Number(trip.pod_penalty);
+        await this.podRepository.updateTrip(trx, tripId, { pod_closure_basis: 'WAIVED' });
+      } else {
+        if (trip.transit_penalty_waived || Number(trip.transit_penalty) <= 0) {
+          throw new DomainException(409, 'NOTHING_TO_WAIVE', 'There is no late-delivery penalty left to waive on this trip.');
+        }
+        amount = Number(trip.transit_penalty);
+        await this.podRepository.updateTrip(trx, tripId, { transit_penalty: 0, transit_penalty_waived: true });
+      }
+
+      await this.podRepository.insertWaiver(trx, {
+        kind: dto.kind,
+        tripId,
+        amount,
+        mailSubject: dto.mailSubject.trim(),
+        mailAttachmentId: dto.mailAttachmentId ?? null,
+        note: dto.note?.trim() || null,
+        waivedBy: actor.userId,
+      });
+      await this.auditService.record(trx, actor, {
+        action: 'PENALTY_WAIVED',
         entityType: 'trips',
         entityId: tripId,
-        reason,
-        title: `Penalty waiver · ${trip.code}`,
-        detail: 'Compliance proposes waiving the accrued POD penalty.',
-        amountPaise: trip.pod_penalty,
-        action,
-      },
-      actor,
-    );
+        after: { kind: dto.kind, amountPaise: amount, mail: dto.mailSubject.trim() },
+      });
+      return { tripId, kind: dto.kind, waivedPaise: amount };
+    });
+    return result;
   }
 
   // ---- Penalty --------------------------------------------------------

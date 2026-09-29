@@ -82,7 +82,7 @@ export async function searchEverywhere(q: string, kinds: SearchKind[]): Promise<
   for (const o of orders.rows.slice(0, PER_KIND)) {
     hits.push({
       kind: 'order',
-      code: o.orderNo,
+      code: o.indentCode,
       title: o.lane,
       detail: `${o.clientName} · ${o.branchName}`,
       state: ORDER_STATUS_LABEL[o.status] ?? null,

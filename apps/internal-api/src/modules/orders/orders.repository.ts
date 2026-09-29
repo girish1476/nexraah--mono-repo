@@ -1,20 +1,48 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { sql } from 'kysely';
 import { DB } from '../../db/tokens';
 import type { DbExecutor, InternalDb } from '../../db/kysely';
 import type { OrderStatus } from '../../db/types';
 import { advanceDocsIn, type PodStatus } from './order-ladder';
 
-export interface OrderListFilters {
-  /** One of the ten steps, or FAILED. Omitted means every step. */
+/** Everything except paging — what the list, its total and the tab counts share. */
+export interface OrderSearchFilters {
+  /** One step, or several separated by commas (a phase is several steps). Omitted means every step. */
   status?: string;
   branchId?: string;
   clientId?: string;
   /** `true` = not yet at BALANCE_RELEASED. */
   openOnly?: boolean;
-  /** Free text over order number, indent code, client name and lane. */
+  /** Free text over order number, indent code, trip code, client name and lane. */
   q?: string;
+  /** Client details: name, client code, GST number, contact person or phone. */
+  clientName?: string;
+  /** Transporter's legal name. */
+  vendor?: string;
+  /** Pick-up city. */
+  from?: string;
+  /** Delivery city. */
+  to?: string;
+  /** Vehicle number — spaces and dashes are ignored, so "MH12AB1234" finds "MH 12 AB 1234". */
+  truck?: string;
+  /** A load-request, trip, lorry-receipt or invoice number. */
+  ref?: string;
+  branchName?: string;
+}
+
+export interface OrderListFilters extends OrderSearchFilters {
   limit: number;
   offset: number;
+}
+
+/** Lower-cased `%term%`, with LIKE's own wildcards made literal. */
+function likeTerm(raw: string) {
+  return `%${raw.trim().toLowerCase().replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+}
+
+/** The same term with spaces and dashes removed, for comparing vehicle numbers. */
+function squashedLikeTerm(raw: string) {
+  return likeTerm(raw.replace(/[\s-]/g, ''));
 }
 
 /**
@@ -33,7 +61,13 @@ export class OrdersRepository {
     return this.db.transaction();
   }
 
-  private baseQuery() {
+  /**
+   * Every table a filter can reach, with nothing selected yet. The row query,
+   * its total and the tab counts all start here, so a filter that narrows the
+   * list narrows the count and the tabs by the same rule — a count built on
+   * fewer joins would quietly ignore the vendor or truck filter.
+   */
+  private joined() {
     return this.db
       .selectFrom('orders')
       .innerJoin('indents', 'indents.id', 'orders.indent_id')
@@ -41,7 +75,86 @@ export class OrdersRepository {
       .innerJoin('branches', 'branches.id', 'orders.branch_id')
       .leftJoin('trips', 'trips.id', 'orders.trip_id')
       .leftJoin('vendors', 'vendors.id', 'trips.vendor_id')
-      .leftJoin('invoices', 'invoices.id', 'orders.invoice_id')
+      .leftJoin('invoices', 'invoices.id', 'orders.invoice_id');
+  }
+
+  /**
+   * The WHERE clauses for a search. `skipStatus` is for the tab counts: each
+   * tab shows how many orders *would* be in it, so the count must ignore
+   * whichever step is currently selected and honour everything else.
+   */
+  private applyFilters<T extends { where: any }>(query: T, filters: OrderSearchFilters, skipStatus = false): T {
+    let q: any = query;
+    if (!skipStatus && filters.status) {
+      const steps = filters.status.split(',').map((s) => s.trim()).filter(Boolean);
+      if (steps.length === 1) q = q.where('orders.status', '=', steps[0]);
+      else if (steps.length > 1) q = q.where('orders.status', 'in', steps);
+    }
+    if (filters.branchId) q = q.where('orders.branch_id', '=', filters.branchId);
+    if (filters.clientId) q = q.where('orders.client_id', '=', filters.clientId);
+    if (filters.openOnly) q = q.where('orders.closed_at', 'is', null);
+    const lowered = (eb: any, column: string, term: string) => eb(eb.fn('lower', [column]), 'like', term);
+    if (filters.q?.trim()) {
+      const term = likeTerm(filters.q);
+      q = q.where((eb: any) =>
+        eb.or([
+          lowered(eb, 'orders.order_no', term),
+          lowered(eb, 'indents.code', term),
+          lowered(eb, 'trips.code', term),
+          lowered(eb, 'clients.name', term),
+          lowered(eb, 'indents.from_city', term),
+          lowered(eb, 'indents.to_city', term),
+        ]),
+      );
+    }
+    if (filters.clientName?.trim()) {
+      const term = likeTerm(filters.clientName);
+      q = q.where((eb: any) =>
+        eb.or([
+          lowered(eb, 'clients.name', term),
+          lowered(eb, 'clients.code', term),
+          lowered(eb, 'clients.gstin', term),
+          lowered(eb, 'clients.contact', term),
+          lowered(eb, 'clients.phone', term),
+        ]),
+      );
+    }
+    if (filters.vendor?.trim()) q = q.where((eb: any) => lowered(eb, 'vendors.legal_name', likeTerm(filters.vendor!)));
+    if (filters.from?.trim()) q = q.where((eb: any) => lowered(eb, 'indents.from_city', likeTerm(filters.from!)));
+    if (filters.to?.trim()) q = q.where((eb: any) => lowered(eb, 'indents.to_city', likeTerm(filters.to!)));
+    if (filters.branchName?.trim()) q = q.where((eb: any) => lowered(eb, 'branches.name', likeTerm(filters.branchName!)));
+    if (filters.truck?.trim()) {
+      // Vehicle numbers are typed every which way, so compare with the spaces
+      // and dashes taken out of both sides.
+      const term = squashedLikeTerm(filters.truck);
+      q = q.where((eb: any) =>
+        eb(eb.fn('replace', [eb.fn('replace', [eb.fn('lower', ['trips.vehicle_no']), eb.val(' '), eb.val('')]), eb.val('-'), eb.val('')]), 'like', term),
+      );
+    }
+    if (filters.ref?.trim()) {
+      const term = likeTerm(filters.ref);
+      q = q.where((eb: any) =>
+        eb.or([
+          lowered(eb, 'indents.code', term),
+          lowered(eb, 'trips.code', term),
+          lowered(eb, 'invoices.code', term),
+          // A subquery, not a join: a join here would repeat an order once per
+          // lorry receipt and inflate both the list and its total.
+          eb.exists(
+            eb
+              .selectFrom('lorry_receipts')
+              .select('lorry_receipts.id')
+              .whereRef('lorry_receipts.trip_id', '=', 'trips.id')
+              .where(eb.fn('lower', ['lorry_receipts.code']), 'like', term),
+          ),
+        ]),
+      );
+    }
+    return q as T;
+  }
+
+  private baseQuery() {
+    return this.joined()
       .select([
         'orders.id as id',
         'orders.order_no as orderNo',
@@ -49,6 +162,7 @@ export class OrdersRepository {
         'orders.step_no as stepNo',
         'orders.closed_at as closedAt',
         'orders.created_at as createdAt',
+        'orders.branch_id as branchId',
         'indents.id as indentId',
         'indents.code as indentCode',
         'indents.from_city as fromCity',
@@ -83,39 +197,15 @@ export class OrdersRepository {
    * a column every caller would have to strip.
    */
   async list(filters: OrderListFilters) {
-    const applyFilters = <T extends { where: any }>(query: T): T => {
-      let q: any = query;
-      if (filters.status) q = q.where('orders.status', '=', filters.status);
-      if (filters.branchId) q = q.where('orders.branch_id', '=', filters.branchId);
-      if (filters.clientId) q = q.where('orders.client_id', '=', filters.clientId);
-      if (filters.openOnly) q = q.where('orders.closed_at', 'is', null);
-      if (filters.q) {
-        const term = `%${filters.q.toLowerCase()}%`;
-        q = q.where((eb: any) =>
-          eb.or([
-            eb(eb.fn('lower', ['orders.order_no']), 'like', term),
-            eb(eb.fn('lower', ['indents.code']), 'like', term),
-            eb(eb.fn('lower', ['clients.name']), 'like', term),
-            eb(eb.fn('lower', ['indents.from_city']), 'like', term),
-            eb(eb.fn('lower', ['indents.to_city']), 'like', term),
-          ]),
-        );
-      }
-      return q as T;
-    };
-
-    const rows = await applyFilters(this.baseQuery())
+    const rows = await this.applyFilters(this.baseQuery(), filters)
       .orderBy('orders.created_at', 'desc')
       .limit(filters.limit)
       .offset(filters.offset)
       .execute();
 
-    const counted = await applyFilters(
-      this.db
-        .selectFrom('orders')
-        .innerJoin('indents', 'indents.id', 'orders.indent_id')
-        .innerJoin('clients', 'clients.id', 'orders.client_id')
-        .select((eb) => eb.fn.countAll<string>().as('total')),
+    const counted = await this.applyFilters(
+      this.joined().select((eb) => eb.fn.countAll<string>().as('total')),
+      filters,
     ).executeTakeFirst();
 
     return { rows, total: Number(counted?.total ?? 0) };
@@ -133,15 +223,22 @@ export class OrdersRepository {
     return this.baseQuery().where('indents.code', '=', indentCode).executeTakeFirst();
   }
 
-  /** Counts per step, for the phase tabs — one query, not one per tab. */
-  async countsByStatus(branchId?: string) {
-    let q = this.db
-      .selectFrom('orders')
-      .select((eb) => ['orders.status as status', eb.fn.countAll<string>().as('count')])
-      .groupBy('orders.status');
-    if (branchId) q = q.where('orders.branch_id', '=', branchId);
-    const rows = await q.execute();
-    return rows.reduce<Record<string, number>>((acc, r) => {
+  /**
+   * Counts per step, for the phase tabs — one query, not one per tab.
+   *
+   * Takes the same filters as the list, minus the step itself: with a vendor
+   * or a city typed in, each tab should say how many of *those* orders sit in
+   * it, not how many exist in total.
+   */
+  async countsByStatus(filters: OrderSearchFilters = {}) {
+    const rows = await this.applyFilters(
+      this.joined().select((eb) => ['orders.status as status', eb.fn.countAll<string>().as('count')]),
+      filters,
+      true,
+    )
+      .groupBy('orders.status')
+      .execute();
+    return rows.reduce<Record<string, number>>((acc, r: any) => {
       acc[r.status] = Number(r.count);
       return acc;
     }, {});
@@ -310,12 +407,13 @@ export class OrdersRepository {
    *  as the number it just issued. */
   async insertOrder(
     trx: DbExecutor,
-    row: { orderNo: string; indentId: string; clientId: string; branchId: string },
+    row: { indentId: string; clientId: string; branchId: string },
   ) {
     const created = await trx
       .insertInto('orders')
       .values({
-        order_no: row.orderNo,
+        // There is no order id of its own: the order carries its indent's id.
+        order_no: sql<string>`(select code from indents where id = ${row.indentId})`,
         indent_id: row.indentId,
         client_id: row.clientId,
         branch_id: row.branchId,
@@ -338,6 +436,42 @@ export class OrdersRepository {
         ),
       )
       .limit(limit)
+      .execute();
+  }
+
+  /**
+   * Money that has actually moved against a trip — every advance and balance
+   * payment with its UTR, newest first. Read from `payments` rather than
+   * inferred from `trips.advance_paid`/`balance_paid`, because those two
+   * columns hold an amount and this has to say *which transfer* it was.
+   */
+  paymentsForTrip(tripId: string) {
+    return this.db
+      .selectFrom('payments')
+      .leftJoin('users', 'users.id', 'payments.released_by')
+      .select([
+        'payments.kind as kind',
+        'payments.gross as grossPaise',
+        'payments.penalty as penaltyPaise',
+        'payments.deduction as deductionPaise',
+        'payments.net as netPaise',
+        'payments.mode as mode',
+        'payments.utr as utr',
+        'payments.value_date as valueDate',
+        'payments.released_at as releasedAt',
+        'users.name as releasedByName',
+      ])
+      .where('payments.trip_id', '=', tripId)
+      .orderBy('payments.released_at', 'desc')
+      .execute();
+  }
+
+  /** Every charge line on a trip, as what it cost us — BR-45, never `billed_amount`. */
+  chargesForTrip(tripId: string) {
+    return this.db
+      .selectFrom('trip_charges')
+      .select(['charge_type as chargeType', 'cost_amount as costPaise'])
+      .where('trip_id', '=', tripId)
       .execute();
   }
 

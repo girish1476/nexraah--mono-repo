@@ -3,14 +3,18 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
+import { useAtomValue } from 'jotai';
 import { errorMessage } from '@/apis';
+import { sessionAtom } from '@/store/atoms';
 import { AdvancePanel } from '@/components/advance-panel';
 import { BalancePanel } from '@/components/balance-panel';
 import { fmtDate, fmtDateTime, inr } from '@/lib/format';
 import {
   Banner,
+  Dialog,
   ErrorState,
   FactList,
+  Field,
   Loading,
   ModuleGuard,
   PageHeader,
@@ -22,9 +26,21 @@ import {
   useCan,
   useToast,
 } from '@/lib/ui';
-import { deliverTrip, departTrip, getTrip } from '../apis';
+import {
+  assignLoadingSupervisor,
+  completeLoading,
+  deliverTrip,
+  departTrip,
+  getLoadingSupervisorOptions,
+  getTrip,
+  LoadingSupervisorOption,
+  startLoading,
+} from '../apis';
 import { getVehicleTracking } from '@/app/telematics/apis';
 import { VehicleRow } from '@/app/telematics/types';
+import { WaiverDialog, WaiverEvidence } from '@/components/waiver-dialog';
+import { uploadAttachment } from '@/lib/attachments';
+import { waivePenalty } from '@/app/pod/apis';
 import { ALERT_LABEL, ALERT_TONE, POD_STATUS_LABEL, POD_TONE } from '@/lib/documents';
 import { TripDetail } from '../types';
 import { TripTabs } from './tabs';
@@ -39,12 +55,58 @@ export default function TripDetailPage() {
   const [tracking, setTracking] = useState<VehicleRow | null>(null);
   const [trackingChecked, setTrackingChecked] = useState(false);
   const [stageBusy, setStageBusy] = useState(false);
+  const session = useAtomValue(sessionAtom);
+  const [waiveOpen, setWaiveOpen] = useState(false);
+  const [supervisorOpen, setSupervisorOpen] = useState(false);
+  const [supervisorOptions, setSupervisorOptions] = useState<LoadingSupervisorOption[]>([]);
+  const [supervisorId, setSupervisorId] = useState('');
 
   const load = () => {
     setError(null);
     getTrip(id).then(setTrip).catch((e) => setError(errorMessage(e)));
   };
   useEffect(load, [id]);
+
+  const runLoadingStep = async (step: () => Promise<TripDetail>, done: string) => {
+    setStageBusy(true);
+    try {
+      setTrip(await step());
+      toast(done);
+    } catch (e) {
+      toast(errorMessage(e));
+    } finally {
+      setStageBusy(false);
+    }
+  };
+
+  const openSupervisorDialog = () => {
+    setSupervisorId(trip?.loadingSupervisorId ?? '');
+    setSupervisorOpen(true);
+    getLoadingSupervisorOptions(id)
+      .then(setSupervisorOptions)
+      .catch((e) => toast(errorMessage(e)));
+  };
+
+  const submitSupervisor = async () => {
+    if (!supervisorId) return;
+    await runLoadingStep(() => assignLoadingSupervisor(id, supervisorId), 'Loading supervisor assigned');
+    setSupervisorOpen(false);
+  };
+
+  const submitTransitWaiver = async (evidence: WaiverEvidence) => {
+    setStageBusy(true);
+    try {
+      const mailAttachmentId = evidence.file ? await uploadAttachment(evidence.file, 'WAIVER_MAIL', 'trips', id) : undefined;
+      await waivePenalty(id, { kind: 'TRANSIT_PENALTY', mailSubject: evidence.mailSubject, mailAttachmentId });
+      toast('Late-delivery penalty waived · recorded against Leadership’s mail');
+      setWaiveOpen(false);
+      load();
+    } catch (e) {
+      toast(errorMessage(e));
+    } finally {
+      setStageBusy(false);
+    }
+  };
 
   const submitDepart = async () => {
     setStageBusy(true);
@@ -167,8 +229,16 @@ export default function TripDetailPage() {
                   ['Advance paid', inr(trip.advancePaidPaise)],
                   ['Balance paid', inr(trip.balancePaidPaise)],
                   ['POD penalty', inr(trip.podPenaltyPaise)],
+                  ['Late-delivery penalty', inr(trip.transitPenaltyPaise ?? 0)],
                 ]}
               />
+              {can('pod.waive') && (trip.transitPenaltyPaise ?? 0) > 0 && (
+                <div style={{ padding: '0 14px 12px' }}>
+                  <button className="btn btn-secondary btn-sm" onClick={() => setWaiveOpen(true)}>
+                    Waive late-delivery penalty
+                  </button>
+                </div>
+              )}
             </Panel>
           </>
         }
@@ -214,7 +284,11 @@ export default function TripDetailPage() {
           )}
           {can('indent.manage') && trip.stage === 'OPEN' && (
             <div style={{ marginTop: 12 }}>
-              {trip.lr?.status === 'RELEASED' ? (
+              {trip.loadingSupervisorId && !trip.loadingCompletedAt ? (
+                <p className="muted" style={{ fontSize: 12.5, marginBottom: 0 }}>
+                  Loading has to be marked complete before this trip can start.
+                </p>
+              ) : trip.lr?.status === 'RELEASED' ? (
                 <button className="btn" onClick={submitDepart} disabled={stageBusy}>
                   Start trip — mark departed
                 </button>
@@ -230,6 +304,51 @@ export default function TripDetailPage() {
               <button className="btn" onClick={submitDeliver} disabled={stageBusy}>
                 Mark delivered
               </button>
+            </div>
+          )}
+        </Panel>
+
+        <Panel title="Loading">
+          <FactList
+            facts={[
+              ['Loading supervisor', trip.loadingSupervisorName ?? 'not assigned'],
+              ['Loading started', trip.loadingStartedAt ? fmtDateTime(trip.loadingStartedAt) : '—'],
+              ['Loading completed', trip.loadingCompletedAt ? fmtDateTime(trip.loadingCompletedAt) : '—'],
+            ]}
+          />
+          <p className="muted" style={{ fontSize: 12.5, margin: '10px 14px 0' }}>
+            The loading supervisor runs the loading and uploads the loading slip and the vehicle documents on{' '}
+            <Link href={`/trips/${trip.id}/documents`}>the document list</Link>. Compliance verifies them, and only
+            then can the advance be paid.
+          </p>
+          {(can('indent.manage') || (!!session && trip.loadingSupervisorId === session.userId)) &&
+            trip.stage === 'OPEN' &&
+            !trip.loadingCompletedAt && (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', padding: '12px 14px' }}>
+              {can('indent.manage') && (
+                <button className="btn btn-secondary" onClick={openSupervisorDialog} disabled={stageBusy}>
+                  {trip.loadingSupervisorId ? 'Change supervisor' : 'Assign loading supervisor'}
+                </button>
+              )}
+              {trip.loadingSupervisorId && !trip.loadingStartedAt && (
+                <button
+                  className="btn"
+                  onClick={() => runLoadingStep(() => startLoading(id), 'Loading started')}
+                  disabled={stageBusy || !trip.vehicleNo}
+                  title={trip.vehicleNo ? undefined : 'Allocate the vehicle on the indent first'}
+                >
+                  Start loading
+                </button>
+              )}
+              {trip.loadingStartedAt && (
+                <button
+                  className="btn"
+                  onClick={() => runLoadingStep(() => completeLoading(id), 'Loading marked complete')}
+                  disabled={stageBusy}
+                >
+                  Loading complete
+                </button>
+              )}
             </div>
           )}
         </Panel>
@@ -309,6 +428,39 @@ export default function TripDetailPage() {
           </p>
         </Panel>
       </Split>
+
+      <WaiverDialog
+        open={waiveOpen}
+        title="Waive the late-delivery penalty"
+        body="Leadership approves a waiver by mail; Compliance records it here. The mail’s subject is kept as the evidence."
+        facts={trip ? [['Trip', trip.code], ['Penalty', inr(trip.transitPenaltyPaise ?? 0)]] : []}
+        confirmLabel="Waive penalty"
+        busy={stageBusy}
+        onConfirm={submitTransitWaiver}
+        onClose={() => setWaiveOpen(false)}
+      />
+
+      <Dialog
+        open={supervisorOpen}
+        title="Assign loading supervisor"
+        body="One Operations person runs the loading for this trip and uploads its loading and vehicle documents."
+        confirmLabel="Assign"
+        confirmDisabled={!supervisorId}
+        busy={stageBusy}
+        onConfirm={submitSupervisor}
+        onClose={() => setSupervisorOpen(false)}
+      >
+        <Field label="Supervisor" required>
+          <select value={supervisorId} onChange={(e) => setSupervisorId(e.target.value)}>
+            <option value="">Choose a person…</option>
+            {supervisorOptions.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+      </Dialog>
     </ModuleGuard>
   );
 }

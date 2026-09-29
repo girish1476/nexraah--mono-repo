@@ -59,6 +59,10 @@ export interface BalanceQueueRow {
   podAgeDays: number;
   netPaise: number;
   penaltyPaise: number;
+  /** Late-delivery penalty for the trip. */
+  transitPenaltyPaise: number;
+  /** Shortage/damage deductions that would come off this payment, including ones carried from earlier trips. */
+  sdrDeductionPaise: number;
   blocked: boolean;
   unmetCount: number;
 }
@@ -72,7 +76,22 @@ export interface BalanceBreakdown {
   penaltyPaise: number;
   penaltyDays: number;
   penaltyPerDayPaise: number;
+  /** Late delivery: days past the client's transit days, and what they cost at the client's per-day rate. */
+  transitPenaltyPaise: number;
+  transitLateDays: number;
   grossPaise: number;
+  /** Total of the shortage/damage deductions taken from this payment. */
+  sdrDeductionPaise: number;
+  sdrLines: {
+    code: string;
+    tripCode: string;
+    amountPaise: number;
+    /** True when the record belongs to an earlier trip and is being recovered from this one. */
+    carriedForward: boolean;
+    remainingAfterPaise: number;
+  }[];
+  /** Still to be taken from the transporter's later payments after this one. */
+  carriedForwardPaise: number;
   netPaise: number;
 }
 

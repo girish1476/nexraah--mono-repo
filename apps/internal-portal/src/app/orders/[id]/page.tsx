@@ -26,13 +26,15 @@ import {
 } from '@/lib/ui';
 import { getOrder } from '../apis';
 import { ORDER_STATUS_LABEL, ORDER_STATUS_TONE, OrderDetail } from '../types';
+import { OrderPaymentsTab } from './payments-tab';
 
-type OrderTab = 'details' | 'documents' | 'tracking' | 'comments';
+type OrderTab = 'details' | 'documents' | 'proof' | 'payments' | 'comments';
 
 const TABS: { key: OrderTab; label: string; emoji: string }[] = [
   { key: 'details', label: 'Details', emoji: '📋' },
   { key: 'documents', label: 'Documents', emoji: '📎' },
-  { key: 'tracking', label: 'Tracking status', emoji: '📍' },
+  { key: 'proof', label: 'Delivery proof', emoji: '📸' },
+  { key: 'payments', label: 'Payments', emoji: '💰' },
   { key: 'comments', label: 'Comments', emoji: '💬' },
 ];
 
@@ -83,13 +85,13 @@ export default function OrderDetailPage() {
   return (
     <ModuleGuard module="orders">
       <PageHeader
-        title={order.orderNo}
-        sub={`${order.clientName} · ${order.lane} · from ${order.indentCode}`}
+        title={order.indentCode}
+        sub={`${order.clientName} · ${order.lane}${order.tripCode ? ` · trip ${order.tripCode}` : ''}`}
         module="orders"
         right={<Tag tone={ORDER_STATUS_TONE[order.status]}>{ORDER_STATUS_LABEL[order.status]}</Tag>}
       />
       <PageIntro
-        what="Everything about one order on a single screen — its details, its documents and lorry receipt, and its tracking status, all in place. Nothing here sends you to another page to see or do something."
+        what="Everything about one order on a single screen — its details, its documents and lorry receipt, and its delivery proof, all in place. Nothing here sends you to another page to see or do something."
         who="Every desk can open this; only Finance can actually release the advance or balance payment shown here."
       />
 
@@ -280,15 +282,17 @@ export default function OrderDetailPage() {
           />
         ))}
 
-      {tab === 'tracking' &&
+      {tab === 'proof' &&
         (order.tripId ? (
           <PodVerifyContent tripId={order.tripId} showOrderLink={false} showStatusTag={false} />
         ) : (
           <EmptyState
-            title="Nothing to track yet"
-            hint="Tracking and proof-of-delivery status open up once a transporter is awarded and a trip is generated for this order."
+            title="Nothing to check yet"
+            hint="Proof of delivery opens up once a transporter is awarded and a trip is generated for this order. Live vehicle position is on the Tracking page while it's on the road."
           />
         ))}
+
+      {tab === 'payments' && <OrderPaymentsTab order={order} />}
 
       {tab === 'comments' && (
         <Panel title="Special instructions">

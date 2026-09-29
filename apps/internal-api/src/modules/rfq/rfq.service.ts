@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import { canRaiseIndent, indentBlockReason } from '../clients/client-onboarding';
+import type { ClientStatus } from '../../db/types';
 import { DomainException } from '../../common/domain-exception';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
 import { AuditService } from '../audit/audit.service';
@@ -70,6 +72,15 @@ export class RfqService {
   async create(dto: CreateRfqDto, actor: AuthenticatedUser) {
     const client = await this.rfqRepository.findClientById(dto.clientId);
     if (!client) throw new DomainException(404, 'NOT_FOUND', `Unknown client: ${dto.clientId}`);
+    // The same rule that stops an indent: we do not price work for a client
+    // Compliance has not cleared yet.
+    if (!canRaiseIndent(client.status as ClientStatus)) {
+      throw new DomainException(
+        422,
+        'CLIENT_NOT_CLEARED',
+        indentBlockReason(client.status as ClientStatus) ?? 'This client has not been cleared for work.',
+      );
+    }
 
     return this.rfqRepository.transaction().execute(async (trx) => {
       const id = randomUUID();

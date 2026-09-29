@@ -57,7 +57,12 @@ export class ReportsRepository {
           .whereRef('quotes.indent_id', '=', 'indents.id')
           .as('quoteCount'),
       ])
-      .where('indents.stage', 'in', ['OPEN', 'VENDOR_ASSIGNED'])
+      .where((eb) =>
+        eb.or([
+          eb('indents.stage', 'in', ['OPEN', 'VENDOR_ASSIGNED']),
+          eb.and([eb('indents.stage', '=', 'TRIP_CREATED'), eb('indents.vehicle_no', 'is', null)]),
+        ]),
+      )
       .where('indents.pickup_date', '<', sql<string>`current_date`);
     if (branchId) query = query.where('indents.branch_id', '=', branchId);
     return query.orderBy('indents.pickup_date', 'asc').execute();
@@ -169,7 +174,8 @@ export class ReportsRepository {
       .select((eb) => eb.fn.countAll<number>().as('c'))
       .where('indents.pickup_date', '>=', monthStart)
       .where('indents.pickup_date', '<', monthEnd)
-      .where('indents.stage', 'in', ['VEHICLE_PLACED', 'TRIP_CREATED']);
+      .where('indents.stage', 'in', ['VEHICLE_PLACED', 'TRIP_CREATED'])
+      .where('indents.vehicle_no', 'is not', null);
     if (branchId) query = query.where('indents.branch_id', '=', branchId);
     return query.executeTakeFirstOrThrow();
   }

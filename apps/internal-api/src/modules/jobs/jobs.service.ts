@@ -205,7 +205,7 @@ export class JobsService {
   }
 
   private async determineFailureCause(indent: { id: string; stage: string; awarded_quote_id: string | null }) {
-    if (indent.stage === 'VENDOR_ASSIGNED') return 'TRUCK_NEVER_REPORTED';
+    if (indent.stage === 'VENDOR_ASSIGNED' || indent.stage === 'TRIP_CREATED') return 'TRUCK_NEVER_REPORTED';
 
     const quotes = await this.indentsRepository.findQuotes(indent.id);
     if (quotes.length === 0) return 'NO_QUOTE_AT_ALL';

@@ -341,6 +341,37 @@ test.describe('Vendor detail page', () => {
     await expect(moneyPanel).toContainText('₹35,040'); // balance pending
   });
 
+  test('lists the loads placed with the transporter, and the search narrows them', async ({ page }) => {
+    await setRole(page, 'OPS');
+    await page.goto('/vendors/v-2301');
+    const placed = panel(page.locator('main'), 'Loads placed with this transporter');
+
+    // Two seeded loads: 4436 Hosur → Gurugram and 4421 Gandhidham → Jaipur.
+    await expect(placed).toContainText('Hosur → Gurugram');
+    await expect(placed).toContainText('Gandhidham → Jaipur');
+    await expect(placed).toContainText('Apex Ceramics');
+
+    await placed.getByPlaceholder(/Order, client, city/).fill('jaipur');
+    await expect(placed).toContainText('Gandhidham → Jaipur');
+    await expect(placed).not.toContainText('Hosur → Gurugram');
+
+    await placed.getByPlaceholder(/Order, client, city/).fill('zzz-nothing');
+    await expect(placed.getByText('Nothing matches that search')).toBeVisible();
+  });
+
+  test('exports the placements as a spreadsheet named for the transporter', async ({ page }) => {
+    await setRole(page, 'OPS');
+    await page.goto('/vendors/v-2301');
+    const placed = panel(page.locator('main'), 'Loads placed with this transporter');
+    await expect(placed).toContainText('Hosur → Gurugram');
+
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      placed.getByRole('button', { name: /Export/ }).click(),
+    ]);
+    expect(download.suggestedFilename()).toMatch(/^VND-2301-placements-\d{4}-\d{2}-\d{2}\.csv$/);
+  });
+
   test('COMPLIANCE sees Clear and activate, disabled while unmet items remain', async ({ page }) => {
     await setRole(page, 'COMPLIANCE');
     await page.goto('/vendors/v-2214');
@@ -458,7 +489,7 @@ test.describe('Vendor issues — /vendors/issues', () => {
     // wording, next to the same list the raise-an-issue form offers.
     await expect(is41).toContainText('Delivery paperwork never came back');
     await expect(is41).toContainText('HIGH');
-    await expect(is41).toContainText('TRP-120881');
+    await expect(is41).toContainText('120881');
 
     const is43 = rows.filter({ hasText: 'IS-0043' });
     await expect(is43).toContainText('Rathod Roadlines');

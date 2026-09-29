@@ -13,11 +13,11 @@ import { setRole, statValue } from './helpers';
  *    (CURRENT ageing bucket).
  *  - inv-410 / NEX-INV-000410 · Apex Ceramics · ISSUED · total ₹36,550 ·
  *    received ₹0 · balance ₹36,550 · due 4 days ago (0–30 days bucket).
- *  - Delivered, unbilled trips: TRP-120881 and TRP-120874 (both Berger
- *    Paints), TRP-120855 (Apex Ceramics). Sanghvi Metals (SPOT) has none.
+ *  - Delivered, unbilled trips: 120881 and 120874 (both Berger
+ *    Paints), 120855 (Apex Ceramics). Sanghvi Metals (SPOT) has none.
  *  - `/pnl` returns 5 branch rows — no fixture user carries a branch, so
- *    nothing is scoped. Exceptions (delivered, zero charge lines): TRP-120874 and
- *    TRP-120869.
+ *    nothing is scoped. Exceptions (delivered, zero charge lines): 120874 and
+ *    120869.
  *
  * A few tests mutate the shared mock db (there is no reset endpoint — see
  * `src/mocks/db.ts`): the "save draft" test appends a DRAFT invoice, which
@@ -105,15 +105,15 @@ test.describe('new invoice form', () => {
 
     const rows = page.locator('table.table tbody tr');
     await expect(rows).toHaveCount(2);
-    await expect(rows.filter({ hasText: 'TRP-120881' })).toBeVisible();
-    await expect(rows.filter({ hasText: 'TRP-120874' })).toBeVisible();
+    await expect(rows.filter({ hasText: '120881' })).toBeVisible();
+    await expect(rows.filter({ hasText: '120874' })).toBeVisible();
 
     const totalPanel = page
       .locator('div.surface')
       .filter({ has: page.getByRole('heading', { name: 'Total', exact: true }) });
     await expect(totalPanel.locator('span.mono').last()).toHaveText('₹0');
 
-    await rows.filter({ hasText: 'TRP-120881' }).locator('input[type="checkbox"]').check();
+    await rows.filter({ hasText: '120881' }).locator('input[type="checkbox"]').check();
     await expect(generate).toBeEnabled();
     await expect(totalPanel.locator('span.mono').last()).toHaveText('₹64,200');
   });
@@ -143,8 +143,8 @@ test.describe('new invoice form', () => {
 
     await fieldControl(page, 'Client').selectOption({ label: 'Berger Paints' });
     const rows = page.locator('table.table tbody tr');
-    await rows.filter({ hasText: 'TRP-120881' }).locator('input[type="checkbox"]').check();
-    await rows.filter({ hasText: 'TRP-120874' }).locator('input[type="checkbox"]').check();
+    await rows.filter({ hasText: '120881' }).locator('input[type="checkbox"]').check();
+    await rows.filter({ hasText: '120874' }).locator('input[type="checkbox"]').check();
 
     await page.getByRole('button', { name: 'Save draft' }).click();
     await expect(page.getByText('Draft saved')).toBeVisible();
@@ -156,8 +156,8 @@ test.describe('new invoice form', () => {
     await expect(page.getByRole('button', { name: 'Cancel' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Download PDF' })).toHaveCount(0);
     const consignmentRows = page.locator('table.table tbody tr');
-    await expect(consignmentRows.filter({ hasText: 'TRP-120881' })).toBeVisible();
-    await expect(consignmentRows.filter({ hasText: 'TRP-120874' })).toBeVisible();
+    await expect(consignmentRows.filter({ hasText: '120881' })).toBeVisible();
+    await expect(consignmentRows.filter({ hasText: '120874' })).toBeVisible();
 
     // A no-yet-generated draft is fully editable — dropping one of the two
     // consignments and adding a charge changes the total on save.
@@ -165,22 +165,22 @@ test.describe('new invoice form', () => {
     await expect(page).toHaveURL(/\/invoices\/inv-.*\/edit/);
     await expect(fieldControl(page, 'Client')).toHaveValue(/./); // client pre-filled, not blank
     const editRows = page.locator('table.table tbody tr');
-    await expect(editRows.filter({ hasText: 'TRP-120881' }).locator('input[type="checkbox"]')).toBeChecked();
-    await expect(editRows.filter({ hasText: 'TRP-120874' }).locator('input[type="checkbox"]')).toBeChecked();
-    await editRows.filter({ hasText: 'TRP-120874' }).locator('input[type="checkbox"]').uncheck();
+    await expect(editRows.filter({ hasText: '120881' }).locator('input[type="checkbox"]')).toBeChecked();
+    await expect(editRows.filter({ hasText: '120874' }).locator('input[type="checkbox"]')).toBeChecked();
+    await editRows.filter({ hasText: '120874' }).locator('input[type="checkbox"]').uncheck();
     await fieldControl(page, 'Loading (₹)').fill('500');
 
     await page.getByRole('button', { name: 'Save changes' }).click();
     await expect(page.getByText('Invoice updated')).toBeVisible();
     await expect(page).toHaveURL(/\/invoices\/inv-[^/]+$/);
     const afterEditRows = page.locator('table.table tbody tr');
-    await expect(afterEditRows.filter({ hasText: 'TRP-120881' })).toBeVisible();
-    await expect(afterEditRows.filter({ hasText: 'TRP-120874' })).toHaveCount(0);
+    await expect(afterEditRows.filter({ hasText: '120881' })).toBeVisible();
+    await expect(afterEditRows.filter({ hasText: '120874' })).toHaveCount(0);
   });
 
   /*
    * inv-410 is ISSUED with no receipt against it (`receivedPaise: 0`) —
-   * editable, but its one consignment (TRP-120855) is locked: `generate()`
+   * editable, but its one consignment (120855) is locked: `generate()`
    * already marked it `billed`, so the checkbox table doesn't render at all
    * on this screen, only a read-only row and a note saying why.
    */
@@ -222,7 +222,7 @@ test.describe('invoice detail', () => {
 
     const receiptRows = page.locator('table.table tbody tr');
     await expect(receiptRows.filter({ hasText: 'RCT-0330' })).toContainText('₹10,000');
-    await expect(receiptRows.filter({ hasText: 'TRP-120874' })).toBeVisible();
+    await expect(receiptRows.filter({ hasText: '120874' })).toBeVisible();
 
     await page.getByRole('button', { name: 'Cancel' }).click();
     const dialog = page
@@ -360,8 +360,8 @@ test.describe('P&L', () => {
 
     await expect(page.getByText('2 trip(s) overstate margin')).toBeVisible();
     const exceptionRows = page.locator('table.table').nth(1).locator('tbody tr');
-    await expect(exceptionRows.filter({ hasText: 'TRP-120874' })).toBeVisible();
-    await expect(exceptionRows.filter({ hasText: 'TRP-120869' })).toBeVisible();
+    await expect(exceptionRows.filter({ hasText: '120874' })).toBeVisible();
+    await expect(exceptionRows.filter({ hasText: '120869' })).toBeVisible();
   });
 
   test('switching granularity relabels the period column', async ({ page }, testInfo) => {
@@ -397,8 +397,8 @@ test.describe('P&L', () => {
     //
     // That zero was inherited verbatim from the BRANCH_MGR test this one
     // replaced, where it held for one reason only: Nashik scoping. The
-    // fixture's two zero-charge trips are Pune (TRP-120874) and Hosur
-    // (TRP-120869), so a Nashik reader saw none of them. `setRole(page,'OPS')`
+    // fixture's two zero-charge trips are Pune (120874) and Hosur
+    // (120869), so a Nashik reader saw none of them. `setRole(page,'OPS')`
     // signs in the *unscoped* Operations account, which sees every branch —
     // as the `All branches` assertion directly above already says. The two
     // lines were asserting opposite things about the same caller.

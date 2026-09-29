@@ -172,10 +172,9 @@ const CASES: RoleCase[] = [
     hidden: [],
   },
   {
-    // ADMIN is EDIT on every module — the full console, every row shown.
-    // What ADMIN still can't *do* (release a payment, waive a POD penalty,
-    // submit an RFQ, decide an approval) is enforced by SEED_GRANTS, not by
-    // hiding the row — see admin.spec.ts's approvals-audit-view test.
+    // ADMIN is EDIT on every module — the full console, every row shown —
+    // and, since 2026-09-26, holds every named permission too, so nothing on
+    // any of those screens is withheld from it.
     role: 'ADMIN',
     landsOn: '/admin',
     visible: ALL_ROUTES,
@@ -204,26 +203,24 @@ for (const { role, landsOn, visible } of CASES) {
   });
 }
 
-test('OPS hitting an ADMIN-only route directly gets the lock panel, not a 500', async ({ page }) => {
+test('OPS hitting an ADMIN-only route directly is sent back to their own desk, not a 500', async ({ page }) => {
   await setRole(page, 'OPS');
   await page.goto('/admin');
-  await expect(page.getByText('is not part of the Operations desk console')).toBeVisible();
-  // The owning desk is named in words a person can act on, never as a role code.
-  await expect(page.getByText(/It belongs to Administrator/)).toBeVisible();
-  await expect(page.getByText('ADMIN', { exact: true })).toHaveCount(0);
-});
-
-test('ADMIN hitting an operational route directly gets the real screen, never a lock panel', async ({ page }) => {
-  await setRole(page, 'ADMIN');
-  await page.goto('/today');
-  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  await expect(page).toHaveURL(/\/today$/);
   await expect(page.getByText(/is not part of the .* console/)).toHaveCount(0);
 });
 
-test('FINANCE hitting the telematics route (no access) gets the lock panel', async ({ page }) => {
+test('ADMIN hitting an operational route directly gets the real screen, never redirected away', async ({ page }) => {
+  await setRole(page, 'ADMIN');
+  await page.goto('/today');
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  await expect(page).toHaveURL(/\/today$/);
+});
+
+test('FINANCE hitting the telematics route (no access) is sent back to their own desk', async ({ page }) => {
   await setRole(page, 'FINANCE');
   await page.goto('/telematics');
-  await expect(page.getByText('is not part of the Finance console')).toBeVisible();
+  await expect(page).toHaveURL(/\/payments\/balance$/);
 });
 
 test('role switcher persists across a client-side navigation', async ({ page }, testInfo) => {

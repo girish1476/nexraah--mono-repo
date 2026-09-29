@@ -26,6 +26,7 @@ import { TicketsModule } from './modules/tickets/tickets.module';
 import { TripsModule } from './modules/trips/trips.module';
 import { PodModule } from './modules/pod/pod.module';
 import { PaymentsModule } from './modules/payments/payments.module';
+import { SdrModule } from './modules/sdr/sdr.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { TelematicsModule } from './modules/telematics/telematics.module';
 import { PnlModule } from './modules/pnl/pnl.module';
@@ -57,6 +58,7 @@ import { JobsModule } from './modules/jobs/jobs.module';
     TripsModule,
     PodModule,
     PaymentsModule,
+    SdrModule,
     ReportsModule,
     TelematicsModule,
     PnlModule,

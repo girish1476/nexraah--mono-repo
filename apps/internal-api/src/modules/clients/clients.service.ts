@@ -117,6 +117,11 @@ export class ClientsService {
       supplySource: r.supply_source,
       supplySourceLabel: r.supply_source ? SUPPLY_SOURCE_LABEL[r.supply_source] : null,
       supplyRemarks: r.supply_remarks,
+      bidMinPaise: r.bid_min,
+      bidMaxPaise: r.bid_max,
+      transitPenaltyApplies: r.transit_penalty_applies,
+      transitPenaltyPerDayPaise: Number(r.transit_penalty_per_day),
+      approvalMailSubject: r.approval_mail_subject,
     }));
   }
 
