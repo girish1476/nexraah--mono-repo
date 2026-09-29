@@ -1,4 +1,4 @@
-import { IsIn, IsInt, IsOptional, IsPositive, IsString, Min } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsPositive, IsString, Max, Min } from 'class-validator';
 
 /** `POST /indents` — docs/api/03-clients-indents.md. */
 export class CreateIndentDto {
@@ -28,7 +28,12 @@ export class CreateIndentDto {
   // CONTRACT only — which won rate-card lane this indent draws from.
   @IsOptional() @IsString() rateCardLaneId?: string;
 
-  @IsOptional() @IsPositive() bidMinPaise?: number;
-  @IsOptional() @IsPositive() bidMaxPaise?: number;
-  @IsOptional() @IsInt() @Min(0) advancePct?: number;
+  // No bid band here. It is a term of the client's rate, held on the rate-card
+  // lane and copied onto the indent by the server; changing it is a Leadership
+  // decision (`LANE_BAND_CHANGE`), not something the person raising an indent
+  // can type.
+
+  // Optional per-order override. Absent means the awarded vendor's standing
+  // policy applies (BR-30); present means this order asked for its own figure.
+  @IsOptional() @IsInt() @Min(0) @Max(100) advancePct?: number;
 }

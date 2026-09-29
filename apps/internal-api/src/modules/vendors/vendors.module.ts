@@ -12,8 +12,10 @@ import { MarketGapRepository } from './market-gap.repository';
 import { IssuesController } from './issues.controller';
 import { IssuesService } from './issues.service';
 import { IssuesRepository } from './issues.repository';
+import { SdrModule } from '../sdr/sdr.module';
 
 @Module({
+  imports: [SdrModule],
   // LeadsController/MarketGapController/IssuesController MUST register before
   // VendorsController: Nest/Express matches routes in registration order, and
   // `GET /vendors/:id` would otherwise swallow `GET /vendors/leads` (etc.) as

@@ -24,6 +24,9 @@ const ACTION_VERB: Record<string, string> = {
   DOCUMENT_VERIFIED: 'verified a document on',
   DOCUMENT_REJECTED: 'rejected a document on',
   RATE_REVISION_APPLIED: 'changed the agreed rate on',
+  RATE_LANE_ADDED: 'added an agreed rate to',
+  LANE_BAND_SET: 'set the bid band on',
+  LANE_BAND_CHANGED: 'changed the bid band on',
   VENDOR_ACTIVATED: 'cleared for work',
   CLIENT_ACTIVATED: 'cleared for work',
 };

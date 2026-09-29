@@ -29,10 +29,12 @@ import type { FixtureAccount } from '../src/mocks/db';
  * mock adapter's OPS fallback regardless of the role it asked for.
  */
 export async function setRole(page: Page, who: RoleCode | FixtureAccount) {
-  await page.addInitScript(
-    (token) => window.localStorage.setItem('token', token),
-    mintAccessToken(who),
-  );
+  // The regression suite runs on the rich seeded data set, which is not persisted
+  // between page loads. Real use starts clean and keeps its work.
+  await page.addInitScript((token) => {
+    window.localStorage.setItem('token', token);
+    window.localStorage.setItem('nexraah.demo', '1');
+  }, mintAccessToken(who));
 }
 
 /**

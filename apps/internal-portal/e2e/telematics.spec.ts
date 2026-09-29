@@ -57,7 +57,7 @@ test.describe('fleet board — manual update', () => {
     await page.getByRole('button', { name: 'Cancel' }).click();
     await expect(page.getByRole('heading', { name: 'Update MH 15 GT 4482' })).toBeHidden();
 
-    // The linked trip (TRP-120881) reads its Position tile from the same
+    // The linked trip (120881) reads its Position tile from the same
     // vehicle row — this is the whole point of the fix. Reached by clicking
     // through, not `page.goto`: a hard navigation reloads every JS module,
     // which resets the mock adapter's in-memory `db` back to its seed data
@@ -68,7 +68,7 @@ test.describe('fleet board — manual update', () => {
     // click at the moment (mid-flight elsewhere in this tree), so `/orders`
     // — client-side `router.push` on a row click, not a link, but still no
     // reload — is the reachable path. Searched by trip number, which the
-    // orders list itself supports (`Client, lane, order or trip number…`).
+    // orders list's search box supports (`data-filter="q"`).
     const orders = page.getByRole('button', { name: /^Orders/ });
     await orders.click();
     await page.getByRole('link', { name: /^All orders/ }).click();
@@ -76,12 +76,14 @@ test.describe('fleet board — manual update', () => {
     // The row shows the order and indent code, not the trip code, so the
     // search narrowing the table to one match is what's being relied on
     // here, not filtering rows by visible text afterward.
-    await page.getByPlaceholder(/Client, lane, order or trip number/).fill('TRP-120881');
+    // The trip is delivered, so it is not under the default "Action required" tab.
+    await page.getByRole('tab', { name: /All shipments/ }).click();
+    await page.locator('[data-filter="q"]').fill('120881');
     const orderRows = page.locator('table.table tbody tr');
     await expect(orderRows).toHaveCount(1);
     await orderRows.first().click();
-    await page.getByRole('link', { name: 'Trip' }).click();
-    await expect(page.getByRole('heading', { name: 'TRP-120881' })).toBeVisible();
+    await page.getByRole('link', { name: '120881' }).click();
+    await expect(page.getByRole('heading', { name: '120881' })).toBeVisible();
 
     const positionTile = page.locator('.stat-strip > div').filter({ has: page.getByText('Position', { exact: true }) });
     await expect(positionTile).toContainText('19.0760, 72.8777');

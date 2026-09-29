@@ -15,13 +15,13 @@ import { setRole, statValue } from './helpers';
  * The gate components (`AdvancePanel`/`BalancePanel`) render whatever the
  * server names as unmet; nothing is computed in the browser (lib/ui.tsx
  * `BlockedPanel`). Fixture trips (src/mocks/db.ts):
- *   TRP-120881 · Rathod Roadlines   · Nashik      · PENDING  · advance unpaid
- *   TRP-120874 · Sai Kripa Carriers · Pune        · ATTACHED · advance paid
- *   TRP-120869 · Bhagwati Logistics · Hosur       · RECEIVED · advance paid
- *   TRP-120855 · Anand Roadways     · Gandhidham  · APPROVED · advance paid
- * Only TRP-120881 has its advance still unpaid, so it is the only row on the
+ *   120881 · Rathod Roadlines   · Nashik      · PENDING  · advance unpaid
+ *   120874 · Sai Kripa Carriers · Pune        · ATTACHED · advance paid
+ *   120869 · Bhagwati Logistics · Hosur       · RECEIVED · advance paid
+ *   120855 · Anand Roadways     · Gandhidham  · APPROVED · advance paid
+ * Only 120881 has its advance still unpaid, so it is the only row on the
  * advance queue. All four have an unpaid balance, so all four are on the
- * balance queue — and TRP-120855, the only approved POD, is the only
+ * balance queue — and 120855, the only approved POD, is the only
  * balance row that isn't gate-blocked. The money figures below come from
  * static fixture fields (buy rate, advance paid, `podPenaltyPaise`), not
  * from the clock, so they're pinned exactly; day counts derived from
@@ -54,12 +54,12 @@ test.describe('Advance', () => {
     await expect(statValue(page, 'advance-ready-value')).toHaveText('₹0');
 
     await expect(page.locator('table.table tbody tr')).toHaveCount(1);
-    const r = row(page, 'TRP-120881');
-    await expect(r.locator('td[data-label="Load request"]')).toHaveText('IND-4443');
+    const r = row(page, '120881');
+    await expect(r.locator('td[data-label="Load request"]')).toHaveText('4443');
     await expect(r.locator('td[data-label="Transporter"]')).toHaveText('Rathod Roadlines');
     await expect(r.locator('td[data-label="Advance amount"]')).toHaveText('40%');
     await expect(r.locator('td[data-label="Amount"]')).toHaveText('₹23,360');
-    await expect(r.locator('td[data-label="Can we pay yet?"]')).toHaveText('3 unmet');
+    await expect(r.locator('td[data-label="Can we pay yet?"]')).toHaveText('4 unmet');
   });
 
   test('FINANCE can see exactly what is missing and what has cleared, but release stays disabled behind the document gate', async ({
@@ -67,7 +67,7 @@ test.describe('Advance', () => {
   }) => {
     await setRole(page, 'FINANCE');
     await page.goto('/payments/advance');
-    await row(page, 'TRP-120881').getByRole('button', { name: 'Open' }).click();
+    await row(page, '120881').getByRole('button', { name: 'Open' }).click();
 
     await expect(page.getByText('Advance blocked')).toBeVisible();
     const panel = page.locator('.surface', { hasText: 'Advance blocked' }).first();
@@ -100,9 +100,9 @@ test.describe('Advance', () => {
   test('Operations (VIEW) sees the same blocked gate with no release control at all', async ({ page }) => {
     await setRole(page, 'OPS');
     await page.goto('/payments/advance');
-    // Branch-scoped to Nashik — TRP-120881 is Nashik, so it's still there.
+    // Branch-scoped to Nashik — 120881 is Nashik, so it's still there.
     await expect(page.locator('table.table tbody tr')).toHaveCount(1);
-    await row(page, 'TRP-120881').getByRole('button', { name: 'Open' }).click();
+    await row(page, '120881').getByRole('button', { name: 'Open' }).click();
 
     await expect(page.getByText('Advance blocked')).toBeVisible();
     await expect(page.getByRole('button', { name: /Release/ })).toHaveCount(0);
@@ -128,7 +128,7 @@ test.describe('Balance', () => {
     await setRole(page, 'FINANCE');
     await page.goto('/payments/balance');
 
-    const r = row(page, 'TRP-120881');
+    const r = row(page, '120881');
     await expect(r.locator('td[data-label="Amount to pay"]')).toHaveText('₹59,800');
     await expect(r.locator('td[data-label="Can we pay yet?"]')).toHaveText('1 unmet');
     await r.getByRole('button', { name: 'Open' }).click();
@@ -159,7 +159,7 @@ test.describe('Balance', () => {
     await setRole(page, 'FINANCE');
     await page.goto('/payments/balance');
 
-    const r = row(page, 'TRP-120855');
+    const r = row(page, '120855');
     await expect(r.locator('td[data-label="Can we pay yet?"]')).toHaveText('Releasable');
     await r.getByRole('button', { name: 'Open' }).click();
 
@@ -179,7 +179,7 @@ test.describe('Balance', () => {
 
     await expect(page.getByText('Balance released · ₹19,040 · UTR UTR778899')).toBeVisible();
     await expect(page.locator('table.table tbody tr')).toHaveCount(3);
-    await expect(row(page, 'TRP-120855')).toHaveCount(0);
+    await expect(row(page, '120855')).toHaveCount(0);
     await expect(statValue(page, 'balance-ready')).toHaveText('0');
   });
 
@@ -198,7 +198,7 @@ test.describe('Balance', () => {
     await expect(page.getByTestId('view-only')).toBeVisible();
     await expect(page.locator('table.table tbody tr')).toHaveCount(4);
 
-    await row(page, 'TRP-120881').getByRole('button', { name: 'Open' }).click();
+    await row(page, '120881').getByRole('button', { name: 'Open' }).click();
     await expect(page.getByText('Balance blocked')).toBeVisible();
     await expect(page.getByRole('button', { name: /Release/ })).toHaveCount(0);
     await expect(
@@ -227,7 +227,7 @@ test.describe('Balance', () => {
     await expect(page.getByTestId('view-only')).toHaveCount(0);
     await expect(page.locator('table.table tbody tr')).toHaveCount(4);
 
-    await row(page, 'TRP-120881').getByRole('button', { name: 'Open' }).click();
+    await row(page, '120881').getByRole('button', { name: 'Open' }).click();
     await expect(page.getByText('Balance blocked')).toBeVisible();
     // The line that matters: open screen, no release control.
     await expect(page.getByRole('button', { name: /Release/ })).toHaveCount(0);

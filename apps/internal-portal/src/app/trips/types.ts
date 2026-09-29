@@ -27,8 +27,8 @@ export interface TripListRow {
 export interface TripDocument {
   kind: string;
   label: string;
-  group: 'CLIENT' | 'VEHICLE' | 'DRIVER' | 'LR' | 'POD';
-  /** True for the eight of BR-58, as configured in `config.advance_document_set`. */
+  group: 'CLIENT' | 'VEHICLE' | 'DRIVER' | 'LOADING' | 'LR' | 'POD';
+  /** True for the kinds of BR-58, as configured in `config.advance_document_set`. */
   gatesAdvance: boolean;
   status: DocStatus;
   attachmentId: string | null;
@@ -109,7 +109,14 @@ export interface TripDetail extends TripListRow {
   ewayValidTill: string | null;
   podReceivedAt: string | null;
   podClosureBasis: string | null;
+  /** Late-delivery penalty charged to the transporter, at the client's per-day rate. */
+  transitPenaltyPaise: number;
   billed: boolean;
+  /** One Operations person per trip who runs loading and uploads the loading and vehicle documents. */
+  loadingSupervisorId: string | null;
+  loadingSupervisorName: string | null;
+  loadingStartedAt: string | null;
+  loadingCompletedAt: string | null;
   documents: TripDocument[];
   charges: TripCharge[];
   lr: LorryReceipt | null;

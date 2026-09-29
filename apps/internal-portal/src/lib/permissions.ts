@@ -16,6 +16,7 @@ export const ROLE_CODES = [
   'BD',
   'LEADERSHIP',
   'ADMIN',
+  'LOADING_SUPERVISOR',
 ] as const;
 
 export type RoleCode = (typeof ROLE_CODES)[number];
@@ -77,6 +78,23 @@ export const ROLES: Record<RoleCode, RoleDef> = {
     landsOn: '/admin',
     owns: 'Configuration, users, roles',
   },
+  /**
+   * The person at the loading point. Added 2026-09-26 at the owner's direction:
+   * one loading supervisor is assigned to each trip, runs its loading, and
+   * uploads the loading slip, weighment slip, e-way bill, client invoice and
+   * vehicle documents the advance needs.
+   *
+   * Holds no permission codes. What they may do is decided per trip — the
+   * person assigned as a trip's loading supervisor may upload documents to it
+   * and start and finish its loading — so a blanket grant that would reach
+   * every trip is deliberately not what they have.
+   */
+  LOADING_SUPERVISOR: {
+    code: 'LOADING_SUPERVISOR',
+    label: 'Loading supervisor',
+    landsOn: '/loading',
+    owns: 'Loading of the trips they are assigned, and uploading their loading and vehicle documents',
+  },
 };
 
 /* ---- named permissions — part 01 §2.4 ---------------------------------- */
@@ -85,6 +103,7 @@ export const PERMISSIONS = [
   'payment.release',
   'indent.create',
   'indent.manage',
+  'indent.reassign',
   'indent.view',
   'document.verify',
   'vendor.edit',
@@ -194,7 +213,9 @@ export const SEED_GRANTS: Record<RoleCode, Permission[]> = {
    * client. Also absent is every `approve.*`: BD raises an above-band price,
    * it does not approve one.
    */
-  BD: ['rfq.edit', 'client.manage', 'indent.view', 'pnl.view_own'],
+  BD: ['rfq.edit', 'client.manage', 'indent.view', 'pnl.view_own', 'rate.revise'],
+  /** No permission codes — see `ROLES.LOADING_SUPERVISOR`. */
+  LOADING_SUPERVISOR: [],
   /**
    * Leadership oversees every desk. As of 2026-08-26 that is literal rather
    * than nominal: they hold the operating permissions of Operations,
@@ -209,6 +230,7 @@ export const SEED_GRANTS: Record<RoleCode, Permission[]> = {
   LEADERSHIP: [
     'indent.create',
     'indent.manage',
+    'indent.reassign',
     'indent.view',
     'document.verify',
     'vendor.edit',
@@ -230,17 +252,32 @@ export const SEED_GRANTS: Record<RoleCode, Permission[]> = {
     'pnl.view_all',
   ],
   /**
-   * Administrator sees and can act on every module — everything except the
-   * three permissions in `FIXED_PERMISSIONS` besides `config.manage`, which
-   * stay exclusive to Finance/Compliance/Leadership by design (BR-40, BR-43)
-   * and are never granted to a second role, admin included. `approve.*` is
-   * deliberately withheld too, so the approvals inbox stays what its own
-   * copy says it is for admin: an audit view, never a decision.
+   * Administrator holds every permission there is (owner's direction,
+   * 2026-09-26: "an administrator can do all the operations").
+   *
+   * This reverses two earlier, deliberate limits, and the cost is worth
+   * having on record. `payment.release`, `pod.waive` and `rfq.submit` were
+   * held back as fixed, single-owner permissions (BR-40, BR-43), and the four
+   * `approve.*` decisions were withheld so the approvals inbox stayed an audit
+   * view for admin. With them granted, one administrator can now raise and
+   * decide the same request, and release money that Finance would otherwise
+   * be the only desk to release. The separation that remains is per-role
+   * for every other desk, and `BR-50` (a verifier cannot approve their own
+   * POD) still keys on the acting user, so it holds for admin too.
    */
   ADMIN: [
+    'payment.release',
+    'pod.waive',
+    'rfq.submit',
+    'approve.above_band',
+    'approve.waiver',
+    'approve.exception',
+    'approve.contract',
+    'pnl.view_own',
     'config.manage',
     'indent.create',
     'indent.manage',
+    'indent.reassign',
     'indent.view',
     'document.verify',
     'vendor.edit',
@@ -284,6 +321,7 @@ export type ModuleKey =
   | 'records'
   | 'search'
   | 'tickets'
+  | 'loading'
   | 'admin';
 
 const E: Level = 'EDIT';
@@ -313,15 +351,15 @@ export const MODULE_ACCESS: Record<ModuleKey, Record<RoleCode, Level>> = {
    * simply means "can open it", so every role gets one place to see where a
    * shipment actually stands instead of piecing it together across screens.
    */
-  orders: { OPS: E, COMPLIANCE: E, FINANCE: E, BD: E, LEADERSHIP: E, ADMIN: E },
+  orders: { OPS: E, COMPLIANCE: E, FINANCE: E, BD: E, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
   /** The third common segment. One box that finds anything, for everybody. */
-  search: { OPS: E, COMPLIANCE: E, FINANCE: E, BD: E, LEADERSHIP: E, ADMIN: E },
+  search: { OPS: E, COMPLIANCE: E, FINANCE: E, BD: E, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
   /**
    * Raising a ticket is open to every desk — the person who spots wrong data
    * is whoever was using the screen. Acting on one is gated separately by
    * `ticket.resolve`, which only Administration holds.
    */
-  tickets: { OPS: E, COMPLIANCE: E, FINANCE: E, BD: E, LEADERSHIP: E, ADMIN: E },
+  tickets: { OPS: E, COMPLIANCE: E, FINANCE: E, BD: E, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
   /*
    * My desk, Business snapshot and Global search are EDIT for every role at
    * the owner's direction — the three screens everybody starts from, common
@@ -329,8 +367,8 @@ export const MODULE_ACCESS: Record<ModuleKey, Record<RoleCode, Level>> = {
    * and Compliance VIEW on `home`, which meant two desks landed on a screen
    * they could read and not work.
    */
-  today: { OPS: E, COMPLIANCE: E, FINANCE: E, BD: E, LEADERSHIP: E, ADMIN: E },
-  home: { OPS: E, COMPLIANCE: E, FINANCE: E, BD: E, LEADERSHIP: E, ADMIN: E },
+  today: { OPS: E, COMPLIANCE: E, FINANCE: E, BD: E, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
+  home: { OPS: E, COMPLIANCE: E, FINANCE: E, BD: E, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
   /**
    * Operations owns vendor onboarding — it is the desk that actually brings a
    * transporter in and collects their papers. Compliance still owns the
@@ -338,7 +376,7 @@ export const MODULE_ACCESS: Record<ModuleKey, Record<RoleCode, Level>> = {
    * SEED_GRANTS.OPS, so an operator can open and fill a vendor record but
    * cannot pass it themselves.
    */
-  vendors: { OPS: E, COMPLIANCE: E, FINANCE: V, BD: V, LEADERSHIP: E, ADMIN: E },
+  vendors: { OPS: E, COMPLIANCE: E, FINANCE: V, BD: V, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
   /**
    * Leadership was `NONE` here until 2026-08-26 — the compliance queue was the
    * one screen in the console they could not open at all, which sat oddly with
@@ -354,7 +392,7 @@ export const MODULE_ACCESS: Record<ModuleKey, Record<RoleCode, Level>> = {
    *
    * BD is `NONE`: rate work has no business in the document queue.
    */
-  compliance: { OPS: N, COMPLIANCE: E, FINANCE: V, BD: N, LEADERSHIP: E, ADMIN: E },
+  compliance: { OPS: N, COMPLIANCE: E, FINANCE: V, BD: N, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
   /**
    * Compliance runs client onboarding — bringing a client in, collecting
    * their papers and clearing them — so `clients` is EDIT for them, the same
@@ -362,10 +400,10 @@ export const MODULE_ACCESS: Record<ModuleKey, Record<RoleCode, Level>> = {
    * keeps `client.manage` and with it the commercial record; the two
    * permissions divide the module rather than competing for it.
    */
-  clients: { OPS: V, COMPLIANCE: E, FINANCE: E, BD: E, LEADERSHIP: E, ADMIN: E },
-  indents: { OPS: E, COMPLIANCE: E, FINANCE: V, BD: V, LEADERSHIP: E, ADMIN: E },
-  trips: { OPS: E, COMPLIANCE: E, FINANCE: V, BD: V, LEADERSHIP: E, ADMIN: E },
-  pod: { OPS: E, COMPLIANCE: E, FINANCE: V, BD: N, LEADERSHIP: E, ADMIN: E },
+  clients: { OPS: V, COMPLIANCE: E, FINANCE: E, BD: E, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
+  indents: { OPS: E, COMPLIANCE: E, FINANCE: V, BD: V, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
+  trips: { OPS: E, COMPLIANCE: E, FINANCE: V, BD: V, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: V },
+  pod: { OPS: E, COMPLIANCE: E, FINANCE: V, BD: N, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
   /**
    * Compliance verifies the advance document checklist; Finance releases the
    * money. Both need the payments screens, so the module is EDIT for both —
@@ -382,14 +420,14 @@ export const MODULE_ACCESS: Record<ModuleKey, Record<RoleCode, Level>> = {
    * BD is VIEW — a desk that prices lanes needs to see whether the money on
    * them actually moved, and nothing beyond that.
    */
-  payments: { OPS: V, COMPLIANCE: E, FINANCE: E, BD: V, LEADERSHIP: E, ADMIN: E },
-  invoices: { OPS: V, COMPLIANCE: N, FINANCE: E, BD: V, LEADERSHIP: E, ADMIN: E },
-  receivables: { OPS: V, COMPLIANCE: N, FINANCE: E, BD: V, LEADERSHIP: E, ADMIN: E },
+  payments: { OPS: V, COMPLIANCE: E, FINANCE: E, BD: V, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
+  invoices: { OPS: V, COMPLIANCE: N, FINANCE: E, BD: V, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
+  receivables: { OPS: V, COMPLIANCE: N, FINANCE: E, BD: V, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
   /** BD's home screen — the lane price is built here. */
-  rfq: { OPS: E, COMPLIANCE: V, FINANCE: V, BD: E, LEADERSHIP: E, ADMIN: E },
-  telematics: { OPS: E, COMPLIANCE: V, FINANCE: N, BD: N, LEADERSHIP: E, ADMIN: E },
-  pnl: { OPS: V, COMPLIANCE: N, FINANCE: E, BD: V, LEADERSHIP: E, ADMIN: E },
-  approvals: { OPS: E, COMPLIANCE: E, FINANCE: E, BD: V, LEADERSHIP: E, ADMIN: E },
+  rfq: { OPS: E, COMPLIANCE: V, FINANCE: V, BD: E, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
+  telematics: { OPS: E, COMPLIANCE: V, FINANCE: N, BD: N, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
+  pnl: { OPS: V, COMPLIANCE: N, FINANCE: E, BD: V, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
+  approvals: { OPS: E, COMPLIANCE: E, FINANCE: E, BD: V, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
   /**
    * The audit trail. EDIT for the three desks that hold `audit.view`, for
    * the same reason `orders` is EDIT everywhere: the module level only
@@ -397,8 +435,10 @@ export const MODULE_ACCESS: Record<ModuleKey, Record<RoleCode, Level>> = {
    * the row from the sidebar entirely. Nothing on it mutates anything —
    * nothing CAN, the table refuses UPDATE and DELETE at the database.
    */
-  records: { OPS: N, COMPLIANCE: N, FINANCE: E, BD: N, LEADERSHIP: E, ADMIN: E },
-  admin: { OPS: N, COMPLIANCE: N, FINANCE: N, BD: N, LEADERSHIP: V, ADMIN: E },
+  records: { OPS: N, COMPLIANCE: N, FINANCE: E, BD: N, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
+  admin: { OPS: N, COMPLIANCE: N, FINANCE: N, BD: N, LEADERSHIP: V, ADMIN: E, LOADING_SUPERVISOR: N },
+  /** The loading supervisor's own screen: the trips assigned to them. */
+  loading: { OPS: N, COMPLIANCE: N, FINANCE: N, BD: N, LEADERSHIP: N, ADMIN: E, LOADING_SUPERVISOR: E },
 };
 
 export const MODULE_LABEL: Record<ModuleKey, string> = {
@@ -421,6 +461,7 @@ export const MODULE_LABEL: Record<ModuleKey, string> = {
   records: 'Activity log',
   search: 'Global search',
   tickets: 'Tickets',
+  loading: 'My loading trips',
   admin: 'Settings',
 };
 
@@ -456,6 +497,7 @@ export const MODULE_EMOJI: Record<ModuleKey, string> = {
   records: '🧭',
   search: '🔎',
   tickets: '🎫',
+  loading: '🏗️',
   admin: '🎛️',
 };
 
@@ -464,6 +506,7 @@ export const PERMISSION_LABEL: Record<Permission, string> = {
   'payment.release': 'Release payment',
   'indent.create': 'Raise indents',
   'indent.manage': 'Manage indents',
+  'indent.reassign': 'Take a load off its transporter and give it to another',
   'indent.view': 'View indents',
   'document.verify': 'Verify documents',
   'vendor.edit': 'Edit vendor records',
@@ -632,6 +675,13 @@ export const NAV: NavGroup[] = [
         emoji: '📊',
         note: 'How the month is going',
       },
+      {
+        label: 'My loading trips',
+        href: '/loading',
+        module: 'loading',
+        emoji: '🏗️',
+        note: 'Trips you are loading, and the documents to upload',
+      },
     ],
   },
   {
@@ -671,7 +721,7 @@ export const NAV: NavGroup[] = [
          * "e-POD pending" preset and the plain receiving register — which
          * read as four separate places to look for what is really one
          * question ("where is the paper"). The page itself now carries
-         * "Delivery proof past due" and "E-POD pending" as its own tabs, so
+         * "Hard copy pending" and "E-POD pending" as its own tabs, so
          * both destinations are still one click away, just inside the page
          * rather than duplicated in the sidebar.
          */
@@ -773,11 +823,11 @@ export const NAV: NavGroup[] = [
         note: 'Routes where nobody quoted — recruit here',
       },
       {
-        label: 'Transporter issues',
-        href: '/vendors/issues',
-        module: 'vendors',
+        label: 'SDR',
+        href: '/sdr',
+        module: 'pod',
         emoji: '🛠️',
-        note: 'Complaints and incidents logged against a transporter',
+        note: 'Shortage and damage records — and what is recovered from transporters',
       },
       {
         label: 'Document verification',

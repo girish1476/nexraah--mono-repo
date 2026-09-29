@@ -7,6 +7,7 @@ import {
   IssueDraft,
   Lead,
   MarketGapRow,
+  VendorPlacement,
   VendorDetail,
   VendorDraft,
   VendorListRow,
@@ -28,6 +29,11 @@ export function listVendors(params: { q?: string; status?: VendorStatus; branch?
 /** GET /vendors/:id */
 export function getVendor(id: string) {
   return request<VendorDetail>({ url: `/vendors/${id}`, method: 'GET' });
+}
+
+/** GET /vendors/:id/placements — the loads given to this transporter, newest first. */
+export function getVendorPlacements(id: string) {
+  return request<VendorPlacement[]>({ url: `/vendors/${id}/placements`, method: 'GET' });
 }
 
 /* ---- onboarding wizard — part 03 §1 ------------------------------------- */

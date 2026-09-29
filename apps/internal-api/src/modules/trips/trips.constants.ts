@@ -1,4 +1,4 @@
-export type DocumentGroup = 'CLIENT' | 'VEHICLE' | 'DRIVER' | 'LR' | 'POD';
+export type DocumentGroup = 'CLIENT' | 'VEHICLE' | 'DRIVER' | 'LOADING' | 'LR' | 'POD';
 
 export interface DocumentKindMeta {
   kind: string;
@@ -21,6 +21,8 @@ export const TRIP_DOCUMENT_KINDS: DocumentKindMeta[] = [
   { kind: 'PERMIT', label: 'Permit', group: 'VEHICLE' },
   { kind: 'PUC', label: 'Pollution certificate', group: 'VEHICLE' },
   { kind: 'DRIVING_LICENCE', label: 'Driving licence', group: 'DRIVER' },
+  { kind: 'LOADING_SLIP', label: 'Loading slip', group: 'LOADING' },
+  { kind: 'WEIGHMENT_SLIP', label: 'Weighment slip', group: 'LOADING' },
   { kind: 'LR', label: 'Lorry receipt', group: 'LR' },
   { kind: 'POD', label: 'Proof of delivery', group: 'POD' },
 ];

@@ -90,7 +90,9 @@ export interface Approval {
     | 'PENALTY_WAIVER'
     | 'DOC_OVERRIDE'
     | 'BRANCH_OVERRIDE'
-    | 'RATE_REVISION';
+    | 'RATE_REVISION'
+    | 'LANE_BAND_CHANGE'
+    | 'RATE_CARD_LANE';
   entityType: string;
   entityId: string;
   requesterId: string;

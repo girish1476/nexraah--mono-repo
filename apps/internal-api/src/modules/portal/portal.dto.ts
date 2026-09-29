@@ -44,7 +44,7 @@ export class PortalMyQuoteDto {
 }
 
 export class PortalLoadDto {
-  /** The `IND-` series. `LD-` is the lead series and a different entity (§1). */
+  /** The indent series. `LD-` is the lead series and a different entity (§1). */
   @Expose() code: string;
   @Expose() originCity: string;
   @Expose() destinationCity: string;

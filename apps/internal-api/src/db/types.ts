@@ -20,6 +20,7 @@ export type SupplySource = 'UNION' | 'MARKET' | 'BOTH' | 'DIRECT_OWNER';
 export type OrderStatus =
   | 'FAILED'
   | 'POD_FORFEITED'
+  | 'CANCELLED'
   | 'INDENT_CREATED'
   | 'TRIP_GENERATED'
   | 'LR_ISSUED'
@@ -437,6 +438,14 @@ export interface RateCardLanesTable {
   valid_to: string | null;
   supply_source: SupplySource | null;
   supply_remarks: string | null;
+  bid_min: number | null;
+  bid_max: number | null;
+  /** Whether a late delivery on this lane is charged, and what a late day costs (paise). */
+  transit_penalty_applies: Generated<boolean>;
+  transit_penalty_per_day: Generated<number>;
+  /** The BD/Leadership approval mail behind this rate. */
+  approval_mail_subject: string | null;
+  approval_mail_attachment_id: string | null;
   created_at: Generated<string>;
   updated_at: Generated<string>;
 }
@@ -460,6 +469,10 @@ export interface RateRevisionsTable {
   approval_id: string | null;
   requested_by: string;
   approved_by: string | null;
+  approval_mail_subject: string | null;
+  approval_mail_attachment_id: string | null;
+  transit_penalty_applies: boolean | null;
+  transit_penalty_per_day: number | null;
   status: Generated<'PENDING' | 'APPLIED' | 'REJECTED'>;
   created_at: Generated<string>;
   updated_at: Generated<string>;
@@ -468,6 +481,10 @@ export interface RateRevisionsTable {
 export interface IndentsTable {
   id: Generated<string>;
   code: string;
+  cancel_reason: string | null;
+  cancelled_at: string | null;
+  cancelled_by: string | null;
+  last_reviewed_at: string | null;
   client_id: string;
   branch_id: string;
   from_city: string;
@@ -489,6 +506,7 @@ export interface IndentsTable {
   bid_max: number | null;
   band_locked: Generated<boolean>;
   advance_pct: Generated<number>;
+  advance_pct_overridden: Generated<boolean>;
   stage: Generated<string>;
   vendor_id: string | null;
   awarded_quote_id: string | null;
@@ -583,6 +601,12 @@ export interface TripsTable {
   balance_paid: Generated<number>;
   billed: Generated<boolean>;
   cross_check_overridden: Generated<boolean>;
+  loading_supervisor_id: string | null;
+  loading_started_at: string | null;
+  loading_completed_at: string | null;
+  departed_at: string | null;
+  transit_penalty: Generated<number>;
+  transit_penalty_waived: Generated<boolean>;
   created_at: Generated<string>;
   updated_at: Generated<string>;
 }
@@ -683,6 +707,7 @@ export interface PaymentsTable {
   kind: string;
   gross: number;
   penalty: Generated<number>;
+  deduction: Generated<number>;
   net: GeneratedAlways<number>;
   mode: string;
   transfer_type: string;
@@ -694,6 +719,49 @@ export interface PaymentsTable {
   idempotency_key: string;
   created_at: Generated<string>;
   updated_at: Generated<string>;
+}
+
+export interface SdrRecordsTable {
+  id: Generated<string>;
+  code: string;
+  trip_id: string;
+  vendor_id: string;
+  kind: string;
+  description: string;
+  claimed_amount: Generated<number>;
+  status: Generated<string>;
+  deduction: number | null;
+  outstanding: Generated<number>;
+  waived: Generated<number>;
+  resolution_note: string | null;
+  raised_by: string;
+  raised_at: Generated<string>;
+  resolved_by: string | null;
+  resolved_at: string | null;
+  created_at: Generated<string>;
+  updated_at: Generated<string>;
+}
+
+export interface PenaltyWaiversTable {
+  id: Generated<string>;
+  kind: string;
+  trip_id: string;
+  sdr_id: string | null;
+  amount: Generated<number>;
+  mail_subject: string;
+  mail_attachment_id: string | null;
+  note: string | null;
+  waived_by: string;
+  created_at: Generated<string>;
+}
+
+export interface SdrRecoveriesTable {
+  id: Generated<string>;
+  sdr_id: string;
+  trip_id: string;
+  payment_id: string;
+  amount: number;
+  created_at: Generated<string>;
 }
 
 export interface InvoicesTable {
@@ -866,6 +934,9 @@ export interface Database {
   pod_receipts: PodReceiptsTable;
   vendor_bills: VendorBillsTable;
   payments: PaymentsTable;
+  sdr_records: SdrRecordsTable;
+  sdr_recoveries: SdrRecoveriesTable;
+  penalty_waivers: PenaltyWaiversTable;
   invoices: InvoicesTable;
   invoice_trips: InvoiceTripsTable;
   receipts: ReceiptsTable;

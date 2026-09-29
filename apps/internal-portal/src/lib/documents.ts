@@ -1,10 +1,11 @@
 /**
- * The eleven trip documents of part 05 §3, in the five groups the documents
- * tab renders. Eight of them gate the advance (BR-58) — but the authoritative
- * set is `config.advance_document_set`, read from the server, never this file.
+ * The trip documents, in the six groups the documents tab renders. Nine of
+ * them gate the advance (BR-58): the original eight plus the loading slip the
+ * loading supervisor uploads — but the authoritative set is
+ * `config.advance_document_set`, read from the server, never this file.
  */
 
-export type DocGroup = 'CLIENT' | 'VEHICLE' | 'DRIVER' | 'LR' | 'POD';
+export type DocGroup = 'CLIENT' | 'VEHICLE' | 'DRIVER' | 'LOADING' | 'LR' | 'POD';
 
 export const DOC_LABELS: Record<string, string> = {
   CLIENT_INVOICE_OR_PO: 'Client invoice or purchase order',
@@ -15,6 +16,8 @@ export const DOC_LABELS: Record<string, string> = {
   PERMIT: 'National permit',
   PUC: 'Pollution certificate',
   DRIVING_LICENCE: 'Driving licence',
+  LOADING_SLIP: 'Loading slip',
+  WEIGHMENT_SLIP: 'Weighment slip',
   LR: 'Lorry receipt',
   POD: 'Proof of delivery',
 };
@@ -23,6 +26,7 @@ export const DOC_GROUPS: { key: DocGroup; label: string; kinds: string[] }[] = [
   { key: 'CLIENT', label: 'Client', kinds: ['CLIENT_INVOICE_OR_PO', 'EWAY_BILL'] },
   { key: 'VEHICLE', label: 'Vehicle', kinds: ['RC', 'INSURANCE', 'FITNESS', 'PERMIT', 'PUC'] },
   { key: 'DRIVER', label: 'Driver', kinds: ['DRIVING_LICENCE'] },
+  { key: 'LOADING', label: 'Loading', kinds: ['LOADING_SLIP', 'WEIGHMENT_SLIP'] },
   { key: 'LR', label: 'Lorry receipt', kinds: ['LR'] },
   { key: 'POD', label: 'Proof of delivery', kinds: ['POD'] },
 ];

@@ -7,6 +7,7 @@ import { CreateIndentDto } from '../../modules/indents/dto/create-indent.dto';
 import { SubmitClientDocumentDto } from '../../modules/clients/dto/submit-client-document.dto';
 import { SubmitQuoteDto } from '../../modules/portal/portal-write.dto';
 import { SuspendVendorDto } from '../../modules/vendors/dto/suspend-vendor.dto';
+import { SetLaneBandDto } from '../../modules/clients/dto/set-lane-band.dto';
 
 /**
  * The validation boundary — the layer that decides whether a request is
@@ -218,6 +219,52 @@ describe('indents', () => {
     for (const weightTn of [0, -5]) {
       const fields = await rejectedFields(CreateIndentDto, { ...validIndent, weightTn });
       expect(fields.join(' '), `${weightTn} should be refused`).toMatch(/weightTn/);
+    }
+  });
+
+  /*
+   * 2026-09-26: the bid band is the client's, held on the rate-card lane and
+   * copied onto the indent by the server. A body that still carries one is
+   * refused rather than quietly dropped, so nobody believes they set it.
+   */
+  it('refuses a bid band typed onto the indent — it comes from the client’s rate card', async () => {
+    for (const band of [{ bidMinPaise: 3800000 }, { bidMaxPaise: 4250000 }]) {
+      const fields = await rejectedFields(CreateIndentDto, { ...validIndent, ...band });
+      expect(fields.join(' ')).toMatch(/bid(Min|Max)Paise/);
+    }
+  });
+
+  it('treats advancePct as optional, and holds it inside 0..100 when it is given', async () => {
+    // Omitted: the awarded vendor's standing policy applies.
+    const omitted = await run<{ advancePct?: number }>(CreateIndentDto, validIndent);
+    expect(omitted.advancePct).toBeUndefined();
+
+    await expect(run(CreateIndentDto, { ...validIndent, advancePct: 0 })).resolves.toBeTruthy();
+    await expect(run(CreateIndentDto, { ...validIndent, advancePct: 25 })).resolves.toBeTruthy();
+    await expect(run(CreateIndentDto, { ...validIndent, advancePct: 100 })).resolves.toBeTruthy();
+
+    for (const advancePct of [-1, 101, 12.5]) {
+      const fields = await rejectedFields(CreateIndentDto, { ...validIndent, advancePct });
+      expect(fields.join(' '), `${advancePct} should be refused`).toMatch(/advancePct/);
+    }
+  });
+});
+
+describe('setting a lane’s bid band', () => {
+  it('accepts a min and a max in paise, with an optional reason', async () => {
+    await expect(run(SetLaneBandDto, { bidMinPaise: 5500000, bidMaxPaise: 6000000 })).resolves.toBeTruthy();
+    await expect(
+      run(SetLaneBandDto, { bidMinPaise: 5600000, bidMaxPaise: 6100000, reason: 'Diesel is up this quarter.' }),
+    ).resolves.toBeTruthy();
+  });
+
+  it('rejects a missing, zero or fractional limit', async () => {
+    for (const body of [{ bidMinPaise: 5500000 }, { bidMaxPaise: 6000000 }]) {
+      await rejectedFields(SetLaneBandDto, body);
+    }
+    for (const bad of [0, -1, 100.5]) {
+      const fields = await rejectedFields(SetLaneBandDto, { bidMinPaise: bad, bidMaxPaise: 6000000 });
+      expect(fields.join(' '), `${bad} should be refused`).toMatch(/bidMinPaise/);
     }
   });
 });

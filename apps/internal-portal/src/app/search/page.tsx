@@ -127,7 +127,7 @@ export default function SearchPage() {
             autoComplete="off"
           />
           <span className="muted" style={{ fontSize: 11 }}>
-            Two letters or more. Partial codes work — “4471” finds IND-4471.
+            Two letters or more. Partial numbers work — “4471” finds indent 4471.
           </span>
         </div>
 

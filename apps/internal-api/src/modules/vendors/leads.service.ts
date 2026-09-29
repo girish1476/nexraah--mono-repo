@@ -22,7 +22,7 @@ export class LeadsService {
 
   async create(dto: CreateLeadDto, actor: AuthenticatedUser) {
     const row = await this.leadsRepository.transaction().execute(async (trx) => {
-      // LD- is its own series (part 01 §4.1), never the indent IND- series.
+      // LD- is its own series (part 01 §4.1), never the indent series.
       const code = await this.numberingService.issue(trx, 'LEAD');
       return this.leadsRepository.insert(trx, {
         code,

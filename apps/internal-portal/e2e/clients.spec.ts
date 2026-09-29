@@ -75,8 +75,11 @@ test.describe('clients list', () => {
 });
 
 test.describe('client detail', () => {
+  // Retargeted from FINANCE, which has held `rate.revise` since rate revision
+  // shipped and so sees a "Change a rate" link where a read-only tag sits for
+  // everyone else. OPS reads the client file and cannot revise a rate.
   test('a contract client shows its facts and its read-only rate card', async ({ page }) => {
-    await setRole(page, 'FINANCE');
+    await setRole(page, 'OPS');
     await page.goto('/clients/c-0092');
 
     await expect(page.getByRole('heading', { name: 'Berger Paints' })).toBeVisible();
@@ -90,8 +93,64 @@ test.describe('client detail', () => {
     // `reason` tooltip. What matters is that the sheet is marked unkeyable.
     await expect(page.getByText('Read-only', { exact: true })).toBeVisible();
     const laneRows = page.locator('table.table tbody tr');
-    await expect(laneRows.filter({ hasText: 'Kolkata → Nashik' })).toBeVisible();
-    await expect(laneRows.filter({ hasText: 'Kolkata → Guwahati' })).toBeVisible();
+    // From and to are their own columns now, so a lane is found by its drop city.
+    await expect(laneRows.filter({ hasText: 'Nashik' })).toContainText('Kolkata');
+    await expect(laneRows.filter({ hasText: 'Guwahati' })).toContainText('Kolkata');
+  });
+
+  /*
+   * 2026-09-26: bid limits belong to the client's lane. Setting the first pair
+   * is direct; changing a pair already in force goes to Leadership. The mock
+   * db resets on every `page.goto`, so each half is its own test.
+   */
+  test('a lane with no bid limits offers to set them, and setting them takes effect at once', async ({ page }) => {
+    await setRole(page, 'FINANCE');
+    await page.goto('/clients/c-0092');
+
+    const guwahati = page.locator('table.table tbody tr').filter({ hasText: 'Guwahati' });
+    await expect(guwahati.getByText('Not set')).toBeVisible();
+    await guwahati.getByRole('button', { name: 'Set limits' }).click();
+
+    await control(page, 'bidMin').fill('30000');
+    await control(page, 'bidMax').fill('33000');
+    await page.getByRole('button', { name: 'Save limits' }).click();
+
+    await expect(page.getByText('Bid limits saved for this lane')).toBeVisible();
+    await expect(guwahati).toContainText(/₹30,000\s*–\s*₹33,000/);
+  });
+
+  test('changing limits already in force needs a reason and goes to Leadership, leaving the old limits in place', async ({
+    page,
+  }) => {
+    await setRole(page, 'FINANCE');
+    await page.goto('/clients/c-0092');
+
+    const nashik = page.locator('table.table tbody tr').filter({ hasText: 'Nashik' });
+    await expect(nashik).toContainText(/₹55,000\s*–\s*₹60,000/);
+    await nashik.getByRole('button', { name: 'Change' }).click();
+
+    await control(page, 'bidMin').fill('56000');
+    await control(page, 'bidMax').fill('61000');
+
+    // No reason yet — refused before anything is sent.
+    await page.getByRole('button', { name: 'Send to Leadership' }).click();
+    await expect(page.getByText('Say why the limits are changing')).toBeVisible();
+
+    await control(page, 'bidReason').fill('Diesel is up and transporters are refusing the old ceiling.');
+    await page.getByRole('button', { name: 'Send to Leadership' }).click();
+
+    await expect(page.getByText('Sent to Leadership — the limits change once they approve it')).toBeVisible();
+    // Nothing moved: the change is only a request until Leadership approves it.
+    await expect(nashik).toContainText(/₹55,000\s*–\s*₹60,000/);
+  });
+
+  test('a role without client.manage sees the limits but no control to change them', async ({ page }) => {
+    await setRole(page, 'OPS');
+    await page.goto('/clients/c-0092');
+
+    const nashik = page.locator('table.table tbody tr').filter({ hasText: 'Nashik' });
+    await expect(nashik).toContainText(/₹55,000\s*–\s*₹60,000/);
+    await expect(nashik.getByRole('button', { name: 'Change' })).toHaveCount(0);
   });
 
   test('a spot client has no rate card table, only the per-indent note', async ({ page }) => {

@@ -115,9 +115,29 @@ export class ClientsRepository {
       valid_to: string | null;
       supply_source: RateCardLanesTable['supply_source'];
       supply_remarks: string | null;
+      bid_min?: number | null;
+      bid_max?: number | null;
+      transit_penalty_applies?: boolean;
+      transit_penalty_per_day?: number;
+      approval_mail_subject?: string | null;
+      approval_mail_attachment_id?: string | null;
     },
   ) {
     return db.insertInto('rate_card_lanes').values(row).returningAll().executeTakeFirstOrThrow();
+  }
+
+  /**
+   * In place, unlike a rate. An indent copies the band when it is raised, so
+   * changing it here only ever affects indents raised afterwards — nothing
+   * already priced against the old band is re-judged.
+   */
+  updateLaneBand(db: DbExecutor, laneId: string, band: { bid_min: number; bid_max: number }) {
+    return db
+      .updateTable('rate_card_lanes')
+      .set({ ...band, updated_at: new Date().toISOString() })
+      .where('id', '=', laneId)
+      .returningAll()
+      .executeTakeFirstOrThrow();
   }
 
   insertRevision(
@@ -131,6 +151,10 @@ export class ClientsRepository {
       reason: string;
       approval_id: string | null;
       requested_by: string;
+      approval_mail_subject?: string | null;
+      approval_mail_attachment_id?: string | null;
+      transit_penalty_applies?: boolean | null;
+      transit_penalty_per_day?: number | null;
     },
   ) {
     return db.insertInto('rate_revisions').values(row).returningAll().executeTakeFirstOrThrow();
@@ -152,6 +176,79 @@ export class ClientsRepository {
       .selectAll()
       .where('approval_id', '=', approvalId)
       .executeTakeFirst();
+  }
+
+  /**
+   * Every lane a client has ever had for one route and truck type, matched
+   * case-insensitively — the input to `checkNewLane`'s overlap test.
+   */
+  findRouteLanes(
+    clientId: string,
+    origin: string,
+    destination: string,
+    truckType: string,
+    db: DbExecutor = this.db,
+  ) {
+    return db
+      .selectFrom('rate_card_lanes')
+      .select(['id', 'valid_from', 'valid_to'])
+      .where('client_id', '=', clientId)
+      .where(sql<boolean>`lower(origin) = lower(${origin})`)
+      .where(sql<boolean>`lower(destination) = lower(${destination})`)
+      .where(sql<boolean>`lower(truck_type) = lower(${truckType})`)
+      .execute();
+  }
+
+  /**
+   * `rate_card_lanes.rfq_lane_id` is `NOT NULL` (BR-37), so a lane agreed
+   * outside an RFQ still needs a real lane to point at. One synthetic CLOSED
+   * RFQ per client, found by its reference and reused — the go-live import
+   * does the same (`ImportRepository.syntheticRfqLane`).
+   */
+  async syntheticRfqLane(
+    db: DbExecutor,
+    clientId: string,
+    lane: { origin: string; destination: string; truckType: string; ratePaise: number },
+    reference: string,
+  ) {
+    const today = new Date().toISOString().slice(0, 10);
+    const existing = await db
+      .selectFrom('rfqs')
+      .select(['id'])
+      .where('client_id', '=', clientId)
+      .where('reference', '=', reference)
+      .executeTakeFirst();
+
+    const rfqId =
+      existing?.id ??
+      (
+        await db
+          .insertInto('rfqs')
+          .values({
+            client_id: clientId,
+            cycle_months: 12,
+            period_from: today,
+            period_to: today,
+            reference,
+            status: 'CLOSED',
+          } as never)
+          .returning('id')
+          .executeTakeFirstOrThrow()
+      ).id;
+
+    return db
+      .insertInto('rfq_lanes')
+      .values({
+        rfq_id: rfqId,
+        origin: lane.origin,
+        destination: lane.destination,
+        truck_type: lane.truckType,
+        quoted_rate: lane.ratePaise,
+        awarded_rate: lane.ratePaise,
+        outcome: 'WON',
+      } as never)
+      .returning('id')
+      .executeTakeFirstOrThrow();
   }
 
   /** A revision already queued against this lane — one at a time, deliberately. */

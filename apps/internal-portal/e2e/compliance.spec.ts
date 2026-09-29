@@ -97,15 +97,16 @@ test.describe('Compliance desk — COMPLIANCE role', () => {
     const main = page.locator('main');
     const queue = panel(main, 'Trip documents awaiting verification');
 
-    const row = queue.locator('tr').filter({ hasText: 'TRP-120881' });
+    const row = queue.locator('tr').filter({ hasText: '120881' });
     await expect(row).toContainText('Nashik → Kolkata');
     await expect(row).toContainText('1 document(s) uploaded and waiting · blocking the advance');
     await expect(row).toContainText('1 day');
     await expect(row).toContainText('Blocking money');
     await expect(row.getByRole('link', { name: 'Verify' })).toHaveAttribute('href', '/trips/t-120881/documents');
 
-    // Every other seeded trip has no documents at all, so only one row queues here.
-    await expect(queue.locator('table.table tbody tr')).toHaveCount(1);
+    // Two other trips (advance paid) have a proof of delivery waiting, which
+    // blocks their balances — three rows queue, this one first.
+    await expect(queue.locator('table.table tbody tr')).toHaveCount(3);
   });
 
   test('COMPLIANCE has EDIT on this module — no read-only badge', async ({ page }) => {

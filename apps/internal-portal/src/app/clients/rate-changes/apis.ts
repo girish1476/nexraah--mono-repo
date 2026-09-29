@@ -17,11 +17,44 @@ export function listRateRevisions(clientId: string) {
  */
 export function proposeRateRevision(
   clientId: string,
-  body: { laneId: string; newRatePaise: number; effectiveFrom: string; reason: string },
+  body: {
+    laneId: string;
+    newRatePaise: number;
+    effectiveFrom: string;
+    reason: string;
+    approvalMailSubject: string;
+    approvalMailAttachmentId?: string;
+  },
 ) {
   return request<never>({
     url: `/clients/${clientId}/rate-revisions`,
     method: 'POST',
     data: body,
   });
+}
+
+/**
+ * POST /clients/:id/rate-card — proposes a lane the client's rate card does not
+ * have yet (`rate.revise`). Like a revision it never resolves: it answers
+ * `202 approvalRequired`, which `request()` throws as `ApprovalRequiredError`,
+ * and the lane exists only once somebody who can approve a contract agrees.
+ */
+export function proposeRateLane(
+  clientId: string,
+  body: {
+    origin: string;
+    destination: string;
+    truckType: string;
+    ratePaise: number;
+    transitDays: number;
+    validFrom: string;
+    validTo?: string;
+    reason: string;
+    transitPenaltyApplies: boolean;
+    transitPenaltyPerDayPaise?: number;
+    approvalMailSubject: string;
+    approvalMailAttachmentId?: string;
+  },
+) {
+  return request<never>({ url: `/clients/${clientId}/rate-card`, method: 'POST', data: body });
 }

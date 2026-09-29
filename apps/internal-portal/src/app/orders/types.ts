@@ -4,7 +4,8 @@
  * It used to be a client-side view stitched together from `/indents`,
  * `/trips` and `/invoices` on every load, with the ten-step ladder run in the
  * browser. That is why this file's shapes changed: an order has its own
- * `ORD-` number rather than borrowing the indent's code, a `stepNo` the
+ * id of its own (it is the indent's id, since 2026-09-26 an order has no
+ * separate number), a `stepNo` the
  * server computed once, and a recorded `events` history in place of
  * milestones the screen worked out for itself.
  *
@@ -26,6 +27,8 @@ export type OrderStatus =
   | 'FAILED'
   /** Proof never arrived and the balance is gone. Terminal, outside the ten. */
   | 'POD_FORFEITED'
+  /** The client cancelled the load. Terminal. */
+  | 'CANCELLED'
   | 'INDENT_CREATED'
   | 'TRIP_GENERATED'
   | 'LR_ISSUED'
@@ -50,6 +53,7 @@ export type OrderStatus =
 export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
   FAILED: 'Could not place',
   POD_FORFEITED: 'Balance forfeited',
+  CANCELLED: 'Cancelled',
   INDENT_CREATED: 'Load requested',
   TRIP_GENERATED: 'Vehicle booked',
   LR_ISSUED: 'Lorry receipt issued',
@@ -65,6 +69,7 @@ export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
 export const ORDER_STATUS_TONE: Record<OrderStatus, 'mint' | 'flag' | 'red' | 'blue' | 'grey'> = {
   FAILED: 'red',
   POD_FORFEITED: 'red',
+  CANCELLED: 'grey',
   INDENT_CREATED: 'grey',
   TRIP_GENERATED: 'blue',
   LR_ISSUED: 'blue',
@@ -137,7 +142,7 @@ const AWAITING_A_PERSON: OrderStatus[] = ['FAILED', 'ADVANCE_DOCS_UPLOADED', 'PO
 
 export function phaseFor(status: OrderStatus): OrderPhase {
   if (AWAITING_A_PERSON.includes(status)) return 'NEEDS_YOU';
-  if (status === 'BALANCE_RELEASED' || status === 'POD_FORFEITED') return 'SETTLED';
+  if (status === 'BALANCE_RELEASED' || status === 'POD_FORFEITED' || status === 'CANCELLED') return 'SETTLED';
   if (status === 'INDENT_CREATED' || status === 'TRIP_GENERATED') return 'PLACING';
   if (status === 'UNLOADED' || status === 'POD_VERIFIED') return 'DELIVERED';
   return 'MOVING';
@@ -163,6 +168,7 @@ export const ORDER_NEXT_ACTION: Record<OrderStatus, { action: string; owner: str
     action: 'Nothing — proof never arrived, the balance is forfeited',
     owner: '',
   },
+  CANCELLED: { action: 'Nothing — this load was cancelled', owner: '' },
   INDENT_CREATED: { action: 'Award a transporter', owner: 'Operations' },
   TRIP_GENERATED: { action: 'Issue the Lorry Receipt', owner: 'Operations' },
   LR_ISSUED: { action: 'Collect the advance documents', owner: 'Operations' },
@@ -177,12 +183,17 @@ export const ORDER_NEXT_ACTION: Record<OrderStatus, { action: string; owner: str
 
 export interface OrderListRow {
   id: string;
-  /** The stable `ORD-` number. Survives the indent it grew out of. */
+  /** Always the indent's own id — there is no separate order id. Kept only so older callers still compile. */
   orderNo: string;
   indentId: string;
   indentCode: string;
   clientName: string;
   lane: string;
+  fromCity: string;
+  toCity: string;
+  /** The transporter, once one is awarded. */
+  vendorName: string | null;
+  vehicleNo: string | null;
   pickupDate: string;
   sellRatePaise: number;
   branchName: string;
@@ -223,20 +234,52 @@ export interface OrderEvent {
   at: string;
 }
 
+/** One transfer that has actually gone out, with the bank reference it went under. */
+export interface OrderPaymentLine {
+  grossPaise: number;
+  /** Late-proof penalty taken off the balance. Always 0 on an advance. */
+  penaltyPaise: number;
+  /** Recovered against earlier claims on this transporter. Always 0 on an advance. */
+  deductionPaise: number;
+  /** What actually left the account. */
+  netPaise: number;
+  mode: string;
+  utr: string;
+  valueDate: string;
+  releasedAt: string;
+  releasedByName: string | null;
+}
+
+/**
+ * The money on one order — mirrors `OrderPayments` in `order-payments.ts` on the
+ * API. `marginPaise` is null when there is no sourcing rate yet, and also when
+ * the signed-in role may not see margin (`pnl.view_all`, or `pnl.view_own` for
+ * an order in their own branch); the screen hides the row in both cases.
+ */
+export interface OrderPayments {
+  sourcingRatePaise: number | null;
+  placementRatePaise: number;
+  loadingPaise: number;
+  unloadingPaise: number;
+  otherChargesPaise: number;
+  marginPaise: number | null;
+  marginPct: number | null;
+  advance: OrderPaymentLine | null;
+  balance: OrderPaymentLine | null;
+}
+
 export interface OrderDetail extends OrderListRow {
-  fromCity: string;
-  toCity: string;
   material: string;
   weightTn: number;
   truckType: string;
-  vendorName: string | null;
-  vehicleNo: string | null;
   driverName: string | null;
   buyRatePaise: number | null;
   advancePaidPaise: number;
   balancePaidPaise: number;
   /** The indent's own special instructions, carried unchanged from raising it. Null when none were given. */
   remarks: string | null;
+  /** Rates, margin and the transfers that have gone out, for the Payments tab. */
+  payments: OrderPayments;
   /** Recorded step history, oldest first. Replaces the old computed milestones. */
   events: OrderEvent[];
 }

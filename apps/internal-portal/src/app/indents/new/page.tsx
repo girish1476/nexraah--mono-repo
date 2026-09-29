@@ -49,13 +49,13 @@ const schema = z
     rateSource: z.enum(['CONTRACT', 'SPOT']),
     sellRupees: z.number().min(1, 'Required'),
     sourcingRupees: z.number().optional(),
-    bidMinRupees: z.number().min(0),
-    bidMaxRupees: z.number().min(0),
-    advancePct: z.number().min(0).max(100),
-  })
-  .refine((v) => v.bidMaxRupees >= v.bidMinRupees, {
-    message: 'Bid max cannot be below bid min',
-    path: ['bidMaxRupees'],
+    // Optional on purpose: left blank, the awarded transporter's standing
+    // advance policy applies. Filled in, it is this order's own figure.
+    advancePct: z
+      .number({ error: 'Enter a number from 0 to 100, or leave it blank' })
+      .min(0, 'Enter a number from 0 to 100')
+      .max(100, 'Enter a number from 0 to 100')
+      .optional(),
   })
   .refine((v) => v.rateSource !== 'SPOT' || (v.sourcingRupees ?? 0) > 0, {
     message: 'A spot indent needs a sourcing rate',
@@ -84,9 +84,6 @@ export default function NewIndentPage() {
       reportingRule: 'SAME_DAY',
       rateSource: 'CONTRACT',
       transitDays: 2,
-      advancePct: 40,
-      bidMinRupees: 0,
-      bidMaxRupees: 0,
     },
   });
 
@@ -96,7 +93,12 @@ export default function NewIndentPage() {
   const sourcing = form.watch('sourcingRupees') ?? 0;
 
   useEffect(() => {
-    listClients().then(setClients).catch(() => setClients([]));
+    // Only clients Compliance has cleared can be booked against, so the others
+    // are not offered — they used to be, and the refusal came only after the whole
+    // form had been filled in.
+    listClients()
+      .then((all) => setClients(all.filter((c) => c.status === 'ACTIVE')))
+      .catch(() => setClients([]));
   }, []);
 
   useEffect(() => {
@@ -147,11 +149,9 @@ export default function NewIndentPage() {
         sellRatePaise: Math.round(v.sellRupees * 100),
         sourcingRatePaise: v.sourcingRupees ? Math.round(v.sourcingRupees * 100) : undefined,
         spotConfirmationAttachmentId: confirmationId ?? undefined,
-        bidMinPaise: Math.round(v.bidMinRupees * 100),
-        bidMaxPaise: Math.round(v.bidMaxRupees * 100),
         advancePct: v.advancePct,
       });
-      toast(`${indent.code} raised · band is now locked`);
+      toast(`${indent.code} raised`);
       router.push(`/indents/${indent.id}`);
     } catch (e) {
       toast(errorMessage(e));
@@ -322,25 +322,27 @@ export default function NewIndentPage() {
           )}
         </Panel>
 
-        <Panel title="Placement terms">
+        <Panel title="Advance payment">
           <FormGrid>
-            <Field label="Bid minimum (₹)" hint="Below this a quote is refused at entry and never persisted.">
-              <input type="number" {...form.register('bidMinRupees', { valueAsNumber: true })} />
-            </Field>
             <Field
-              label="Bid maximum (₹)"
-              hint="Above this a quote is kept and flagged; awarding it needs leadership."
-              error={form.formState.errors.bidMaxRupees?.message}
+              label="Advance % for this order (optional)"
+              hint="Leave blank to use the transporter's standing advance policy — that is what normally applies. Fill it in only if this one order needs a different advance."
+              error={form.formState.errors.advancePct?.message}
             >
-              <input type="number" {...form.register('bidMaxRupees', { valueAsNumber: true })} />
-            </Field>
-            <Field label="Advance %" hint="Defaults from the awarded vendor's standing policy.">
-              <input type="number" {...form.register('advancePct', { valueAsNumber: true })} />
+              <input
+                type="number"
+                min={0}
+                max={100}
+                placeholder="Transporter's policy"
+                {...form.register('advancePct', {
+                  setValueAs: (v) => (v === '' || v === null || v === undefined ? undefined : Number(v)),
+                })}
+              />
             </Field>
           </FormGrid>
           <p className="muted" style={{ fontSize: 12, marginBottom: 0 }}>
-            The band becomes read-only the moment this indent is published, before the first quote and after.
-            A lane that draws no in-band quote is a market gap, and the fix is recruitment.
+            The bid limits for transporter quotes are not set here. They come from this client’s rate card
+            for the lane, and only Leadership can change them once set.
           </p>
           <div style={{ marginTop: 16 }}>
             <button

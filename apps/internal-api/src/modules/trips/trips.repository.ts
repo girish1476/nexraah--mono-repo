@@ -19,6 +19,16 @@ export class TripsRepository {
     return this.db.transaction();
   }
 
+  /** The trips a loading supervisor has been assigned, newest first. */
+  listForLoadingSupervisor(userId: string) {
+    return this.baseListQuery()
+      .select(['trips.loading_started_at as loadingStartedAt', 'trips.loading_completed_at as loadingCompletedAt'])
+      .where('trips.loading_supervisor_id', '=', userId)
+      .where('trips.stage', '=', 'OPEN')
+      .orderBy('trips.created_at', 'desc')
+      .execute();
+  }
+
   private baseListQuery() {
     return this.db
       .selectFrom('trips')
@@ -106,8 +116,10 @@ export class TripsRepository {
       .innerJoin('vendors', 'vendors.id', 'trips.vendor_id')
       .innerJoin('branches', 'branches.id', 'trips.branch_id')
       .leftJoin('lorry_receipts', 'lorry_receipts.trip_id', 'trips.id')
+      .leftJoin('users as loading_sup', 'loading_sup.id', 'trips.loading_supervisor_id')
       .selectAll('trips')
       .select([
+        'loading_sup.name as loadingSupervisorName',
         'indents.code as indentCode',
         'clients.name as clientName',
         'vendors.legal_name as vendorName',
@@ -116,6 +128,34 @@ export class TripsRepository {
         'trips.pod_penalty as podPenaltyPaise',
       ])
       .where('trips.id', '=', id)
+      .executeTakeFirst();
+  }
+
+  /**
+   * Who can be made a trip's loading supervisor: active loading-supervisor logins. A
+   * branch-scoped user only appears for their own branch's trips; a user with
+   * no branch (null) can be assigned anywhere.
+   */
+  findLoadingSupervisorCandidates(branchId: string) {
+    return this.db
+      .selectFrom('users')
+      .innerJoin('roles', 'roles.id', 'users.role_id')
+      .select(['users.id as id', 'users.name as name', 'users.branch_id as branchId'])
+      .where('roles.code', '=', 'LOADING_SUPERVISOR')
+      .where('users.status', '=', 'ACTIVE')
+      .where((eb) => eb.or([eb('users.branch_id', 'is', null), eb('users.branch_id', '=', branchId)]))
+      .orderBy('users.name')
+      .execute();
+  }
+
+  findActiveLoadingSupervisor(db: DbExecutor, userId: string) {
+    return db
+      .selectFrom('users')
+      .innerJoin('roles', 'roles.id', 'users.role_id')
+      .select(['users.id as id', 'users.name as name', 'users.branch_id as branchId'])
+      .where('users.id', '=', userId)
+      .where('roles.code', '=', 'LOADING_SUPERVISOR')
+      .where('users.status', '=', 'ACTIVE')
       .executeTakeFirst();
   }
 

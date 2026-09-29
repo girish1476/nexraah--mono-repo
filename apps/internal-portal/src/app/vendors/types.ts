@@ -111,6 +111,8 @@ export interface VendorDetail {
     advanceOutstandingPaise: number;
     balancePendingPaise: number;
     penaltiesAccruedPaise: number;
+    /** What they owe us from shortage and damage records — a negative balance recovered from their next payments. */
+    recoverableBalancePaise?: number;
     topLanes: { lane: string; trips: number; marginPct: number }[];
   };
 }
@@ -214,4 +216,39 @@ export interface VendorDraft {
    * it converted — so the two can never end up half-done.
    */
   leadId?: string;
+}
+
+/**
+ * One load given to a transporter — `GET /vendors/:id/placements`.
+ *
+ * Starts at the award, so a load still waiting for its vehicle is here with a
+ * null `vehicleNo`; `tripId` and `orderId` are null until those exist.
+ */
+export interface VendorPlacement {
+  indentId: string;
+  indentCode: string;
+  orderId: string | null;
+  orderNo: string | null;
+  orderStatus: string | null;
+  orderStep: number | null;
+  tripId: string | null;
+  tripCode: string | null;
+  clientName: string;
+  lane: string;
+  material: string;
+  weightTn: number;
+  truckType: string;
+  pickupDate: string;
+  /** The indent's own stage — `VENDOR_ASSIGNED` means awarded, no vehicle named yet. */
+  stage: string;
+  buyRatePaise: number | null;
+  vehicleNo: string | null;
+  driverName: string | null;
+  driverLicence: string | null;
+  /** When the vehicle reported for loading. */
+  placedAt: string | null;
+  deliveredAt: string | null;
+  podStatus: string | null;
+  advancePaidPaise: number | null;
+  balancePaidPaise: number | null;
 }

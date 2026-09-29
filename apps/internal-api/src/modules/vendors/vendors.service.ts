@@ -2,6 +2,7 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { DomainException, assertReason, type UnmetItem } from '../../common/domain-exception';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
 import type { ApprovalRequiredResponse } from '../../common/approval-required.response';
+import { SdrRepository } from '../sdr/sdr.repository';
 import { AuditService } from '../audit/audit.service';
 import { NumberingService } from '../numbering/numbering.service';
 import { ApprovalsService } from '../approvals/approvals.service';
@@ -50,6 +51,7 @@ export class VendorsService implements OnModuleInit {
     private readonly approvalsRegistry: ApprovalsRegistry,
     private readonly portalAccountService: VendorPortalAccountService,
     private readonly leadsRepository: LeadsRepository,
+    private readonly sdrRepository: SdrRepository,
   ) {}
 
   onModuleInit() {
@@ -140,18 +142,56 @@ export class VendorsService implements OnModuleInit {
     }));
   }
 
+  /**
+   * The loads this vendor has been given, with the vehicle they put on each and
+   * where the order stands now. Read-only, and open to every internal role for
+   * the same reason `getById` is: the vendor file is not branch-scoped.
+   */
+  async placements(id: string) {
+    const vendor = await this.vendorsRepository.findById(id);
+    if (!vendor) throw new DomainException(404, 'NOT_FOUND', `Unknown vendor: ${id}`);
+    const rows = await this.vendorsRepository.findPlacements(id);
+    return rows.map((r) => ({
+      indentId: r.indentId,
+      indentCode: r.indentCode,
+      orderId: r.orderId,
+      orderNo: r.orderNo,
+      orderStatus: r.orderStatus,
+      orderStep: r.orderStep,
+      tripId: r.tripId,
+      tripCode: r.tripCode,
+      clientName: r.clientName,
+      lane: `${r.fromCity} → ${r.toCity}`,
+      material: r.material,
+      weightTn: r.weightKg / 1000,
+      truckType: r.truckType,
+      pickupDate: r.pickupDate,
+      stage: r.stage,
+      buyRatePaise: r.buyRatePaise === null ? null : Number(r.buyRatePaise),
+      vehicleNo: r.vehicleNo,
+      driverName: r.driverName,
+      driverLicence: r.driverLicence,
+      placedAt: r.reportedAt,
+      deliveredAt: r.deliveredAt,
+      podStatus: r.podStatus,
+      advancePaidPaise: r.advancePaidPaise === null ? null : Number(r.advancePaidPaise),
+      balancePaidPaise: r.balancePaidPaise === null ? null : Number(r.balancePaidPaise),
+    }));
+  }
+
   async getById(id: string) {
     const vendor = await this.vendorsRepository.findById(id);
     if (!vendor) {
       throw new DomainException(404, 'NOT_FOUND', `Unknown vendor: ${id}`);
     }
 
-    const [kycRows, docRows, fleetRows, advanceHistory, stats] = await Promise.all([
+    const [kycRows, docRows, fleetRows, advanceHistory, stats, recoverablePaise] = await Promise.all([
       this.vendorsRepository.findKyc(id),
       this.vendorsRepository.findDocuments(id),
       this.vendorsRepository.findFleet(id),
       this.vendorsRepository.findAdvanceHistory(id),
       this.vendorsRepository.findBusinessStats(id),
+      this.sdrRepository.recoverableFor(id),
     ]);
 
     const kycByKind = new Map(kycRows.map((r) => [r.kind, r]));
@@ -247,6 +287,9 @@ export class VendorsService implements OnModuleInit {
         advanceOutstandingPaise: Math.max(0, Number(stats.totals.outstandingPaise)),
         balancePendingPaise: Math.max(0, Number(stats.totals.outstandingPaise)),
         penaltiesAccruedPaise: Number(stats.totals.penaltiesAccruedPaise),
+        // What they owe us from shortage and damage records: a negative balance on
+        // their account, taken from their next payments until cleared.
+        recoverableBalancePaise: recoverablePaise,
         topLanes: stats.lanes.map((l) => ({
           lane: l.lane,
           trips: Number(l.trips),

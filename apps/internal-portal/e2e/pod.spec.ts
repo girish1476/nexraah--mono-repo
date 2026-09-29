@@ -9,17 +9,17 @@ import { setRole, statValue } from './helpers';
  * the named permission a control actually checks: `pod.waive` is a fixed
  * permission (BR-43) held only by COMPLIANCE (see SEED_GRANTS in
  * lib/permissions.ts), so OPS — EDIT on the module — still doesn't
- * get the "Propose waiver" button. Tests below assert the real
+ * get the "Waive penalty" button. Tests below assert the real
  * permission-gated behaviour rather than the module-level shorthand.
  *
  * Fixture trips relevant here (src/mocks/db.ts) — podStatus is fixed fixture
  * data, not derived from the clock, so it's asserted exactly. Age-derived
  * numbers (days left, penalty accrued on the *pending* list specifically)
  * drift with real time and are asserted loosely or not at all:
- *   TRP-120881 · Rathod Roadlines   · Nashik      · PENDING  · ageDays ~24
- *   TRP-120874 · Sai Kripa Carriers · Pune        · ATTACHED · ageDays ~31
- *   TRP-120869 · Bhagwati Logistics · Hosur       · RECEIVED · ageDays ~16
- *   TRP-120855 · Anand Roadways     · Gandhidham  · APPROVED · ageDays ~3
+ *   120881 · Rathod Roadlines   · Nashik      · PENDING  · ageDays ~24
+ *   120874 · Sai Kripa Carriers · Pune        · ATTACHED · ageDays ~31
+ *   120869 · Bhagwati Logistics · Hosur       · RECEIVED · ageDays ~16
+ *   120855 · Anand Roadways     · Gandhidham  · APPROVED · ageDays ~3
  * Turnaround is 20 days (pod_tat_days), forfeiture is 40 (pod_forfeit_days) —
  * all four ages sit comfortably clear of both boundaries.
  */
@@ -70,13 +70,13 @@ test.describe('POD pending list', () => {
     await expect(statValue(page, 'podpending-money-held')).toHaveText('₹81,920');
 
     const codes = await page.locator('table.table tbody tr td[data-label="Trip number"] a').allTextContents();
-    expect(codes).toEqual(['TRP-120874', 'TRP-120881', 'TRP-120869']);
+    expect(codes).toEqual(['120874', '120881', '120869']);
 
-    await expect(row(page, 'TRP-120874').getByText(/\+\d+d over/)).toBeVisible();
-    await expect(row(page, 'TRP-120881').getByText(/\+\d+d over/)).toBeVisible();
-    await expect(row(page, 'TRP-120869').getByText(/\d+ days left/)).toBeVisible();
+    await expect(row(page, '120874').getByText(/\+\d+d over/)).toBeVisible();
+    await expect(row(page, '120881').getByText(/\+\d+d over/)).toBeVisible();
+    await expect(row(page, '120869').getByText(/\d+ days left/)).toBeVisible();
 
-    await expect(row(page, 'TRP-120881').locator('td[data-label="Their money we hold"]')).toHaveText('₹58,400');
+    await expect(row(page, '120881').locator('td[data-label="Their money we hold"]')).toHaveText('₹58,400');
   });
 
   test('branch and transporter filters narrow the list', async ({ page }) => {
@@ -86,12 +86,12 @@ test.describe('POD pending list', () => {
 
     await field(page, 'Branch').locator('input').fill('Nashik');
     await expect(page.locator('table.table tbody tr')).toHaveCount(1);
-    await expect(row(page, 'TRP-120881')).toBeVisible();
+    await expect(row(page, '120881')).toBeVisible();
 
     await field(page, 'Branch').locator('input').fill('');
     await field(page, 'Transporter').locator('input').fill('Sai Kripa');
     await expect(page.locator('table.table tbody tr')).toHaveCount(1);
-    await expect(row(page, 'TRP-120874')).toBeVisible();
+    await expect(row(page, '120874')).toBeVisible();
   });
 
   test('the ageing filter buckets rows, and a filter with no matches shows the empty state', async ({ page }) => {
@@ -100,7 +100,7 @@ test.describe('POD pending list', () => {
 
     await field(page, 'Ageing').locator('select').selectOption('within');
     await expect(page.locator('table.table tbody tr')).toHaveCount(1);
-    await expect(row(page, 'TRP-120869')).toBeVisible();
+    await expect(row(page, '120869')).toBeVisible();
 
     await field(page, 'Ageing').locator('select').selectOption('');
     await field(page, 'Branch').locator('input').fill('Not A Real Branch');
@@ -108,13 +108,13 @@ test.describe('POD pending list', () => {
     await expect(page.locator('table.table')).toHaveCount(0);
   });
 
-  test('COMPLIANCE sees "Propose waiver" only on rows with an unwaived penalty', async ({ page }) => {
+  test('COMPLIANCE sees "Waive penalty" only on rows with an unwaived penalty', async ({ page }) => {
     await setRole(page, 'COMPLIANCE');
     await page.goto('/pod/pending');
 
-    await expect(row(page, 'TRP-120874').getByRole('button', { name: 'Propose waiver' })).toBeVisible();
-    await expect(row(page, 'TRP-120881').getByRole('button', { name: 'Propose waiver' })).toBeVisible();
-    await expect(row(page, 'TRP-120869').getByRole('button', { name: 'Propose waiver' })).toHaveCount(0);
+    await expect(row(page, '120874').getByRole('button', { name: 'Waive penalty' })).toBeVisible();
+    await expect(row(page, '120881').getByRole('button', { name: 'Waive penalty' })).toBeVisible();
+    await expect(row(page, '120869').getByRole('button', { name: 'Waive penalty' })).toHaveCount(0);
   });
 
   test('Operations has module-level EDIT but lacks the fixed pod.waive permission, so no waiver button renders', async ({
@@ -127,8 +127,8 @@ test.describe('POD pending list', () => {
     // of this test is the absent waiver button, not the row count — but the
     // count stays as a guard against branch scoping reappearing by accident.
     await expect(page.locator('table.table tbody tr')).toHaveCount(3);
-    await expect(row(page, 'TRP-120881')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Propose waiver' })).toHaveCount(0);
+    await expect(row(page, '120881')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Waive penalty' })).toHaveCount(0);
     // EDIT-level role: no read-only badge.
     await expect(page.getByTestId('view-only')).toHaveCount(0);
   });
@@ -141,29 +141,29 @@ test.describe('POD pending list', () => {
 
     await expect(page.getByTestId('view-only')).toBeVisible();
     await expect(page.locator('table.table tbody tr')).toHaveCount(3);
-    await expect(page.getByRole('button', { name: 'Propose waiver' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Waive penalty' })).toHaveCount(0);
   });
 
-  test('proposing a waiver requires 30 characters and is routed to LEADERSHIP for approval', async ({ page }) => {
+  test('a penalty is waived on Leadership’s mail: the mail subject is required and the waiver applies at once', async ({ page }) => {
     await setRole(page, 'COMPLIANCE');
     await page.goto('/pod/pending');
 
-    await row(page, 'TRP-120874').getByRole('button', { name: 'Propose waiver' }).click();
-    const dialog = dialogFor(page, 'Propose a penalty waiver');
-    await expect(dialog.getByText('TRP-120874')).toBeVisible();
+    await row(page, '120874').getByRole('button', { name: 'Waive penalty' }).click();
+    const dialog = dialogFor(page, 'Waive the paperwork penalty');
+    await expect(dialog.getByText('120874')).toBeVisible();
     await expect(dialog.getByText('Sai Kripa Carriers')).toBeVisible();
 
-    const confirm = dialog.getByRole('button', { name: 'Request waiver' });
+    const confirm = dialog.getByRole('button', { name: 'Waive penalty' });
     await expect(confirm).toBeDisabled();
-    await dialog.locator('textarea').fill('Too short');
+    await dialog.locator('input').first().fill('Ok');
     await expect(confirm).toBeDisabled();
-    await dialog
-      .locator('textarea')
-      .fill('The transporter disputes the delay; branch confirms the depot was closed for a local holiday.');
+    await dialog.locator('input').first().fill('RE: Waiver approval for trip 120874');
     await expect(confirm).toBeEnabled();
     await confirm.click();
 
-    await expect(page.getByText('Sent to LEADERSHIP · the penalty keeps accruing until it is approved')).toBeVisible();
+    await expect(page.getByText(/Penalty waived for 120874/)).toBeVisible();
+    // The penalty is gone from the row, so there is nothing left to waive there.
+    await expect(row(page, '120874').getByRole('button', { name: 'Waive penalty' })).toHaveCount(0);
   });
 });
 
@@ -180,10 +180,10 @@ test.describe('POD receiving register', () => {
     await expect(statValue(page, 'podrecv-over-20-days')).toHaveText('2');
 
     await expect(page.locator('table.table tbody tr')).toHaveCount(4);
-    await expect(row(page, 'TRP-120881').getByRole('button', { name: 'Log a receipt' })).toBeVisible();
-    await expect(row(page, 'TRP-120874').getByRole('button', { name: 'Log a receipt' })).toBeVisible();
-    await expect(row(page, 'TRP-120869').getByRole('link', { name: 'Open' })).toBeVisible();
-    await expect(row(page, 'TRP-120855').getByRole('link', { name: 'Open' })).toBeVisible();
+    await expect(row(page, '120881').getByRole('button', { name: 'Log a receipt' })).toBeVisible();
+    await expect(row(page, '120874').getByRole('button', { name: 'Log a receipt' })).toBeVisible();
+    await expect(row(page, '120869').getByRole('link', { name: 'Open' })).toBeVisible();
+    await expect(row(page, '120855').getByRole('link', { name: 'Open' })).toBeVisible();
   });
 
   test('a role without pod.receive sees read-only text instead of the log button', async ({ page }) => {
@@ -191,17 +191,17 @@ test.describe('POD receiving register', () => {
     await page.goto('/pod/receiving');
 
     await expect(page.getByTestId('view-only')).toBeVisible();
-    await expect(row(page, 'TRP-120881').getByText('Branch logs receipts')).toBeVisible();
-    await expect(row(page, 'TRP-120881').getByRole('button', { name: 'Log a receipt' })).toHaveCount(0);
+    await expect(row(page, '120881').getByText('Branch logs receipts')).toBeVisible();
+    await expect(row(page, '120881').getByRole('button', { name: 'Log a receipt' })).toHaveCount(0);
     // The verify page itself is still viewable — the "Open" link isn't permission-gated.
-    await expect(row(page, 'TRP-120869').getByRole('link', { name: 'Open' })).toBeVisible();
+    await expect(row(page, '120869').getByRole('link', { name: 'Open' })).toBeVisible();
   });
 
   test('logging a receipt stops the clock', async ({ page }) => {
     await setRole(page, 'COMPLIANCE');
     await page.goto('/pod/receiving');
 
-    await row(page, 'TRP-120881').getByRole('button', { name: 'Log a receipt' }).click();
+    await row(page, '120881').getByRole('button', { name: 'Log a receipt' }).click();
     const dialog = dialogFor(page, 'Log a POD receipt');
     const confirm = dialog.getByRole('button', { name: 'Log receipt' });
     await expect(confirm).toBeDisabled();
@@ -215,9 +215,9 @@ test.describe('POD receiving register', () => {
     await expect(confirm).toBeEnabled();
     await confirm.click();
 
-    await expect(page.getByText(/logged · the clock has stopped for TRP-120881/)).toBeVisible();
-    await expect(row(page, 'TRP-120881').getByRole('link', { name: 'Open' })).toBeVisible();
-    await expect(row(page, 'TRP-120881').getByRole('button', { name: 'Log a receipt' })).toHaveCount(0);
+    await expect(page.getByText(/logged · the clock has stopped for 120881/)).toBeVisible();
+    await expect(row(page, '120881').getByRole('link', { name: 'Open' })).toBeVisible();
+    await expect(row(page, '120881').getByRole('button', { name: 'Log a receipt' })).toHaveCount(0);
   });
 });
 
@@ -226,7 +226,7 @@ test.describe('POD verify and approve', () => {
     await setRole(page, 'COMPLIANCE');
     await page.goto('/pod/t-120869/verify');
 
-    await expect(page.getByRole('heading', { name: /Proof of delivery · TRP-120869/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Proof of delivery · 120869/ })).toBeVisible();
     await expect(page.getByText('Received, not yet checked', { exact: true })).toBeVisible();
     await expect(page.getByText('LR-88201')).toBeVisible();
     // The page header's subtitle also mentions the transporter's name — this

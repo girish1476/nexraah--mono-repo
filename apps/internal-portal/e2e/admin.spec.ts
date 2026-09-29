@@ -14,8 +14,8 @@ import {
  * already covered by `rbac-nav.spec.ts`, so this file is about what ADMIN
  * can actually do, plus what LEADERSHIP's read-only view withholds.
  * `approvals` is a *different* module (OPS=VIEW, COMPLIANCE/FINANCE/
- * OPS/LEADERSHIP=EDIT, ADMIN=VIEW) — an administrator only gets an
- * audit view of that queue, never a decision.
+ * OPS/LEADERSHIP=EDIT) — and since 2026-09-26 an administrator holds every
+ * named permission, so it can decide that queue as well as read it.
  *
  * The shared mock db (`src/mocks/db.ts`) has no reset endpoint, so a few
  * tests here are designed around that constraint instead of ignoring it:
@@ -97,7 +97,8 @@ test.describe('control panel', () => {
 
     const rows = page.locator('table.table tbody tr');
     const trip = rows.filter({ hasText: 'TRIP' });
-    await expect(trip.locator('td[data-label="Prefix"]')).toHaveText('TRP-');
+    // Trip ids are plain numbers now: no prefix.
+    await expect(trip.locator('td[data-label="Prefix"]')).toHaveText('');
     await expect(trip.getByRole('button', { name: 'Edit' })).toBeVisible();
 
     const invoice = rows.filter({ hasText: 'INVOICE' });
@@ -141,8 +142,32 @@ test.describe('control panel', () => {
   });
 });
 
+/*
+ * 2026-09-26: the owner directed that an administrator can do every
+ * operation. These are the operations that used to be withheld — the fixed
+ * `payment.release` and `pod.waive` — asserted as controls that render, not
+ * clicked, since the mock db has no reset and other specs consume the rows.
+ */
+test.describe('ADMIN holds every operation', () => {
+  test('can release a cleared balance payment', async ({ page }) => {
+    await setRole(page, 'ADMIN');
+    await page.goto('/trips/t-120855');
+    const release = page.getByRole('button', { name: 'Release ₹19,040' });
+    await expect(release).toBeVisible();
+    await expect(release).toBeEnabled();
+  });
+
+  test('can waive a POD penalty', async ({ page }) => {
+    await setRole(page, 'ADMIN');
+    await page.goto('/pod/pending');
+    await expect(
+      page.locator('table.table tbody tr', { hasText: '120874' }).getByRole('button', { name: 'Waive penalty' }),
+    ).toBeVisible();
+  });
+});
+
 test.describe('approvals inbox', () => {
-  test('ADMIN sees the queue as a read-only audit view', async ({ page }) => {
+  test('ADMIN can decide items in the queue, not just read them', async ({ page }) => {
     await setRole(page, 'ADMIN');
     await page.goto('/admin/approvals');
 
@@ -162,15 +187,12 @@ test.describe('approvals inbox', () => {
     if (count === 0) {
       await expect(page.getByText('Nothing is waiting on a decision.')).toBeVisible();
     } else {
-      // ADMIN holds every module as EDIT (the sidebar shows the full
-      // console), but `approve.*` is deliberately withheld from its grants —
-      // no permission ADMIN holds ever matches an approval's
-      // requiredPermission, so ADMIN can see every row but decide none.
-      await expect(itemRows.first().getByRole('button', { name: 'Approve' })).toHaveCount(0);
-      await expect(itemRows.first().getByText(/Decided by/)).toBeVisible();
-      await expect(
-        page.getByText('Administrators see the queue as an audit view. Approving is not an administrator action.'),
-      ).toBeVisible();
+      // ADMIN holds every permission since 2026-09-26, including all four
+      // `approve.*`, so every row's requiredPermission matches and the
+      // decision controls render. Only asserted, never clicked: the mock db
+      // has no reset, and the LEADERSHIP test below already consumes a row.
+      await expect(page.getByRole('button', { name: 'Approve' }).first()).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Reject' }).first()).toBeVisible();
     }
   });
 

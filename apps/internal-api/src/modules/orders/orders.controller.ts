@@ -2,7 +2,48 @@ import { Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { SupabaseJwtGuard } from '../../common/guards/supabase-jwt.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
 import { OrdersService } from './orders.service';
+import type { OrderSearchFilters } from './orders.repository';
+
+/** The search fields a list request may carry, all optional free text. */
+interface OrderSearchQuery {
+  status?: string;
+  branch?: string;
+  client?: string;
+  open?: string;
+  q?: string;
+  clientName?: string;
+  vendor?: string;
+  from?: string;
+  to?: string;
+  truck?: string;
+  ref?: string;
+  branchName?: string;
+}
+
+/** A query value is only text when it is one string — `?q=a&q=b` arrives as an array. */
+function text(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim().slice(0, 100) : undefined;
+}
+
+function searchFilters(query: OrderSearchQuery): OrderSearchFilters {
+  return {
+    status: text(query.status),
+    branchId: text(query.branch),
+    clientId: text(query.client),
+    openOnly: query.open === '1' || query.open === 'true',
+    q: text(query.q),
+    clientName: text(query.clientName),
+    vendor: text(query.vendor),
+    from: text(query.from),
+    to: text(query.to),
+    truck: text(query.truck),
+    ref: text(query.ref),
+    branchName: text(query.branchName),
+  };
+}
 
 /**
  * Orders — the ten-step spine, read-only.
@@ -26,11 +67,7 @@ export class OrdersController {
   @Get()
   @RequirePermission('indent.view')
   list(
-    @Query('status') status?: string,
-    @Query('branch') branchId?: string,
-    @Query('client') clientId?: string,
-    @Query('open') open?: string,
-    @Query('q') q?: string,
+    @Query() query: OrderSearchQuery,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ) {
@@ -39,28 +76,24 @@ export class OrdersController {
     // reintroduce exactly the problem the endpoint exists to fix.
     const parsedLimit = Math.min(Math.max(Number(limit) || 50, 1), 200);
     const parsedOffset = Math.max(Number(offset) || 0, 0);
-    return this.orders.list({
-      status,
-      branchId,
-      clientId,
-      openOnly: open === '1' || open === 'true',
-      q,
-      limit: parsedLimit,
-      offset: parsedOffset,
-    });
+    return this.orders.list({ ...searchFilters(query), limit: parsedLimit, offset: parsedOffset });
   }
 
-  /** Counts per step, for the phase tabs — one round trip, not one per tab. */
+  /**
+   * Counts per step, for the phase tabs — one round trip, not one per tab.
+   * Takes the list's own search fields, so the tabs describe the orders the
+   * search found rather than every order there is. `status` is ignored here.
+   */
   @Get('counts')
   @RequirePermission('indent.view')
-  counts(@Query('branch') branchId?: string) {
-    return this.orders.counts(branchId);
+  counts(@Query() query: OrderSearchQuery) {
+    return this.orders.counts(searchFilters(query));
   }
 
   @Get(':id')
   @RequirePermission('indent.view')
-  getById(@Param('id') id: string) {
-    return this.orders.getById(id);
+  getById(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.orders.getById(id, user);
   }
 
   /**

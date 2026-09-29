@@ -438,4 +438,52 @@ export class VendorsRepository {
 
     return { totals, lanes };
   }
+
+  /**
+   * Every load ever awarded to this vendor, newest pickup first — the vendor
+   * side of "who placed what, and where did it get to".
+   *
+   * Driven from `indents`, not `trips`: an award is a placement from the day a
+   * vehicle is named, and that happens (`VEHICLE_PLACED`) before any trip
+   * exists. Starting from trips would hide exactly the loads still waiting on a
+   * vehicle. Trip and order are LEFT joins for the same reason.
+   */
+  findPlacements(vendorId: string) {
+    return this.db
+      .selectFrom('indents')
+      .innerJoin('clients', 'clients.id', 'indents.client_id')
+      .leftJoin('trips', 'trips.indent_id', 'indents.id')
+      .leftJoin('orders', 'orders.indent_id', 'indents.id')
+      .select([
+        'indents.id as indentId',
+        'indents.code as indentCode',
+        'indents.from_city as fromCity',
+        'indents.to_city as toCity',
+        'indents.material as material',
+        'indents.weight_kg as weightKg',
+        'indents.truck_type as truckType',
+        'indents.pickup_date as pickupDate',
+        'indents.stage as stage',
+        'indents.buy_rate as buyRatePaise',
+        'indents.vehicle_no as vehicleNo',
+        'indents.driver_name as driverName',
+        'indents.driver_licence as driverLicence',
+        'indents.reported_at as reportedAt',
+        'clients.name as clientName',
+        'trips.id as tripId',
+        'trips.code as tripCode',
+        'trips.delivered_at as deliveredAt',
+        'trips.pod_status as podStatus',
+        'trips.advance_paid as advancePaidPaise',
+        'trips.balance_paid as balancePaidPaise',
+        'orders.id as orderId',
+        'orders.order_no as orderNo',
+        'orders.status as orderStatus',
+        'orders.step_no as orderStep',
+      ])
+      .where('indents.vendor_id', '=', vendorId)
+      .orderBy('indents.pickup_date', 'desc')
+      .orderBy('indents.code', 'desc')
+      .execute();
+  }
 }

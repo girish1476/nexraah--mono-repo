@@ -1,11 +1,13 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ApiError, errorMessage, newIdempotencyKey } from '@/apis';
 import { ReleaseDialog } from '@/components/release-dialog';
 import { POD_STATUS_LABEL, POD_TONE } from '@/lib/documents';
 import { fmtDate, inr, pct } from '@/lib/format';
+import { downloadCsv, todayStamp } from '@/lib/export-csv';
+import { activeFilterCount, emptyFilters, FilterBar, FilterField, FilterValues, matchesAny } from '@/lib/list-filters';
 import {
   Column,
   DataTable,
@@ -42,6 +44,33 @@ const BILL_STATUS_LABEL: Record<VendorBill['status'], string> = {
  * it — and a bill cannot exist at all before its proof of delivery is
  * approved, which is enforced at insert.
  */
+const FILTER_FIELDS: FilterField[] = [
+  { kind: 'text', key: 'q', label: 'Search anything', placeholder: 'Bill, trip or transporter…' },
+  {
+    kind: 'select',
+    key: 'status',
+    label: 'Status',
+    allLabel: 'Any status',
+    options: [
+      { value: 'SUBMITTED', label: 'Submitted' },
+      { value: 'QUERIED', label: 'Queried' },
+      { value: 'ACCEPTED', label: 'Accepted' },
+    ],
+  },
+  {
+    kind: 'select',
+    key: 'variance',
+    label: 'Variance',
+    allLabel: 'Either',
+    options: [
+      { value: 'yes', label: 'Has a variance' },
+      { value: 'no', label: 'Matches our figure' },
+    ],
+  },
+  { kind: 'text', key: 'vendor', label: 'Transporter', placeholder: 'Transporter name' },
+  { kind: 'text', key: 'ref', label: 'Bill or trip number', placeholder: 'Bill or trip number' },
+];
+
 export default function BillsPage() {
   const can = useCan();
   const toast = useToast();
@@ -54,6 +83,7 @@ export default function BillsPage() {
   const [querying, setQuerying] = useState<VendorBill | null>(null);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  const [filters, setFilters] = useState<FilterValues>(() => emptyFilters(FILTER_FIELDS));
 
   const load = () => {
     setError(null);
@@ -108,6 +138,30 @@ export default function BillsPage() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const visible = useMemo(
+    () =>
+      (rows ?? []).filter(
+        (r) =>
+          (!filters.status || r.status === filters.status) &&
+          (!filters.variance || (filters.variance === 'yes' ? r.variancePaise !== 0 : r.variancePaise === 0)) &&
+          matchesAny(filters.q, r.billNo, r.tripCode, r.vendorName) &&
+          matchesAny(filters.vendor, r.vendorName) &&
+          matchesAny(filters.ref, r.billNo, r.tripCode),
+      ),
+    [rows, filters],
+  );
+
+  const exportRows = async () => {
+    downloadCsv(
+      `transporter-bills-${todayStamp()}.csv`,
+      ['Bill number', 'Bill date', 'Trip', 'Transporter', 'Freight (INR)', 'Charges (INR)', 'Their total (INR)', 'Our figure (INR)', 'Variance (INR)', 'Status'],
+      visible.map((r) => [
+        r.billNo, r.billDate?.slice(0, 10), r.tripCode, r.vendorName, r.freightPaise / 100, r.chargesPaise / 100,
+        r.totalPaise / 100, r.computedBalancePaise / 100, r.variancePaise / 100, r.status,
+      ]),
+    );
   };
 
   if (error) return <ErrorState message={error} retry={load} />;
@@ -217,16 +271,31 @@ export default function BillsPage() {
             { k: 'Bill value', id: 'bill-value', v: inr(rows.reduce((a, r) => a + r.totalPaise, 0)) },
           ]}
         />
+        <FilterBar
+          fields={FILTER_FIELDS}
+          values={filters}
+          onChange={setFilters}
+          onExport={exportRows}
+          resultNote={`${visible.length} bill${visible.length === 1 ? '' : 's'} found`}
+        />
+
         <Panel pad={false}>
           <DataTable
             columns={columns}
-            rows={rows}
+            rows={visible}
             rowKey={(r) => r.id}
             empty={
+              activeFilterCount(filters) > 0 ? (
+                <EmptyState
+                  title="No bill matches this search"
+                  hint="Loosen one of the boxes above, or use Clear to start again."
+                />
+              ) : (
               <EmptyState
                 title="No bills submitted"
                 hint="A transporter's bill appears here once they submit it for a trip whose proof of delivery has been approved."
               />
+              )
             }
           />
         </Panel>
