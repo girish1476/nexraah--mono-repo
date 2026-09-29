@@ -33,7 +33,6 @@
 export type OrderStatus =
   | 'FAILED'
   | 'POD_FORFEITED'
-  | 'CANCELLED'
   | 'INDENT_CREATED'
   | 'TRIP_GENERATED'
   | 'LR_ISSUED'
@@ -67,8 +66,6 @@ export function stepNoFor(status: OrderStatus): number {
   // Nine of ten is the truth: it reached step 9's position and will never
   // reach step 10, because there is no balance left to release.
   if (status === 'POD_FORFEITED') return 9;
-  // A cancelled order stops wherever it was raised: one of ten.
-  if (status === 'CANCELLED') return 1;
   const i = ORDER_LADDER.indexOf(status);
   return i === -1 ? 1 : i + 1;
 }
@@ -82,7 +79,7 @@ export function stepNoFor(status: OrderStatus): number {
  * it, which is the opposite of what that queue is for.
  */
 export function isTerminal(status: OrderStatus): boolean {
-  return status === 'BALANCE_RELEASED' || status === 'POD_FORFEITED' || status === 'CANCELLED';
+  return status === 'BALANCE_RELEASED' || status === 'POD_FORFEITED';
 }
 
 /**
@@ -148,8 +145,6 @@ export interface LadderFacts {
 export function ladder(facts: LadderFacts): OrderStatus {
   const { indentStage, failureCause, trip, advanceDocsUploaded } = facts;
 
-  // The client cancelled the load: the order ends here, whatever it had reached.
-  if (indentStage === 'CANCELLED') return 'CANCELLED';
   if (failureCause && indentStage === 'OPEN') return 'FAILED';
   if (indentStage !== 'TRIP_CREATED') return 'INDENT_CREATED';
   if (!trip) return 'TRIP_GENERATED';

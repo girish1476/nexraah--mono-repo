@@ -32,8 +32,6 @@ select v.name, v.email, r.id, b.id
     -- lane, and a lane spans branches, so scoping this desk to one office
     -- would hide half the lanes it prices.
     ('Neha Bhatt',   'neha@nexraah.test',   'BD',         null::text),
-    -- Loading supervisor: unbranched, so any trip can be assigned to them.
-    ('Ravi Kumar',   'ravi@nexraah.test',   'LOADING_SUPERVISOR', null::text),
     ('Arjun Kapoor', 'arjun@nexraah.test',  'LEADERSHIP', null::text),
     ('Dev Admin',    'dev@nexraah.test',    'ADMIN',      null::text)
   ) as v(name, email, role_code, branch_code)
@@ -106,8 +104,8 @@ select i.code, c.id, b.id, 'Bengaluru', 'Chennai', i.material,
        i.weight_kg, '32FT_SXL', current_date + i.offs, 2, 3400000,
        'CONTRACT', rc.id, 2800000, 3200000, 70, i.stage
   from (values
-    ('4471','Packaged food', 18000, 1, 'OPEN'),
-    ('4472','Packaged food', 17500, -3,'TRIP_CREATED')
+    ('IND-4471','Packaged food', 18000, 1, 'OPEN'),
+    ('IND-4472','Packaged food', 17500, -3,'TRIP_CREATED')
   ) as i(code, material, weight_kg, offs, stage)
   cross join lateral (select id from clients  where code = 'CLT-0001') c
   cross join lateral (select id from branches where code = 'BLR')      b
@@ -118,7 +116,7 @@ on conflict (code) do nothing;
 insert into quotes (code, indent_id, vendor_id, amount, band_position, status)
 select 'BID-00001', i.id, v.id, 3050000, 'IN_BAND', 'SUBMITTED'
   from indents i, vendors v
- where i.code = '4471' and v.code = 'VND-0001'
+ where i.code = 'IND-4471' and v.code = 'VND-0001'
 on conflict (code) do nothing;
 
 -- One trip delivered and awaiting POD — the state both money gates key off.
@@ -126,12 +124,12 @@ insert into trips (code, indent_id, client_id, vendor_id, branch_id, vehicle_no,
                    vehicle_type, capacity_kg, driver_name, lane, weight_kg,
                    transit_days_required, buy_rate, stage, delivered_at,
                    pod_status, advance_paid)
-select '100001', i.id, i.client_id, v.id, i.branch_id, 'KA01AB5678',
+select 'TRP-00001', i.id, i.client_id, v.id, i.branch_id, 'KA01AB5678',
        '20FT', 9000, 'Ramesh Kumar', 'Bengaluru-Chennai', 17500,
        2, 3000000, 'DELIVERED', now() - interval '22 days',
        'PENDING', 2100000
   from indents i, vendors v
- where i.code = '4472' and v.code = 'VND-0001'
+ where i.code = 'IND-4472' and v.code = 'VND-0001'
 on conflict (code) do nothing;
 
 -- The fixture rows above hardcode their own codes rather than going through
@@ -144,8 +142,8 @@ on conflict (code) do nothing;
 -- code actually used above keeps the fixtures and the live app out of each
 -- other's way. `INDENT` already starts past 4471/4472 (4468 < both, but not
 -- by much) — bumped too so a short burst of real indents doesn't catch up to
--- them either. `TRIP` is untouched: the fixture trip `100001` sits below the
--- `100241` the series starts at.
+-- them either. `TRIP` is untouched: `TRP-00001` doesn't collide with the
+-- `TRP-100241`-format codes that series actually issues.
 update number_series set next_value = greatest(next_value, 4)    where key = 'VENDOR';
 update number_series set next_value = greatest(next_value, 3)    where key = 'CLIENT';
 update number_series set next_value = greatest(next_value, 4473) where key = 'INDENT';
@@ -153,7 +151,7 @@ update number_series set next_value = greatest(next_value, 2)    where key = 'QU
 
 commit;
 
--- Delivered 22 days ago with pod_status PENDING puts trip 100001 two days past the
+-- Delivered 22 days ago with pod_status PENDING puts TRP-00001 two days past the
 -- BR-24 threshold, so the penalty accrual and the blocked balance gate both have
 -- something real to render on first load.
 

@@ -5,9 +5,9 @@ import { setRole } from './helpers';
  * Demand · Indents — `/indents`, `/indents/new`, `/indents/[id]` (part 04).
  *
  * Fixture data (src/mocks/db.ts `db.indents`): four seeded indents —
- * 4471 (Sanghvi Metals, OPEN, SPOT, 3 quotes), 4468 (Berger Paints,
- * OPEN, failureCause ONLY_ABOVE_BAND_QUOTES, 1 quote), 4462 (Apex
- * Ceramics, OPEN, 0 quotes), 4443 (Berger Paints, TRIP_CREATED, 0
+ * IND-4471 (Sanghvi Metals, OPEN, SPOT, 3 quotes), IND-4468 (Berger Paints,
+ * OPEN, failureCause ONLY_ABOVE_BAND_QUOTES, 1 quote), IND-4462 (Apex
+ * Ceramics, OPEN, 0 quotes), IND-4443 (Berger Paints, TRIP_CREATED, 0
  * quotes, buy rate already written). `indent.create` (EDIT) is seeded to
  * OPS and COMPLIANCE (lib/permissions.ts SEED_GRANTS) — Operations gained it
  * when it absorbed the branch manager — and FINANCE/LEADERSHIP hold VIEW.
@@ -39,28 +39,28 @@ test.describe('indents list', () => {
     await setRole(page, 'OPS');
     await page.goto('/indents');
 
-    await expect(page.getByRole('link', { name: '4471' })).toBeVisible();
-    await expect(page.getByRole('link', { name: '4468' })).toBeVisible();
-    await expect(page.getByRole('link', { name: '4462' })).toBeVisible();
-    await expect(page.getByRole('link', { name: '4443' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'IND-4471' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'IND-4468' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'IND-4462' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'IND-4443' })).toBeVisible();
     // OPS holds indent.create since the merge, so the link is offered.
     await expect(page.getByRole('link', { name: 'Raise an indent' })).toHaveCount(1);
 
     // failureCause renders as a red tag next to the stage tag.
     await expect(page.getByText('only above band quotes')).toBeVisible();
 
-    const stageFilter = page.locator('select[data-filter="stage"]');
+    const stageFilter = page.locator('main select');
     await stageFilter.selectOption('OPEN');
-    await expect(page.getByRole('link', { name: '4471' })).toBeVisible();
-    await expect(page.getByRole('link', { name: '4468' })).toBeVisible();
-    await expect(page.getByRole('link', { name: '4462' })).toBeVisible();
-    await expect(page.getByRole('link', { name: '4443' })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'IND-4471' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'IND-4468' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'IND-4462' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'IND-4443' })).toHaveCount(0);
 
     await stageFilter.selectOption('TRIP_CREATED');
-    await expect(page.getByRole('link', { name: '4443' })).toBeVisible();
-    await expect(page.getByRole('link', { name: '4471' })).toHaveCount(0);
-    await expect(page.getByRole('link', { name: '4468' })).toHaveCount(0);
-    await expect(page.getByRole('link', { name: '4462' })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'IND-4443' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'IND-4471' })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'IND-4468' })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'IND-4462' })).toHaveCount(0);
   });
 
   test('FINANCE (VIEW-only) sees the read-only badge, no create control, and a guarded new-indent page', async ({
@@ -138,65 +138,6 @@ test.describe('raise an indent', () => {
     await expect(page.getByRole('button', { name: 'Raise indent' })).toBeEnabled();
   });
 
-  /*
-   * 2026-09-26: the bid band is the client's, not the indent's — it lives on
-   * the rate-card lane and is copied onto the indent by the server. Advance %
-   * is an optional override of the transporter's standing policy.
-   */
-  test('the form no longer asks for a bid band, and advance % is optional and starts blank', async ({ page }) => {
-    await setRole(page, 'OPS');
-    await page.goto('/indents/new');
-
-    await expect(page.getByText('Bid minimum')).toHaveCount(0);
-    await expect(page.getByText('Bid maximum')).toHaveCount(0);
-    await expect(page.getByText('Advance % for this order (optional)')).toBeVisible();
-    await expect(page.locator('input[name="advancePct"]')).toHaveValue('');
-  });
-
-  test('an indent on a rate-card lane inherits its bid band, and a blank advance leaves the transporter’s policy to apply', async ({
-    page,
-  }) => {
-    await setRole(page, 'OPS');
-    await page.goto('/indents/new');
-
-    await page.locator('select[name="clientId"]').selectOption({ label: 'Berger Paints · CONTRACT' });
-    await page.locator('input[name="fromCity"]').fill('Kolkata');
-    await page.locator('input[name="toCity"]').fill('Nashik');
-    await page.locator('input[name="material"]').fill('Paint drums');
-    await page.locator('input[name="weightTn"]').fill('12');
-    await page.locator('input[name="truckType"]').fill('32 ft SXL');
-    await page.locator('input[name="pickupDate"]').fill('2026-09-10');
-    await page.locator('input[name="sellRupees"]').fill('64200');
-    await page.getByRole('button', { name: 'Raise indent' }).click();
-
-    await expect(page).toHaveURL(/\/indents\/i-\d+$/);
-    // The Kolkata → Nashik lane carries ₹55,000 – ₹60,000; nothing was typed.
-    await expect(factValue(page, 'Band')).toHaveText(/₹55,000\s*–\s*₹60,000/);
-    await expect(factValue(page, 'Advance %')).toHaveText('Transporter’s standing policy · applies once awarded');
-  });
-
-  test('a route the rate card does not cover gets no band, and a typed advance % is kept as this order’s own', async ({
-    page,
-  }) => {
-    await setRole(page, 'OPS');
-    await page.goto('/indents/new');
-
-    await page.locator('select[name="clientId"]').selectOption({ label: 'Berger Paints · CONTRACT' });
-    await page.locator('input[name="fromCity"]').fill('Nashik');
-    await page.locator('input[name="toCity"]').fill('Surat');
-    await page.locator('input[name="material"]').fill('Cotton bales');
-    await page.locator('input[name="weightTn"]').fill('12');
-    await page.locator('input[name="truckType"]').fill('32 ft SXL');
-    await page.locator('input[name="pickupDate"]').fill('2026-09-10');
-    await page.locator('input[name="sellRupees"]').fill('40000');
-    await page.locator('input[name="advancePct"]').fill('25');
-    await page.getByRole('button', { name: 'Raise indent' }).click();
-
-    await expect(page).toHaveURL(/\/indents\/i-\d+$/);
-    await expect(factValue(page, 'Band')).toHaveText('No limits set on the client’s rate card for this lane');
-    await expect(factValue(page, 'Advance %')).toHaveText('25% · set for this order');
-  });
-
   test('a valid contract indent is created and lands on its detail page', async ({ page }) => {
     await setRole(page, 'OPS');
     await page.goto('/indents/new');
@@ -214,7 +155,7 @@ test.describe('raise an indent', () => {
     await page.getByRole('button', { name: 'Raise indent' }).click();
 
     await expect(page).toHaveURL(/\/indents\/i-\d+$/);
-    await expect(page.getByRole('heading', { name: '4472' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'IND-04472' })).toBeVisible();
 
     await expect(factValue(page, 'Client')).toHaveText('Berger Paints');
     await expect(factValue(page, 'Branch')).toHaveText('Nashik');
@@ -232,7 +173,7 @@ test.describe('indent detail', () => {
     await setRole(page, 'OPS');
     await page.goto('/indents/i-4471');
 
-    await expect(page.getByRole('heading', { name: '4471' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'IND-4471' })).toBeVisible();
     await expect(page.getByText(/Bhiwandi.*Hyderabad.*32 ft SXL.*21 MT/)).toBeVisible();
 
     await expect(factValue(page, 'Client')).toHaveText('Sanghvi Metals');

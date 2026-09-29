@@ -76,11 +76,6 @@ export interface RateCardLane {
   truckType: string;
   ratePaise: number;
   transitDays: number;
-  /** Whether a late delivery on this lane is charged to the transporter, and what a late day costs. */
-  transitPenaltyApplies: boolean;
-  transitPenaltyPerDayPaise: number;
-  /** The subject of the BD/Leadership mail this rate was approved against. */
-  approvalMailSubject?: string | null;
   reportingRule: 'SAME_DAY' | 'NEXT_DAY' | 'SCHEDULED';
   validFrom: string;
   validTo: string;
@@ -92,14 +87,6 @@ export interface RateCardLane {
   supplySource: SupplySource | null;
   supplySourceLabel: string | null;
   supplyRemarks: string | null;
-  /**
-   * The floor and ceiling a transporter quote is judged against on this lane,
-   * copied onto every indent raised against it. Null until somebody sets it —
-   * setting the first one is direct, changing one that exists goes to
-   * Leadership.
-   */
-  bidMinPaise: number | null;
-  bidMaxPaise: number | null;
 }
 
 export type ClientDraft = Omit<Client, 'id' | 'code' | 'status' | 'outstandingPaise'>;

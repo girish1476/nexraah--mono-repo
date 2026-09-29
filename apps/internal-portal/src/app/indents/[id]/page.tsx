@@ -28,9 +28,7 @@ import {
   useCan,
   useToast,
 } from '@/lib/ui';
-import { listVendors } from '@/app/vendors/apis';
-import type { VendorListRow } from '@/app/vendors/types';
-import { awardQuote, cancelIndent, createTrip, getIndent, reassignTransporter, recordPlacement, recordQuote } from '../apis';
+import { awardQuote, createTrip, getIndent, recordPlacement } from '../apis';
 import { IndentDetail, Quote } from '../types';
 
 /** Stage order for the progress stepper — position, not identity, is what "complete" means. */
@@ -62,12 +60,6 @@ export default function IndentDetailPage() {
     remarks: '',
   });
   const [busy, setBusy] = useState(false);
-  const [quoteOpen, setQuoteOpen] = useState(false);
-  const [cancelOpen, setCancelOpen] = useState(false);
-  const [reassignOpen, setReassignOpen] = useState(false);
-  const [reasonText, setReasonText] = useState('');
-  const [vendors, setVendors] = useState<VendorListRow[]>([]);
-  const [quoteForm, setQuoteForm] = useState({ vendorId: '', amountRupees: '', truckRegistration: '', remarks: '' });
 
   const load = () => {
     setError(null);
@@ -80,11 +72,7 @@ export default function IndentDetailPage() {
     try {
       const updated = await awardQuote(id, quote.id);
       setIndent(updated);
-      toast(
-        updated.tripCode
-          ? `Awarded to ${quote.vendorName} at ${inr(quote.amountPaise)} · trip ${updated.tripCode} generated — allocate the vehicle next`
-          : `Awarded to ${quote.vendorName} at ${inr(quote.amountPaise)} · buy rate written`,
-      );
+      toast(`Awarded to ${quote.vendorName} at ${inr(quote.amountPaise)} · buy rate written`);
     } catch (e) {
       if (e instanceof ApprovalRequiredError) {
         setAwaitingApproval(quote.id);
@@ -97,74 +85,6 @@ export default function IndentDetailPage() {
     } finally {
       setBusy(false);
     }
-  };
-
-  const onCancel = async () => {
-    setBusy(true);
-    try {
-      setIndent(await cancelIndent(id, reasonText.trim()));
-      setCancelOpen(false);
-      setReasonText('');
-      toast('Indent cancelled — the remark is on its record');
-    } catch (e) {
-      toast(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const onReassign = async () => {
-    setBusy(true);
-    try {
-      setIndent(await reassignTransporter(id, reasonText.trim()));
-      setReassignOpen(false);
-      setReasonText('');
-      toast('Transporter taken off — enter or accept another quote to place the load again');
-    } catch (e) {
-      toast(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const openQuoteDialog = () => {
-    setQuoteForm({ vendorId: '', amountRupees: '', truckRegistration: '', remarks: '' });
-    setQuoteOpen(true);
-    listVendors({ status: 'ACTIVE' })
-      .then(setVendors)
-      .catch((e) => toast(errorMessage(e)));
-  };
-
-  const onRecordQuote = async () => {
-    const amountPaise = Math.round(Number(quoteForm.amountRupees) * 100);
-    if (!quoteForm.vendorId || !Number.isFinite(amountPaise) || amountPaise < 1) return;
-    setBusy(true);
-    try {
-      const updated = await recordQuote(id, {
-        vendorId: quoteForm.vendorId,
-        amountPaise,
-        truckRegistration: quoteForm.truckRegistration.trim() || undefined,
-        remarks: quoteForm.remarks.trim() || undefined,
-      });
-      setIndent(updated);
-      setQuoteOpen(false);
-      toast('Quote entered — it now ranks with the others below');
-    } catch (e) {
-      toast(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const openPlacement = () => {
-    const awarded = indent?.quotes.find((q) => q.id === indent.awardedQuoteId);
-    setPlacement((p) => ({
-      ...p,
-      vehicleNo: indent?.vehicleNo ?? awarded?.truckRegistration ?? p.vehicleNo,
-      driverName: indent?.driverName ?? p.driverName,
-      driverLicence: indent?.driverLicence ?? p.driverLicence,
-    }));
-    setPlacementOpen(true);
   };
 
   const onPlacement = async () => {
@@ -217,25 +137,14 @@ export default function IndentDetailPage() {
     ['Pickup', fmtDate(indent.pickupDate)],
     ['Transit days', indent.transitDays],
     ['Reporting', indent.reportingRule.replace(/_/g, ' ').toLowerCase()],
-    [
-      'Advance %',
-      indent.advancePctOverridden
-        ? `${indent.advancePct}% · set for this order`
-        : indent.vendorId
-          ? `${indent.advancePct}% · transporter’s standing policy`
-          : 'Transporter’s standing policy · applies once awarded',
-    ],
+    ['Advance %', `${indent.advancePct}%`],
   ];
-  const bandText =
-    indent.bidMinPaise !== null && indent.bidMaxPaise !== null
-      ? `${inr(indent.bidMinPaise)} – ${inr(indent.bidMaxPaise)}`
-      : null;
   const progress = [
     { label: 'Raised', done: true },
     { label: 'Quotes in', done: indent.quotes.length > 0 },
-    { label: 'Bid accepted', done: stagePosition >= STAGE_ORDER.indexOf('VENDOR_ASSIGNED') },
-    { label: 'Trip generated', done: stagePosition >= STAGE_ORDER.indexOf('TRIP_CREATED') },
-    { label: 'Vehicle allocated', done: !!indent.vehicleNo },
+    { label: 'Awarded', done: stagePosition >= STAGE_ORDER.indexOf('VENDOR_ASSIGNED') },
+    { label: 'Placed', done: stagePosition >= STAGE_ORDER.indexOf('VEHICLE_PLACED') },
+    { label: 'Trip created', done: stagePosition >= STAGE_ORDER.indexOf('TRIP_CREATED') },
   ];
   // `POST /indents/:id/award` is `indent.manage` on the server. Including
   // `indent.view` here handed Finance and Leadership an Award button that
@@ -319,48 +228,15 @@ export default function IndentDetailPage() {
         sub={`${indent.fromCity} → ${indent.toCity} · ${indent.truckType} · ${indent.weightTn} MT`}
         module="indents"
         right={
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {indent.stage === 'TRIP_CREATED' && can('indent.reassign') && (
-              <button
-                className="btn btn-secondary"
-                onClick={() => {
-                  setReasonText('');
-                  setReassignOpen(true);
-                }}
-              >
-                Reassign transporter
-              </button>
-            )}
-            {indent.stage !== 'CANCELLED' && can('indent.manage') && (
-              <button
-                className="btn btn-secondary"
-                onClick={() => {
-                  setReasonText('');
-                  setCancelOpen(true);
-                }}
-              >
-                Cancel indent
-              </button>
-            )}
-            <Link href={`/orders/${indent.id}`} className="btn btn-secondary">
-              View order
-            </Link>
-          </div>
+          <Link href={`/orders/${indent.id}`} className="btn btn-secondary">
+            View order
+          </Link>
         }
       />
       <PageIntro
-        what="Everything about one indent in one place — the transporter quotes with their band position, the buy rate locked in the moment a bid is accepted, the trip that accepting generates, and the vehicle allocated to it."
-        who="Operations enters and accepts quotes and allocates the vehicle; everyone else with indent access can see the full record."
+        what="Everything about one indent in one place — the transporter quotes with their band position, the buy rate locked in the moment one is awarded, and the vehicle placement and trip that follow."
+        who="Operations awards quotes and records placement; everyone else with indent access can see the full record."
       />
-
-      {indent.stage === 'CANCELLED' && (
-        <div style={{ marginBottom: 16 }}>
-          <Banner tone="red" title="This indent was cancelled">
-            {indent.cancelReason ?? 'No remark was recorded.'}
-            {indent.cancelledAt ? ` · ${fmtDateTime(indent.cancelledAt)}` : ''}
-          </Banner>
-        </div>
-      )}
 
       <Split
         aside={
@@ -369,35 +245,19 @@ export default function IndentDetailPage() {
               <FactList facts={indentFacts.filter((f): f is [string, ReactNode] => f !== null)} />
             </Panel>
 
-            <Panel
-              title="Quotes"
-              right={
-                indent.stage === 'OPEN' && canAward ? (
-                  <button className="btn btn-sm" onClick={openQuoteDialog}>
-                    Enter a quote
-                  </button>
-                ) : undefined
-              }
-              pad={false}
-            >
-              <div className="muted" style={{ fontSize: 11.5, padding: '10px 14px 0' }}>
-                {bandText ? `Band ${bandText}` : 'No bid limits on this lane'}
-              </div>
-              <DataTable
-                columns={columns}
-                rows={[...indent.quotes].sort((a, b) => a.amountPaise - b.amountPaise)}
-                rowKey={(r) => r.id}
-                empty={
-                  <EmptyState
-                    title="No quotes yet"
-                    hint="Transporters quote from their own portal, or Operations can enter a quote a transporter gave by phone with “Enter a quote”. Once quotes are in, they’re ranked cheapest first with their band position, ready to accept."
-                  />
-                }
+            <Panel title="Pricing" pad={false}>
+              <FactList
+                facts={[
+                  ['Rate source', indent.rateSource],
+                  ['Client sell rate', inr(indent.sellRatePaise)],
+                  ['Sourcing rate', indent.sourcingRatePaise ? inr(indent.sourcingRatePaise) : '—'],
+                  ['Band', `${inr(indent.bidMinPaise)} – ${inr(indent.bidMaxPaise)}`],
+                  ['Buy rate', indent.buyRatePaise ? inr(indent.buyRatePaise) : 'not yet awarded'],
+                ]}
               />
               <div className="muted" style={{ fontSize: 11.5, padding: '10px 14px', lineHeight: 1.45 }}>
-                A quote below the floor never reaches this desk — it is refused at entry in the transporter portal
-                and never persisted. An above-band quote is kept and shown, because it is the honest market rate on
-                that lane.
+                The rate you’re charging the client is internal — transporters never see it.
+                {indent.bandLocked && ' The band is locked and cannot be widened.'}
               </div>
             </Panel>
           </>
@@ -421,19 +281,30 @@ export default function IndentDetailPage() {
           )}
         </Panel>
 
-        <Panel title="Pricing" pad={false}>
-          <FactList
-            facts={[
-              ['Rate source', indent.rateSource],
-              ['Client sell rate', inr(indent.sellRatePaise)],
-              ['Sourcing rate', indent.sourcingRatePaise ? inr(indent.sourcingRatePaise) : '—'],
-              ['Band', bandText ?? 'No limits set on the client’s rate card for this lane'],
-              ['Buy rate', indent.buyRatePaise ? inr(indent.buyRatePaise) : 'not yet awarded'],
-            ]}
+        <Panel
+          title="Quotes"
+          right={
+            <span className="muted" style={{ fontSize: 11.5 }}>
+              Band {inr(indent.bidMinPaise)} – {inr(indent.bidMaxPaise)}
+            </span>
+          }
+          pad={false}
+        >
+          <DataTable
+            columns={columns}
+            rows={[...indent.quotes].sort((a, b) => a.amountPaise - b.amountPaise)}
+            rowKey={(r) => r.id}
+            empty={
+              <EmptyState
+                title="No quotes yet"
+                hint="Transporters quote against this indent from their own portal. Once quotes come in, they’re ranked cheapest first with their band position, ready to award."
+              />
+            }
           />
           <div className="muted" style={{ fontSize: 11.5, padding: '10px 14px', lineHeight: 1.45 }}>
-            The rate you’re charging the client is internal — transporters never see it.
-            {indent.bandLocked && ' The band is locked and cannot be widened.'}
+            A quote below the floor never reaches this desk — it is refused at entry in the transporter portal
+            and never persisted. An above-band quote is kept and shown, because it is the honest market rate on
+            that lane.
           </div>
         </Panel>
 
@@ -441,7 +312,7 @@ export default function IndentDetailPage() {
           <AdvancePanel indentId={indent.id} onReleased={load} />
         )}
 
-        <Panel title="Vehicle allocation">
+        <Panel title="Placement">
           {indent.vehicleNo ? (
             <FactList
               facts={[
@@ -453,15 +324,15 @@ export default function IndentDetailPage() {
             />
           ) : (
             <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }}>
-              {indent.stage === 'TRIP_CREATED'
-                ? `Trip ${indent.tripCode ?? ''} is generated. Allocate the vehicle: registration, driver, licence and the reported-at time. Where reporting is later than the client’s requirement, the trip is flagged as a transit delay in its own right.`
-                : 'Accept a quote first. Accepting a bid generates the trip, and the vehicle is allocated on it.'}
+              Recording the placed vehicle captures registration, driver, licence and the reported-at time. Where
+              reporting is later than the client’s requirement, the trip is flagged as a transit delay in its own
+              right.
             </p>
           )}
           <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-            {(indent.stage === 'VENDOR_ASSIGNED' || indent.stage === 'TRIP_CREATED') && can('indent.manage') && (
-              <button className="btn" onClick={openPlacement}>
-                {indent.vehicleNo ? 'Change vehicle' : 'Allocate vehicle'}
+            {indent.stage === 'VENDOR_ASSIGNED' && can('indent.manage') && (
+              <button className="btn" onClick={() => setPlacementOpen(true)}>
+                Record vehicle placed
               </button>
             )}
             {indent.stage === 'VEHICLE_PLACED' && can('indent.manage') && (
@@ -470,7 +341,7 @@ export default function IndentDetailPage() {
               </button>
             )}
             {indent.stage === 'TRIP_CREATED' && (
-              <Link href={indent.tripId ? `/trips/${indent.tripId}` : '/trips'} className="btn btn-secondary">
+              <Link href="/trips" className="btn btn-secondary">
                 Open the trip
               </Link>
             )}
@@ -479,86 +350,9 @@ export default function IndentDetailPage() {
       </Split>
 
       <Dialog
-        open={cancelOpen}
-        title="Cancel this indent"
-        body="The load is closed and any quote or trip made for it is set aside. A remark is required and stays on its record."
-        confirmLabel="Cancel indent"
-        confirmDisabled={reasonText.trim().length < 5}
-        busy={busy}
-        onConfirm={onCancel}
-        onClose={() => setCancelOpen(false)}
-      >
-        <Field label="Remark" required hint="Why it is being cancelled — for example, the client withdrew the load.">
-          <textarea rows={3} value={reasonText} onChange={(e) => setReasonText(e.target.value)} />
-        </Field>
-      </Dialog>
-
-      <Dialog
-        open={reassignOpen}
-        title="Reassign the transporter"
-        body="The load comes off this transporter and reopens for quotes; its trip keeps its number and is set up again for whoever is given it. Only possible before the truck leaves and before any advance is paid."
-        confirmLabel="Take it off this transporter"
-        confirmDisabled={reasonText.trim().length < 5}
-        busy={busy}
-        onConfirm={onReassign}
-        onClose={() => setReassignOpen(false)}
-      >
-        <Field label="Why" required hint="For example, the transporter could not provide the truck.">
-          <textarea rows={3} value={reasonText} onChange={(e) => setReasonText(e.target.value)} />
-        </Field>
-      </Dialog>
-
-      <Dialog
-        open={quoteOpen}
-        title="Enter a quote"
-        body="Use this when a transporter gave their price by phone or message instead of quoting from their own portal. It is ranked with the others and is accepted from this page."
-        confirmLabel="Enter quote"
-        confirmDisabled={!quoteForm.vendorId || !(Number(quoteForm.amountRupees) > 0)}
-        busy={busy}
-        onConfirm={onRecordQuote}
-        onClose={() => setQuoteOpen(false)}
-      >
-        <FormGrid>
-          <Field label="Transporter" required hint="Only cleared, active transporters can be quoted for.">
-            <select value={quoteForm.vendorId} onChange={(e) => setQuoteForm({ ...quoteForm, vendorId: e.target.value })}>
-              <option value="">Choose a transporter…</option>
-              {vendors
-                .filter((v) => !indent.quotes.some((q) => q.vendorId === v.id))
-                .map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.legalName} · {v.baseCity}
-                  </option>
-                ))}
-            </select>
-          </Field>
-          <Field
-            label="Quote (₹)"
-            required
-            hint={bandText ? `Accepted range for this lane: ${bandText}. Above it goes to approval.` : undefined}
-          >
-            <input
-              type="number"
-              min={1}
-              value={quoteForm.amountRupees}
-              onChange={(e) => setQuoteForm({ ...quoteForm, amountRupees: e.target.value })}
-            />
-          </Field>
-          <Field label="Truck registration" hint="Optional — the truck they expect to send.">
-            <input
-              value={quoteForm.truckRegistration}
-              onChange={(e) => setQuoteForm({ ...quoteForm, truckRegistration: e.target.value })}
-            />
-          </Field>
-          <Field label="Note">
-            <input value={quoteForm.remarks} onChange={(e) => setQuoteForm({ ...quoteForm, remarks: e.target.value })} />
-          </Field>
-        </FormGrid>
-      </Dialog>
-
-      <Dialog
         open={placementOpen}
-        title="Allocate vehicle"
-        confirmLabel="Allocate vehicle"
+        title="Record vehicle placed"
+        confirmLabel="Record placement"
         confirmDisabled={!placement.vehicleNo || !placement.driverName || !placement.driverLicence}
         busy={busy}
         onConfirm={onPlacement}

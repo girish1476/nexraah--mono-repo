@@ -1,9 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { NumberingService } from '../numbering/numbering.service';
 import { ConfigRepository } from '../config/config.repository';
-import { OrdersRepository, type OrderListFilters, type OrderSearchFilters } from './orders.repository';
+import { OrdersRepository, type OrderListFilters } from './orders.repository';
 import { ladder as pureLadder, isTerminal, stepNoFor } from './order-ladder';
-import { buildOrderPayments } from './order-payments';
 import type { OrderStatus } from '../../db/types';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
 
@@ -121,8 +120,13 @@ export class OrdersService {
     const existing = await this.repo.getByIndentId(indentId);
     if (existing) return existing;
 
+    // `issue()` takes a row lock on the series (`.forUpdate()`), so it has to
+    // run inside a transaction — and the insert belongs in the same one, or a
+    // failure between the two burns an order number.
     await this.repo.transaction().execute(async (trx) => {
+      const orderNo = await this.numbering.issue(trx, 'ORDER');
       await this.repo.insertOrder(trx, {
+        orderNo,
         indentId,
         clientId: inputs.indent.clientId,
         branchId: inputs.indent.branchId,
@@ -152,10 +156,6 @@ export class OrdersService {
         indentCode: r.indentCode,
         clientName: r.clientName,
         lane: `${r.fromCity} → ${r.toCity}`,
-        fromCity: r.fromCity,
-        toCity: r.toCity,
-        vendorName: r.vendorName,
-        vehicleNo: r.vehicleNo,
         pickupDate: r.pickupDate,
         sellRatePaise: r.sellRatePaise,
         branchName: r.branchName,
@@ -173,8 +173,8 @@ export class OrdersService {
     };
   }
 
-  async counts(filters: OrderSearchFilters = {}) {
-    return this.repo.countsByStatus(filters);
+  async counts(branchId?: string) {
+    return this.repo.countsByStatus(branchId);
   }
 
   /**
@@ -186,35 +186,13 @@ export class OrdersService {
    * indent detail page passes its own id), never the order's own id, which
    * no other screen knows.
    */
-  async getById(ref: string, user?: AuthenticatedUser) {
+  async getById(ref: string) {
     const order =
       (await this.repo.getById(ref)) ??
       (await this.repo.getByIndentId(ref)) ??
       (await this.repo.getByIndentCode(ref));
     if (!order) throw new NotFoundException('Order not found');
     const events = await this.repo.events(order.id);
-
-    // Margin is the one figure here that is not simply "what was on the
-    // records": it follows the Profit and loss rule for who may see it —
-    // everything with `pnl.view_all`, own branch only with `pnl.view_own`.
-    // The rates and the money that moved are already visible to anyone who can
-    // read the order, so they are not gated.
-    const level = (code: string) => user?.permissions.get(code) ?? 'NONE';
-    const canSeeMargin =
-      !!user &&
-      (level('pnl.view_all') !== 'NONE' ||
-        (level('pnl.view_own') !== 'NONE' && user.branch?.id === order.branchId));
-    const [paid, charges] = order.tripId
-      ? await Promise.all([this.repo.paymentsForTrip(order.tripId), this.repo.chargesForTrip(order.tripId)])
-      : [[], []];
-    const payments = buildOrderPayments({
-      sourcingRatePaise: order.buyRatePaise,
-      placementRatePaise: order.sellRatePaise,
-      charges,
-      payments: paid.map((p) => ({ ...p, kind: p.kind as 'ADVANCE' | 'BALANCE' })),
-      canSeeMargin,
-    });
-
     return {
       id: order.id,
       orderNo: order.orderNo,
@@ -248,7 +226,6 @@ export class OrdersService {
       // receipt's own Remarks field already; surfaced here too as the order
       // page's Comments tab, so it doesn't take opening the LR to read it.
       remarks: order.remarks,
-      payments,
       events,
     };
   }

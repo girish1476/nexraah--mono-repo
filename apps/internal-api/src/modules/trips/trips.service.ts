@@ -1,7 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { DomainException, assertReason } from '../../common/domain-exception';
 import { assertAnyPermission } from '../../common/guards/assert-any-permission';
-import { computeTransitPenalty } from '../../common/transit-penalty';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
 import type { ApprovalRequiredResponse } from '../../common/approval-required.response';
 import { AuditService } from '../audit/audit.service';
@@ -139,12 +138,7 @@ export class TripsService implements OnModuleInit {
       podClosureBasis: trip.pod_closure_basis,
       advancePaidPaise: trip.advance_paid,
       balancePaidPaise: trip.balance_paid,
-      loadingSupervisorId: trip.loading_supervisor_id,
-      loadingSupervisorName: trip.loadingSupervisorName ?? null,
-      loadingStartedAt: trip.loading_started_at,
-      loadingCompletedAt: trip.loading_completed_at,
       podPenaltyPaise: trip.podPenaltyPaise,
-      transitPenaltyPaise: Number(trip.transit_penalty ?? 0),
       billed: trip.billed,
       documents,
       charges: charges.map((c) => ({
@@ -157,103 +151,6 @@ export class TripsService implements OnModuleInit {
       })),
       lr: lr ? this.lrToDto(lr) : null,
     };
-  }
-
-  // ---- Loading ------------------------------------------------------
-  //
-  // One loading supervisor per trip — an existing Operations user, assigned
-  // here, who runs the loading and uploads the loading and vehicle documents.
-  // Compliance verifies those, and only then does the advance move.
-
-  async loadingSupervisorCandidates(tripId: string) {
-    const trip = await this.assertTripExists(tripId);
-    return this.tripsRepository.findLoadingSupervisorCandidates(trip.branch_id);
-  }
-
-  async assignLoadingSupervisor(tripId: string, userId: string, actor: AuthenticatedUser) {
-    await this.tripsRepository.transaction().execute(async (trx) => {
-      const trip = await this.tripsRepository.findByIdForUpdate(trx, tripId);
-      if (!trip) throw new DomainException(404, 'NOT_FOUND', `Unknown trip: ${tripId}`);
-      if (trip.stage !== 'OPEN') {
-        throw new DomainException(409, 'NOT_OPEN', `Trip ${trip.code} is not OPEN (currently ${trip.stage}).`);
-      }
-      if (trip.loading_completed_at) {
-        throw new DomainException(409, 'LOADING_DONE', 'Loading is already complete; the supervisor can no longer change.');
-      }
-      const supervisor = await this.tripsRepository.findActiveLoadingSupervisor(trx, userId);
-      if (!supervisor) {
-        throw new DomainException(422, 'NOT_A_SUPERVISOR', 'Only an active loading supervisor can be assigned to a trip.');
-      }
-      if (supervisor.branchId && supervisor.branchId !== trip.branch_id) {
-        throw new DomainException(422, 'WRONG_BRANCH', 'That person works from a different branch than this trip.');
-      }
-      await this.tripsRepository.update(trx, tripId, {
-        loading_supervisor_id: userId,
-        // A different supervisor starts loading afresh.
-        loading_started_at: trip.loading_supervisor_id === userId ? trip.loading_started_at : null,
-      });
-      await this.auditService.record(trx, actor, {
-        action: 'LOADING_SUPERVISOR_ASSIGNED',
-        entityType: 'trips',
-        entityId: tripId,
-        before: { loadingSupervisorId: trip.loading_supervisor_id },
-        after: { loadingSupervisorId: userId },
-      });
-    });
-    return this.getById(tripId);
-  }
-
-  async startLoading(tripId: string, actor: AuthenticatedUser) {
-    await this.tripsRepository.transaction().execute(async (trx) => {
-      const trip = await this.tripsRepository.findByIdForUpdate(trx, tripId);
-      if (!trip) throw new DomainException(404, 'NOT_FOUND', `Unknown trip: ${tripId}`);
-      this.assertCanRunLoading(trip, actor);
-      if (trip.stage !== 'OPEN') {
-        throw new DomainException(409, 'NOT_OPEN', `Trip ${trip.code} is not OPEN (currently ${trip.stage}).`);
-      }
-      if (!trip.loading_supervisor_id) {
-        throw new DomainException(409, 'NO_SUPERVISOR', 'Assign a loading supervisor before loading starts.');
-      }
-      if (!trip.vehicle_no) {
-        throw new DomainException(409, 'NO_VEHICLE', 'Allocate the vehicle before loading starts.');
-      }
-      if (trip.loading_started_at) {
-        throw new DomainException(409, 'LOADING_STARTED', 'Loading has already started.');
-      }
-      await this.tripsRepository.update(trx, tripId, { loading_started_at: new Date().toISOString() });
-      await this.auditService.record(trx, actor, {
-        action: 'LOADING_STARTED',
-        entityType: 'trips',
-        entityId: tripId,
-        after: { loadingSupervisorId: trip.loading_supervisor_id },
-      });
-    });
-    return this.getById(tripId);
-  }
-
-  async completeLoading(tripId: string, actor: AuthenticatedUser) {
-    await this.tripsRepository.transaction().execute(async (trx) => {
-      const trip = await this.tripsRepository.findByIdForUpdate(trx, tripId);
-      if (!trip) throw new DomainException(404, 'NOT_FOUND', `Unknown trip: ${tripId}`);
-      this.assertCanRunLoading(trip, actor);
-      if (trip.stage !== 'OPEN') {
-        throw new DomainException(409, 'NOT_OPEN', `Trip ${trip.code} is not OPEN (currently ${trip.stage}).`);
-      }
-      if (!trip.loading_started_at) {
-        throw new DomainException(409, 'LOADING_NOT_STARTED', 'Loading has not started yet.');
-      }
-      if (trip.loading_completed_at) {
-        throw new DomainException(409, 'LOADING_DONE', 'Loading is already complete.');
-      }
-      await this.tripsRepository.update(trx, tripId, { loading_completed_at: new Date().toISOString() });
-      await this.auditService.record(trx, actor, {
-        action: 'LOADING_COMPLETED',
-        entityType: 'trips',
-        entityId: tripId,
-        after: { loadingSupervisorId: trip.loading_supervisor_id },
-      });
-    });
-    return this.getById(tripId);
   }
 
   // ---- Documents ----------------------------------------------------
@@ -298,23 +195,9 @@ export class TripsService implements OnModuleInit {
   }
 
   async submitDocument(tripId: string, kind: string, dto: SubmitTripDocumentDto, actor: AuthenticatedUser) {
+    assertAnyPermission(actor, ['document.verify', 'indent.manage']);
     this.assertKnownKind(kind);
     const trip = await this.assertTripExists(tripId);
-    if (trip.stage === 'CLOSED') {
-      throw new DomainException(409, 'TRIP_CLOSED', 'This trip is closed; documents can no longer be added.');
-    }
-    // A document is a file. Recording one with nothing behind it would let a
-    // "verified" paper exist that nobody can open.
-    if (!dto.attachmentId) {
-      throw new DomainException(400, 'ATTACHMENT_REQUIRED', 'Attach the document file.');
-    }
-    // The trip's own loading supervisor uploads any document of the order — the
-    // advance documents (invoice, e-way bill, LR, vehicle papers, loading and
-    // weighment slips) and the unloading ones (POD). Compliance verifies them
-    // afterwards. Everyone else needs the document desk's or Operations' permission.
-    if (!this.isLoadingSupervisorOf(trip, actor)) {
-      assertAnyPermission(actor, ['document.verify', 'indent.manage']);
-    }
 
     const result = await this.tripsRepository.transaction().execute(async (trx) => {
       const row = await this.tripsRepository.upsertDocument(trx, {
@@ -342,9 +225,6 @@ export class TripsService implements OnModuleInit {
     const result = await this.tripsRepository.transaction().execute(async (trx) => {
       const existing = await this.tripsRepository.findDocumentOne(trx, tripId, kind);
       if (!existing) throw new DomainException(404, 'NOT_FOUND', `${kind} has not been uploaded for trip ${tripId}.`);
-      if (!existing.attachment_id) {
-        throw new DomainException(409, 'NO_FILE', `${kind} has no file to verify.`);
-      }
 
       const row = await this.tripsRepository.decideDocument(trx, tripId, kind, 'VERIFIED', actor.userId, null);
       await this.auditService.record(trx, actor, {
@@ -627,22 +507,8 @@ export class TripsService implements OnModuleInit {
       if (!lr || lr.status !== 'RELEASED') {
         throw new DomainException(409, 'LR_NOT_GENERATED', 'The lorry receipt must be generated before departure.');
       }
-      // Once the advance documents are uploaded the truck moves to transit. They do
-      // not have to be verified yet: verification is what releases the advance, not
-      // what lets the truck go.
-      const missing = await this.missingAdvanceDocuments(tripId);
-      if (missing.length > 0) {
-        throw new DomainException(409, 'ADVANCE_DOCS_NOT_UPLOADED', 'The advance documents are not all uploaded yet.', {
-          unmet: missing.map((kind) => ({ key: kind, label: `${kind.replace(/_/g, ' ').toLowerCase()} is not uploaded`, state: 'MISSING' })),
-        });
-      }
-      // A trip with a loading supervisor is not sent off until they have said
-      // loading is finished. Trips with no supervisor keep the old behaviour.
-      if (trip.loading_supervisor_id && !trip.loading_completed_at) {
-        throw new DomainException(409, 'LOADING_NOT_COMPLETE', 'Loading is not complete yet.');
-      }
 
-      await this.tripsRepository.update(trx, tripId, { stage: 'IN_TRANSIT', departed_at: new Date().toISOString() });
+      await this.tripsRepository.update(trx, tripId, { stage: 'IN_TRANSIT' });
       await this.tripsRepository.updateLrStatus(trx, tripId, 'IN_TRANSIT');
       await this.auditService.record(trx, actor, {
         action: 'STATUS_CHANGE',
@@ -670,28 +536,10 @@ export class TripsService implements OnModuleInit {
       const deliveredAt = dto.deliveredAt ?? new Date().toISOString();
       // docs/api/05-pod.md: "PENDING | System, on delivery" — the one hard
       // rule the spec states about this transition.
-      // Late delivery is charged to the transporter by the lane's own terms —
-      // whether a penalty applies and what a late day costs were fixed when the
-      // rate was entered — counted from the day loading was done.
-      const lane = await trx
-        .selectFrom('indents')
-        .innerJoin('rate_card_lanes', 'rate_card_lanes.id', 'indents.rate_card_lane_id')
-        .select(['rate_card_lanes.transit_penalty_applies as applies', 'rate_card_lanes.transit_penalty_per_day as perDay'])
-        .where('indents.id', '=', trip.indent_id)
-        .executeTakeFirst();
-      const transit = computeTransitPenalty({
-        startedAt: trip.loading_completed_at ?? trip.departed_at,
-        deliveredAt,
-        requiredDays: trip.transit_days_required,
-        applies: lane?.applies ?? false,
-        perDayPaise: Number(lane?.perDay ?? 0),
-      });
       await this.tripsRepository.update(trx, tripId, {
         stage: 'DELIVERED',
         delivered_at: deliveredAt,
         pod_status: 'PENDING',
-        actual_transit_days: transit.actualDays,
-        transit_penalty: transit.penaltyPaise,
       });
       await this.tripsRepository.updateLrStatus(trx, tripId, 'DELIVERED');
       await this.auditService.record(trx, actor, {
@@ -709,32 +557,6 @@ export class TripsService implements OnModuleInit {
   }
 
   // ---- Helpers ------------------------------------------------------
-
-  /** The advance-gating documents that have not been uploaded (or were rejected and not replaced). */
-  private async missingAdvanceDocuments(tripId: string): Promise<string[]> {
-    const set = await this.advanceDocumentSet();
-    const docs = await this.tripsRepository.findDocuments(tripId);
-    const status = new Map(docs.map((d) => [d.kind, d.status]));
-    return [...set].filter((kind) => {
-      const s = status.get(kind);
-      return s === undefined || s === 'REJECTED';
-    });
-  }
-
-  private isLoadingSupervisorOf(trip: { loading_supervisor_id: string | null }, actor: AuthenticatedUser) {
-    return trip.loading_supervisor_id !== null && trip.loading_supervisor_id === actor.userId;
-  }
-
-  /** Loading is run by the trip's own supervisor, or by anyone who runs trips (`indent.manage`). */
-  private assertCanRunLoading(trip: { loading_supervisor_id: string | null }, actor: AuthenticatedUser) {
-    if (this.isLoadingSupervisorOf(trip, actor)) return;
-    assertAnyPermission(actor, ['indent.manage']);
-  }
-
-  /** The trips assigned to the signed-in loading supervisor. */
-  async listMyLoadingTrips(actor: AuthenticatedUser) {
-    return this.tripsRepository.listForLoadingSupervisor(actor.userId);
-  }
 
   private assertKnownKind(kind: string) {
     if (!TRIP_DOCUMENT_KINDS.some((k) => k.kind === kind)) {

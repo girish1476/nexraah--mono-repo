@@ -9,8 +9,6 @@ import { CreateIndentDto } from './dto/create-indent.dto';
 import { AwardIndentDto } from './dto/award-indent.dto';
 import { PlacementDto } from './dto/placement.dto';
 import { AdvancePctDto } from './dto/advance-pct.dto';
-import { RecordQuoteDto } from './dto/record-quote.dto';
-import { CancelIndentDto } from './dto/cancel-indent.dto';
 
 @Controller('indents')
 @UseGuards(SupabaseJwtGuard, PermissionsGuard)
@@ -23,13 +21,6 @@ export class IndentsController {
     return this.indentsService.list({ stage, branchId, clientId });
   }
 
-  // Declared before `:id`, or "stale" would be read as an indent id.
-  @Get('stale')
-  @RequirePermission('indent.view')
-  stale(@Query('branch') branchId?: string) {
-    return this.indentsService.stale(branchId);
-  }
-
   @Get(':id')
   @RequirePermission('indent.view')
   getById(@Param('id') id: string) {
@@ -40,31 +31,6 @@ export class IndentsController {
   @RequirePermission('indent.create')
   create(@Body() dto: CreateIndentDto, @CurrentUser() user: AuthenticatedUser) {
     return this.indentsService.create(dto, user);
-  }
-
-  @Post(':id/quotes')
-  @RequirePermission('indent.manage')
-  recordQuote(@Param('id') id: string, @Body() dto: RecordQuoteDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.indentsService.recordQuote(id, dto, user);
-  }
-
-  @Post(':id/cancel')
-  @RequirePermission('indent.manage')
-  cancel(@Param('id') id: string, @Body() dto: CancelIndentDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.indentsService.cancel(id, dto, user);
-  }
-
-  @Post(':id/keep')
-  @RequirePermission('indent.manage')
-  keep(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.indentsService.keep(id, user);
-  }
-
-  // Taking a load off its transporter is Leadership's call.
-  @Post(':id/reassign-transporter')
-  @RequirePermission('indent.reassign')
-  reassignTransporter(@Param('id') id: string, @Body() dto: CancelIndentDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.indentsService.reassignTransporter(id, dto, user);
   }
 
   @Post(':id/award')

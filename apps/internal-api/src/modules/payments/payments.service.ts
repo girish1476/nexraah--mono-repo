@@ -8,8 +8,6 @@ import { OrdersService } from '../orders/orders.service';
 import { PaymentsRepository } from './payments.repository';
 import type { ReleasePaymentDto } from './dto/release-payment.dto';
 import type { AcceptBillDto } from './dto/accept-bill.dto';
-import { planRecovery } from '../sdr/sdr-recovery';
-import { SdrRepository } from '../sdr/sdr.repository';
 
 const DOC_LABEL: Record<string, string> = {
   CLIENT_INVOICE_OR_PO: 'Client invoice or purchase order',
@@ -20,7 +18,6 @@ const DOC_LABEL: Record<string, string> = {
   PERMIT: 'Permit',
   PUC: 'Pollution certificate',
   DRIVING_LICENCE: 'Driving licence',
-  LOADING_SLIP: 'Loading slip',
 };
 
 @Injectable()
@@ -30,7 +27,6 @@ export class PaymentsService {
     private readonly configRepository: ConfigRepository,
     private readonly auditService: AuditService,
     private readonly ordersService: OrdersService,
-    private readonly sdrRepository: SdrRepository,
   ) {}
 
   private readonly logger = new Logger('PaymentsService');
@@ -179,10 +175,8 @@ export class PaymentsService {
         const billable = r.buyRate + Number(chargeCost.total);
         const gross = billable - r.advancePaid;
         const penalty = r.podClosureBasis === 'WAIVED' ? 0 : r.podPenalty;
-        const transitPenalty = Number(r.transitPenalty ?? 0);
         const podAgeDays = r.podReceivedAt ? this.daysBetween(r.podReceivedAt, new Date().toISOString()) : null;
-        const unmet = await this.balanceUnmet(r.tripId, r.podStatus, r.podClosureBasis);
-        const sdr = await this.sdrPlan(this.paymentsRepository.executor(), r.tripId, r.vendorId, gross - penalty - transitPenalty);
+        const unmet = this.balanceUnmetFor(r.podStatus, r.podClosureBasis);
         return {
           tripId: r.tripId,
           tripCode: r.tripCode,
@@ -191,10 +185,8 @@ export class PaymentsService {
           branchName: r.branchName,
           podStatus: r.podStatus,
           podAgeDays,
-          netPaise: sdr.netPaise,
+          netPaise: gross - penalty,
           penaltyPaise: penalty,
-          transitPenaltyPaise: transitPenalty,
-          sdrDeductionPaise: sdr.totalPaise,
           blocked: unmet.length > 0 || r.balancePaid > 0,
           unmetCount: unmet.length,
         };
@@ -219,19 +211,8 @@ export class PaymentsService {
         ? 0
         : Math.round(trip.pod_penalty / Math.max(1, penaltyConfig.perDayPaise));
     const penaltyPaise = trip.pod_closure_basis === 'WAIVED' ? 0 : trip.pod_penalty;
-    const transitPenaltyPaise = Number(trip.transit_penalty ?? 0);
-    const transitLateDays =
-      trip.actual_transit_days != null && trip.transit_days_required != null
-        ? Math.max(0, trip.actual_transit_days - trip.transit_days_required)
-        : 0;
 
-    const unmet = await this.balanceUnmet(trip.id, trip.pod_status, trip.pod_closure_basis);
-    const sdr = await this.sdrPlan(
-      this.paymentsRepository.executor(),
-      trip.id,
-      trip.vendor_id,
-      grossPaise - penaltyPaise - transitPenaltyPaise,
-    );
+    const unmet = this.balanceUnmetFor(trip.pod_status, trip.pod_closure_basis);
 
     return {
       tripId: trip.id,
@@ -250,19 +231,8 @@ export class PaymentsService {
         penaltyPaise,
         penaltyDays,
         penaltyPerDayPaise: penaltyConfig.perDayPaise,
-        transitPenaltyPaise,
-        transitLateDays,
         grossPaise,
-        sdrDeductionPaise: sdr.totalPaise,
-        sdrLines: sdr.recoveries.map((r) => ({
-          code: r.sdrCode,
-          tripCode: r.tripCode,
-          amountPaise: r.amountPaise,
-          carriedForward: !r.ownTrip,
-          remainingAfterPaise: r.remainingAfterPaise,
-        })),
-        carriedForwardPaise: sdr.carriedForwardPaise,
-        netPaise: sdr.netPaise,
+        netPaise: grossPaise - penaltyPaise,
       },
       unmet,
       releasable: unmet.length === 0 && trip.balance_paid === 0,
@@ -319,11 +289,8 @@ export class PaymentsService {
       pod_closure_basis: string | null;
       pod_status: string;
       pod_penalty: number;
-      transit_penalty: number;
       buy_rate: number;
       advance_paid: number;
-      vendor_id: string;
-      billed: boolean;
     },
     billableOverride: number | null,
     dto: ReleasePaymentDto,
@@ -352,7 +319,7 @@ export class PaymentsService {
       throw new DomainException(409, 'POD_FORFEITED', 'This POD is past the forfeiture window; nothing is payable.');
     }
 
-    const unmet = await this.balanceUnmet(trip.id, trip.pod_status, trip.pod_closure_basis, trx);
+    const unmet = this.balanceUnmetFor(trip.pod_status, trip.pod_closure_basis);
     if (unmet.length > 0) {
       throw new DomainException(409, 'BALANCE_BLOCKED', 'The balance is blocked.', { unmet });
     }
@@ -360,14 +327,7 @@ export class PaymentsService {
     const chargeCost = await this.paymentsRepository.chargeCostTotal(trip.id);
     const billable = billableOverride ?? trip.buy_rate + Number(chargeCost.total);
     const gross = billable - trip.advance_paid;
-    const podPenalty = trip.pod_closure_basis === 'WAIVED' ? 0 : trip.pod_penalty;
-    // The penalty on the payment is late paperwork plus late delivery.
-    const penalty = podPenalty + Number(trip.transit_penalty ?? 0);
-
-    // Shortage/damage deductions come off before anything is paid, this trip's
-    // own records first and then any carried forward from the transporter's
-    // earlier trips. Whatever the balance cannot cover stays outstanding.
-    const sdr = await this.sdrPlan(trx, trip.id, trip.vendor_id, gross - penalty, true);
+    const penalty = trip.pod_closure_basis === 'WAIVED' ? 0 : trip.pod_penalty;
 
     const payment = await this.paymentsRepository.insertPayment(trx, {
       tripId: trip.id,
@@ -375,7 +335,6 @@ export class PaymentsService {
       kind: 'BALANCE',
       gross,
       penalty,
-      deduction: sdr.totalPaise,
       mode: dto.mode,
       transferType: dto.transferType,
       remittingAccount: dto.remittingAccount,
@@ -385,35 +344,16 @@ export class PaymentsService {
       idempotencyKey,
     });
 
-    for (const r of sdr.recoveries) {
-      await this.sdrRepository.insertRecovery(trx, {
-        sdrId: r.sdrId,
-        tripId: trip.id,
-        paymentId: payment.id,
-        amountPaise: r.amountPaise,
-      });
-      await this.sdrRepository.reduceOutstanding(trx, r.sdrId, r.amountPaise);
-    }
-
-    // Paying the transporter says nothing about billing the client: `billed` is set
-    // by the invoice, and the trip stays open to be invoiced until it has been. It
-    // closes once both halves are done — the transporter paid and the client billed.
     await this.paymentsRepository.updateTrip(trx, trip.id, {
-      balance_paid: sdr.netPaise,
-      ...(trip.billed ? { stage: 'CLOSED' } : {}),
+      balance_paid: gross - penalty,
+      billed: true,
+      stage: 'CLOSED',
     });
     await this.auditService.record(trx, actor, {
       action: 'PAYMENT',
       entityType: 'payments',
       entityId: payment.id,
-      after: {
-        kind: 'BALANCE',
-        tripId: trip.id,
-        gross,
-        penalty,
-        sdrDeduction: sdr.totalPaise,
-        carriedForward: sdr.carriedForwardPaise,
-      },
+      after: { kind: 'BALANCE', tripId: trip.id, gross, penalty },
     });
 
     return { payment: this.paymentDto(payment), indentId: trip.indent_id };
@@ -540,48 +480,6 @@ export class PaymentsService {
       .map((kind) => ({ key: kind, label: DOC_LABEL[kind] ?? kind }));
   }
 
-  /**
-   * What would be deducted from a balance payment of `availablePaise` for this
-   * transporter's trip. Pass `lock` inside the release transaction so two
-   * releases cannot spend the same outstanding amount.
-   */
-  private async sdrPlan(db: DbExecutor, tripId: string, vendorId: string, availablePaise: number, lock = false) {
-    const rows = await this.sdrRepository.outstandingForVendor(db, vendorId, lock);
-    const { minPayablePaise } = await this.penaltyLabelConfig();
-    return planRecovery(
-      rows.map((r) => ({
-        id: r.id,
-        code: r.code,
-        tripId: r.tripId,
-        tripCode: r.tripCode,
-        outstandingPaise: Number(r.outstandingPaise),
-        resolvedAt: String(r.resolvedAt ?? ''),
-      })),
-      tripId,
-      availablePaise,
-      minPayablePaise,
-    );
-  }
-
-  /** The POD condition, plus: an open shortage/damage record holds the balance. */
-  private async balanceUnmet(
-    tripId: string,
-    podStatus: string,
-    podClosureBasis: string | null,
-    db: DbExecutor = this.paymentsRepository.executor(),
-  ): Promise<UnmetItem[]> {
-    const unmet = this.balanceUnmetFor(podStatus, podClosureBasis);
-    const open = await this.sdrRepository.countOpenForTrip(db, tripId);
-    if (open > 0) {
-      unmet.push({
-        key: 'SDR_OPEN',
-        label: `${open} shortage or damage record${open === 1 ? ' is' : 's are'} still open`,
-        state: 'BLOCKED',
-      });
-    }
-    return unmet;
-  }
-
   private balanceUnmetFor(podStatus: string, podClosureBasis: string | null): UnmetItem[] {
     if (podStatus === 'APPROVED' || podClosureBasis === 'WAIVED') return [];
     return [{ key: 'POD_STATUS', label: `POD is ${podStatus.toLowerCase()}, not approved`, state: 'BLOCKED' }];
@@ -604,9 +502,6 @@ export class PaymentsService {
     return {
       perDayPaise: Number(config.get('pod_penalty_per_day_paise') ?? 10000),
       forfeitDays: Number(config.get('pod_forfeit_days') ?? 40),
-      // A balance payment is never reduced to nothing: this much is always paid,
-      // and it is kept below one hundred rupees.
-      minPayablePaise: Math.min(9_900, Math.max(0, Number(config.get('min_balance_payable_paise') ?? 5_000))),
     };
   }
 

@@ -31,33 +31,6 @@ export class IndentsRepository {
       .executeTakeFirst();
   }
 
-  /**
-   * The bid band an indent inherits: the client's lane in force on the pickup
-   * date for this route and truck. Matched by route rather than by an id the
-   * form would have to carry, so the band follows the lane even when the
-   * person typed the route instead of picking it from the rate card.
-   */
-  findLaneBandForRoute(
-    clientId: string,
-    fromCity: string,
-    toCity: string,
-    truckType: string,
-    pickupDate: string,
-  ) {
-    return this.db
-      .selectFrom('rate_card_lanes')
-      .select(['bid_min as bidMin', 'bid_max as bidMax'])
-      .where('client_id', '=', clientId)
-      .where(sql<boolean>`lower(origin) = lower(${fromCity})`)
-      .where(sql<boolean>`lower(destination) = lower(${toCity})`)
-      .where(sql<boolean>`lower(truck_type) = lower(${truckType})`)
-      .where('valid_from', '<=', pickupDate)
-      .where((eb) => eb.or([eb('valid_to', 'is', null), eb('valid_to', '>=', pickupDate)]))
-      .orderBy('valid_from', 'desc')
-      .limit(1)
-      .executeTakeFirst();
-  }
-
   /** Just the onboarding state — the indent guard needs nothing else. */
   findClientStatus(clientId: string) {
     return this.db
@@ -143,14 +116,7 @@ export class IndentsRepository {
     return this.db
       .selectFrom('indents')
       .select(['id', 'stage', 'awarded_quote_id'])
-      // An award now generates its trip at once (stage TRIP_CREATED), so "awarded
-      // but no truck ever named" is TRIP_CREATED with no vehicle on the indent.
-      .where((eb) =>
-        eb.or([
-          eb('stage', 'in', ['OPEN', 'VENDOR_ASSIGNED']),
-          eb.and([eb('stage', '=', 'TRIP_CREATED'), eb('vehicle_no', 'is', null)]),
-        ]),
-      )
+      .where('stage', 'in', ['OPEN', 'VENDOR_ASSIGNED'])
       .where('pickup_date', '<', new Date().toISOString().slice(0, 10))
       .where('failure_cause', 'is', null)
       .execute();
@@ -228,81 +194,10 @@ export class IndentsRepository {
       bid_max: number | null;
       band_locked: boolean;
       advance_pct: number;
-      advance_pct_overridden: boolean;
     },
   ) {
     const values = { code, ...row };
     return db.insertInto('indents').values(values).returningAll().executeTakeFirstOrThrow();
-  }
-
-  /**
-   * Indents nobody has touched for `days` days that are still waiting on somebody:
-   * not yet awarded, or awarded with the truck still to load. A review ("keep")
-   * counts as a touch, so a kept indent leaves the list until it has been quiet
-   * for another week.
-   */
-  listStale(days: number, branchId?: string) {
-    let query = this.db
-      .selectFrom('indents')
-      .innerJoin('clients', 'clients.id', 'indents.client_id')
-      .select([
-        'indents.id as id',
-        'indents.code as code',
-        'clients.name as clientName',
-        'indents.from_city as fromCity',
-        'indents.to_city as toCity',
-        'indents.stage as stage',
-        'indents.pickup_date as pickupDate',
-        'indents.updated_at as updatedAt',
-        'indents.last_reviewed_at as lastReviewedAt',
-      ])
-      .where('indents.stage', 'in', ['OPEN', 'VENDOR_ASSIGNED', 'VEHICLE_PLACED', 'TRIP_CREATED'])
-      .where(
-        sql<boolean>`greatest(indents.updated_at, coalesce(indents.last_reviewed_at, indents.updated_at)) < now() - make_interval(days => ${days})`,
-      );
-    if (branchId) query = query.where('indents.branch_id', '=', branchId);
-    return query.orderBy('indents.updated_at').execute();
-  }
-
-  findTripByIndent(indentId: string) {
-    return this.db.selectFrom('trips').select(['id', 'code']).where('indent_id', '=', indentId).executeTakeFirst();
-  }
-
-  findQuoteByVendor(db: DbExecutor, indentId: string, vendorId: string) {
-    return db
-      .selectFrom('quotes')
-      .select(['id', 'status'])
-      .where('indent_id', '=', indentId)
-      .where('vendor_id', '=', vendorId)
-      .executeTakeFirst();
-  }
-
-  insertQuote(
-    db: DbExecutor,
-    row: {
-      code: string;
-      indentId: string;
-      vendorId: string;
-      amountPaise: number;
-      truckRegistration: string | null;
-      remarks: string | null;
-      bandPosition: 'IN_BAND' | 'ABOVE_BAND';
-    },
-  ) {
-    return db
-      .insertInto('quotes')
-      .values({
-        code: row.code,
-        indent_id: row.indentId,
-        vendor_id: row.vendorId,
-        amount: row.amountPaise,
-        truck_registration: row.truckRegistration,
-        remarks: row.remarks,
-        band_position: row.bandPosition,
-        status: 'SUBMITTED',
-      })
-      .returning(['id', 'code'])
-      .executeTakeFirstOrThrow();
   }
 
   update(db: DbExecutor, id: string, patch: Record<string, unknown>) {

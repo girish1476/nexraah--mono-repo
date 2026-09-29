@@ -311,7 +311,7 @@ export default function IssuesPage() {
           <input
             value={form.tripCode}
             onChange={(e) => set({ tripCode: e.target.value.toUpperCase() })}
-            placeholder="120881"
+            placeholder="TRP-120881"
           />
         </Field>
         <Field

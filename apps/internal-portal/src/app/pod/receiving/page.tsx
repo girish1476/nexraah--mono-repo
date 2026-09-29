@@ -1,12 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { errorMessage } from '@/apis';
 import { POD_STATUS_LABEL, POD_TONE } from '@/lib/documents';
 import { fmtDate, inr } from '@/lib/format';
-import { downloadCsv, todayStamp } from '@/lib/export-csv';
-import { activeFilterCount, emptyFilters, FilterBar, FilterField, FilterValues, matchesAny } from '@/lib/list-filters';
 import {
   Column,
   DataTable,
@@ -39,30 +37,6 @@ import { PodTabs } from '../pod-tabs';
  * is visible here, and the branch chases the courier rather than the
  * transporter.
  */
-const FILTER_FIELDS: FilterField[] = [
-  { kind: 'text', key: 'q', label: 'Search anything', placeholder: 'Trip, LR, transporter, city…' },
-  {
-    kind: 'select',
-    key: 'podStatus',
-    label: 'Delivery proof',
-    allLabel: 'Any',
-    options: ['PENDING', 'ATTACHED', 'RECEIVED', 'VERIFIED', 'APPROVED', 'WAIVED'].map((v) => ({
-      value: v,
-      label: POD_STATUS_LABEL[v] ?? v,
-    })),
-  },
-  { kind: 'text', key: 'vendor', label: 'Transporter', placeholder: 'Transporter name' },
-  { kind: 'text', key: 'from', label: 'From', placeholder: 'Pick-up city' },
-  { kind: 'text', key: 'to', label: 'To', placeholder: 'Delivery city' },
-  { kind: 'text', key: 'ref', label: 'Trip, LR or courier number', placeholder: 'Trip, LR or courier tracking number' },
-];
-
-/** The lane is stored as one string, "Mumbai → Pune". */
-function laneEnds(lane: string): [string, string] {
-  const [from = '', to = ''] = lane.split('→').map((x) => x.trim());
-  return [from, to];
-}
-
 export default function PodReceivingPage() {
   const can = useCan();
   const toast = useToast();
@@ -93,7 +67,6 @@ export default function PodReceivingPage() {
    * value it needs once.
    */
   const [attachedOnly, setAttachedOnly] = useState(false);
-  const [filters, setFilters] = useState<FilterValues>(() => emptyFilters(FILTER_FIELDS));
   useEffect(() => {
     setAttachedOnly(new URLSearchParams(window.location.search).get('attached') === '1');
   }, []);
@@ -117,42 +90,6 @@ export default function PodReceivingPage() {
     } finally {
       setBusy(false);
     }
-  };
-
-  const visible = useMemo(
-    () =>
-      (data?.rows ?? [])
-        // `attachedAt` is what makes a row an e-POD: the transporter has sent a
-        // photograph, so the paper is somewhere between them and the branch. A
-        // row without one is a delivered trip nobody has photographed at all —
-        // a different chase, and a different person to ring.
-        .filter((r) => !attachedOnly || r.attachedAt !== null)
-        .filter((r) => {
-          const [from, to] = laneEnds(r.lane);
-          return (
-            (!filters.podStatus || r.podStatus === filters.podStatus) &&
-            matchesAny(filters.q, r.tripCode, r.lrCode, r.vendorName, r.lane, r.courierDocket) &&
-            matchesAny(filters.vendor, r.vendorName) &&
-            matchesAny(filters.from, from) &&
-            matchesAny(filters.to, to) &&
-            matchesAny(filters.ref, r.tripCode, r.lrCode, r.courierDocket)
-          );
-        }),
-    [data, attachedOnly, filters],
-  );
-
-  const exportRows = async () => {
-    downloadCsv(
-      `collect-pod-${todayStamp()}.csv`,
-      ['Trip', 'LR', 'Transporter', 'From', 'To', 'Delivered on', 'Courier tracking no.', 'Days waiting', 'Delivery proof', 'Money we hold (INR)'],
-      visible.map((r) => {
-        const [from, to] = laneEnds(r.lane);
-        return [
-          r.tripCode, r.lrCode, r.vendorName, from, to, r.deliveredAt?.slice(0, 10), r.courierDocket, r.ageDays,
-          POD_STATUS_LABEL[r.podStatus] ?? r.podStatus, r.balanceHeldPaise / 100,
-        ];
-      }),
-    );
   };
 
   if (error) return <ErrorState message={error} retry={load} />;
@@ -252,26 +189,21 @@ export default function PodReceivingPage() {
             { k: 'Over 20 days late', id: 'podrecv-over-20-days', emoji: '⏰', v: data.stats.pastTwentyDays, tone: 'red' },
           ]}
         />
-        <FilterBar
-          fields={FILTER_FIELDS}
-          values={filters}
-          onChange={setFilters}
-          onExport={exportRows}
-          resultNote={`${visible.length} trip${visible.length === 1 ? '' : 's'} found`}
-        />
-
         <Panel pad={false}>
           <DataTable
             columns={columns}
-            rows={visible}
+            rows={
+              /*
+               * `attachedAt` is what makes a row an e-POD: the transporter has
+               * sent a photograph, so the paper is somewhere between them and
+               * the branch. A row without one is a delivered trip nobody has
+               * photographed at all — a different chase, and a different
+               * person to ring.
+               */
+              attachedOnly ? data.rows.filter((r) => r.attachedAt !== null) : data.rows
+            }
             rowKey={(r) => r.tripId}
             empty={
-              activeFilterCount(filters) > 0 ? (
-                <EmptyState
-                  title="No trip matches this search"
-                  hint="Loosen one of the boxes above, or use Clear to start again."
-                />
-              ) : (
               <EmptyState
                 title={attachedOnly ? 'No e-PODs waiting' : 'Nothing waiting to be received'}
                 hint={
@@ -280,7 +212,6 @@ export default function PodReceivingPage() {
                     : 'A trip lands here once its proof of delivery is attached in the transporter app. Log the physical copy as it arrives by courier to stop the penalty clock.'
                 }
               />
-              )
             }
           />
         </Panel>

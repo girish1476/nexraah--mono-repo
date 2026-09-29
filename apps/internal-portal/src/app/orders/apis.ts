@@ -1,5 +1,5 @@
 import { request } from '@/apis';
-import { OrderCounts, OrderDetail, OrderListResponse, OrderListRow } from './types';
+import { OrderCounts, OrderDetail, OrderListResponse, OrderStatus } from './types';
 
 /**
  * Orders now come from the server.
@@ -14,95 +14,41 @@ import { OrderCounts, OrderDetail, OrderListResponse, OrderListRow } from './typ
  * uploaded" on its own page, and both were "right".
  *
  * There is now one ladder, in `OrdersService`, and both screens read its
- * answer. The other things that came with it: a step number that
+ * answer. The other things that came with it: a stable `ORD-` number that
  * survives the indent, a recorded step history, server-side filtering by step,
  * and paging — none of which a client-side join could offer.
  */
 
-/**
- * Everything a search can narrow by. All optional, all combined — an order
- * must match every one that is filled in.
- */
-export interface OrderSearchParams {
-  /** One step, or several separated by commas (a phase is several steps). */
-  status?: string;
+export interface ListOrdersParams {
+  status?: OrderStatus;
   client?: string;
   branch?: string;
   /** Everything that has not reached "Balance released". */
   openOnly?: boolean;
   q?: string;
-  /** Client name, client code, GST number, contact person or phone. */
-  clientName?: string;
-  /** Transporter's name. */
-  vendor?: string;
-  from?: string;
-  to?: string;
-  /** Vehicle number, in any spacing. */
-  truck?: string;
-  /** A load-request, trip, lorry-receipt or invoice number. */
-  ref?: string;
-  branchName?: string;
-}
-
-export interface ListOrdersParams extends OrderSearchParams {
   limit?: number;
   offset?: number;
-}
-
-function searchQuery(params: OrderSearchParams) {
-  return {
-    status: params.status || undefined,
-    client: params.client,
-    branch: params.branch,
-    open: params.openOnly ? '1' : undefined,
-    q: params.q || undefined,
-    clientName: params.clientName || undefined,
-    vendor: params.vendor || undefined,
-    from: params.from || undefined,
-    to: params.to || undefined,
-    truck: params.truck || undefined,
-    ref: params.ref || undefined,
-    branchName: params.branchName || undefined,
-  };
 }
 
 export async function listOrders(params: ListOrdersParams = {}): Promise<OrderListResponse> {
   return request<OrderListResponse>({
     url: '/orders',
     method: 'GET',
-    params: { ...searchQuery(params), limit: params.limit ?? 50, offset: params.offset ?? 0 },
+    params: {
+      status: params.status,
+      client: params.client,
+      branch: params.branch,
+      open: params.openOnly ? '1' : undefined,
+      q: params.q || undefined,
+      limit: params.limit ?? 50,
+      offset: params.offset ?? 0,
+    },
   });
 }
 
-/**
- * Every order a search matches, page by page, for an export.
- *
- * The list endpoint caps a page at 200 on purpose, so an export walks pages
- * rather than asking for one giant one. It stops at `ceiling` and says so via
- * `truncated`, because a spreadsheet that quietly holds only the first few
- * thousand rows looks complete and is not.
- */
-export async function listAllOrders(
-  params: OrderSearchParams,
-  ceiling = 5000,
-): Promise<{ rows: OrderListRow[]; total: number; truncated: boolean }> {
-  const rows: OrderListRow[] = [];
-  let total = 0;
-  while (rows.length < ceiling) {
-    const page = await listOrders({ ...params, limit: 200, offset: rows.length });
-    total = page.total;
-    rows.push(...page.rows);
-    if (page.rows.length === 0 || rows.length >= page.total) break;
-  }
-  return { rows, total, truncated: rows.length < total };
-}
-
-/**
- * Counts per step, for the phase tabs — one round trip, not one per tab.
- * Pass the same search as the list and the tabs count what the search found.
- */
-export async function orderCounts(params: OrderSearchParams = {}): Promise<OrderCounts> {
-  return request<OrderCounts>({ url: '/orders/counts', method: 'GET', params: searchQuery({ ...params, status: undefined }) });
+/** Counts per step, for the phase tabs — one round trip, not one per tab. */
+export async function orderCounts(branch?: string): Promise<OrderCounts> {
+  return request<OrderCounts>({ url: '/orders/counts', method: 'GET', params: { branch } });
 }
 
 export async function getOrder(id: string): Promise<OrderDetail> {

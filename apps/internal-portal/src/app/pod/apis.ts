@@ -17,15 +17,6 @@ export function getPod(tripId: string) {
 }
 
 /**
- * POST /pod/:tripId/docket · `pod.receive` — the courier docket, when the
- * transporter has not attached one. Takes the delivery off the hard-copy
- * follow-up list; it does not move the proof's status. 409 DOCKET_EXISTS.
- */
-export function addDocket(tripId: string, body: { docketNo: string; sentOn?: string }) {
-  return request<{ tripId: string; docketNo: string }>({ url: `/pod/${tripId}/docket`, method: 'POST', data: body });
-}
-
-/**
  * POST /pod/:tripId/receive · `pod.receive`
  * Consumes the PDR- series, which is scoped per branch. **This is what stops
  * the clock** — attachment in the transporter portal does not (BR-49, D-35).
@@ -77,13 +68,10 @@ export function approvePod(tripId: string) {
 }
 
 /**
- * POST /pod/:tripId/waive · `pod.waive` — a penalty waived on Leadership's mail,
- * recorded by Compliance with the mail's subject as the evidence. Takes effect at
- * once; there is no second approval in the console.
+ * POST /pod/:tripId/waive  { reason ≥ 30 } · `pod.waive`
+ * Always 202 PENALTY_WAIVER — compliance proposes, leadership approves. A
+ * penalty is never waived at the desk (BR-43).
  */
-export function waivePenalty(
-  tripId: string,
-  body: { kind: 'POD_PENALTY' | 'TRANSIT_PENALTY'; mailSubject: string; mailAttachmentId?: string },
-) {
-  return request<{ tripId: string; kind: string; waivedPaise: number }>({ url: `/pod/${tripId}/waive`, method: 'POST', data: body });
+export function waivePenalty(tripId: string, reason: string) {
+  return request<never>({ url: `/pod/${tripId}/waive`, method: 'POST', data: { reason } });
 }

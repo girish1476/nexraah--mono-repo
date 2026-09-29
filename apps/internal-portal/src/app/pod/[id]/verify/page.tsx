@@ -18,7 +18,7 @@ import { PodVerifyContent } from './content';
  * The actual document/checklist/charges/approve workflow lives in
  * `PodVerifyContent` (`./content.tsx`) — this route wraps it in this page's
  * own header, mirrored from the content's `onLoaded` callback rather than
- * fetched a second time, so the order detail page's Delivery proof tab can
+ * fetched a second time, so the order detail page's Tracking status tab can
  * embed the identical, fully working thing without this page's chrome. The
  * header prints a plain placeholder for the one frame before `onLoaded`
  * fires and upgrades to the trip-specific title — `PodVerifyContent` itself

@@ -18,44 +18,6 @@ export function getTrip(id: string) {
   return request<TripDetail>({ url: `/trips/${id}`, method: 'GET' });
 }
 
-/* ---- loading ------------------------------------------------------------- */
-
-export interface LoadingTripRow extends TripListRow {
-  loadingStartedAt: string | null;
-  loadingCompletedAt: string | null;
-}
-
-/** GET /trips/loading/mine — the trips assigned to the signed-in loading supervisor. */
-export function getMyLoadingTrips() {
-  return request<LoadingTripRow[]>({ url: '/trips/loading/mine', method: 'GET' });
-}
-
-export interface LoadingSupervisorOption {
-  id: string;
-  name: string;
-  branchId: string | null;
-}
-
-/** GET /trips/:id/loading/supervisors — active Operations people who can supervise this trip. */
-export function getLoadingSupervisorOptions(id: string) {
-  return request<LoadingSupervisorOption[]>({ url: `/trips/${id}/loading/supervisors`, method: 'GET' });
-}
-
-/** POST /trips/:id/loading/supervisor · `indent.manage` — 422 NOT_A_SUPERVISOR · 409 LOADING_DONE. */
-export function assignLoadingSupervisor(id: string, userId: string) {
-  return request<TripDetail>({ url: `/trips/${id}/loading/supervisor`, method: 'POST', data: { userId } });
-}
-
-/** POST /trips/:id/loading/start · `indent.manage` — 409 NO_SUPERVISOR / NO_VEHICLE. */
-export function startLoading(id: string) {
-  return request<TripDetail>({ url: `/trips/${id}/loading/start`, method: 'POST' });
-}
-
-/** POST /trips/:id/loading/complete · `indent.manage` — 409 LOADING_NOT_STARTED. */
-export function completeLoading(id: string) {
-  return request<TripDetail>({ url: `/trips/${id}/loading/complete`, method: 'POST' });
-}
-
 /* ---- documents — part 05 §3 --------------------------------------------- */
 
 export function getTripDocuments(id: string) {

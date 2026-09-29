@@ -28,23 +28,3 @@ export function patchClient(id: string, patch: Partial<ClientDraft>) {
 export function getRateCard(id: string) {
   return request<RateCardLane[]>({ url: `/clients/${id}/rate-card`, method: 'GET' });
 }
-
-/**
- * PUT /clients/:id/rate-card/:laneId/band — `client.manage`.
- *
- * The first band on a lane applies at once and resolves. Changing one that
- * already exists answers `202 approvalRequired` for Leadership, which
- * `request()` turns into a thrown `ApprovalRequiredError` — callers catch it
- * and say the change is waiting, they do not treat it as a failure.
- */
-export function setLaneBand(
-  clientId: string,
-  laneId: string,
-  body: { bidMinPaise: number; bidMaxPaise: number; reason?: string },
-) {
-  return request<{ applied: true; laneId: string; bidMinPaise: number; bidMaxPaise: number }>({
-    url: `/clients/${clientId}/rate-card/${laneId}/band`,
-    method: 'PUT',
-    data: body,
-  });
-}

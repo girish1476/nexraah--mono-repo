@@ -11,7 +11,6 @@ import { CreateChargeDto } from './dto/create-charge.dto';
 import { PatchLrDto } from './dto/patch-lr.dto';
 import { CrossCheckOverrideDto } from './dto/cross-check-override.dto';
 import { DeliverTripDto } from './dto/deliver-trip.dto';
-import { AssignLoadingSupervisorDto } from './dto/assign-loading-supervisor.dto';
 
 @Controller('trips')
 @UseGuards(SupabaseJwtGuard, PermissionsGuard)
@@ -33,39 +32,6 @@ export class TripsController {
   @Get(':id')
   getById(@Param('id') id: string) {
     return this.tripsService.getById(id);
-  }
-
-  @Get('loading/mine')
-  myLoadingTrips(@CurrentUser() user: AuthenticatedUser) {
-    return this.tripsService.listMyLoadingTrips(user);
-  }
-
-  @Get(':id/loading/supervisors')
-  loadingSupervisorCandidates(@Param('id') id: string) {
-    return this.tripsService.loadingSupervisorCandidates(id);
-  }
-
-  @Post(':id/loading/supervisor')
-  @RequirePermission('indent.manage')
-  assignLoadingSupervisor(
-    @Param('id') id: string,
-    @Body() dto: AssignLoadingSupervisorDto,
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
-    return this.tripsService.assignLoadingSupervisor(id, dto.userId, user);
-  }
-
-  // Loading start/finish is the trip's own supervisor or anyone with
-  // `indent.manage` — an "either" the single-code decorator can't say, so the
-  // service asserts it.
-  @Post(':id/loading/start')
-  startLoading(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.tripsService.startLoading(id, user);
-  }
-
-  @Post(':id/loading/complete')
-  completeLoading(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.tripsService.completeLoading(id, user);
   }
 
   @Get(':id/documents')

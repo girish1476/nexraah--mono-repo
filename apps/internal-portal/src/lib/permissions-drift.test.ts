@@ -47,19 +47,13 @@ describe('the portal and the API agree on the role table', () => {
     }
   });
 
-  it('keeps rate.revise off every desk that can approve a contract, except ADMIN', () => {
+  it('keeps rate.revise off every desk that can approve a contract', () => {
     /*
      * The separation this whole feature rests on. `RATE_REVISION` approvals
      * require `approve.contract`; if a desk held both, it could propose a
      * client rate change and then countersign its own proposal.
-     *
-     * ADMIN is the one named exception since 2026-09-26, when the owner
-     * directed that an administrator hold every permission. It is listed here
-     * rather than the rule being dropped, so any *other* role that picks up
-     * both still fails this test.
      */
     for (const [role, codes] of Object.entries(SEED_GRANTS)) {
-      if (role === 'ADMIN') continue;
       const list = codes as readonly Permission[];
       const both = list.includes('rate.revise' as Permission) && list.includes('approve.contract' as Permission);
       expect(both, `${role} can both propose and approve a rate revision`).toBe(false);

@@ -46,8 +46,6 @@ export interface PendingRow {
   penaltyPaise: number;
   balanceHeldPaise: number;
   forfeited: boolean;
-  /** The courier docket on record — the transporter's, or one added by whoever tracks the POD. */
-  docketNo: string | null;
 }
 
 export interface PendingResponse {

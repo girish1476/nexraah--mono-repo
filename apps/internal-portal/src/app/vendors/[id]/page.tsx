@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { ApiError, ApprovalRequiredError, errorMessage, request } from '@/apis';
@@ -29,7 +28,6 @@ import {
 import { UnmetCondition } from '@/apis';
 import {
   activateVendor,
-  submitVendor,
   changeAdvancePolicy,
   getVendor,
   reinstateVendor,
@@ -43,7 +41,6 @@ import {
 } from '../apis';
 import { CheckStatus, FleetRow, KycItem, VendorDetail, VendorDocument } from '../types';
 import { UploadCell } from '../upload-cell';
-import { VendorPlacements } from './placements';
 
 const CHECK_TONE: Record<CheckStatus, Tone> = {
   MISSING: 'red',
@@ -108,27 +105,6 @@ export default function VendorDetailPage() {
       .catch((e) => setError(errorMessage(e)));
   };
   useEffect(load, [id]);
-
-  // A vendor left as a draft (a tab closed before the last wizard step) had no way
-  // to be sent for verification from its own page.
-  const onSubmitForVerification = async () => {
-    setBusy(true);
-    try {
-      await submitVendor(id);
-      load();
-      setUnmet([]);
-      toast('Sent to Compliance for verification');
-    } catch (e) {
-      if (e instanceof ApiError && e.code === 'VENDOR_INCOMPLETE') {
-        setUnmet(e.unmet);
-        toast('Not sent — the file is incomplete');
-      } else {
-        toast(errorMessage(e));
-      }
-    } finally {
-      setBusy(false);
-    }
-  };
 
   // The server answers with a narrow `{ id, status, portalAccountProvisioned }`,
   // not the vendor — re-fetch for the full record, and let the real
@@ -552,24 +528,6 @@ export default function VendorDetailPage() {
           <Banner tone="red" title="Blacklisted">
             This transporter is not to be used again. There is no way back from here in the console.
           </Banner>
-        ) : vendor.status === 'DRAFT' ? (
-          <BlockedPanel
-            title="Not sent for verification yet"
-            subtitle={
-              can('vendor.edit')
-                ? 'Add what is missing, then send it to Compliance.'
-                : 'This transporter has not been sent for verification yet.'
-            }
-            unmet={unmet}
-            action={
-              can('vendor.edit') && (
-                <button className="btn" disabled={busy} onClick={onSubmitForVerification}>
-                  Submit for verification
-                </button>
-              )
-            }
-            note="Compliance checks the papers and activates the vendor. Until then it cannot be awarded an indent."
-          />
         ) : (
           <BlockedPanel
             title="Vendor not yet active"
@@ -592,14 +550,6 @@ export default function VendorDetailPage() {
             }
             note="Activating makes the vendor awardable across every branch. Portal login setup follows separately."
           />
-        )}
-
-        {(vendor.business.recoverableBalancePaise ?? 0) > 0 && (
-          <Banner tone="flag" title="Negative balance on this transporter’s account">
-            They owe {inr(vendor.business.recoverableBalancePaise ?? 0)} from shortage and damage records. It is taken from
-            their next payments, and shows against each order it is recovered from.{' '}
-            <Link href={`/sdr`}>Open the SDR list →</Link>
-          </Banner>
         )}
 
         <Panel title="Trips and business" pad={false}>
@@ -643,8 +593,6 @@ export default function VendorDetailPage() {
             ))}
           </div>
         </Panel>
-
-        <VendorPlacements vendorId={id} vendorCode={vendor.code} />
 
         <Panel title="Identity checks" pad={false}>
           <DataTable columns={kycColumns} rows={vendor.kyc} rowKey={(r) => r.kind} />

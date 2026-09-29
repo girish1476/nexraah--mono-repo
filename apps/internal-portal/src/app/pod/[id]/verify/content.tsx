@@ -43,7 +43,7 @@ interface ChargeDraft {
 /**
  * The whole of `/pod/[id]/verify`, minus its own `PageHeader`/`PageIntro` —
  * extracted (part 04, the "everything about one order, one screen, no
- * redirects" rebuild) so the order detail page's Delivery proof tab can
+ * redirects" rebuild) so the order detail page's Tracking status tab can
  * embed this exact verify/approve/reject workflow. The route itself
  * (`page.tsx`) still renders this unchanged.
  *

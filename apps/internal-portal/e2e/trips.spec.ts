@@ -5,14 +5,14 @@ import { setRole } from './helpers';
  * `/trips` and `/trips/[id]` — part 05. Fixture data (`src/mocks/db.ts`)
  * seeds exactly four trips:
  *
- *   120881  Berger Paints · Rathod Roadlines · Nashik → Kolkata
+ *   TRP-120881  Berger Paints · Rathod Roadlines · Nashik → Kolkata
  *               DELIVERED · POD PENDING · buy ₹58,400 · advance not
  *               released · documents from `tripDocs()` (partially verified)
- *   120874  Berger Paints · Sai Kripa Carriers · Pune → Surat
+ *   TRP-120874  Berger Paints · Sai Kripa Carriers · Pune → Surat
  *               DELIVERED · POD ATTACHED · advance already released
- *   120869  Apex Ceramics · Bhagwati Logistics · Hosur → Gurugram
+ *   TRP-120869  Apex Ceramics · Bhagwati Logistics · Hosur → Gurugram
  *               IN_TRANSIT · POD RECEIVED · advance already released
- *   120855  Apex Ceramics · Anand Roadways · Gandhidham → Jaipur
+ *   TRP-120855  Apex Ceramics · Anand Roadways · Gandhidham → Jaipur
  *               DELIVERED · POD APPROVED · advance already released ·
  *               balance gate fully cleared (the one trip with nothing
  *               blocking it)
@@ -22,6 +22,7 @@ import { setRole } from './helpers';
 
 const panel = (page: Page, heading: string) =>
   page.locator('.surface', { has: page.getByRole('heading', { name: heading, exact: true }) });
+const field = (page: Page, label: string) => page.locator('.field').filter({ has: page.getByText(label, { exact: true }) });
 const fact = (page: Page, label: string) => page.getByText(label, { exact: true }).locator('..').locator('.mono');
 
 test.describe('trips list', () => {
@@ -47,30 +48,30 @@ test.describe('trips list', () => {
 
     const rows = page.locator('table.table tbody tr');
     await expect(rows).toHaveCount(4);
-    for (const code of ['120881', '120874', '120869', '120855']) {
+    for (const code of ['TRP-120881', 'TRP-120874', 'TRP-120869', 'TRP-120855']) {
       await expect(page.getByRole('link', { name: code })).toBeVisible();
     }
   });
 
   test('search narrows to an exact trip code', async ({ page }) => {
-    const search = page.locator('[data-filter="q"]');
-    await search.fill('120855');
+    const search = page.getByPlaceholder('Any of the above');
+    await search.fill('TRP-120855');
     await search.press('Enter');
     await expect(page.locator('table.table tbody tr')).toHaveCount(1);
-    await expect(page.getByRole('link', { name: '120855' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'TRP-120855' })).toBeVisible();
   });
 
   test('search by client name matches every trip for that client', async ({ page }) => {
-    const search = page.locator('[data-filter="q"]');
+    const search = page.getByPlaceholder('Any of the above');
     await search.fill('Berger Paints');
     await search.press('Enter');
     await expect(page.locator('table.table tbody tr')).toHaveCount(2);
-    await expect(page.getByRole('link', { name: '120881' })).toBeVisible();
-    await expect(page.getByRole('link', { name: '120874' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'TRP-120881' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'TRP-120874' })).toBeVisible();
   });
 
   test('a search with no matches shows the empty state, not a broken table', async ({ page }) => {
-    const search = page.locator('[data-filter="q"]');
+    const search = page.getByPlaceholder('Any of the above');
     await search.fill('zzz-does-not-exist');
     await search.press('Enter');
     await expect(page.getByText('No trip matches this search')).toBeVisible();
@@ -78,15 +79,15 @@ test.describe('trips list', () => {
   });
 
   test('stage filter narrows to the one IN_TRANSIT trip', async ({ page }) => {
-    await page.locator('select[data-filter="stage"]').selectOption('IN_TRANSIT');
+    await field(page, 'Stage').locator('select').selectOption('IN_TRANSIT');
     await expect(page.locator('table.table tbody tr')).toHaveCount(1);
-    await expect(page.getByRole('link', { name: '120869' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'TRP-120869' })).toBeVisible();
   });
 
   test('POD status filter narrows to the one APPROVED trip', async ({ page }) => {
-    await page.locator('select[data-filter="podStatus"]').selectOption('APPROVED');
+    await field(page, 'POD status').locator('select').selectOption('APPROVED');
     await expect(page.locator('table.table tbody tr')).toHaveCount(1);
-    await expect(page.getByRole('link', { name: '120855' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'TRP-120855' })).toBeVisible();
   });
 
   test('FINANCE gets a read-only badge (VIEW-level on trips)', async ({ page }) => {
@@ -96,28 +97,28 @@ test.describe('trips list', () => {
   });
 
   test('clicking a trip code opens its detail page', async ({ page }) => {
-    await page.getByRole('link', { name: '120881' }).click();
+    await page.getByRole('link', { name: 'TRP-120881' }).click();
     await expect(page).toHaveURL(/\/trips\/t-120881$/);
-    await expect(page.getByRole('heading', { name: '120881', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'TRP-120881', exact: true })).toBeVisible();
   });
 
   test('clicking elsewhere in a row also navigates (DataTable row-click)', async ({ page }) => {
     await page.getByText('Hosur → Gurugram').click();
     await expect(page).toHaveURL(/\/trips\/t-120869$/);
-    await expect(page.getByRole('heading', { name: '120869', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'TRP-120869', exact: true })).toBeVisible();
   });
 });
 
-test.describe('trip detail — 120881 (OPS, edit)', () => {
+test.describe('trip detail — TRP-120881 (OPS, edit)', () => {
   test.beforeEach(async ({ page }) => {
     await setRole(page, 'OPS');
     await page.goto('/trips/t-120881');
-    await expect(page.getByRole('heading', { name: '120881', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'TRP-120881', exact: true })).toBeVisible();
   });
 
   test('identifiers, truck/driver and money fact lists render seeded values', async ({ page }) => {
     await expect(fact(page, 'Lorry receipt')).toHaveText('LR-88214');
-    await expect(fact(page, 'Indent')).toHaveText('4443');
+    await expect(fact(page, 'Indent')).toHaveText('IND-4443');
     await expect(fact(page, 'Client')).toHaveText('Berger Paints');
     await expect(fact(page, 'Transporter')).toHaveText('Rathod Roadlines');
     await expect(fact(page, 'Branch')).toHaveText('Nashik');
@@ -136,7 +137,7 @@ test.describe('trip detail — 120881 (OPS, edit)', () => {
   });
 
   test('the indent link in Identifiers goes to the indent detail page', async ({ page }) => {
-    await page.getByRole('link', { name: '4443' }).click();
+    await page.getByRole('link', { name: 'IND-4443' }).click();
     await expect(page).toHaveURL(/\/indents\/i-4443$/);
   });
 
@@ -185,7 +186,7 @@ test.describe('trip detail — 120881 (OPS, edit)', () => {
   });
 });
 
-test.describe('trip detail sub-pages — 120881 (OPS)', () => {
+test.describe('trip detail sub-pages — TRP-120881 (OPS)', () => {
   test('documents page groups the eleven-document set with per-group verified counts', async ({ page }) => {
     await setRole(page, 'OPS');
     await page.goto('/trips/t-120881/documents');
@@ -233,7 +234,7 @@ test.describe('trip detail sub-pages — 120881 (OPS)', () => {
   });
 });
 
-test.describe('trip detail — 120855 (fully cleared money gates)', () => {
+test.describe('trip detail — TRP-120855 (fully cleared money gates)', () => {
   test('advance already released and balance ready to release, both read-only for OPS', async ({ page }) => {
     await setRole(page, 'OPS');
     await page.goto('/trips/t-120855');

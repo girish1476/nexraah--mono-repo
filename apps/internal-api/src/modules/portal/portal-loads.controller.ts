@@ -54,7 +54,7 @@ export class PortalLoadsController {
     return this.loadsService.listLoads(vendor, { truckType, branch });
   }
 
-  /** `code` is the indent series, never `LD-` (`11-portal.md` §5.2). */
+  /** `code` is the `IND-` series, never `LD-` (`11-portal.md` §5.2). */
   @Get('loads/:code')
   getLoad(@CurrentVendor() vendor: PortalVendor, @Param('code') code: string) {
     return this.loadsService.getLoad(vendor, code);

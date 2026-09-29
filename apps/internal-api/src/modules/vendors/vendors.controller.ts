@@ -61,12 +61,6 @@ export class VendorsController {
     return this.vendorsService.getById(id);
   }
 
-  /** Loads placed with this vendor — see `VendorsService.placements`. */
-  @Get(':id/placements')
-  placements(@Param('id') id: string) {
-    return this.vendorsService.placements(id);
-  }
-
   @Post()
   @RequirePermission('vendor.edit')
   create(@Body() dto: CreateVendorDto, @CurrentUser() user: AuthenticatedUser) {

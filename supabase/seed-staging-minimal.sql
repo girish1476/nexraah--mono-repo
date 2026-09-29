@@ -18,11 +18,11 @@
 -- Everything below is a placeholder. The branch (code `HQ`) is meant to be
 -- renamed or replaced with your real branch(es) once you have them. Every
 -- other row — the client, transporter, fleet truck and load request — is
--- named with a `SAMPLE` code (`CLT-SAMPLE`, `VND-SAMPLE`, `SAMPLE`, fleet
+-- named with a `SAMPLE` code (`CLT-SAMPLE`, `VND-SAMPLE`, `IND-SAMPLE`, fleet
 -- registration `SAMPLE0001`) specifically so they're easy to find and delete
 -- once real data starts arriving. Order matters — each step frees the
 -- reference the next one needs to delete cleanly:
---   delete from indents where code = 'SAMPLE';
+--   delete from indents where code = 'IND-SAMPLE';
 --   delete from rate_card_lanes where client_id = (select id from clients where code = 'CLT-SAMPLE');
 --   delete from rfqs where client_id = (select id from clients where code = 'CLT-SAMPLE'); -- cascades to rfq_lanes
 --   delete from vendor_fleet where registration = 'SAMPLE0001';
@@ -94,7 +94,7 @@ select r.client_id, l.id, l.origin, l.destination, l.truck_type,
 insert into indents (code, client_id, branch_id, from_city, to_city, material,
                      weight_kg, truck_type, pickup_date, transit_days, sell_rate,
                      rate_source, rate_card_lane_id, bid_min, bid_max, advance_pct, stage)
-select 'SAMPLE', c.id, b.id, rc.origin, rc.destination,
+select 'IND-SAMPLE', c.id, b.id, rc.origin, rc.destination,
        'Sample goods — edit or replace', 10000, '32FT_SXL', current_date + 3, 2,
        4500000, 'CONTRACT', rc.id, 4000000, 4500000, 70, 'OPEN'
   from clients c, branches b, rate_card_lanes rc
@@ -106,7 +106,7 @@ on conflict (code) do nothing;
 -- collide with these on a `duplicate key value` error.
 update number_series set next_value = greatest(next_value, 2) where key = 'VENDOR';
 update number_series set next_value = greatest(next_value, 2) where key = 'CLIENT';
--- INDENT's code here is non-numeric (`SAMPLE`, not a number) precisely
+-- INDENT's code here is non-numeric (`IND-SAMPLE`, not `IND-####`) precisely
 -- so it can never collide with a real series-issued code — no series bump
 -- needed for it.
 

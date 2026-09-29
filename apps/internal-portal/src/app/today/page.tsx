@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import { StaleIndentsPanel } from '@/components/stale-indents';
 import { useEffect, useState } from 'react';
 import { useAtomValue } from 'jotai';
 import { errorMessage } from '@/apis';
@@ -213,8 +212,6 @@ export default function TodayPage() {
           </div>
         </div>
       </div>
-
-      <StaleIndentsPanel />
 
       <SectionHead
         emoji="📌"

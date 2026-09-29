@@ -2,9 +2,7 @@
 
 import Link from 'next/link';
 import { ChangeEvent, useCallback, useEffect, useRef, useState } from 'react';
-import { useAtomValue } from 'jotai';
 import { errorMessage, request } from '@/apis';
-import { sessionAtom } from '@/store/atoms';
 import { fmtDateTime, inr } from '@/lib/format';
 import {
   Banner,
@@ -81,7 +79,6 @@ export function LorryReceiptContent({
 }) {
   const can = useCan();
   const toast = useToast();
-  const session = useAtomValue(sessionAtom);
 
   const [trip, setTrip] = useState<TripDetail | null>(null);
   const [lr, setLr] = useState<LorryReceipt | null>(null);
@@ -106,17 +103,11 @@ export function LorryReceiptContent({
     Promise.all([getTrip(tripId), getLr(tripId), getCrossCheck(tripId)])
       .then(([t, l, c]) => {
         setTrip(t);
-        // A trip with no draft yet starts from what the trip already knows, so the
-        // person issuing the receipt is checking it rather than typing it out.
         const lrValue = l ?? {
           ...EMPTY,
-          consignor: { name: t.clientName, address: '', gstin: '' },
-          goods: { ...EMPTY.goods, weightTn: t.weightTn ?? 0 },
           vehicle: { registration: t.vehicleNo, type: t.vehicleType },
-          driver: { name: t.driverName ?? '', licence: t.driverLicence ?? '', phone: t.driverPhone ?? '' },
           transitDays: t.transitDaysRequired,
           remarks: t.remarks,
-          chargeHeads: { ...EMPTY.chargeHeads, freightPaise: t.sellRatePaise ?? 0 },
         };
         setLr(lrValue);
         setCrossCheck(c);
@@ -153,10 +144,6 @@ export function LorryReceiptContent({
   const generate = async () => {
     setBusy(true);
     try {
-      // The receipt is issued from a saved draft. Waiting for the autosave meant a
-      // trip nobody had edited had no draft, and Generate failed on the first click.
-      if (timer.current) clearTimeout(timer.current);
-      if (lr) await patchLr(tripId, lr);
       const issued = await generateLr(tripId);
       setLr(issued);
       toast(`${issued.code} issued · the trip is open`);
@@ -237,8 +224,6 @@ export function LorryReceiptContent({
   const mismatchOpen = !!crossCheck && crossCheck.mismatches.length > 0 && !crossCheck.overridden;
   const notPlaced = !trip.vehicleNo;
   const canIssue = can('indent.manage') && !lr.code && !mismatchOpen && !notPlaced;
-  // The trip's loading supervisor may upload the lorry receipt too.
-  const isSupervisor = !!session && trip.loadingSupervisorId !== null && trip.loadingSupervisorId === session.userId;
 
   const lrDoc = trip.documents.find((d) => d.kind === 'LR') ?? null;
   const hasManualUpload = !!lrDoc && lrDoc.status !== 'MISSING';
@@ -270,7 +255,7 @@ export function LorryReceiptContent({
           <button
             className="btn btn-secondary btn-lg"
             onClick={() => setChoosing('MANUAL')}
-            disabled={!can('indent.manage') && !can('document.verify') && !isSupervisor}
+            disabled={!can('indent.manage') && !can('document.verify')}
             style={{ flex: '1 1 220px' }}
           >
             📎 Upload one manually

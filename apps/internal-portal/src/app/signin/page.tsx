@@ -19,8 +19,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AuthError, isSignedIn, signIn } from '@/lib/auth';
 import { MOCKS_ENABLED, mockAccounts } from '@/mocks';
-import { DEMO_PASSWORD } from '@/mocks/db';
-import { forgetSaved } from '@/mocks/persist';
+import { DEMO_PASSWORD, resetToEmpty } from '@/mocks/db';
 import { ROLES } from '@/lib/permissions';
 import { Field } from '@/lib/ui';
 
@@ -31,6 +30,7 @@ export default function SignInPage() {
   const [reveal, setReveal] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cleared, setCleared] = useState(false);
 
   // Someone who still holds a session has no business on this screen; send
   // them on rather than letting them sign in a second time over the top.
@@ -180,19 +180,20 @@ export default function SignInPage() {
           <div className="surface auth-reset-panel">
             <p className="auth-reset-copy">
               <span aria-hidden>🧹</span>
-              The console keeps what you do in this browser, so you can pick up where you left off. To begin again
-              from a clean start — one client, one transporter and nothing else — clear it here. The demo accounts
-              above and the system settings stay.
+              Testing from scratch? This clears every seeded vendor, client, indent, trip, invoice,
+              approval and RFQ so you can build your own data end to end. The six accounts above, the
+              branch list and system config stay — you still need somewhere to sign in.
             </p>
             <button
               className="btn btn-secondary"
               style={{ width: '100%' }}
+              disabled={cleared}
               onClick={() => {
-                forgetSaved();
-                window.location.reload();
+                resetToEmpty();
+                setCleared(true);
               }}
             >
-              Clear my work and start over
+              {cleared ? 'Cleared — sign in above to start building' : 'Start with a clean slate'}
             </button>
           </div>
         )}
@@ -219,7 +220,7 @@ function initials(name: string) {
 }
 
 /**
- * Present only with mocks on, where these demo accounts are the only ones that
+ * Present only with mocks on, where these six accounts are the only ones that
  * exist. Picking one *fills the form* rather than signing in: the password is
  * still checked, so the demo exercises the real path instead of routing around
  * it — which is exactly what the old one-click role buttons did wrong.
@@ -229,7 +230,7 @@ function DemoAccounts({ onPick }: { onPick: (email: string) => void }) {
     <div className="surface auth-demo-panel">
       <p className="auth-demo-copy">
         Demo accounts — sample data only. Pick one to fill the form, then sign in. The password for
-        every one of them is <strong>{DEMO_PASSWORD}</strong>.
+        all six is <strong>{DEMO_PASSWORD}</strong>.
       </p>
       <div className="auth-demo-list">
         {mockAccounts().map((account) => (

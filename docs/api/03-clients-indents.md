@@ -42,27 +42,9 @@ GET   /clients/:id/rate-card
   "id": "rc-1", "rfqLaneId": "rl-1",
   "origin": "Kolkata", "destination": "Nashik", "truckType": "32 ft SXL",
   "ratePaise": 6420000, "transitDays": 5, "reportingRule": "NEXT_DAY",
-  "validFrom": "2026-04-01", "validTo": "2027-03-31",
-  "bidMinPaise": 5500000, "bidMaxPaise": 6000000
+  "validFrom": "2026-04-01", "validTo": "2027-03-31"
 }]
 ```
-
-`bidMinPaise` / `bidMaxPaise` are the floor and ceiling a transporter quote is judged against on this lane, both `null` until set. They are copied onto every indent raised against the lane.
-
-### `PUT /clients/:id/rate-card/:laneId/band`
-
-**Permission** — `client.manage`. **Body** — `{ "bidMinPaise": 5600000, "bidMaxPaise": 6100000, "reason": "≥ 20 characters, only when a band already exists" }`.
-
-| Situation | Outcome |
-|---|---|
-| Lane has no band yet | `200 { "applied": true, … }` — set at once |
-| Lane already has a band | `202 approvalRequired`, kind `LANE_BAND_CHANGE`, decided by `approve.above_band` (Leadership). The band moves only when it is approved; indents already raised keep the band they were raised with |
-| Same band as now | `400 BAND_UNCHANGED` |
-| Existing band, reason under 20 characters | `400 REASON_TOO_SHORT` |
-| Max below min | `400 VALIDATION_ERROR` |
-| Lane belongs to another client / has ended | `400 LANE_NOT_ON_CLIENT` / `400 LANE_ALREADY_CLOSED` |
-
-A rate revision (`POST /clients/:id/rate-revisions`) carries the lane's band across to the successor lane, so a new rate never strips it.
 
 `rfqLaneId` is `NOT NULL` in the schema — a rate card line with no RFQ provenance cannot exist. Part 12 imports client rate cards against a **synthetic closed RFQ** for exactly this reason.
 
@@ -154,13 +136,10 @@ Adds `quotes[]` and the pricing block:
   "sellRatePaise": 4680000,
   "sourcingRatePaise": 4020000,
   "spotConfirmationAttachmentId": "att-spot-4471",
+  "bidMinPaise": 3800000, "bidMaxPaise": 4250000,
   "advancePct": 40
 }
 ```
-
-**No bid band in the body.** `bidMinPaise` / `bidMaxPaise` are not accepted here (the whitelist rejects them). The band is a term of the client's rate, held on the rate-card lane; the server copies it onto the indent from the client's lane in force on `pickupDate` for the same route and truck type. A spot load, or a route the rate card does not cover, gets no band (both `null`) and `bandLocked: false` — there is nothing to enforce. Changing a band is done on the lane, below.
-
-**`advancePct` is optional.** Omit it and the awarded vendor's standing policy applies at award (`BR-30`); the indent then reports `advancePctOverridden: false`. Send it and it is this order's own figure, `advancePctOverridden: true`, and award keeps it instead of overwriting it. `0–100`, integer.
 
 **Errors**
 
@@ -187,7 +166,7 @@ Branch is **derived from the pickup city** and carried unchanged to the trip and
 
 The buy rate is never reconstructed from a rate card afterwards. Advance, balance, margin and P&L all read that field.
 
-Awarding also sets `advancePct` from the awarded vendor's standing policy (`BR-30`) — unless the indent was raised with its own `advancePct` (`advancePctOverridden: true`), which it keeps.
+Awarding also sets `advancePct` from the awarded vendor's standing policy (`BR-30`).
 
 ---
 

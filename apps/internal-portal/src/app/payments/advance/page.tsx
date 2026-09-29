@@ -1,11 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { errorMessage } from '@/apis';
 import { AdvancePanel } from '@/components/advance-panel';
 import { inr } from '@/lib/format';
-import { downloadCsv, todayStamp } from '@/lib/export-csv';
-import { activeFilterCount, emptyFilters, FilterBar, FilterField, FilterValues, matchesAny } from '@/lib/list-filters';
 import {
   Column,
   DataTable,
@@ -23,31 +21,6 @@ import {
 import { listAdvanceQueue } from '../apis';
 import { AdvanceQueueRow } from '../types';
 
-const FILTER_FIELDS: FilterField[] = [
-  { kind: 'text', key: 'q', label: 'Search anything', placeholder: 'Trip, load request, transporter, city…' },
-  {
-    kind: 'select',
-    key: 'state',
-    label: 'Can we pay yet?',
-    allLabel: 'Either',
-    options: [
-      { value: 'ready', label: 'Ready to pay' },
-      { value: 'held', label: 'Held until papers are in' },
-    ],
-  },
-  { kind: 'text', key: 'vendor', label: 'Transporter', placeholder: 'Transporter name' },
-  { kind: 'text', key: 'from', label: 'From', placeholder: 'Pick-up city' },
-  { kind: 'text', key: 'to', label: 'To', placeholder: 'Delivery city' },
-  { kind: 'text', key: 'ref', label: 'Trip or load request number', placeholder: 'Trip or load request number' },
-  { kind: 'text', key: 'branchName', label: 'Branch', placeholder: 'Branch name' },
-];
-
-/** The lane is stored as one string, "Mumbai → Pune". */
-function laneEnds(lane: string): [string, string] {
-  const [from = '', to = ''] = lane.split('→').map((x) => x.trim());
-  return [from, to];
-}
-
 /**
  * Advance queue — `/payments/advance` · `payment.release` (part 07 §1).
  *
@@ -59,7 +32,6 @@ export default function AdvanceQueuePage() {
   const [rows, setRows] = useState<AdvanceQueueRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<AdvanceQueueRow | null>(null);
-  const [filters, setFilters] = useState<FilterValues>(() => emptyFilters(FILTER_FIELDS));
 
   const load = () => {
     setError(null);
@@ -97,37 +69,6 @@ export default function AdvanceQueuePage() {
     },
   ];
 
-  const visible = useMemo(
-    () =>
-      (rows ?? []).filter((r) => {
-        const [from, to] = laneEnds(r.lane);
-        return (
-          (!filters.state || (filters.state === 'ready' ? !r.blocked : r.blocked)) &&
-          matchesAny(filters.q, r.tripCode, r.indentCode, r.vendorName, r.lane) &&
-          matchesAny(filters.vendor, r.vendorName) &&
-          matchesAny(filters.from, from) &&
-          matchesAny(filters.to, to) &&
-          matchesAny(filters.ref, r.tripCode, r.indentCode) &&
-          matchesAny(filters.branchName, r.branchName)
-        );
-      }),
-    [rows, filters],
-  );
-
-  const exportRows = async () => {
-    downloadCsv(
-      `advance-payments-${todayStamp()}.csv`,
-      ['Trip', 'Load request', 'Transporter', 'From', 'To', 'Branch', 'Advance %', 'Amount (INR)', 'Can we pay yet?', 'Conditions unmet'],
-      visible.map((r) => {
-        const [from, to] = laneEnds(r.lane);
-        return [
-          r.tripCode, r.indentCode, r.vendorName, from, to, r.branchName, r.advancePct, r.grossPaise / 100,
-          r.blocked ? 'Held' : 'Ready to pay', r.unmetCount,
-        ];
-      }),
-    );
-  };
-
   if (error) return <ErrorState message={error} retry={load} />;
   if (!rows) return <Loading what="Loading the advance queue" />;
 
@@ -156,32 +97,17 @@ export default function AdvanceQueuePage() {
           ]}
         />
 
-        <FilterBar
-          fields={FILTER_FIELDS}
-          values={filters}
-          onChange={setFilters}
-          onExport={exportRows}
-          resultNote={`${visible.length} trip${visible.length === 1 ? '' : 's'} found`}
-        />
-
         <Panel pad={false}>
           <DataTable
             columns={columns}
-            rows={visible}
+            rows={rows}
             rowKey={(r) => r.tripId}
             onRowClick={setSelected}
             empty={
-              activeFilterCount(filters) > 0 ? (
-                <EmptyState
-                  title="No advance matches this search"
-                  hint="Loosen one of the boxes above, or use Clear to start again."
-                />
-              ) : (
               <EmptyState
                 title="No advances waiting"
                 hint="A trip lands here once it is dispatched and eligible for an advance. An empty queue means Finance is caught up, not that something is missing."
               />
-              )
             }
           />
         </Panel>

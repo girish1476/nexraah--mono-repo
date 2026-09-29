@@ -1,9 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
 
-// Specs read fixtures (`../src/mocks/db`) in Node to work out what a screen should show. The screens
-// they check are opened with the rich demo set, so Node must load the same one, not the clean start.
-process.env.NEXT_PUBLIC_DEMO_DATA = '1';
-
 /**
  * E2E config — runs against the mock adapter (NEXT_PUBLIC_USE_MOCKS=1), the
  * same fixture data every page already renders against in local dev. No
@@ -56,8 +52,6 @@ export default defineConfig({
     url: 'http://localhost:3002',
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,
-    // The app itself starts clean (what a real user gets); specs that want the rich set ask for it
-    // in the browser with `nexraah.demo`. See the note at the top of this file.
-    env: { NEXT_PUBLIC_USE_MOCKS: '1', NEXT_PUBLIC_DEMO_DATA: '0' },
+    env: { NEXT_PUBLIC_USE_MOCKS: '1' },
   },
 });

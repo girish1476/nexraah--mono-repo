@@ -24,8 +24,6 @@ import {
   useToast,
 } from '@/lib/ui';
 import { getRateCard, listClients } from '../apis';
-import { AddLaneDialog } from '../add-lane-dialog';
-import { LiveLane, liveLanes } from '../lanes';
 import { Client, RateCardLane } from '../types';
 import { listRateRevisions, proposeRateRevision } from './apis';
 import {
@@ -67,30 +65,21 @@ export default function RateChangesPage() {
   const [clients, setClients] = useState<Client[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [clientId, setClientId] = useState<string>('');
-  const [lanes, setLanes] = useState<LiveLane[] | null>(null);
+  const [lanes, setLanes] = useState<RateCardLane[] | null>(null);
   const [history, setHistory] = useState<RateRevision[] | null>(null);
 
   const [editing, setEditing] = useState<RateCardLane | null>(null);
   const [newRate, setNewRate] = useState('');
   const [effectiveFrom, setEffectiveFrom] = useState(today());
   const [reason, setReason] = useState('');
-  const [mailSubject, setMailSubject] = useState('');
   const [busy, setBusy] = useState(false);
-  const [adding, setAdding] = useState(false);
 
   const loadClients = () => {
     setError(null);
     listClients()
       .then((rows) => {
         setClients(rows);
-        // The client file links here with `?client=<id>`, so the screen opens
-        // on the client you came from. Read from `window.location` on mount —
-        // the same reason `/pod/pending` does — rather than `useSearchParams()`.
-        const asked = new URLSearchParams(window.location.search).get('client');
-        const first = rows.find((c) => c.id === asked)?.id ?? rows[0]?.id ?? '';
-        setClientId((current) => current || first);
-        // The client file's "Add a lane" arrives as `?add=1`.
-        if (new URLSearchParams(window.location.search).get('add') === '1') setAdding(true);
+        if (rows.length > 0) setClientId((current) => current || rows[0].id);
       })
       .catch((e) => setError(errorMessage(e)));
   };
@@ -100,7 +89,7 @@ export default function RateChangesPage() {
     if (!id) return;
     setLanes(null);
     setHistory(null);
-    getRateCard(id).then((rows) => setLanes(liveLanes(rows))).catch((e) => toast(errorMessage(e)));
+    getRateCard(id).then(setLanes).catch((e) => toast(errorMessage(e)));
     listRateRevisions(id).then(setHistory).catch((e) => toast(errorMessage(e)));
   };
   useEffect(() => loadClient(clientId), [clientId]);
@@ -112,7 +101,6 @@ export default function RateChangesPage() {
     setNewRate(String(Math.round(lane.ratePaise / 100)));
     setEffectiveFrom(today());
     setReason('');
-    setMailSubject('');
   };
 
   const submit = async () => {
@@ -128,7 +116,6 @@ export default function RateChangesPage() {
         newRatePaise: Math.round(Number(newRate) * 100),
         effectiveFrom,
         reason: reason.trim(),
-        approvalMailSubject: mailSubject.trim(),
       });
     } catch (e) {
       if (e instanceof ApprovalRequiredError) {
@@ -146,9 +133,6 @@ export default function RateChangesPage() {
   if (error) return <ErrorState message={error} retry={loadClients} />;
   if (!clients) return <Loading what="Loading clients" />;
 
-  const selected = clients.find((c) => c.id === clientId);
-  const canAddLane = can('rate.revise') && selected?.engagement === 'CONTRACT';
-
   const pending = (history ?? []).filter((r) => r.status === 'PENDING');
   const lanesPendingChange = new Set(
     pending.map((r) => `${r.lane ?? ''}·${r.truckType ?? ''}`),
@@ -165,33 +149,30 @@ export default function RateChangesPage() {
     if (reason.trim().length < MIN_REASON) {
       return `Say why it is changing (at least ${MIN_REASON} characters).`;
     }
-    if (mailSubject.trim().length < 5) return 'Put in the subject of the BD and Leadership approval mail.';
     return null;
   })();
 
-  const laneColumns: Column<LiveLane>[] = [
-    { key: 'truck', label: 'Truck type', primary: true, render: ({ lane: l }) => l.truckType },
-    { key: 'from', label: 'From location', render: ({ lane: l }) => l.origin },
-    { key: 'to', label: 'To location', render: ({ lane: l }) => l.destination },
-    { key: 'transit', label: 'Transit days', render: ({ lane: l }) => l.transitDays },
-    { key: 'rate', label: 'Lane rate', render: ({ lane: l }) => inr(l.ratePaise) },
+  const laneColumns: Column<RateCardLane>[] = [
+    {
+      key: 'lane',
+      label: 'Route',
+      primary: true,
+      render: (l) => `${l.origin} → ${l.destination}`,
+      sub: (l) => l.truckType,
+    },
+    { key: 'rate', label: 'Agreed rate', render: (l) => inr(l.ratePaise) },
     {
       key: 'period',
       label: 'In force',
-      render: ({ lane: l }) =>
-        `${fmtDate(l.validFrom)} — ${l.validTo ? fmtDate(l.validTo) : 'open-ended'}`,
+      render: (l) => `${fmtDate(l.validFrom)} — ${l.validTo ? fmtDate(l.validTo) : 'open-ended'}`,
     },
     {
       key: 'go',
       label: '',
-      render: ({ lane: l, replacedFrom }) =>
+      render: (l) =>
         lanesPendingChange.has(`${l.origin} → ${l.destination}·${l.truckType}`) ? (
           <Tag tone="flag" emoji="⏳">
             Change waiting for sign-off
-          </Tag>
-        ) : replacedFrom ? (
-          <Tag tone="grey" emoji="📅">
-            New rate starts {fmtDate(replacedFrom)}
           </Tag>
         ) : (
           <button
@@ -245,7 +226,7 @@ export default function RateChangesPage() {
         module="clients"
       />
       <PageIntro
-        what="Pick a client. Add a lane to their rate card, or pick a lane whose rate is changing and say what it is changing to and why."
+        what="Pick a client, pick the lane whose rate is changing, and say what it is changing to and why."
         who="Finance asks for the change. Somebody who can approve a contract has to agree to it before it takes effect."
       >
         The old rate is never wiped. It closes on the day before the new one starts, so a load that
@@ -269,7 +250,7 @@ export default function RateChangesPage() {
         stats={[
           {
             k: 'Lanes on this rate card',
-            v: (lanes ?? []).filter(({ lane }) => lane.validFrom <= today()).length,
+            v: lanes?.length ?? 0,
             emoji: '🛣️',
             id: 'rate-lanes',
             note: 'Routes we have an agreed price for',
@@ -308,13 +289,6 @@ export default function RateChangesPage() {
         emoji="🛣️"
         title="This client’s agreed rates"
         note="What we charge them today, per route and truck type"
-        right={
-          canAddLane ? (
-            <button className="btn btn-secondary btn-sm" onClick={() => setAdding(true)}>
-              ➕ Add a lane
-            </button>
-          ) : undefined
-        }
       />
 
       <Panel pad={false}>
@@ -324,23 +298,12 @@ export default function RateChangesPage() {
           <DataTable
             columns={laneColumns}
             rows={lanes}
-            rowKey={(l) => l.lane.id}
+            rowKey={(l) => l.id}
             empty={
               <EmptyState
                 emoji="📄"
                 title="This client has no agreed rates yet"
-                hint={
-                  selected?.engagement === 'SPOT'
-                    ? 'This client is priced load by load, so they have no rate card. Change them to a contract client first.'
-                    : 'A rate card is written when a rate request is won, or you can add a lane here — one route and truck type at a time.'
-                }
-                action={
-                  canAddLane ? (
-                    <button className="btn btn-sm" onClick={() => setAdding(true)}>
-                      ➕ Add the first lane
-                    </button>
-                  ) : undefined
-                }
+                hint="A rate card is written when a rate request is won. Until then there is nothing to change."
               />
             }
           />
@@ -371,16 +334,6 @@ export default function RateChangesPage() {
           />
         )}
       </Panel>
-
-      {selected && (
-        <AddLaneDialog
-          clientId={selected.id}
-          clientName={selected.name}
-          open={adding}
-          onClose={() => setAdding(false)}
-          onSent={() => loadClient(selected.id)}
-        />
-      )}
 
       {/* ---- propose one change ------------------------------------------ */}
       <Dialog
@@ -434,14 +387,6 @@ export default function RateChangesPage() {
                 onChange={(e) => setReason(e.target.value)}
                 placeholder="e.g. Diesel surcharge agreed with their logistics head on 25 August"
               />
-            </Field>
-
-            <Field
-              label="Approval mail subject"
-              required
-              hint="BD and Leadership approve a rate by mail; Compliance signs it off against that mail."
-            >
-              <input value={mailSubject} onChange={(e) => setMailSubject(e.target.value)} placeholder="e.g. RE: Berger Paints rate revision" />
             </Field>
 
             <div className="hint">

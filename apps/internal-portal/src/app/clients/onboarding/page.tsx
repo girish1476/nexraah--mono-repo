@@ -245,20 +245,7 @@ export default function ClientOnboardingPage() {
         confirmLabel="Clear this client"
         confirmDisabled={!open?.gate.canActivate || !can('client.onboard')}
         busy={busy}
-        onConfirm={async () => {
-          if (!open) return;
-          setBusy(true);
-          try {
-            await activateClient(open.id);
-            toast(`${open.name} is cleared for work — loads can be raised for them now`);
-            setOpen(null);
-            load();
-          } catch (e) {
-            toast(errorMessage(e));
-          } finally {
-            setBusy(false);
-          }
-        }}
+        onConfirm={() => open && run(() => activateClient(open.id))}
         onClose={() => setOpen(null)}
       >
         {open && (

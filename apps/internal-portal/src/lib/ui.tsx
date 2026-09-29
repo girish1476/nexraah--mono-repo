@@ -6,9 +6,7 @@ import {
   KeyboardEvent as ReactKeyboardEvent,
   ReactNode,
   useCallback,
-  useEffect,
 } from 'react';
-import { useRouter } from 'next/navigation';
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import { permissionsAtom, roleAtom, toastAtom } from '@/store/atoms';
 import { CITIES } from './geo';
@@ -1277,24 +1275,44 @@ export function ErrorState({ message, retry }: { message: string; retry?: () => 
 }
 
 /**
- * Wraps a page body so a role with no access to it never sees it.
+ * Direct URL to a module the role lacks — a lock panel naming the owner.
  *
- * A direct URL to a module the role lacks (a stale link, a browser-history
- * jump, a bookmark from another account) sends them straight back to their
- * own landing page instead — the route behaves as if it were never there.
- * The server refuses the underlying requests independent of this: the
- * redirect is only ever about what renders, never the actual access rule.
+ * The owners used to print as raw role codes: "It belongs to COMPLIANCE,
+ * ADMIN." A screaming enum is not a person somebody can go and ask, and it
+ * is exactly the kind of internal identifier this console should never put
+ * in front of a reader. They print as desk names now.
  */
+export function ModuleLock({ module }: { module: ModuleKey }) {
+  const role = useRole();
+  const owners = (Object.keys(ROLES) as RoleCode[])
+    .filter((r) => levelFor(module, r) === 'EDIT')
+    .map((r) => ROLES[r].label);
+  const named =
+    owners.length <= 1
+      ? owners[0]
+      : `${owners.slice(0, -1).join(', ')} and ${owners[owners.length - 1]}`;
+  return (
+    <div className="surface" style={{ padding: 24, maxWidth: 560 }}>
+      <h1 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <Glyph size={24}>🔒</Glyph>
+        {MODULE_LABEL[module]}
+      </h1>
+      <p style={{ fontSize: 'var(--text-base)', marginTop: 10, lineHeight: 1.6 }}>
+        {MODULE_LABEL[module]} is not part of the {ROLES[role].label} console.
+        {owners.length > 0 && ` It belongs to ${named} — ask them if you need something from it.`}
+      </p>
+      <p className="hint">
+        This is not just a hidden button: the server refuses the underlying requests too. The panel
+        is how that rule is shown, not the rule itself.
+      </p>
+    </div>
+  );
+}
+
+/** Wraps a page body so a lacking role gets the lock panel, not a broken screen. */
 export function ModuleGuard({ module, children }: { module: ModuleKey; children: ReactNode }) {
   const level = useLevel(module);
-  const role = useRole();
-  const router = useRouter();
-
-  useEffect(() => {
-    if (level === 'NONE') router.replace(ROLES[role].landsOn);
-  }, [level, role, router]);
-
-  if (level === 'NONE') return null;
+  if (level === 'NONE') return <ModuleLock module={module} />;
   return <>{children}</>;
 }
 

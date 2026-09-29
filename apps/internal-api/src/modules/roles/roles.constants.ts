@@ -15,15 +15,11 @@ export const INTERNAL_ROLES = [
   'BD',
   'LEADERSHIP',
   'ADMIN',
-  'LOADING_SUPERVISOR',
 ] as const;
 
 export type InternalRoleCode = (typeof INTERNAL_ROLES)[number];
 
 export const SEED_GRANTS: Record<InternalRoleCode, string[]> = {
-  // Holds no permission codes: a loading supervisor acts on the trips they are
-  // assigned to, checked per trip in `TripsService`, not through a blanket grant.
-  LOADING_SUPERVISOR: [],
   // Operations absorbed the branch manager — see the portal's permissions.ts
   // for the full reasoning, including the deliberate cost of `approve.exception`
   // landing on the desk that raises exceptions.
@@ -67,14 +63,13 @@ export const SEED_GRANTS: Record<InternalRoleCode, string[]> = {
   // Business development — rate management only. `rfq.submit` is deliberately
   // absent: it is a fixed permission held by Leadership, so the desk that
   // builds a price is never the desk that sends it to the client.
-  BD: ['rfq.edit', 'client.manage', 'indent.view', 'pnl.view_own', 'rate.revise'],
+  BD: ['rfq.edit', 'client.manage', 'indent.view', 'pnl.view_own'],
   // Leadership oversees every desk in fact, not just on paper. `payment.release`
   // stays out — a fixed permission that never belongs to two roles, so
   // oversight of the money never becomes a second pair of hands on it.
   LEADERSHIP: [
     'indent.create',
     'indent.manage',
-    'indent.reassign',
     'indent.view',
     'document.verify',
     'vendor.edit',
@@ -104,25 +99,13 @@ export const SEED_GRANTS: Record<InternalRoleCode, string[]> = {
    * `permissions-drift.test.ts` in the portal now fails if the two diverge
    * again.
    *
-   * 2026-09-26: admin now holds every permission, by the owner's direction —
-   * including the fixed `payment.release` / `pod.waive` / `rfq.submit` and all
-   * four `approve.*`, which used to be withheld. See the portal's
-   * permissions.ts for what that trades away. `permission_fixed_owners` is
-   * unchanged: it only stops these being granted to *other* roles by PATCH.
+   * `approve.*` stays out deliberately (the inbox is an audit view for admin,
+   * never a decision), as do the fixed permissions other than `config.manage`.
    */
   ADMIN: [
-    'payment.release',
-    'pod.waive',
-    'rfq.submit',
-    'approve.above_band',
-    'approve.waiver',
-    'approve.exception',
-    'approve.contract',
-    'pnl.view_own',
     'config.manage',
     'indent.create',
     'indent.manage',
-    'indent.reassign',
     'indent.view',
     'document.verify',
     'vendor.edit',

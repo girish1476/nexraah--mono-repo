@@ -7,9 +7,7 @@ export type ApprovalKind =
   | 'PENALTY_WAIVER'
   | 'DOC_OVERRIDE'
   | 'BRANCH_OVERRIDE'
-  | 'RATE_REVISION'
-  | 'LANE_BAND_CHANGE'
-  | 'RATE_CARD_LANE';
+  | 'RATE_REVISION';
 
 export interface ApprovalRow {
   id: string;

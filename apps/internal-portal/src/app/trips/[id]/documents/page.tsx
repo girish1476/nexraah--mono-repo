@@ -8,8 +8,8 @@ import { TripDocumentsContent } from './content';
 /**
  * Documents tab — `/trips/[id]/documents` (part 05 §3).
  *
- * Six groups, twelve documents. Nine gate the advance — the loading slip the
- * loading supervisor uploads among them, and fitness, permit and PUC. A cross-check mismatch blocks LR generation until
+ * Five groups, eleven documents. Eight gate the advance, and fitness, permit
+ * and PUC are in that set. A cross-check mismatch blocks LR generation until
  * it is rejected or overridden — catching it after dispatch catches nothing.
  *
  * The actual upload/verify/reject/cross-check workflow lives in
@@ -25,7 +25,7 @@ export default function TripDocumentsPage() {
       <PageHeader
         path={`/trips/${id}/documents`}
         title="Trip documents"
-        sub="Twelve documents in six groups. Nine of them must be verified before the advance can be released."
+        sub="Eleven documents in five groups. Eight of them must be verified before the advance can be released."
         module="trips"
       />
       <PageIntro

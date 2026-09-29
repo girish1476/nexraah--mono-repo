@@ -187,12 +187,7 @@ export class InvoicingRepository {
 
   markTripsBilled(db: DbExecutor, tripIds: string[]) {
     if (tripIds.length === 0) return Promise.resolve(undefined);
-    // Billing the client closes a trip whose transporter has already been paid.
-    return db
-      .updateTable('trips')
-      .set({ billed: true, stage: sql<string>`case when balance_paid > 0 then 'CLOSED' else stage end` })
-      .where('id', 'in', tripIds)
-      .execute();
+    return db.updateTable('trips').set({ billed: true }).where('id', 'in', tripIds).execute();
   }
 
   // ---- Receipts -----------------------------------------------------------

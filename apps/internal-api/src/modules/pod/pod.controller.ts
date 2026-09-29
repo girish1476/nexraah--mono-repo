@@ -5,11 +5,10 @@ import { RequirePermission } from '../../common/decorators/require-permission.de
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
 import { PodService } from './pod.service';
-import { AddDocketDto } from './dto/add-docket.dto';
 import { ReceivePodDto } from './dto/receive-pod.dto';
 import { VerifyPodDto } from './dto/verify-pod.dto';
 import { RejectPodDto } from './dto/reject-pod.dto';
-import { WaivePenaltyDto } from './dto/waive-pod.dto';
+import { WaivePodDto } from './dto/waive-pod.dto';
 
 @Controller('pod')
 @UseGuards(SupabaseJwtGuard, PermissionsGuard)
@@ -19,12 +18,6 @@ export class PodController {
   @Get('receiving')
   receiving(@Query('branch') branchId?: string) {
     return this.podService.receiving(branchId);
-  }
-
-  @Post(':tripId/docket')
-  @RequirePermission('pod.receive')
-  addDocket(@Param('tripId') tripId: string, @Body() dto: AddDocketDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.podService.addDocket(tripId, dto, user);
   }
 
   @Post(':tripId/receive')
@@ -67,7 +60,7 @@ export class PodController {
 
   @Post(':tripId/waive')
   @RequirePermission('pod.waive')
-  waive(@Param('tripId') tripId: string, @Body() dto: WaivePenaltyDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.podService.waive(tripId, dto, user);
+  waive(@Param('tripId') tripId: string, @Body() dto: WaivePodDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.podService.waive(tripId, dto.reason, user);
   }
 }

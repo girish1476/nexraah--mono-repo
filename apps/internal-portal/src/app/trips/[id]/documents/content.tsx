@@ -2,8 +2,6 @@
 
 import { ChangeEvent, useEffect, useRef, useState } from 'react';
 import { ApprovalRequiredError, errorMessage, request } from '@/apis';
-import { useAtomValue } from 'jotai';
-import { sessionAtom } from '@/store/atoms';
 import { DOC_GROUPS, docLabel } from '@/lib/documents';
 import { fmtDateTime } from '@/lib/format';
 import { ROLES } from '@/lib/permissions';
@@ -24,7 +22,6 @@ import {
 } from '@/lib/ui';
 import {
   getCrossCheck,
-  getTrip,
   getTripDocuments,
   overrideCrossCheck,
   rejectTripDocument,
@@ -52,8 +49,6 @@ const DOC_TONE: Record<DocStatus, Tone> = {
 export function TripDocumentsContent({ tripId }: { tripId: string }) {
   const can = useCan();
   const toast = useToast();
-  const session = useAtomValue(sessionAtom);
-  const [supervisorId, setSupervisorId] = useState<string | null>(null);
 
   const [docs, setDocs] = useState<TripDocument[] | null>(null);
   const [crossCheck, setCrossCheck] = useState<CrossCheckResult | null>(null);
@@ -72,21 +67,14 @@ export function TripDocumentsContent({ tripId }: { tripId: string }) {
 
   const load = () => {
     setError(null);
-    Promise.all([getTripDocuments(tripId), getCrossCheck(tripId), getTrip(tripId)])
-      .then(([d, c, t]) => {
+    Promise.all([getTripDocuments(tripId), getCrossCheck(tripId)])
+      .then(([d, c]) => {
         setDocs(d);
         setCrossCheck(c);
-        setSupervisorId(t.loadingSupervisorId ?? null);
       })
       .catch((e) => setError(errorMessage(e)));
   };
   useEffect(load, [tripId]);
-
-  // Operations and the document desk upload any document. So does the trip's own
-  // loading supervisor: the advance documents and the unloading ones alike.
-  // Compliance verifies whatever they upload.
-  const isSupervisor = !!session && supervisorId !== null && supervisorId === session.userId;
-  const canUpload = (_doc: TripDocument) => can('document.verify') || can('indent.manage') || isSupervisor;
 
   const upload = (doc: TripDocument) => {
     setPendingDoc(doc);
@@ -233,7 +221,7 @@ export function TripDocumentsContent({ tripId }: { tripId: string }) {
       align: 'right',
       render: (r) => {
         if (r.status === 'MISSING' || r.status === 'REJECTED')
-          return canUpload(r) ? (
+          return can('document.verify') || can('indent.manage') ? (
             <button
               className="btn btn-secondary btn-sm"
               onClick={() => upload(r)}
@@ -243,7 +231,7 @@ export function TripDocumentsContent({ tripId }: { tripId: string }) {
             </button>
           ) : (
             <span className="muted" style={{ fontSize: 11.5 }}>
-              The loading supervisor or {ROLES.OPS.label} uploads
+              {ROLES.OPS.label} uploads
             </span>
           );
         if (r.status === 'PENDING')
@@ -266,7 +254,7 @@ export function TripDocumentsContent({ tripId }: { tripId: string }) {
         // sends it back through the same verification step rather than
         // leaving a stale file as the record's last word with no way to
         // correct it short of a ticket to Administration.
-        return canUpload(r) ? (
+        return can('document.verify') || can('indent.manage') ? (
           <button className="btn btn-secondary btn-sm" onClick={() => upload(r)} disabled={uploading !== null}>
             {uploading === r.kind ? 'Uploading…' : 'Replace'}
           </button>

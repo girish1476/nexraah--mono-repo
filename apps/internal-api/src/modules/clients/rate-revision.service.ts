@@ -7,38 +7,11 @@ import { ApprovalsService } from '../approvals/approvals.service';
 import { ApprovalsRegistry } from '../approvals/approvals.registry';
 import { ClientsRepository } from './clients.repository';
 import { ProposeRateRevisionDto } from './dto/propose-rate-revision.dto';
-import { SetLaneBandDto } from './dto/set-lane-band.dto';
 import { checkRevision, revisionRows, type LaneForRevision } from './rate-revision';
-import { AddRateLaneDto } from './dto/add-rate-lane.dto';
-import { checkNewLane, routePart } from './rate-lane';
 
 /** Replayed verbatim on approval. Only the id — everything else is re-read under lock. */
 interface RateRevisionAction {
   revisionId: string;
-}
-
-/** Replayed on approval: the lane exactly as it was proposed. */
-interface RateCardLaneAction {
-  clientId: string;
-  origin: string;
-  destination: string;
-  truckType: string;
-  ratePaise: number;
-  transitDays: number;
-  validFrom: string;
-  validTo: string | null;
-  reason: string;
-  transitPenaltyApplies: boolean;
-  transitPenaltyPerDayPaise: number;
-  approvalMailSubject: string;
-  approvalMailAttachmentId: string | null;
-}
-
-/** Replayed on approval: the lane and the band that was asked for. */
-interface LaneBandAction {
-  laneId: string;
-  bidMinPaise: number;
-  bidMaxPaise: number;
 }
 
 /**
@@ -72,111 +45,6 @@ export class RateRevisionService implements OnModuleInit {
   ) {}
 
   onModuleInit() {
-    // Runs inside ApprovalsService.approve()'s transaction (ctx.db) — see the
-    // note on RATE_REVISION below for why a handler never opens its own.
-    this.approvalsRegistry.register('LANE_BAND_CHANGE', 'clients', async (action: LaneBandAction, ctx) => {
-      const lane = await this.clientsRepository.findLaneForUpdate(ctx.db, action.laneId);
-      if (!lane) {
-        throw new DomainException(409, 'LANE_NOT_FOUND', 'The lane this band change was raised against no longer exists.');
-      }
-      await this.clientsRepository.updateLaneBand(ctx.db, lane.id, {
-        bid_min: action.bidMinPaise,
-        bid_max: action.bidMaxPaise,
-      });
-      await this.auditService.record(
-        ctx.db,
-        { userId: ctx.approverId, role: ctx.approverRole },
-        {
-          action: 'LANE_BAND_CHANGED',
-          entityType: 'rate_card_lanes',
-          entityId: lane.id,
-          before: { bidMinPaise: lane.bid_min, bidMaxPaise: lane.bid_max },
-          after: { bidMinPaise: action.bidMinPaise, bidMaxPaise: action.bidMaxPaise },
-        },
-      );
-    });
-
-    this.approvalsRegistry.register('RATE_CARD_LANE', 'clients', async (action: RateCardLaneAction, ctx) => {
-      const client = await ctx.db
-        .selectFrom('clients')
-        .select(['id', 'code'])
-        .where('id', '=', action.clientId)
-        .forUpdate()
-        .executeTakeFirst();
-      if (!client) {
-        throw new DomainException(409, 'CLIENT_NOT_FOUND', 'The client this rate was proposed for no longer exists.');
-      }
-
-      /*
-       * Re-checked here, not only at propose time: the approval can sit in the
-       * inbox for days, and a lane for this route may have been won at RFQ or
-       * approved from another proposal in between. Refuse the approval rather
-       * than leave two rates in force for one route on one day. The client row
-       * lock above is what serialises two of these approved together.
-       */
-      const sameRoute = await this.clientsRepository.findRouteLanes(
-        client.id,
-        action.origin,
-        action.destination,
-        action.truckType,
-        ctx.db,
-      );
-      const recheck = checkNewLane(
-        action,
-        sameRoute.map((l) => ({ id: l.id, validFrom: l.valid_from, validTo: l.valid_to })),
-      );
-      if (!recheck.ok) {
-        throw new DomainException(
-          409,
-          'RATE_LANE_NO_LONGER_VALID',
-          `${recheck.reason} Raise a fresh proposal if it is still wanted.`,
-        );
-      }
-
-      const rfqLane = await this.clientsRepository.syntheticRfqLane(ctx.db, client.id, action, `DIRECT/${client.code}`);
-      const lane = await this.clientsRepository.insertLane(ctx.db, {
-        client_id: client.id,
-        rfq_lane_id: rfqLane.id,
-        origin: action.origin,
-        destination: action.destination,
-        truck_type: action.truckType,
-        rate: action.ratePaise,
-        transit_days: action.transitDays,
-        reporting_rule: null,
-        valid_from: action.validFrom,
-        valid_to: action.validTo,
-        supply_source: null,
-        supply_remarks: null,
-        transit_penalty_applies: action.transitPenaltyApplies,
-        transit_penalty_per_day: action.transitPenaltyApplies ? action.transitPenaltyPerDayPaise : 0,
-        approval_mail_subject: action.approvalMailSubject,
-        approval_mail_attachment_id: action.approvalMailAttachmentId,
-      });
-
-      await this.auditService.record(
-        ctx.db,
-        { userId: ctx.approverId, role: ctx.approverRole },
-        {
-          action: 'RATE_LANE_ADDED',
-          entityType: 'rate_card_lanes',
-          entityId: lane.id,
-          before: null,
-          after: {
-            laneId: lane.id,
-            route: `${action.origin} → ${action.destination}`,
-            truckType: action.truckType,
-            rate: action.ratePaise,
-            transitDays: action.transitDays,
-            transitPenaltyApplies: action.transitPenaltyApplies,
-            transitPenaltyPerDayPaise: action.transitPenaltyApplies ? action.transitPenaltyPerDayPaise : 0,
-            validFrom: action.validFrom,
-            approvalMail: action.approvalMailSubject,
-            source: action.reason,
-          },
-        },
-      );
-    });
-
     this.approvalsRegistry.register('RATE_REVISION', 'clients', async (action: RateRevisionAction, ctx) => {
       /*
        * Runs inside ApprovalsService.approve()'s transaction (ctx.db), never a
@@ -255,14 +123,6 @@ export class RateRevisionService implements OnModuleInit {
         valid_to: rows.successor.validTo,
         supply_source: lane.supply_source,
         supply_remarks: lane.supply_remarks,
-        // A new rate is not a new band: it carries across so a rate update
-        // never silently strips the floor and ceiling off the lane.
-        bid_min: lane.bid_min,
-        bid_max: lane.bid_max,
-        transit_penalty_applies: revision.transit_penalty_applies ?? lane.transit_penalty_applies,
-        transit_penalty_per_day: Number(revision.transit_penalty_per_day ?? lane.transit_penalty_per_day),
-        approval_mail_subject: revision.approval_mail_subject,
-        approval_mail_attachment_id: revision.approval_mail_attachment_id,
       });
 
       await this.clientsRepository.updateRevision(ctx.db, revision.id, {
@@ -283,161 +143,6 @@ export class RateRevisionService implements OnModuleInit {
         },
       );
     });
-  }
-
-  // ---- Bid band -------------------------------------------------------
-
-  /**
-   * Sets or changes the bid band on a client's lane.
-   *
-   * The first band on a lane applies straight away — that is the moment the
-   * rate is being set up and nobody is being overruled. Changing a band that
-   * is already in force is different: it moves the floor and ceiling every
-   * later indent on this lane is judged against, so it goes to Leadership
-   * (`LANE_BAND_CHANGE`) and only lands when they approve. Indents already
-   * raised keep the band they were raised with.
-   */
-  async setLaneBand(
-    clientId: string,
-    laneId: string,
-    dto: SetLaneBandDto,
-    actor: AuthenticatedUser,
-  ): Promise<ApprovalRequiredResponse | { applied: true; laneId: string; bidMinPaise: number; bidMaxPaise: number }> {
-    const client = await this.clientsRepository.findById(clientId);
-    if (!client) throw new DomainException(404, 'NOT_FOUND', `Unknown client: ${clientId}`);
-
-    const lane = await this.clientsRepository.findLane(laneId);
-    if (!lane) throw new DomainException(404, 'NOT_FOUND', `Unknown rate card lane: ${laneId}`);
-    if (lane.client_id !== clientId) {
-      throw new DomainException(400, 'LANE_NOT_ON_CLIENT', 'That lane belongs to a different client.');
-    }
-    if (dto.bidMaxPaise < dto.bidMinPaise) {
-      throw new DomainException(400, 'VALIDATION_ERROR', 'The bid maximum cannot be below the bid minimum.');
-    }
-    const today = new Date().toISOString().slice(0, 10);
-    if (lane.valid_to && lane.valid_to < today) {
-      throw new DomainException(
-        400,
-        'LANE_ALREADY_CLOSED',
-        `That agreed rate ended on ${lane.valid_to}. Set the band on the lane now in force.`,
-      );
-    }
-
-    const hasBand = lane.bid_min !== null || lane.bid_max !== null;
-    if (!hasBand) {
-      await this.clientsRepository.transaction().execute(async (trx) => {
-        await this.clientsRepository.updateLaneBand(trx, lane.id, {
-          bid_min: dto.bidMinPaise,
-          bid_max: dto.bidMaxPaise,
-        });
-        await this.auditService.record(trx, actor, {
-          action: 'LANE_BAND_SET',
-          entityType: 'rate_card_lanes',
-          entityId: lane.id,
-          before: { bidMinPaise: null, bidMaxPaise: null },
-          after: { bidMinPaise: dto.bidMinPaise, bidMaxPaise: dto.bidMaxPaise },
-        });
-      });
-      return { applied: true, laneId: lane.id, bidMinPaise: dto.bidMinPaise, bidMaxPaise: dto.bidMaxPaise };
-    }
-
-    if (lane.bid_min === dto.bidMinPaise && lane.bid_max === dto.bidMaxPaise) {
-      throw new DomainException(400, 'BAND_UNCHANGED', 'That is the band already in force — nothing would change.');
-    }
-    if (!dto.reason || dto.reason.trim().length < 20) {
-      throw new DomainException(
-        400,
-        'REASON_TOO_SHORT',
-        'Say why the band is changing (at least 20 characters). Leadership decides it from this.',
-      );
-    }
-
-    const action: LaneBandAction = {
-      laneId: lane.id,
-      bidMinPaise: dto.bidMinPaise,
-      bidMaxPaise: dto.bidMaxPaise,
-    };
-    return this.approvalsService.raise(
-      {
-        kind: 'LANE_BAND_CHANGE',
-        entityType: 'clients',
-        entityId: clientId,
-        reason: dto.reason,
-        title: `Bid band change · ${client.name} · ${lane.origin} → ${lane.destination}`,
-        detail:
-          `${rupees(Number(lane.bid_min ?? 0))}–${rupees(Number(lane.bid_max ?? 0))} → ` +
-          `${rupees(dto.bidMinPaise)}–${rupees(dto.bidMaxPaise)} (${lane.truck_type})`,
-        amountPaise: null,
-        action,
-      },
-      actor,
-    );
-  }
-
-  // ---- Add a lane -----------------------------------------------------
-
-  /**
-   * Proposes a lane for a client who has no agreed rate on that route yet.
-   * Never writes the lane — the approval handler does, once somebody who can
-   * approve a contract agrees. Returns `202 approvalRequired`.
-   */
-  async addLane(clientId: string, dto: AddRateLaneDto, actor: AuthenticatedUser): Promise<ApprovalRequiredResponse> {
-    const client = await this.clientsRepository.findById(clientId);
-    if (!client) throw new DomainException(404, 'NOT_FOUND', `Unknown client: ${clientId}`);
-    if (client.engagement !== 'CONTRACT') {
-      throw new DomainException(
-        400,
-        'CLIENT_IS_SPOT',
-        'This client is priced load by load, so there is no rate card to add to. Change them to a contract client first.',
-      );
-    }
-
-    const input = {
-      origin: routePart(dto.origin),
-      destination: routePart(dto.destination),
-      truckType: routePart(dto.truckType),
-      ratePaise: dto.ratePaise,
-      transitDays: dto.transitDays,
-      validFrom: dto.validFrom,
-      validTo: dto.validTo ?? null,
-      reason: dto.reason.trim(),
-      transitPenaltyApplies: dto.transitPenaltyApplies,
-      transitPenaltyPerDayPaise: dto.transitPenaltyApplies ? (dto.transitPenaltyPerDayPaise ?? 0) : 0,
-      approvalMailSubject: dto.approvalMailSubject.trim(),
-      approvalMailAttachmentId: dto.approvalMailAttachmentId ?? null,
-    };
-
-    const sameRoute = await this.clientsRepository.findRouteLanes(
-      clientId,
-      input.origin,
-      input.destination,
-      input.truckType,
-    );
-    const check = checkNewLane(
-      input,
-      sameRoute.map((l) => ({ id: l.id, validFrom: l.valid_from, validTo: l.valid_to })),
-    );
-    if (!check.ok) {
-      throw new DomainException(400, `RATE_LANE_${check.refusal}`, check.reason ?? 'That lane is not valid.');
-    }
-
-    const action: RateCardLaneAction = { clientId, ...input };
-    return this.approvalsService.raise(
-      {
-        kind: 'RATE_CARD_LANE',
-        entityType: 'clients',
-        entityId: clientId,
-        reason: input.reason,
-        title: `New agreed rate · ${client.name} · ${input.origin} → ${input.destination}`,
-        detail:
-          `${rupees(input.ratePaise)} · ${input.truckType} · ${input.transitDays} days · from ${input.validFrom}` +
-          (input.transitPenaltyApplies ? ` · late penalty ${rupees(input.transitPenaltyPerDayPaise)}/day` : ' · no late penalty') +
-          ` · mail: ${input.approvalMailSubject}`,
-        amountPaise: input.ratePaise,
-        action,
-      },
-      actor,
-    );
   }
 
   // ---- Propose --------------------------------------------------------
@@ -475,11 +180,6 @@ export class RateRevisionService implements OnModuleInit {
       );
     }
 
-    // A late-delivery penalty that applies must carry an amount.
-    if (dto.transitPenaltyApplies === true && !(dto.transitPenaltyPerDayPaise && dto.transitPenaltyPerDayPaise > 0)) {
-      throw new DomainException(400, 'RATE_REVISION_PENALTY_AMOUNT', 'Enter what a late day costs, or switch the late-delivery penalty off.');
-    }
-
     const check = checkRevision(
       toLane(lane),
       { newRatePaise: dto.newRatePaise, effectiveFrom: dto.effectiveFrom, reason: dto.reason },
@@ -500,10 +200,6 @@ export class RateRevisionService implements OnModuleInit {
         reason: dto.reason,
         approval_id: null,
         requested_by: actor.userId,
-        approval_mail_subject: dto.approvalMailSubject.trim(),
-        approval_mail_attachment_id: dto.approvalMailAttachmentId ?? null,
-        transit_penalty_applies: dto.transitPenaltyApplies ?? null,
-        transit_penalty_per_day: dto.transitPenaltyApplies === false ? 0 : (dto.transitPenaltyPerDayPaise ?? null),
       }),
     );
 

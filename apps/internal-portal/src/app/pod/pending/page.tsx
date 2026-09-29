@@ -1,14 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
-import { errorMessage } from '@/apis';
-import { WaiverDialog, WaiverEvidence } from '@/components/waiver-dialog';
-import { uploadAttachment } from '@/lib/attachments';
+import { useEffect, useState } from 'react';
+import { ApprovalRequiredError, errorMessage } from '@/apis';
 import { POD_STATUS_LABEL, POD_TONE } from '@/lib/documents';
 import { fmtDate, inr } from '@/lib/format';
-import { downloadCsv, todayStamp } from '@/lib/export-csv';
-import { activeFilterCount, emptyFilters, FilterBar, FilterField, FilterValues, matchesAny } from '@/lib/list-filters';
 import { ROLES } from '@/lib/permissions';
 import {
   Column,
@@ -29,41 +25,9 @@ import {
   useCan,
   useToast,
 } from '@/lib/ui';
-import { addDocket, getPending, waivePenalty } from '../apis';
+import { getPending, waivePenalty } from '../apis';
 import { PendingResponse, PendingRow } from '../types';
 import { PodTabs } from '../pod-tabs';
-
-/**
- * Branch, transporter and ageing are asked of the server (it filters on them);
- * the rest narrow the rows that come back. The labels are what the e2e suite
- * and the sidebar presets already know these boxes by.
- */
-const FILTER_FIELDS: FilterField[] = [
-  { kind: 'text', key: 'q', label: 'Search anything', placeholder: 'Trip, LR, client, city…' },
-  { kind: 'text', key: 'branch', label: 'Branch', placeholder: 'All' },
-  { kind: 'text', key: 'transporter', label: 'Transporter', placeholder: 'All' },
-  {
-    kind: 'select',
-    key: 'ageing',
-    label: 'Ageing',
-    allLabel: 'All',
-    options: [
-      { value: 'within', label: 'Within turnaround' },
-      { value: 'breached', label: 'Breached' },
-      { value: 'forfeited', label: 'Past 40 days' },
-    ],
-  },
-  { kind: 'text', key: 'clientName', label: 'Client', placeholder: 'Client name' },
-  { kind: 'text', key: 'from', label: 'From', placeholder: 'Pick-up city' },
-  { kind: 'text', key: 'to', label: 'To', placeholder: 'Delivery city' },
-  { kind: 'text', key: 'ref', label: 'Trip or LR number', placeholder: 'Trip or LR number' },
-];
-
-/** The lane is stored as one string, "Mumbai → Pune". */
-function laneEnds(lane: string): [string, string] {
-  const [from = '', to = ''] = lane.split('→').map((x) => x.trim());
-  return [from, to];
-}
 
 /**
  * Chase list — `/pod/pending` (part 06 §4).
@@ -77,8 +41,9 @@ export default function PodPendingPage() {
   const toast = useToast();
   const [data, setData] = useState<PendingResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [filters, setFilters] = useState<FilterValues>(() => emptyFilters(FILTER_FIELDS));
-  const { branch, transporter, ageing } = filters;
+  const [branch, setBranch] = useState('');
+  const [transporter, setTransporter] = useState('');
+  const [ageing, setAgeing] = useState('');
 
   /**
    * A preset arriving as `?ageing=breached`, so the sidebar can offer "past
@@ -90,99 +55,42 @@ export default function PodPendingPage() {
    * which would put this page behind a Suspense boundary at build time for a
    * value it only needs once.
    */
-  /**
-   * "Hard copy pending" arrives as `?copy=pending`: the rows whose paper has
-   * not been logged as received (still waiting on the transporter, or photo
-   * attached but no paper yet). Rows already received and only awaiting a
-   * check or approval drop out — their paper is with us.
-   */
-  const [hardCopyOnly, setHardCopyOnly] = useState(false);
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const preset = params.get('ageing');
+    const preset = new URLSearchParams(window.location.search).get('ageing');
     if (preset === 'within' || preset === 'breached' || preset === 'forfeited') {
-      setFilters((f) => ({ ...f, ageing: preset }));
+      setAgeing(preset);
     }
-    setHardCopyOnly(params.get('copy') === 'pending');
   }, []);
-  const [docketFor, setDocketFor] = useState<PendingRow | null>(null);
-  const [docketNo, setDocketNo] = useState('');
   const [waiving, setWaiving] = useState<PendingRow | null>(null);
+  const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
 
   const load = () => {
     setError(null);
+    setData(null);
     getPending({ branch: branch || undefined, transporter: transporter || undefined, ageing: ageing || undefined })
       .then(setData)
       .catch((e) => setError(errorMessage(e)));
   };
   useEffect(load, [branch, transporter, ageing]);
 
-  const submitWaiver = async (evidence: WaiverEvidence) => {
+  const submitWaiver = async () => {
     if (!waiving) return;
     setBusy(true);
     try {
-      const mailAttachmentId = evidence.file
-        ? await uploadAttachment(evidence.file, 'WAIVER_MAIL', 'trips', waiving.tripId)
-        : undefined;
-      await waivePenalty(waiving.tripId, { kind: 'POD_PENALTY', mailSubject: evidence.mailSubject, mailAttachmentId });
-      toast(`Penalty waived for ${waiving.tripCode} · recorded against Leadership’s mail`);
-      setWaiving(null);
-      load();
+      await waivePenalty(waiving.tripId, reason);
+      toast('Waiver requested');
     } catch (e) {
-      toast(errorMessage(e));
+      if (e instanceof ApprovalRequiredError) {
+        toast(`Sent to ${ROLES.LEADERSHIP.label} · the penalty keeps accruing until it is approved`);
+        setWaiving(null);
+        setReason('');
+      } else {
+        toast(errorMessage(e));
+      }
     } finally {
       setBusy(false);
     }
-  };
-
-  const submitDocket = async () => {
-    if (!docketFor) return;
-    setBusy(true);
-    try {
-      await addDocket(docketFor.tripId, { docketNo: docketNo.trim() });
-      toast(`Docket ${docketNo.trim()} recorded — ${docketFor.tripCode} comes off the hard-copy follow-up`);
-      setDocketFor(null);
-      setDocketNo('');
-      load();
-    } catch (e) {
-      toast(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const visible = useMemo(
-    () =>
-      (data?.rows ?? [])
-        // Once a courier docket is on record the paper is on its way, so the
-        // delivery is no longer one to chase for its hard copy.
-        .filter((r) => !hardCopyOnly || ((r.podStatus === 'PENDING' || r.podStatus === 'ATTACHED') && !r.docketNo))
-        .filter((r) => {
-          const [from, to] = laneEnds(r.lane);
-          return (
-            matchesAny(filters.q, r.tripCode, r.lrCode, r.clientName, r.lane, r.vendorName) &&
-            matchesAny(filters.clientName, r.clientName) &&
-            matchesAny(filters.from, from) &&
-            matchesAny(filters.to, to) &&
-            matchesAny(filters.ref, r.tripCode, r.lrCode)
-          );
-        }),
-    [data, hardCopyOnly, filters],
-  );
-
-  const exportRows = async () => {
-    downloadCsv(
-      `proof-of-delivery-pending-${todayStamp()}.csv`,
-      ['Trip', 'LR', 'Client', 'From', 'To', 'Transporter', 'Branch', 'Delivered on', 'Days since delivery', 'Days left (negative = over)', 'Proof status', 'Penalty (INR)', 'Money we hold (INR)'],
-      visible.map((r) => {
-        const [from, to] = laneEnds(r.lane);
-        return [
-          r.tripCode, r.lrCode, r.clientName, from, to, r.vendorName, r.branchName, r.deliveredAt?.slice(0, 10),
-          r.ageDays, r.daysLeft, POD_STATUS_LABEL[r.podStatus] ?? r.podStatus, r.penaltyPaise / 100, r.balanceHeldPaise / 100,
-        ];
-      }),
-    );
   };
 
   if (error) return <ErrorState message={error} retry={load} />;
@@ -230,36 +138,6 @@ export default function PodPendingPage() {
       align: 'right',
       render: (r) => <span style={{ color: r.penaltyPaise ? 'var(--red)' : undefined }}>{inr(r.penaltyPaise)}</span>,
     },
-    {
-      key: 'docket',
-      label: 'Courier docket',
-      render: (r) =>
-        r.docketNo ? (
-          <span>
-            <span className="mono" style={{ fontSize: 12 }}>
-              {r.docketNo}
-            </span>
-            {can('pod.receive') && (
-              <button
-                className="btn btn-ghost btn-sm"
-                style={{ marginLeft: 6 }}
-                onClick={() => {
-                  setDocketNo(r.docketNo ?? '');
-                  setDocketFor(r);
-                }}
-              >
-                Edit
-              </button>
-            )}
-          </span>
-        ) : can('pod.receive') ? (
-          <button className="btn btn-secondary btn-sm" onClick={() => setDocketFor(r)}>
-            Add docket
-          </button>
-        ) : (
-          <span className="muted">—</span>
-        ),
-    },
     { key: 'held', label: 'Their money we hold', align: 'right', render: (r) => inr(r.balanceHeldPaise) },
     {
       key: 'act',
@@ -268,7 +146,7 @@ export default function PodPendingPage() {
       render: (r) =>
         can('pod.waive') && r.penaltyPaise > 0 ? (
           <button className="btn btn-secondary btn-sm" onClick={() => setWaiving(r)}>
-            Waive penalty
+            Propose waiver
           </button>
         ) : null,
     },
@@ -287,17 +165,7 @@ export default function PodPendingPage() {
         who="Compliance can propose a penalty waiver here; leadership has to approve it before it actually applies."
       />
 
-      <PodTabs active={hardCopyOnly ? 'hard-copy' : null} />
-
-      {hardCopyOnly && (
-        <p className="hint" style={{ margin: '-4px 0 16px' }}>
-          Showing only deliveries whose paper copy has not reached a branch yet — oldest first, so the
-          overdue ones are at the top.{' '}
-          <button className="btn btn-ghost btn-sm" onClick={() => setHardCopyOnly(false)}>
-            Show every trip missing proof
-          </button>
-        </p>
-      )}
+      <PodTabs active={ageing === 'breached' ? 'past-due' : null} />
 
       <Stack>
         <StatStrip
@@ -309,24 +177,53 @@ export default function PodPendingPage() {
           ]}
         />
 
-        <FilterBar
-          fields={FILTER_FIELDS}
-          values={filters}
-          onChange={setFilters}
-          onExport={exportRows}
-          resultNote={`${visible.length} trip${visible.length === 1 ? '' : 's'} found`}
-        />
+        <Panel>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ flex: '0 1 180px' }}>
+              <Field label="Branch">
+                <input value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="All" />
+              </Field>
+            </div>
+            <div style={{ flex: '0 1 200px' }}>
+              <Field label="Transporter">
+                <input value={transporter} onChange={(e) => setTransporter(e.target.value)} placeholder="All" />
+              </Field>
+            </div>
+            <div style={{ flex: '0 1 180px' }}>
+              <Field label="Ageing">
+                <select value={ageing} onChange={(e) => setAgeing(e.target.value)}>
+                  <option value="">All</option>
+                  <option value="within">Within turnaround</option>
+                  <option value="breached">Breached</option>
+                  <option value="forfeited">Past 40 days</option>
+                </select>
+              </Field>
+            </div>
+          </div>
+        </Panel>
 
         <Panel pad={false}>
           <DataTable
             columns={columns}
-            rows={visible}
+            rows={data.rows}
             rowKey={(r) => r.tripId}
             empty={
-              activeFilterCount(filters) > 0 ? (
+              branch || transporter || ageing ? (
                 <EmptyState
                   title="No trips match these filters"
-                  hint="Loosen one of the boxes above, or use Clear to start again — there may still be proofs pending elsewhere."
+                  hint="Try clearing the branch, transporter or ageing filter — there may still be proofs pending elsewhere."
+                  action={
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => {
+                        setBranch('');
+                        setTransporter('');
+                        setAgeing('');
+                      }}
+                    >
+                      Clear filters
+                    </button>
+                  }
                 />
               ) : (
                 <EmptyState
@@ -340,25 +237,9 @@ export default function PodPendingPage() {
       </Stack>
 
       <Dialog
-        open={!!docketFor}
-        title={docketFor?.docketNo ? 'Change courier docket' : 'Add courier docket'}
-        body="The docket number is the proof the paper was sent — optional, and it can be corrected. Once one is on record, this delivery no longer needs chasing for its hard copy."
-        facts={docketFor ? [['Trip', docketFor.tripCode], ['Transporter', docketFor.vendorName]] : []}
-        confirmLabel="Record docket"
-        confirmDisabled={docketNo.trim().length < 3}
-        busy={busy}
-        onConfirm={submitDocket}
-        onClose={() => setDocketFor(null)}
-      >
-        <Field label="Courier docket number" required>
-          <input value={docketNo} onChange={(e) => setDocketNo(e.target.value)} />
-        </Field>
-      </Dialog>
-
-      <WaiverDialog
         open={!!waiving}
-        title="Waive the paperwork penalty"
-        body="Leadership approves a waiver by mail; Compliance records it here. The mail’s subject is kept as the evidence, and the penalty computes as zero when Finance releases the balance."
+        title="Propose a penalty waiver"
+        body="Compliance proposes; leadership approves. The proposal, the approval and the reason are all recorded against the trip. A waived penalty computes as zero when finance releases the balance."
         facts={
           waiving
             ? [
@@ -369,11 +250,20 @@ export default function PodPendingPage() {
               ]
             : []
         }
-        confirmLabel="Waive penalty"
+        confirmLabel="Request waiver"
+        confirmDisabled={reason.trim().length < 30}
         busy={busy}
         onConfirm={submitWaiver}
         onClose={() => setWaiving(null)}
-      />
+      >
+        <Field
+          label="Reason"
+          required
+          hint="At least 30 characters — this goes to leadership for approval, so explain the situation fully."
+        >
+          <textarea rows={4} value={reason} onChange={(e) => setReason(e.target.value)} />
+        </Field>
+      </Dialog>
     </ModuleGuard>
   );
 }

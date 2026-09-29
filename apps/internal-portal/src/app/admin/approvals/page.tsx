@@ -28,8 +28,6 @@ const TONE: Record<string, Tone> = {
   DOC_OVERRIDE: 'red',
   BRANCH_OVERRIDE: 'blue',
   RATE_REVISION: 'blue',
-  LANE_BAND_CHANGE: 'flag',
-  RATE_CARD_LANE: 'blue',
 };
 
 const KIND_LABEL: Record<string, string> = {
@@ -42,14 +40,12 @@ const KIND_LABEL: Record<string, string> = {
   // Plain language on purpose: nobody outside this codebase calls it a
   // "rate revision". It is a price we already agreed, being changed.
   RATE_REVISION: 'Change to an agreed client rate',
-  LANE_BAND_CHANGE: 'Change to a lane’s bid limits',
-  RATE_CARD_LANE: 'New agreed client rate',
 };
 
 /**
  * Approvals inbox — `/admin/approvals`.
  *
- * Several kinds of request, each raised by a `202 APPROVAL_REQUIRED` somewhere
+ * Seven kinds of request, each raised by a `202 APPROVAL_REQUIRED` somewhere
  * else in the console. Approving replays the original payload; rejecting
  * requires a note.
  */
@@ -126,7 +122,9 @@ export default function ApprovalsPage() {
                 ? 'You see requests you raised. Deciding them belongs to leadership and compliance.'
                 : role === 'FINANCE'
                   ? 'Finance sees this queue for cash-flow visibility but approves none of it — approval and disbursement stay separate.'
-                  : 'Nothing here is yours to decide.'}
+                  : role === 'ADMIN'
+                    ? 'Administrators see the queue as an audit view. Approving is not an administrator action.'
+                    : 'Nothing here is yours to decide.'}
             </div>
           )}
 

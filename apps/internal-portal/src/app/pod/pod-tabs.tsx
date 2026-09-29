@@ -10,28 +10,22 @@ import Link from 'next/link';
  * `getReceiving`), so this is a `.stage-tabs`-styled pair of links rather
  * than `StageTabs`, which only ever changes local state.
  *
- * "Hard copy pending" is every delivered trip whose signed paper has not been
- * logged as received, of any age — the overdue ones are the same list read
- * with the ageing filter, not a different screen. It was "Delivery proof past
- * due" and showed only the overdue slice, which nobody could tell from its
- * name was about paper.
- *
  * Neither tab is `is-active` on the bare, unfiltered `/pod/pending` — that
  * view is "Check POD status" itself, the landing page these two narrow from.
  */
-export function PodTabs({ active }: { active: 'hard-copy' | 'epod' | null }) {
+export function PodTabs({ active }: { active: 'past-due' | 'epod' | null }) {
   return (
     <div className="stage-tabs" role="tablist">
       <Link
-        href="/pod/pending?copy=pending"
+        href="/pod/pending?ageing=breached"
         role="tab"
-        aria-selected={active === 'hard-copy'}
-        className={active === 'hard-copy' ? 'stage-tab is-active' : 'stage-tab'}
+        aria-selected={active === 'past-due'}
+        className={active === 'past-due' ? 'stage-tab is-active' : 'stage-tab'}
       >
         <span className="glyph" aria-hidden>
-          📄
+          ⏰
         </span>
-        Hard copy pending
+        Delivery proof past due
       </Link>
       <Link
         href="/pod/receiving?attached=1"

@@ -9,8 +9,6 @@
  */
 
 import { RoleCode } from '@/lib/permissions';
-import { applyCleanSlate } from './clean-data';
-import { hydrate, isDemoData } from './persist';
 
 const now = () => new Date().toISOString();
 const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
@@ -21,7 +19,7 @@ export type DocState = 'MISSING' | 'PENDING' | 'VERIFIED' | 'REJECTED';
 export interface Doc {
   kind: string;
   label: string;
-  group: 'CLIENT' | 'VEHICLE' | 'DRIVER' | 'LOADING' | 'LR' | 'POD';
+  group: 'CLIENT' | 'VEHICLE' | 'DRIVER' | 'LR' | 'POD';
   gatesAdvance: boolean;
   status: DocState;
   attachmentId: string | null;
@@ -75,9 +73,6 @@ export const ACCOUNTS: FixtureAccount[] = [
   { userId: 'u-bd', name: 'Neha Bhatt', email: 'neha@nexraah.in', role: 'BD', branch: null },
   { userId: 'u-lead', name: 'Vikram Shah', email: 'vikram@nexraah.in', role: 'LEADERSHIP', branch: null },
   { userId: 'u-adm', name: 'S. Krishnan', email: 'krishnan@nexraah.in', role: 'ADMIN', branch: null },
-  // The loading supervisor: assigned per trip, uploads that trip's loading and
-  // vehicle documents. Unbranched, so any trip can be assigned to them.
-  { userId: 'u-lgs', name: 'Ravi Kumar', email: 'ravi@nexraah.in', role: 'LOADING_SUPERVISOR', branch: null },
 ];
 
 /**
@@ -167,7 +162,6 @@ export const ADVANCE_DOCUMENT_SET = [
   'PERMIT',
   'PUC',
   'DRIVING_LICENCE',
-  'LOADING_SLIP',
 ];
 
 export const DOC_LABEL: Record<string, string> = {
@@ -182,7 +176,6 @@ export const DOC_LABEL: Record<string, string> = {
   LR: 'Lorry receipt',
   POD: 'Proof of delivery',
   LOADING_SLIP: 'Loading slip',
-  WEIGHMENT_SLIP: 'Weighment slip',
   TRADE_LICENCE: 'Trade licence',
   LABOUR_LICENCE: 'Labour licence',
   UDYAM: 'Udyam / MSME certificate',
@@ -223,8 +216,6 @@ function tripDocs(opts?: { advanceCleared?: boolean; podStatus?: DocState; lrDoc
     ['PERMIT', 'VEHICLE', 'VERIFIED'],
     ['PUC', 'VEHICLE', 'VERIFIED'],
     ['DRIVING_LICENCE', 'DRIVER', advanceCleared ? 'VERIFIED' : 'MISSING'],
-    ['LOADING_SLIP', 'LOADING', advanceCleared ? 'VERIFIED' : 'MISSING'],
-    ['WEIGHMENT_SLIP', 'LOADING', 'MISSING'],
     ['LR', 'LR', lrDocStatus],
     ['POD', 'POD', podStatus],
   ];
@@ -247,24 +238,9 @@ function tripDocs(opts?: { advanceCleared?: boolean; podStatus?: DocState; lrDoc
   }));
 }
 
-/** Every known kind, none uploaded yet — what a freshly generated trip starts with. */
-export function missingTripDocs(): Doc[] {
-  return tripDocs().map((d) => ({
-    ...d,
-    status: 'MISSING' as DocState,
-    attachmentId: null,
-    uploadedAt: null,
-    verifiedBy: null,
-    verifiedAt: null,
-    keyedValues: {},
-  }));
-}
-
 /* ---- the mutable fixture database -------------------------------------- */
 
 export const db = {
-  /** Shortage / damage records. Empty until somebody records one. */
-  sdr: [] as Record<string, any>[],
   config: {
     modules: {
       rfq: true,
@@ -281,8 +257,6 @@ export const db = {
     pod_tat_days: 20,
     pod_penalty_per_day_paise: 10000,
     pod_forfeit_days: 40,
-    // Always paid out of a balance, however large the deductions — below one hundred rupees.
-    min_balance_payable_paise: 5000,
     eway_warning_window_hours: 12,
     overspeed_kmph: 80,
     halt_minutes: 90,
@@ -307,16 +281,15 @@ export const db = {
   },
 
   numberSeries: [
-    { key: 'TRIP', prefix: '', nextValue: 120882, width: 6, scope: 'GLOBAL', branchId: null },
+    { key: 'TRIP', prefix: 'TRP-', nextValue: 120882, width: 6, scope: 'GLOBAL', branchId: null },
     { key: 'LR', prefix: 'LR-', nextValue: 88216, width: 5, scope: 'GLOBAL', branchId: null },
     { key: 'INVOICE', prefix: 'NEX-INV-', nextValue: 412, width: 6, scope: 'GLOBAL', branchId: null },
-    { key: 'INDENT', prefix: '', nextValue: 4472, width: 4, scope: 'GLOBAL', branchId: null },
+    { key: 'INDENT', prefix: 'IND-', nextValue: 4472, width: 5, scope: 'GLOBAL', branchId: null },
     { key: 'VENDOR', prefix: 'VND-', nextValue: 2302, width: 4, scope: 'GLOBAL', branchId: null },
     { key: 'CLIENT', prefix: 'CLT-', nextValue: 93, width: 4, scope: 'GLOBAL', branchId: null },
     { key: 'CUSTOMER', prefix: 'CUS-', nextValue: 18, width: 4, scope: 'GLOBAL', branchId: null },
     { key: 'POD_RECEIPT', prefix: 'PDR-', nextValue: 771, width: 4, scope: 'BRANCH', branchId: 'br-nsk' },
     { key: 'QUOTE', prefix: 'BID-', nextValue: 9912, width: 4, scope: 'GLOBAL', branchId: null },
-    { key: 'SDR', prefix: 'SDR-', nextValue: 1, width: 4, scope: 'GLOBAL', branchId: null },
     { key: 'RECEIPT', prefix: 'RCT-', nextValue: 331, width: 4, scope: 'GLOBAL', branchId: null },
     { key: 'LEAD', prefix: 'LD-', nextValue: 88, width: 4, scope: 'GLOBAL', branchId: null },
     { key: 'ISSUE', prefix: 'IS-', nextValue: 45, width: 4, scope: 'GLOBAL', branchId: null },
@@ -330,7 +303,7 @@ export const db = {
       id: 'apr-1',
       kind: 'ABOVE_BAND_PRICE',
       entityType: 'indent',
-      entityId: '4468',
+      entityId: 'IND-4468',
       title: 'Award at ₹35,800 · band ceiling ₹33,000',
       detail:
         'Chakan → Coimbatore. Only two quotes in band, both from vendors without a fitness certificate on file.',
@@ -347,7 +320,7 @@ export const db = {
       id: 'apr-2',
       kind: 'PENALTY_WAIVER',
       entityType: 'trip',
-      entityId: '120874',
+      entityId: 'TRP-120874',
       title: 'Waive ₹1,100 penalty · 11 days beyond window',
       detail:
         'Consignee refused to stamp until a shortage claim was settled. The delay is the client’s, not the vendor’s.',
@@ -380,7 +353,7 @@ export const db = {
       id: 'apr-4',
       kind: 'DOC_OVERRIDE',
       entityType: 'trip',
-      entityId: '120869',
+      entityId: 'TRP-120869',
       title: 'Place without fitness certificate · expires in 2 days',
       detail: 'Truck is loaded and at the gate. Vendor has produced the renewal receipt but not the certificate.',
       amountPaise: null,
@@ -573,8 +546,8 @@ export const db = {
   ] as Record<string, any>[],
 
   issues: [
-    { id: 'is-1', code: 'IS-0041', vendorId: 'v-2214', vendorName: 'Rathod Roadlines', category: 'POD_DELAY', severity: 'HIGH', tripCode: '120881', raisedBy: 'Anil Deshmukh', raisedAt: daysAgo(6), status: 'OPEN', note: 'POD not couriered 24 days after delivery.' },
-    { id: 'is-2', code: 'IS-0042', vendorId: 'v-2287', vendorName: 'Sai Kripa Carriers', category: 'VEHICLE_CONDITION', severity: 'MEDIUM', tripCode: '120874', raisedBy: 'Sunita Rao', raisedAt: daysAgo(11), status: 'IN_PROGRESS', note: 'Tarpaulin torn, consignment wet at delivery.' },
+    { id: 'is-1', code: 'IS-0041', vendorId: 'v-2214', vendorName: 'Rathod Roadlines', category: 'POD_DELAY', severity: 'HIGH', tripCode: 'TRP-120881', raisedBy: 'Anil Deshmukh', raisedAt: daysAgo(6), status: 'OPEN', note: 'POD not couriered 24 days after delivery.' },
+    { id: 'is-2', code: 'IS-0042', vendorId: 'v-2287', vendorName: 'Sai Kripa Carriers', category: 'VEHICLE_CONDITION', severity: 'MEDIUM', tripCode: 'TRP-120874', raisedBy: 'Sunita Rao', raisedAt: daysAgo(11), status: 'IN_PROGRESS', note: 'Tarpaulin torn, consignment wet at delivery.' },
     { id: 'is-3', code: 'IS-0043', vendorId: 'v-2214', vendorName: 'Rathod Roadlines', category: 'DRIVER_CONDUCT', severity: 'LOW', tripCode: null, raisedBy: 'Meera Iyer', raisedAt: daysAgo(20), status: 'RESOLVED', note: 'Driver refused to wait at consignee gate.' },
   ] as Record<string, any>[],
 
@@ -685,7 +658,7 @@ export const db = {
 
   rateCards: {
     'c-0092': [
-      { id: 'rc-1', rfqLaneId: 'rl-1', origin: 'Kolkata', destination: 'Nashik', truckType: '32 ft SXL', ratePaise: 6420000, transitDays: 5, reportingRule: 'NEXT_DAY', validFrom: '2026-04-01', validTo: '2027-03-31', bidMinPaise: 5500000, bidMaxPaise: 6000000 },
+      { id: 'rc-1', rfqLaneId: 'rl-1', origin: 'Kolkata', destination: 'Nashik', truckType: '32 ft SXL', ratePaise: 6420000, transitDays: 5, reportingRule: 'NEXT_DAY', validFrom: '2026-04-01', validTo: '2027-03-31' },
       { id: 'rc-2', rfqLaneId: 'rl-2', origin: 'Kolkata', destination: 'Guwahati', truckType: '22 ft container', ratePaise: 3880000, transitDays: 3, reportingRule: 'SAME_DAY', validFrom: '2026-04-01', validTo: '2027-03-31' },
     ],
     /*
@@ -696,7 +669,7 @@ export const db = {
      */
     'c-0090': [
       { id: 'rc-3', rfqLaneId: 'rl-9', origin: 'Mundra', destination: 'Jaipur', truckType: '40 ft trailer', ratePaise: 5210000, transitDays: 2, reportingRule: 'SAME_DAY', validFrom: '2026-01-01', validTo: '2026-06-30' },
-      { id: 'rc-4', rfqLaneId: 'rl-9', origin: 'Mundra', destination: 'Jaipur', truckType: '40 ft trailer', ratePaise: 5390000, transitDays: 2, reportingRule: 'SAME_DAY', validFrom: '2026-07-01', validTo: '2026-12-31', bidMinPaise: 4200000, bidMaxPaise: 4700000 },
+      { id: 'rc-4', rfqLaneId: 'rl-9', origin: 'Mundra', destination: 'Jaipur', truckType: '40 ft trailer', ratePaise: 5390000, transitDays: 2, reportingRule: 'SAME_DAY', validFrom: '2026-07-01', validTo: '2026-12-31' },
     ],
   } as Record<string, any[]>,
 
@@ -704,13 +677,13 @@ export const db = {
     // These three back trips t-120874/t-120869/t-120855, which already
     // reference them by id and code. Without a matching indent record here,
     // every "Indent" related-record link from those trips (and from their
-    // orders) 404s with "Indent xxxx not found" — the indent side of the
+    // orders) 404s with "Indent IND-xxxx not found" — the indent side of the
     // seed data was never filled in to match. Unshifted (not appended) so
-    // the order numbering below, which is derived from array
+    // the existing ORD-000NN numbering below, which is derived from array
     // position, doesn't shift for the indents that already worked.
     {
       id: 'i-4440',
-      code: '4440',
+      code: 'IND-4440',
       clientId: 'c-0092',
       clientName: 'Berger Paints',
       branchId: 'br-pun',
@@ -747,7 +720,7 @@ export const db = {
     },
     {
       id: 'i-4436',
-      code: '4436',
+      code: 'IND-4436',
       clientId: 'c-0090',
       clientName: 'Apex Ceramics',
       branchId: 'br-hsr',
@@ -784,7 +757,7 @@ export const db = {
     },
     {
       id: 'i-4421',
-      code: '4421',
+      code: 'IND-4421',
       clientId: 'c-0090',
       clientName: 'Apex Ceramics',
       branchId: 'br-gdm',
@@ -821,7 +794,7 @@ export const db = {
     },
     {
       id: 'i-4471',
-      code: '4471',
+      code: 'IND-4471',
       clientId: 'c-0088',
       clientName: 'Sanghvi Metals',
       branchId: 'br-vja',
@@ -862,7 +835,7 @@ export const db = {
     },
     {
       id: 'i-4468',
-      code: '4468',
+      code: 'IND-4468',
       clientId: 'c-0092',
       clientName: 'Berger Paints',
       branchId: 'br-pun',
@@ -901,7 +874,7 @@ export const db = {
     },
     {
       id: 'i-4462',
-      code: '4462',
+      code: 'IND-4462',
       clientId: 'c-0090',
       clientName: 'Apex Ceramics',
       branchId: 'br-gdm',
@@ -942,7 +915,7 @@ export const db = {
     },
     {
       id: 'i-4443',
-      code: '4443',
+      code: 'IND-4443',
       clientId: 'c-0092',
       clientName: 'Berger Paints',
       branchId: 'br-nsk',
@@ -982,9 +955,9 @@ export const db = {
   trips: [
     {
       id: 't-120881',
-      code: '120881',
+      code: 'TRP-120881',
       indentId: 'i-4443',
-      indentCode: '4443',
+      indentCode: 'IND-4443',
       lrCode: 'LR-88214',
       clientId: 'c-0092',
       clientName: 'Berger Paints',
@@ -1042,9 +1015,9 @@ export const db = {
     },
     {
       id: 't-120874',
-      code: '120874',
+      code: 'TRP-120874',
       indentId: 'i-4440',
-      indentCode: '4440',
+      indentCode: 'IND-4440',
       lrCode: 'LR-88207',
       clientId: 'c-0092',
       clientName: 'Berger Paints',
@@ -1072,8 +1045,6 @@ export const db = {
       stage: 'DELIVERED',
       deliveredAt: daysAgo(31),
       podStatus: 'ATTACHED',
-      // The transporter's own upload carries the courier docket.
-      podDocketNo: 'DKT-778812',
       podReceivedAt: null,
       podPenaltyPaise: 110000,
       podClosureBasis: null,
@@ -1086,9 +1057,9 @@ export const db = {
     },
     {
       id: 't-120869',
-      code: '120869',
+      code: 'TRP-120869',
       indentId: 'i-4436',
-      indentCode: '4436',
+      indentCode: 'IND-4436',
       lrCode: 'LR-88201',
       clientId: 'c-0090',
       clientName: 'Apex Ceramics',
@@ -1128,9 +1099,9 @@ export const db = {
     },
     {
       id: 't-120855',
-      code: '120855',
+      code: 'TRP-120855',
       indentId: 'i-4421',
-      indentCode: '4421',
+      indentCode: 'IND-4421',
       lrCode: 'LR-88188',
       clientId: 'c-0090',
       clientName: 'Apex Ceramics',
@@ -1174,14 +1145,12 @@ export const db = {
 
   podReceipts: [] as Record<string, any>[],
   payments: [] as Record<string, any>[],
-  sdrRecoveries: [] as Record<string, any>[],
-  penaltyWaivers: [] as Record<string, any>[],
 
   vendorBills: [
     {
       id: 'vb-1',
       tripId: 't-120855',
-      tripCode: '120855',
+      tripCode: 'TRP-120855',
       vendorId: 'v-2301',
       vendorName: 'Anand Roadways',
       billNo: 'AR/26/0221',
@@ -1199,7 +1168,7 @@ export const db = {
     {
       id: 'vb-2',
       tripId: 't-120869',
-      tripCode: '120869',
+      tripCode: 'TRP-120869',
       vendorId: 'v-2301',
       vendorName: 'Bhagwati Logistics',
       billNo: 'BL/26/1180',
@@ -1359,9 +1328,9 @@ export const db = {
   ] as Record<string, any>[],
 
   telematics: [
-    { vehicleNo: 'MH 15 GT 4482', tripCode: '120881', vendorName: 'Rathod Roadlines', lane: 'Nashik → Kolkata', progressPct: 100, speedKmph: 0, fuelPct: 34, lastPingAt: daysAgo(24), lat: 22.5726, lng: 88.3639, ewayValidTill: null, alerts: ['DARK_VEHICLE'] },
-    { vehicleNo: 'MH 04 TT 2019', tripCode: '120869', vendorName: 'Bhagwati Logistics', lane: 'Hosur → Gurugram', progressPct: 82, speedKmph: 91, fuelPct: 58, lastPingAt: new Date(Date.now() - 4 * 60000).toISOString(), lat: 26.9124, lng: 75.7873, ewayValidTill: daysAhead(2), alerts: ['OVERSPEED', 'EWAY_EXPIRING'] },
-    { vehicleNo: 'GJ 12 AT 7745', tripCode: '120855', vendorName: 'Anand Roadways', lane: 'Gandhidham → Jaipur', progressPct: 100, speedKmph: 0, fuelPct: 21, lastPingAt: new Date(Date.now() - 40 * 60000).toISOString(), lat: 26.9124, lng: 75.7873, ewayValidTill: daysAgo(1), alerts: ['LONG_HALT', 'EWAY_EXPIRED'] },
+    { vehicleNo: 'MH 15 GT 4482', tripCode: 'TRP-120881', vendorName: 'Rathod Roadlines', lane: 'Nashik → Kolkata', progressPct: 100, speedKmph: 0, fuelPct: 34, lastPingAt: daysAgo(24), lat: 22.5726, lng: 88.3639, ewayValidTill: null, alerts: ['DARK_VEHICLE'] },
+    { vehicleNo: 'MH 04 TT 2019', tripCode: 'TRP-120869', vendorName: 'Bhagwati Logistics', lane: 'Hosur → Gurugram', progressPct: 82, speedKmph: 91, fuelPct: 58, lastPingAt: new Date(Date.now() - 4 * 60000).toISOString(), lat: 26.9124, lng: 75.7873, ewayValidTill: daysAhead(2), alerts: ['OVERSPEED', 'EWAY_EXPIRING'] },
+    { vehicleNo: 'GJ 12 AT 7745', tripCode: 'TRP-120855', vendorName: 'Anand Roadways', lane: 'Gandhidham → Jaipur', progressPct: 100, speedKmph: 0, fuelPct: 21, lastPingAt: new Date(Date.now() - 40 * 60000).toISOString(), lat: 26.9124, lng: 75.7873, ewayValidTill: daysAgo(1), alerts: ['LONG_HALT', 'EWAY_EXPIRED'] },
   ] as Record<string, any>[],
 
   /**
@@ -1471,14 +1440,14 @@ export const db = {
       code: 'TKT-0001',
       subject: 'Pickup date on this load request is a day out',
       detail:
-        '4474 says pickup on the 30th. The client asked for the 29th and the truck is booked for the 29th.',
+        'IND-4474 says pickup on the 30th. The client asked for the 29th and the truck is booked for the 29th.',
       kind: 'WRONG_DATA',
       severity: 'MINOR',
       status: 'RESOLVED',
       raisedOnPath: '/indents',
       entityType: 'indents',
       entityId: 'i-4474',
-      resolution: 'Corrected the pickup date on 4474 to the 29th and told the branch.',
+      resolution: 'Corrected the pickup date on IND-4474 to the 29th and told the branch.',
       resolvedAt: daysAgo(6),
       resolvedByName: 'S. Krishnan',
       createdAt: daysAgo(7),
@@ -1543,7 +1512,7 @@ export const db = {
       entityId: 'i-4474',
       // A creation has no `before` — every field reads as newly set.
       before: null,
-      after: { code: '4474', fromCity: 'Mundra', toCity: 'Jaipur', sellRatePaise: 5390000 },
+      after: { code: 'IND-4474', fromCity: 'Mundra', toCity: 'Jaipur', sellRatePaise: 5390000 },
     },
     {
       id: 'ae-5',
@@ -1591,34 +1560,4 @@ export function resetToEmpty(): void {
   db.numberSeries.forEach((series) => {
     series.nextValue = 1;
   });
-}
-
-// Seeded trips with hand-written document lists predate the loading slip. Give
-// each one a slip that agrees with how far its other advance documents got, so
-// a trip that already had every gate cleared still does.
-for (const trip of db.trips as { documents: Doc[] }[]) {
-  if (trip.documents.some((d) => d.kind === 'LOADING_SLIP')) continue;
-  const others = trip.documents.filter((d) => ADVANCE_DOCUMENT_SET.includes(d.kind));
-  const cleared = others.length > 0 && others.every((d) => d.status === 'VERIFIED');
-  trip.documents.push({
-    kind: 'LOADING_SLIP',
-    label: DOC_LABEL.LOADING_SLIP,
-    group: 'LOADING',
-    gatesAdvance: true,
-    status: cleared ? 'VERIFIED' : 'MISSING',
-    attachmentId: cleared ? 'att-loading_slip' : null,
-    uploadedAt: cleared ? daysAgo(1) : null,
-    verifiedBy: cleared ? 'Meera Iyer' : null,
-    verifiedAt: cleared ? daysAgo(1) : null,
-    rejectReason: null,
-    keyedValues: {},
-  });
-}
-
-// The console starts clean — one client, one transporter, no invented business —
-// and keeps what people do in the browser between visits. The rich seeded set
-// below is only for the regression suite (`nexraah.demo = 1`).
-if (!isDemoData()) {
-  applyCleanSlate(db as unknown as Record<string, any>);
-  hydrate(db as unknown as Record<string, any>, BRANCHES);
 }

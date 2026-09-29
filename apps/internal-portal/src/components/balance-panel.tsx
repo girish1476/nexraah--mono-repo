@@ -99,27 +99,6 @@ export function BalancePanel({
           value={`−${inr(b.penaltyPaise)}`}
           note={`${inr(b.penaltyPerDayPaise)}/day beyond ${detail.podAgeDays - b.penaltyDays} days`}
         />
-        {b.transitPenaltyPaise > 0 && (
-          <Line
-            label={`Less late delivery (${b.transitLateDays} day${b.transitLateDays === 1 ? '' : 's'})`}
-            value={`−${inr(b.transitPenaltyPaise)}`}
-            note="At the client’s per-day rate, past the lane’s transit days"
-          />
-        )}
-        {b.sdrLines.map((l) => (
-          <Line
-            key={l.code}
-            label={`Less shortage / damage ${l.code}`}
-            value={`−${inr(l.amountPaise)}`}
-            note={
-              l.carriedForward
-                ? `carried forward from ${l.tripCode}${l.remainingAfterPaise ? ` · ${inr(l.remainingAfterPaise)} still to come` : ''}`
-                : l.remainingAfterPaise
-                  ? `${inr(l.remainingAfterPaise)} is more than this payment — it carries to their next orders`
-                  : undefined
-            }
-          />
-        ))}
         <div
           style={{
             display: 'flex',

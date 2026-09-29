@@ -10,8 +10,6 @@ export default defineConfig({
     setupFiles: ['./vitest.setup.ts'],
     include: ['src/**/*.test.{ts,tsx}'],
     exclude: ['e2e/**', 'node_modules/**'],
-    // The fixture tests are written against the rich seeded data set; real use starts clean.
-    env: { NEXT_PUBLIC_DEMO_DATA: '1' },
   },
   resolve: {
     alias: {

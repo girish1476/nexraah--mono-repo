@@ -6,15 +6,15 @@ import { scopedOperations, setRole, statValue } from './helpers';
  * data (`src/mocks/db.ts`) seeds four indents and four trips; the numbers
  * below are derived from that fixture, not guessed:
  *
- *  - OPEN indents: 4471, 4468, 4462 (4443 is TRIP_CREATED).
- *    Of those, 4468's pickup date is in the past → the one placement
+ *  - OPEN indents: IND-4471, IND-4468, IND-4462 (IND-4443 is TRIP_CREATED).
+ *    Of those, IND-4468's pickup date is in the past → the one placement
  *    failure, cause ONLY_ABOVE_BAND_QUOTES.
- *  - Trips delivered but not APPROVED/WAIVED on POD: 120881, 120874,
- *    120869 (120855 is APPROVED, so it is excluded).
+ *  - Trips delivered but not APPROVED/WAIVED on POD: TRP-120881, TRP-120874,
+ *    TRP-120869 (TRP-120855 is APPROVED, so it is excluded).
  *  - Vendor issues not RESOLVED: IS-0041, IS-0042 (IS-0043 is RESOLVED).
  *
  * No fixture user carries a branch, so nothing here is branch-scoped
- * while POD overdue (120881) and vendor issues (not branch-scoped) still
+ * while POD overdue (TRP-120881) and vendor issues (not branch-scoped) still
  * show rows — a real empty-state case distinct from the ADMIN lock panel
  * already covered by rbac-nav.spec.ts.
  */
@@ -45,7 +45,7 @@ test.describe('today — stat strip and queues (OPS, unscoped)', () => {
     await expect(statValue(page, 'today-never-quoted')).toHaveText('0');
 
     const panel = page.locator('.surface', { has: page.getByRole('heading', { name: 'Unassigned loads' }) });
-    await expect(panel.getByText('4468')).toBeVisible();
+    await expect(panel.getByText('IND-4468')).toBeVisible();
     await expect(panel.getByText('Every quote came in above our price limit')).toBeVisible();
     await expect(panel.getByText('recruit on that route')).toBeVisible();
   });
@@ -64,19 +64,19 @@ test.describe('today — stat strip and queues (OPS, unscoped)', () => {
 
     const rows = panel.locator('tbody tr');
     await expect(rows).toHaveCount(3);
-    await expect(panel.getByText('4471')).toBeVisible();
-    await expect(panel.getByText('4468')).toBeVisible();
-    await expect(panel.getByText('4462')).toBeVisible();
+    await expect(panel.getByText('IND-4471')).toBeVisible();
+    await expect(panel.getByText('IND-4468')).toBeVisible();
+    await expect(panel.getByText('IND-4462')).toBeVisible();
   });
 
   test('POD overdue lists the three trips still open on POD, not the approved one', async ({ page }) => {
     const panel = page.locator('.surface', { has: page.getByRole('heading', { name: 'Missing documents' }) });
     const rows = panel.locator('tbody tr');
     await expect(rows).toHaveCount(3);
-    await expect(panel.getByText('120881')).toBeVisible();
-    await expect(panel.getByText('120874')).toBeVisible();
-    await expect(panel.getByText('120869')).toBeVisible();
-    await expect(panel.getByText('120855')).toHaveCount(0);
+    await expect(panel.getByText('TRP-120881')).toBeVisible();
+    await expect(panel.getByText('TRP-120874')).toBeVisible();
+    await expect(panel.getByText('TRP-120869')).toBeVisible();
+    await expect(panel.getByText('TRP-120855')).toHaveCount(0);
   });
 
   test('vendor issues lists the two open issues, not the resolved one', async ({ page }) => {
@@ -99,7 +99,7 @@ test.describe('today — stat strip and queues (OPS, unscoped)', () => {
     const panel = page.locator('.surface', {
       has: page.getByRole('heading', { name: 'Awaiting transporter' }),
     });
-    await panel.locator('tbody tr').filter({ hasText: '4471' }).getByRole('link', { name: 'Open' }).click();
+    await panel.locator('tbody tr').filter({ hasText: 'IND-4471' }).getByRole('link', { name: 'Open' }).click();
     // Plain `waitForURL`, on the config's own timeout.
     //
     // This carried a 60s fuse because the first open of /indents/[id] in a
@@ -109,16 +109,16 @@ test.describe('today — stat strip and queues (OPS, unscoped)', () => {
     // local override goes with it: one place decides how long a navigation
     // may take, and it is `playwright.config.ts`.
     await page.waitForURL(/\/indents\/i-4471$/);
-    await expect(page.getByRole('heading', { name: '4471', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'IND-4471', exact: true })).toBeVisible();
   });
 
   test('a row in the delivery-paperwork queue opens the trip behind it', async ({ page }) => {
     const panel = page.locator('.surface', {
       has: page.getByRole('heading', { name: 'Missing documents' }),
     });
-    await panel.locator('tbody tr').filter({ hasText: '120881' }).getByRole('link', { name: 'Open' }).click();
+    await panel.locator('tbody tr').filter({ hasText: 'TRP-120881' }).getByRole('link', { name: 'Open' }).click();
     await page.waitForURL(/\/trips\/t-120881$/);
-    await expect(page.getByRole('heading', { name: '120881', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'TRP-120881', exact: true })).toBeVisible();
   });
 });
 
@@ -160,7 +160,7 @@ test.describe('today — branch scoping (a scoped Operations user)', () => {
       has: page.getByRole('heading', { name: 'Missing documents' }),
     });
     await expect(podPanel.locator('tbody tr')).toHaveCount(1);
-    await expect(podPanel.getByText('120881')).toBeVisible();
+    await expect(podPanel.getByText('TRP-120881')).toBeVisible();
 
     const issuesPanel = page.locator('.surface', {
       has: page.getByRole('heading', { name: 'Transporter issues' }),

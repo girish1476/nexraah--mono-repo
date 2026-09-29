@@ -1,7 +1,5 @@
 import { Type } from 'class-transformer';
-import { TRIP_DOCUMENT_KINDS } from '../../trips/trips.constants';
 import {
-  ArrayNotEmpty,
   IsArray,
   IsBoolean,
   IsIn,
@@ -10,7 +8,6 @@ import {
   IsOptional,
   IsString,
   Matches,
-  Max,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -38,17 +35,7 @@ export class PatchConfigDto {
   @IsOptional() @IsBoolean() kyc_strict_gate?: boolean;
   @IsOptional() @IsIn(['MANUAL', 'API']) kyc_route?: 'MANUAL' | 'API';
 
-  // Only documents that can actually be uploaded before the advance: the lorry
-  // receipt and proof of delivery come later, and an unknown kind could never be
-  // satisfied. An empty set would release money with no documents at all.
-  @IsOptional()
-  @IsArray()
-  @ArrayNotEmpty()
-  @IsIn(
-    TRIP_DOCUMENT_KINDS.filter((k) => k.group !== 'LR' && k.group !== 'POD').map((k) => k.kind),
-    { each: true },
-  )
-  advance_document_set?: string[];
+  @IsOptional() @IsArray() @IsString({ each: true }) advance_document_set?: string[];
   @IsOptional() @IsInt() @Min(0) advance_default_pct?: number;
   @IsOptional() @IsInt() @Min(0) credit_default_days?: number;
   @IsOptional() @IsInt() @Min(0) sla_hours?: number;
@@ -56,8 +43,6 @@ export class PatchConfigDto {
   @IsOptional() @IsInt() @Min(0) pod_tat_days?: number;
   @IsOptional() @IsInt() @Min(0) pod_penalty_per_day_paise?: number;
   @IsOptional() @IsInt() @Min(0) pod_forfeit_days?: number;
-  /** Always paid out of a balance, however large the deductions. Below one hundred rupees. */
-  @IsOptional() @IsInt() @Min(0) @Max(9900) min_balance_payable_paise?: number;
 
   @IsOptional() @IsInt() @Min(0) eway_warning_window_hours?: number;
   @IsOptional() @IsInt() @Min(0) overspeed_kmph?: number;

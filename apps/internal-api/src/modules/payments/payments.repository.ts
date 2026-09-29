@@ -11,11 +11,6 @@ export class PaymentsRepository {
     return this.db.transaction();
   }
 
-  /** The plain (non-transactional) connection, for reads that take a `DbExecutor`. */
-  executor(): DbExecutor {
-    return this.db;
-  }
-
   // ---- Advance queue / resolution --------------------------------------
 
   advanceQueue(status?: string) {
@@ -42,9 +37,7 @@ export class PaymentsRepository {
     // above, which always filters `trips.stage = 'DELIVERED'` unconditionally.
     if (status === 'released') query = query.where('trips.advance_paid', '>', 0);
     else if (status === 'pending' || !status) query = query.where('trips.advance_paid', '=', 0);
-    // A trip that was set aside (a cancelled load, or one whose transporter was
-    // reassigned) is not waiting for an advance.
-    return query.where('trips.stage', '!=', 'CANCELLED').execute();
+    return query.execute();
   }
 
   resolveByTripId(id: string) {
@@ -101,7 +94,6 @@ export class PaymentsRepository {
       .select([
         'trips.id as tripId',
         'trips.code as tripCode',
-        'trips.vendor_id as vendorId',
         'vendors.legal_name as vendorName',
         'trips.lane as lane',
         'branches.name as branchName',
@@ -109,15 +101,11 @@ export class PaymentsRepository {
         'trips.pod_received_at as podReceivedAt',
         'trips.pod_closure_basis as podClosureBasis',
         'trips.pod_penalty as podPenalty',
-        'trips.transit_penalty as transitPenalty',
         'trips.buy_rate as buyRate',
         'trips.advance_paid as advancePaid',
         'trips.balance_paid as balancePaid',
       ])
       .where('trips.stage', '=', 'DELIVERED')
-      // A delivered trip stays open until the client is billed, so "already paid" is
-      // its own condition rather than something the stage says.
-      .where('trips.balance_paid', '=', 0)
       .execute();
   }
 
@@ -139,7 +127,6 @@ export class PaymentsRepository {
       kind: 'ADVANCE' | 'BALANCE';
       gross: number;
       penalty: number;
-      deduction?: number;
       mode: string;
       transferType: string;
       remittingAccount: string;
@@ -157,7 +144,6 @@ export class PaymentsRepository {
         kind: row.kind,
         gross: row.gross,
         penalty: row.penalty,
-        deduction: row.deduction ?? 0,
         mode: row.mode,
         transfer_type: row.transferType,
         remitting_account: row.remittingAccount,
