@@ -51,6 +51,16 @@ export class RateRevisionController {
   }
 
   /**
+   * Lanes proposed for this client and still waiting for approval. No
+   * permission beyond being signed in — the same as `GET :id/rate-card`,
+   * which this sits beside on the client page.
+   */
+  @Get(':id/rate-card/pending')
+  pendingLanes(@Param('id') id: string) {
+    return this.revisions.pendingLanes(id);
+  }
+
+  /**
    * Proposes, never applies. Returns `202 approvalRequired` — the rate does not
    * move until somebody with `approve.contract` countersigns, and no desk holds
    * both permissions.

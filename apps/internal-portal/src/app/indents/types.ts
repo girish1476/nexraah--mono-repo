@@ -13,7 +13,7 @@ export interface StaleIndent {
   idleDays: number;
 }
 export type RateSource = 'CONTRACT' | 'SPOT';
-export type BandPosition = 'IN_BAND' | 'ABOVE_BAND';
+export type BandPosition = 'BELOW_BAND' | 'IN_BAND' | 'ABOVE_BAND';
 export type ReportingRule = 'SAME_DAY' | 'NEXT_DAY' | 'SCHEDULED';
 
 export interface IndentListRow {
@@ -43,7 +43,11 @@ export interface Quote {
   vendorStatus: string;
   amountPaise: number;
   truckRegistration: string;
-  /** Below `bid_min` never reaches this screen — refused at entry (BR-05, D-39). */
+  /**
+   * Below `bid_min` is accepted and flagged, not refused — a cheaper truck is
+   * more margin, and Operations decides whether to trust the price. Above
+   * `bid_max` still needs approval to award (D-39).
+   */
   bandPosition: BandPosition;
   status: 'SUBMITTED' | 'ACCEPTED' | 'REJECTED' | 'WITHDRAWN';
   submittedAt: string;
@@ -102,6 +106,8 @@ export interface IndentDetail {
   vehicleNo: string | null;
   driverName: string | null;
   driverLicence: string | null;
+  /** The driver's mobile number — the one contact detail allocation requires. */
+  driverPhone?: string | null;
   reportedAt: string | null;
   failureCause: string | null;
   /**
@@ -145,8 +151,11 @@ export interface RecordQuoteBody {
 
 export interface PlacementBody {
   vehicleNo: string;
-  driverName: string;
-  driverLicence: string;
+  /** Required — Operations reaches the truck by phoning its driver. */
+  driverPhone: string;
+  /** Optional: often not known when the vehicle is confirmed. */
+  driverName?: string;
+  driverLicence?: string;
   reportedAt: string;
   /** BR-42 — late reporting is a transit delay in its own right. */
   transitDelay: boolean;

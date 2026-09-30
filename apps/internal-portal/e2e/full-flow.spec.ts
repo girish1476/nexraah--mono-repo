@@ -75,16 +75,16 @@ test.describe('one load, first indent to last rupee', () => {
     await signInAs(page, 'OPS');
     await page.goto('/indents/new');
     await page.locator('select[name="clientId"]').selectOption({ label: 'Berger Paints · CONTRACT' });
-    await page.locator('input[name="fromCity"]').fill('Kolkata');
-    await page.locator('input[name="toCity"]').fill('Nashik');
+    // A contract client's load comes from the agreed lane: choosing it fills the
+    // route, truck and freight. The rate card is fetched once a client is chosen.
+    const lane = page.locator('div.field').filter({ hasText: 'Agreed lane' }).locator('select');
+    await expect(lane.locator('option', { hasText: 'Kolkata → Nashik' })).toHaveCount(1);
+    await lane.selectOption({ index: 1 });
+    await expect(page.locator('input[name="sellRupees"]')).toHaveValue('64200');
     await page.locator('input[name="material"]').fill('Decorative paints');
     await page.locator('input[name="weightTn"]').fill('18');
-    await page.locator('input[name="truckType"]').fill('32 ft SXL');
     const pickup = new Date(Date.now() + 5 * 86_400_000).toISOString().slice(0, 10);
     await page.locator('input[name="pickupDate"]').fill(pickup);
-    await page.locator('input[name="sellRupees"]').fill('64200');
-    // The client's rate card is fetched once a client is chosen; raise the indent only after it is in.
-    await expect(page.getByRole('button', { name: /Kolkata → Nashik/ })).toBeVisible();
     // On a cold dev server the first click can land while the screen is still settling; press it
     // again only while the form is still on screen.
     await expect(async () => {
@@ -117,10 +117,12 @@ test.describe('one load, first indent to last rupee', () => {
     await page.goto(`/indents/${indentId}`);
     await page.getByRole('button', { name: 'Allocate vehicle' }).click();
     const form = dialog(page, 'Allocate vehicle');
+    await fieldControl(form, 'Driver mobile number').fill('9876543210');
     await fieldControl(form, 'Driver name').fill('Murugan S');
-    await fieldControl(form, 'Driver licence').fill('TN0120200012345');
     await form.getByRole('button', { name: 'Allocate vehicle' }).click();
-    await expect(page.getByText('Placement recorded')).toBeVisible();
+    // "Vehicle allocated" is also a progress tag on this page, so wait for what
+    // only a saved allocation shows.
+    await expect(page.getByRole('button', { name: 'Change vehicle' })).toBeVisible();
 
     await page.goto(`/trips/${tripId}`);
     tripCode = (await page.getByRole('heading', { level: 1 }).first().innerText()).trim();
@@ -139,7 +141,9 @@ test.describe('one load, first indent to last rupee', () => {
 
     await page.goto(`/trips/${tripId}`);
     await page.getByRole('button', { name: 'Start loading' }).click();
-    await expect(page.getByText('Loading started', { exact: true }).first()).toBeVisible();
+    // "Loading started" is also a permanent label in the Loading panel; the
+    // button swapping to "Loading complete" is what shows the start was saved.
+    await expect(page.getByRole('button', { name: 'Loading complete' })).toBeVisible();
 
     await page.goto(`/trips/${tripId}/documents`);
     const scan = { name: 'scan.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 scanned document') };
@@ -231,18 +235,19 @@ test.describe('one load, first indent to last rupee', () => {
     const today = new Date().toISOString().slice(0, 10);
     await signOut(page);
     await signInAs(page, 'COMPLIANCE');
-    await page.goto('/pod/receiving');
-    await row(page, tripCode).getByRole('button', { name: 'Log a receipt' }).click();
-    const log = dialog(page, 'Log a POD receipt');
-    // In order: docket, sent on, received on, pages, condition (the labels' hints repeat each other's words).
-    await log.locator('input').nth(0).fill('DKT-556677');
-    await log.locator('input').nth(1).fill(today);
-    await log.locator('input').nth(2).fill(today);
-    await log.locator('input').nth(3).fill('3');
-    await log.getByRole('button', { name: 'Log receipt' }).click();
-    await expect(page.getByText(/receipt/i).first()).toBeVisible();
-
+    // The paper copy is logged right on the proof page — the same panel the
+    // order page's Documents tab shows — rather than only on the register.
     await page.goto(`/pod/${tripId}/verify`);
+    await expect(page.getByRole('heading', { name: 'Receive the proof of delivery' })).toBeVisible();
+    // Its field labels appear nowhere else on the page.
+    const receive = page;
+    await fieldControl(receive, 'Courier docket').fill('DKT-556677');
+    await fieldControl(receive, 'Sent on').fill(today);
+    await fieldControl(receive, 'Received on').fill(today);
+    await fieldControl(receive, 'Pages').fill('3');
+    await receive.getByRole('button', { name: /Log the paper copy/ }).click();
+    await expect(page.getByText(/logged · the clock has stopped/)).toBeVisible();
+
     await page.getByRole('button', { name: 'Verify' }).click();
     await expect(page.getByText(/Verified/).first()).toBeVisible();
 
@@ -380,14 +385,13 @@ test.describe('one load, first indent to last rupee', () => {
     await signInAs(page, 'OPS');
     await page.goto('/indents/new');
     await page.locator('select[name="clientId"]').selectOption({ label: 'Sundaram Auto Components · CONTRACT' });
-    await page.locator('input[name="fromCity"]').fill('Hosur');
-    await page.locator('input[name="toCity"]').fill('Pune');
+    const lane = page.locator('div.field').filter({ hasText: 'Agreed lane' }).locator('select');
+    await expect(lane.locator('option', { hasText: 'Hosur → Pune' })).toHaveCount(1);
+    await lane.selectOption({ index: 1 });
+    await expect(page.locator('input[name="sellRupees"]')).toHaveValue('52000');
     await page.locator('input[name="material"]').fill('Brake assemblies');
     await page.locator('input[name="weightTn"]').fill('14');
-    await page.locator('input[name="truckType"]').fill('32 ft MXL');
     await page.locator('input[name="pickupDate"]').fill(new Date(Date.now() + 6 * 86_400_000).toISOString().slice(0, 10));
-    await page.locator('input[name="sellRupees"]').fill('52000');
-    await expect(page.getByRole('button', { name: /Hosur → Pune/ })).toBeVisible();
     await page.getByRole('button', { name: 'Raise indent' }).click();
     await expect(page).toHaveURL(/\/indents\/i-\d+$/);
     await expect(page.getByRole('heading', { name: '1002' })).toBeVisible();

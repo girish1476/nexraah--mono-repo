@@ -513,6 +513,7 @@ export interface IndentsTable {
   vehicle_no: string | null;
   driver_name: string | null;
   driver_licence: string | null;
+  driver_phone: string | null;
   reported_at: string | null;
   failure_cause: string | null;
   created_at: Generated<string>;
@@ -571,6 +572,15 @@ export interface OrderEventsTable {
   at: Generated<Date>;
 }
 
+/** Append-only notes on an order. Internal only — never granted to `vendor_api`. */
+export interface OrderCommentsTable {
+  id: Generated<string>;
+  order_id: string;
+  author_user_id: string;
+  body: string;
+  created_at: Generated<Date>;
+}
+
 export interface TripsTable {
   id: Generated<string>;
   code: string;
@@ -583,6 +593,7 @@ export interface TripsTable {
   capacity_kg: number | null;
   driver_name: string | null;
   driver_licence: string | null;
+  driver_phone: string | null;
   lane: string | null;
   weight_kg: number | null;
   transit_days_required: number | null;
@@ -947,5 +958,6 @@ export interface Database {
   portal_idempotency_keys: PortalIdempotencyKeysTable;
   orders: OrdersTable;
   order_events: OrderEventsTable;
+  order_comments: OrderCommentsTable;
   client_documents: ClientDocumentsTable;
 }

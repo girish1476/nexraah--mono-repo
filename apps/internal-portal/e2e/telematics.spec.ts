@@ -1,5 +1,5 @@
 import { test, expect, Locator, Page } from '@playwright/test';
-import { setRole } from './helpers';
+import { openMobileMenu, setRole } from './helpers';
 
 /**
  * Fleet board — `/telematics`. No test file existed for this module before
@@ -70,6 +70,7 @@ test.describe('fleet board — manual update', () => {
     // reload — is the reachable path. Searched by trip number, which the
     // orders list's search box supports (`data-filter="q"`).
     const orders = page.getByRole('button', { name: /^Orders/ });
+    await openMobileMenu(page);
     await orders.click();
     await page.getByRole('link', { name: /^All orders/ }).click();
     await expect(page).toHaveURL(/\/orders$/);

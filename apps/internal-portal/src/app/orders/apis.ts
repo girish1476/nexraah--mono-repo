@@ -1,5 +1,5 @@
 import { request } from '@/apis';
-import { OrderCounts, OrderDetail, OrderListResponse, OrderListRow } from './types';
+import { OrderComment, OrderCounts, OrderDetail, OrderListResponse, OrderListRow } from './types';
 
 /**
  * Orders now come from the server.
@@ -107,6 +107,11 @@ export async function orderCounts(params: OrderSearchParams = {}): Promise<Order
 
 export async function getOrder(id: string): Promise<OrderDetail> {
   return request<OrderDetail>({ url: `/orders/${id}`, method: 'GET' });
+}
+
+/** POST /orders/:id/comments — adds a note; answers with the order's comments, oldest first. */
+export async function addOrderComment(id: string, body: string): Promise<OrderComment[]> {
+  return request<OrderComment[]>({ url: `/orders/${id}/comments`, method: 'POST', data: { body } });
 }
 
 /**

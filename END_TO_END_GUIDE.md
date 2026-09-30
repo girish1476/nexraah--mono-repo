@@ -158,7 +158,9 @@ The sidebar groups mirror the natural order goods move through the business:
 - **Vendors** (`/vendors`) — the transporter directory: fleet size, trip
   count, our margin on them, advance policy, verification status.
   Sub-pages: **Leads** (prospective transporters), **Market gap** (lanes that
-  keep drawing no in-band quotes — a recruitment problem, not a pricing one),
+  keep drawing no in-band quotes — a recruitment problem, not a pricing one;
+  **Add a lane** records a new one — branch, from/to, truck type, target — and
+  the target / on-panel / converted counts are editable in place),
   **Issues** (POD delays, vehicle condition complaints, logged against a
   vendor's record).
 - **Telematics** (`/telematics`) — live vehicle tracking signal: overspeed,
@@ -195,19 +197,30 @@ choice would lose more than an empty column does.
   happens **before** any individual shipment — it's how a lane becomes
   available to raise indents against.
 - **Indents** (`/indents`) — an individual shipment request: one truck, one
-  lane, one pickup date. "Raise an indent" captures the requirement (client,
-  route, material, weight, truck type, pickup date), the pricing (what we
-  charge the client), and placement terms (the price band a transporter's
-  quote must fall within, and the advance %). Once published, the band
-  becomes read-only — widening it later to force a match is exactly the
-  shortcut this rule exists to block; a lane that keeps missing its band is a
-  market-gap problem, not a pricing-tweak problem.
+  lane, one pickup date. "Raise an indent" follows the client. For a
+  **contract** client you pick an **Agreed lane**, which fills and locks the
+  route, truck type, transit days, reporting rule and freight, so the rate is
+  cross-checked and the lane's late-delivery penalty applies. For a **spot**
+  client (or **Book it as spot** on a route the rate card doesn't cover) you
+  enter it by hand, with a sourcing rate and the client's confirmation
+  screenshot attached. The advance % is optional (blank = the transporter's
+  standing policy). The price band is not typed here — it comes from the
+  client's rate card lane, and only Leadership can change it.
 
 ### Execution
 - **Trips** (`/trips`) — once a transporter is awarded an indent, it becomes
   a trip: `PLACED` → `REPORTED` → `LOADED` → `IN_TRANSIT` → `DELIVERED` →
   `CLOSED`, tracked alongside a parallel POD status. The trip record carries
   the Lorry Receipt (LR), charges, and documents.
+- **Orders** (`/orders/[id]`) — the page that moves an order along. The
+  **Details** tab has a **Next step** panel that names what's left and holds
+  the button for it (award a quote, allocate vehicle, start/complete loading,
+  mark departed, mark delivered, then the POD / balance / invoice checklist),
+  plus payments made (with UTR), vehicle tracking and history. **Documents**
+  holds the LR, trip documents and delivery proof — a paper POD can be
+  received right there. **Invoice** shows the client invoice, what's received
+  and what's still to collect, with a pre-filled **Raise the client invoice**
+  link. The 💬 button in the header opens append-only comments anyone can add.
 - **POD receiving** / **POD pending** (`/pod/receiving`, `/pod/pending`) —
   proof of delivery: receiving the physical/scanned document, verifying it,
   and tracking the clock (see §6) that determines whether a penalty accrues
@@ -222,6 +235,9 @@ choice would lose more than an empty column does.
 - **Transporter bills** (`/payments/bills`) — the transporter's own invoice
   against a trip; a bill above the computed balance is *flagged*, not
   auto-rejected, because the transporter's number might be the correct one.
+  A bill that arrives on paper or WhatsApp is keyed in by Finance or
+  Operations with **Raise a bill** (POD approved, one live bill per trip,
+  bill number unique per transporter).
 - **Invoices** (`/invoices`) — what we bill the *client*.
 - **Receivables** (`/receivables`) — what clients still owe us.
 - **P&L** (`/pnl`) — margin by branch/lane/client, for the people who need to
@@ -256,10 +272,11 @@ Four tabs, phone-first (this is a driver-facing tool as much as an
 office one):
 
 1. **Loads** — shipments open for a quote, matched to the transporter's fleet
-   and lanes. Quoting below the price band is refused client-side *and*
-   server-side — a below-band quote never even reaches the "submitted"
-   state. Quoting above the band still submits, but is held for approval
-   rather than auto-accepted.
+   and lanes. Quoting below the price band is allowed — the screen says
+   "Below the usual range — you can send it", and on our side the quote is
+   tagged **Below band** with no approval needed. Quoting above the band
+   still submits, but is held for Leadership approval rather than
+   auto-accepted.
 2. **Quotes** — every quote the transporter has placed: open, won, lost, or
    withdrawn. A lost quote states a fixed reason (`AWARDED_ELSEWHERE`,
    `INDENT_CANCELLED`, `EXPIRED`) — never a price, never a competitor.
@@ -271,7 +288,9 @@ office one):
    current city, availability status. `DOCS_DUE` (an expired compliance
    document) is set by the server only — a transporter can't clear it by
    picking a different status; they have to re-upload the document under
-   Profile.
+   Profile. `ON_TRIP` / `AVAILABLE` follow the trip automatically (allocated →
+   on trip; delivered, swapped or cancelled → available, at the delivery city
+   on delivery); `DOCS_DUE` and `MAINTENANCE` are never overwritten.
 
 A fifth screen, **Profile**, sits behind the header's account link rather
 than a tab (four is the limit for a bottom tab bar) — company details, KYC
@@ -285,25 +304,36 @@ through:
 
 1. **Client relationship exists**, or an **RFQ** wins a new lane at a
    workable price (internal console).
-2. Ops **raises an indent** against that lane: route, material, weight,
-   pickup date, sell rate, and a placement band (internal console).
+2. Ops **raises an indent**: a contract client's agreed lane (route, truck,
+   freight and band come from it), or a spot load with sourcing rate and the
+   client's confirmation screenshot (internal console).
 3. The indent becomes visible to transporters as an **available load**
-   (transporter portal). One or more transporters **quote**.
-4. Ops **awards** the best in-band quote (or an above-band one, with
-   approval). The indent becomes a **trip**; the winning transporter sees it
-   under Trips, everyone else sees a **lost** quote with no pricing detail.
-5. Ops (or the system, once wired) issues the **Lorry Receipt**. The
-   transporter can view/share/print it.
+   (transporter portal). One or more transporters **quote**. A below-band
+   quote goes straight in, tagged **Below band**; an above-band one is held.
+4. Ops **awards** a quote (an above-band one only with Leadership
+   approval), then **allocates the vehicle** — vehicle number and driver
+   mobile are enough; driver name and licence are optional. The indent
+   becomes a **trip**; the winning transporter sees it under Trips, everyone
+   else sees a **lost** quote with no pricing detail. From here the order
+   page's **Next step** panel walks Ops through each remaining action.
+5. Ops issues the **Lorry Receipt** if one is needed. The transporter can
+   view/share/print it. It is optional for departure — only an LR that was
+   started but not issued blocks the truck from leaving.
 6. The **advance** releases once the document checklist clears (internal
    console payments gate; transporter portal shows the same checklist from
    their side).
-7. The truck moves: `REPORTED` → `LOADED` → `IN_TRANSIT` → `DELIVERED`.
+7. The truck moves: `REPORTED` → `LOADED` → `IN_TRANSIT` → `DELIVERED`. Once
+   it has departed the order reads **On the road**, even if the advance is
+   still unpaid. The fleet vehicle goes on trip at allocation and back to
+   available on delivery.
 8. The transporter **uploads POD** (courier docket + sent-on date + photos).
    This does **not** stop the clock — only the branch physically receiving
    the paper copy does. From `DELIVERED`, the transporter has 20 days before
    a ₹100/day deduction starts accruing against their balance, and 40 days
    before the balance is forfeited outright (compliance/operations
-   verify and approve POD on the internal side).
+   verify and approve POD on the internal side). If the verifier unticks
+   "No shortage or damage noted" or "Quantity matches the invoice", the
+   remarks become an **SDR** that holds the balance until it is resolved.
 9. Once POD is **approved**, the **balance** payment gate opens. The
    transporter can also now **raise a bill** — if their number differs from
    the computed balance, it's flagged for review, not rejected outright.

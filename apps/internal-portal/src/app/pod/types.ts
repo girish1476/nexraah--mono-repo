@@ -107,6 +107,13 @@ export interface VerifyChecklist {
 export interface VerifyBody {
   checklist: VerifyChecklist;
   remarks?: string;
+  /**
+   * When the shortage/damage or quantity check fails, the remarks become a
+   * shortage / damage record (SDR) on the trip. Kind defaults from which check
+   * failed; the amount is what it is believed to cost, fixed at resolution.
+   */
+  sdrKind?: 'SHORTAGE' | 'DAMAGE' | 'UNLOADING_ACK';
+  sdrClaimedAmountPaise?: number;
   /** BR-56 — charges are captured here, not as a separate later step. */
   charges: { chargeType: string; costAmountPaise: number; billedAmountPaise: number }[];
 }

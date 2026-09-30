@@ -72,22 +72,23 @@ export default function QuoteFormPage({ params }: { params: { code: string } }) 
     const isBelow = amountPaise < load.bandLowPaise;
     const isAbove = amountPaise > load.bandHighPaise;
     return {
-      tone: BAND_TONE(isBelow, isAbove),
+      // A price under the range is allowed now, so it reads as a plain "ready
+      // to send" rather than the red of a refusal.
+      tone: BAND_TONE(false, isAbove),
       title: isBelow
-        ? 'Below the band — you cannot send this price'
+        ? 'Below the usual range — you can send it'
         : isAbove
           ? 'Above the band — goes for approval first'
           : 'Within the band — ready to send',
       note: isBelow
-        ? `Nexraah will not award this lane below ${inr(load.bandLowPaise)}. Raise your price to ${inr(load.bandLowPaise)} or more before you can send it.`
+        ? `Your price is under ${inr(load.bandLowPaise)}. You can still send it — make sure it covers your costs, because this is the price you will be paid.`
         : isAbove
           ? `You can still send this price. It will not be accepted straight away — a Nexraah manager has to approve anything over ${inr(load.bandHighPaise)} first, so you wait longer for an answer.`
           : 'This price can be given to you straight away, with nobody else to approve it.',
     };
   }, [load, amountPaise]);
 
-  const below = !!load && amountPaise > 0 && amountPaise < load.bandLowPaise;
-  const canSubmit = !!load && !below && !!amountPaise && !!vehicleRegNo.trim() && driverMobileValid;
+  const canSubmit = !!load && !!amountPaise && !!vehicleRegNo.trim() && driverMobileValid;
 
   const submit = () => {
     if (!load || !canSubmit) return;
@@ -138,10 +139,10 @@ export default function QuoteFormPage({ params }: { params: { code: string } }) 
       {error && <ErrorNote message={error} />}
 
       <div className="card">
-        <p className="muted">Two price rules for this load</p>
+        <p className="muted">How your price is handled</p>
         <p style={{ marginTop: 8, fontSize: 15.5, lineHeight: 1.5 }}>
-          <strong>1. The least you can quote is {inr(load.bandLowPaise)}.</strong> Type anything
-          under that and this screen will not let you send it. The floor does not move.
+          <strong>1. Any price up to {inr(load.bandHighPaise)} goes in as it is.</strong> The usual
+          range is {inrRange(load.bandLowPaise, load.bandHighPaise)}, but a lower price is allowed too.
         </p>
         <p style={{ marginTop: 10, fontSize: 15.5, lineHeight: 1.5 }}>
           <strong>2. Over {inr(load.bandHighPaise)} it goes for approval.</strong> You may still
@@ -168,8 +169,8 @@ export default function QuoteFormPage({ params }: { params: { code: string } }) 
           top later.
         </p>
         <p className="muted" style={{ marginTop: 6 }}>
-          Price range for this load: {inrRange(load.bandLowPaise, load.bandHighPaise)}. The box
-          starts at the lowest price you are allowed to quote.
+          Usual price range for this load: {inrRange(load.bandLowPaise, load.bandHighPaise)}. The
+          box starts at the low end of the range; you can type any amount.
         </p>
       </div>
 
@@ -282,9 +283,7 @@ export default function QuoteFormPage({ params }: { params: { code: string } }) 
         label={sending ? 'Sending…' : `Submit quote ${inr(amountPaise)}`}
         disabled={!canSubmit || sending}
         note={
-          below
-            ? `Blocked: below the published floor of ${inr(load.bandLowPaise)}. Raise your price to send it.`
-            : amountPaise > load.bandHighPaise
+          amountPaise > load.bandHighPaise
               ? 'Will be sent for approval before award — this takes longer than a price inside the range'
               : undefined
         }

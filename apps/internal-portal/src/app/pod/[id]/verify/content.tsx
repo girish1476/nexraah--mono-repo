@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import { useAtomValue } from 'jotai';
 import { ApiError, errorMessage } from '@/apis';
 import { CHARGE_TYPES, POD_STATUS_LABEL, POD_TONE } from '@/lib/documents';
@@ -23,8 +23,10 @@ import {
   useCan,
   useToast,
 } from '@/lib/ui';
-import { approvePod, getPod, rejectPod, verifyPod } from '../../apis';
+import { approvePod, getPod, receivePod, rejectPod, verifyPod } from '../../apis';
 import { PodDetail, VerifyChecklist } from '../../types';
+import { listSdr } from '@/app/sdr/apis';
+import { SDR_KIND_LABEL, SdrKind, SdrRecord } from '@/app/sdr/types';
 
 const CHECKS: { key: keyof VerifyChecklist; label: string }[] = [
   { key: 'consigneeStamp', label: 'Consignee stamp present' },
@@ -84,6 +86,17 @@ export function PodVerifyContent({
   const [rejectReason, setRejectReason] = useState('');
   const [busy, setBusy] = useState(false);
 
+  const [sdrKind, setSdrKind] = useState<SdrKind>('DAMAGE');
+  const [sdrClaimedRupees, setSdrClaimedRupees] = useState(0);
+  const [sdrs, setSdrs] = useState<SdrRecord[]>([]);
+  const [receive, setReceive] = useState({
+    courierDocket: '',
+    sentOn: '',
+    receivedOn: new Date().toISOString().slice(0, 10),
+    pages: 1,
+    condition: '',
+  });
+
   const load = () => {
     setError(null);
     getPod(tripId)
@@ -92,24 +105,56 @@ export function PodVerifyContent({
         onLoaded?.(d);
       })
       .catch((e) => setError(errorMessage(e)));
+    listSdr({ trip: tripId })
+      .then(setSdrs)
+      .catch(() => setSdrs([]));
   };
   useEffect(load, [tripId]);
 
   const anyFailed = Object.values(checklist).some((v) => !v);
+  // Same rule as the server's `sdrKindFromChecklist`.
+  const raisesSdr = !checklist.noShortageOrDamage || !checklist.quantityMatchesInvoice;
+  useEffect(() => {
+    setSdrKind(!checklist.quantityMatchesInvoice && checklist.noShortageOrDamage ? 'SHORTAGE' : 'DAMAGE');
+  }, [checklist.quantityMatchesInvoice, checklist.noShortageOrDamage]);
+
+  const submitReceive = async () => {
+    setBusy(true);
+    try {
+      const receipt = await receivePod(tripId, {
+        courierDocket: receive.courierDocket.trim(),
+        sentOn: receive.sentOn,
+        receivedOn: receive.receivedOn,
+        pages: receive.pages,
+        condition: receive.condition.trim() || undefined,
+      });
+      toast(`${receipt.code} logged · the clock has stopped — it can be verified now`);
+      load();
+    } catch (e) {
+      toast(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const submitVerify = async () => {
     setBusy(true);
     try {
-      await verifyPod(tripId, {
+      const result = await verifyPod(tripId, {
         checklist,
         remarks: remarks || undefined,
+        ...(raisesSdr ? { sdrKind, sdrClaimedAmountPaise: Math.round(sdrClaimedRupees * 100) } : {}),
         charges: charges.map((c) => ({
           chargeType: c.chargeType,
           costAmountPaise: Math.round(c.costRupees * 100),
           billedAmountPaise: Math.round(c.billedRupees * 100),
         })),
       });
-      toast('Verified · a second person needs to approve it before the balance is released.');
+      toast(
+        result.sdrCode
+          ? `Verified · ${result.sdrCode} raised from the remarks — the balance is held until it is resolved.`
+          : 'Verified · a second person needs to approve it before the balance is released.',
+      );
       setCharges([]);
       load();
     } catch (e) {
@@ -240,10 +285,51 @@ export function PodVerifyContent({
         </Panel>
 
         {pod.podStatus === 'PENDING' || pod.podStatus === 'ATTACHED' ? (
-          <Banner tone="flag" title="The physical copy has not been logged">
-            Verification begins once the branch logs the paper against its courier docket. A photograph does not
-            stop the clock.
-          </Banner>
+          <Panel title="Receive the proof of delivery">
+            <Banner tone="flag" title="The physical copy has not been logged">
+              {pod.podStatus === 'ATTACHED'
+                ? 'The transporter has sent a photo. Log the paper copy when it reaches the branch — that is what stops the clock.'
+                : 'Nothing has come in yet. Log the paper copy when it reaches the branch — that is what stops the clock and lets it be verified.'}
+            </Banner>
+            {can('pod.receive') ? (
+              <div style={{ marginTop: 12 }}>
+                <FormGrid>
+                  <Field label="Courier docket" required>
+                    <input value={receive.courierDocket} onChange={(e) => setReceive({ ...receive, courierDocket: e.target.value })} />
+                  </Field>
+                  <Field label="Sent on" required>
+                    <input type="date" value={receive.sentOn} onChange={(e) => setReceive({ ...receive, sentOn: e.target.value })} />
+                  </Field>
+                  <Field label="Received on" required>
+                    <input type="date" value={receive.receivedOn} onChange={(e) => setReceive({ ...receive, receivedOn: e.target.value })} />
+                  </Field>
+                  <Field label="Pages" required>
+                    <input
+                      type="number"
+                      min={1}
+                      value={receive.pages}
+                      onChange={(e) => setReceive({ ...receive, pages: Math.max(1, Number(e.target.value) || 1) })}
+                    />
+                  </Field>
+                  <Field label="Condition" hint="Optional — e.g. torn, water-damaged">
+                    <input value={receive.condition} onChange={(e) => setReceive({ ...receive, condition: e.target.value })} />
+                  </Field>
+                </FormGrid>
+                <button
+                  className="btn"
+                  style={{ marginTop: 12 }}
+                  disabled={busy || !receive.courierDocket.trim() || !receive.sentOn || !receive.receivedOn}
+                  onClick={submitReceive}
+                >
+                  Log the paper copy — stop the clock
+                </button>
+              </div>
+            ) : (
+              <p className="muted" style={{ fontSize: 12.5, marginBottom: 0 }}>
+                The branch receiving desk logs the paper copy.
+              </p>
+            )}
+          </Panel>
         ) : null}
 
         {canVerify && (
@@ -269,6 +355,34 @@ export function PodVerifyContent({
                 <textarea rows={2} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
               </Field>
             </div>
+
+            {raisesSdr && (
+              <div style={{ marginTop: 12 }}>
+                <Banner tone="flag" title="These remarks will be recorded as a shortage / damage record (SDR)">
+                  The transporter’s balance is held until the SDR is resolved, and the amount decided then is taken off
+                  it — anything the balance cannot cover carries to their next orders.
+                </Banner>
+                <FormGrid>
+                  <Field label="What went wrong">
+                    <select value={sdrKind} onChange={(e) => setSdrKind(e.target.value as SdrKind)}>
+                      {(Object.keys(SDR_KIND_LABEL) as SdrKind[]).map((k) => (
+                        <option key={k} value={k}>
+                          {SDR_KIND_LABEL[k]}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Believed to cost (₹)" hint="Optional — the deduction is fixed when the SDR is resolved">
+                    <input
+                      type="number"
+                      min={0}
+                      value={sdrClaimedRupees || ''}
+                      onChange={(e) => setSdrClaimedRupees(Math.max(0, Number(e.target.value) || 0))}
+                    />
+                  </Field>
+                </FormGrid>
+              </div>
+            )}
 
             <div style={{ marginTop: 16 }}>
               <div className="eyebrow">Charges written on this document</div>
@@ -357,6 +471,31 @@ export function PodVerifyContent({
           <Banner tone="mint" title="Approved">
             The balance is unblocked. Finance still releases it — approval and disbursement stay separate.
           </Banner>
+        )}
+
+        {sdrs.length > 0 && (
+          <Panel title="⚠️ Shortage / damage on this trip" pad={false}>
+            <FactList
+              facts={sdrs.map(
+                (s) =>
+                  [
+                    `${s.code} · ${SDR_KIND_LABEL[s.kind]}`,
+                    <span key={s.id}>
+                      {s.description}
+                      <span className="muted">
+                        {' · '}
+                        {s.status === 'OPEN'
+                          ? `open${s.claimedPaise ? ` · claimed ${inr(s.claimedPaise)}` : ''} — holds the balance`
+                          : `resolved · deduct ${inr(s.deductionPaise ?? 0)}`}
+                      </span>
+                    </span>,
+                  ] as [string, ReactNode],
+              )}
+            />
+            <div className="hint" style={{ padding: '10px 14px' }}>
+              Resolved on the <Link href="/sdr">SDR</Link> screen, where the amount to deduct is decided.
+            </div>
+          </Panel>
         )}
       </Split>
 

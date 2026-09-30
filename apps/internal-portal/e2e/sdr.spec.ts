@@ -1,5 +1,5 @@
 import { Locator, Page, test, expect } from '@playwright/test';
-import { setRole } from './helpers';
+import { openMobileMenu, setRole } from './helpers';
 
 /**
  * SDR — `/sdr`: shortage and damage records (SDR).
@@ -28,6 +28,7 @@ const row = (page: Page, text: string) => page.locator('table.table tbody tr').f
 // navigation can be swallowed by a route still compiling.
 async function openNav(page: Page, group: RegExp, link: RegExp, url: RegExp) {
   const target = page.getByRole('link', { name: link });
+  await openMobileMenu(page);
   if (!(await target.isVisible())) await page.getByRole('button', { name: group }).click();
   await expect(async () => {
     await target.click();

@@ -117,7 +117,7 @@ export function AddLaneDialog({
       });
     } catch (e) {
       if (e instanceof ApprovalRequiredError) {
-        toast('Sent for sign-off. The lane is added to the rate card once it is approved.');
+        toast('Sent for sign-off — it shows on the client under “Lanes waiting for approval” and moves to the rate card once approved.');
         reset();
         onClose();
         onSent();

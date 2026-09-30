@@ -129,7 +129,7 @@ function Sheet({ label, trip, config }: { label: string; trip: TripDetail; confi
             {trip.vehicleNo} · {trip.vehicleType}
           </div>
           <div style={{ fontSize: 11 }}>
-            {trip.driverName} · {trip.driverLicence}
+            {[trip.driverName, trip.driverLicence, trip.driverPhone].filter(Boolean).join(' · ') || 'Driver not recorded'}
           </div>
           <div style={{ fontSize: 11 }}>
             Transit {trip.transitDaysRequired} days · Trip {trip.code}

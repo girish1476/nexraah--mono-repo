@@ -9,10 +9,11 @@
  * server computed once, and a recorded `events` history in place of
  * milestones the screen worked out for itself.
  *
- * Still read-only, and deliberately so. There is no endpoint to set a status:
- * an order's step is a consequence of what happened to its indent, trip,
- * documents and payments, so movement happens by doing the underlying thing.
- * Every action still lives on the indent, trip, POD or invoice page.
+ * There is no endpoint to set a status: an order's step is a consequence of
+ * what happened to its indent, trip, documents and payments, so movement
+ * happens by doing the underlying thing. The order page's "Next step" panel
+ * calls those same indent, trip and POD actions in place, so the order can be
+ * moved forward without leaving it. Comments are the one write of its own.
  */
 
 /**
@@ -268,11 +269,23 @@ export interface OrderPayments {
   balance: OrderPaymentLine | null;
 }
 
+/** A note somebody added to the order as it moved. Append-only. */
+export interface OrderComment {
+  id: string;
+  body: string;
+  at: string;
+  authorName: string;
+}
+
 export interface OrderDetail extends OrderListRow {
+  clientId: string;
+  /** The client invoice this order's trip is billed on, once one exists. */
+  invoiceId: string | null;
   material: string;
   weightTn: number;
   truckType: string;
   driverName: string | null;
+  driverPhone: string | null;
   buyRatePaise: number | null;
   advancePaidPaise: number;
   balancePaidPaise: number;
@@ -282,4 +295,6 @@ export interface OrderDetail extends OrderListRow {
   payments: OrderPayments;
   /** Recorded step history, oldest first. Replaces the old computed milestones. */
   events: OrderEvent[];
+  /** Notes added from the order page's comment button, oldest first. */
+  comments: OrderComment[];
 }

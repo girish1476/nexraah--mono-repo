@@ -45,7 +45,7 @@ test.describe('Add a lane to a rate card', () => {
 
     await expect(send).toBeEnabled();
     await send.click();
-    await expect(page.getByText('Sent for sign-off. The lane is added to the rate card once it is approved.')).toBeVisible();
+    await expect(page.getByText(/^Sent for sign-off — it shows on the client under “Lanes waiting for approval”/)).toBeVisible();
 
     // A proposal changes nothing anybody is billed against: the lane is not on
     // the card until it is approved. (The approve-and-land step is covered in

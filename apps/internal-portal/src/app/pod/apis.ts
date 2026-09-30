@@ -44,7 +44,8 @@ export function receivePod(
 
 /** POST /pod/:tripId/verify · `pod.verify` — checklist, remarks and charges. */
 export function verifyPod(tripId: string, body: VerifyBody) {
-  return request<{ tripId: string; podStatus: string }>({
+  // `sdrCode` is set when a failed shortage/damage or quantity check raised an SDR from the remarks.
+  return request<{ tripId: string; podStatus: string; sdrCode?: string | null }>({
     url: `/pod/${tripId}/verify`,
     method: 'POST',
     data: body,

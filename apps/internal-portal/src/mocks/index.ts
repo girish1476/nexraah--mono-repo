@@ -1,5 +1,6 @@
 import { planRecovery } from './sdr-recovery';
 import { computeTransitPenalty } from './transit-penalty';
+import { bandPositionFor } from './band-position';
 import { isDemoData, persist } from './persist';
 import { AxiosAdapter, AxiosError, AxiosRequestConfig, AxiosResponse } from 'axios';
 import { RoleCode, SEED_GRANTS } from '@/lib/permissions';
@@ -315,7 +316,7 @@ function openTripFor(indent: any) {
     capacityTn: indent.weightTn,
     driverName: indent.driverName ?? null,
     driverLicence: indent.driverLicence ?? null,
-    driverPhone: null,
+    driverPhone: indent.driverPhone ?? null,
     lane: `${indent.fromCity} → ${indent.toCity}`,
     distanceKm: indent.distanceKm,
     weightTn: indent.weightTn,
@@ -349,6 +350,38 @@ function openTripFor(indent: any) {
   };
   db.trips.unshift(trip);
   return trip;
+}
+
+/**
+ * A transporter's own fleet row follows its truck through a trip:
+ * AVAILABLE → ON_TRIP when it is allocated, back to AVAILABLE (at the
+ * delivery city) once it is delivered. DOCS_DUE and MAINTENANCE are never
+ * overwritten — those are set for a reason nothing here knows about. A plate
+ * that is not in their fleet (a truck they never listed) is simply skipped.
+ */
+function fleetRow(vendorId: string | null | undefined, vehicleNo: string | null | undefined) {
+  if (!vendorId || !vehicleNo) return undefined;
+  const plate = String(vehicleNo).replace(/\s/g, '').toUpperCase();
+  const vendor = db.vendors.find((v: any) => v.id === vendorId) as any;
+  return (vendor?.fleet ?? []).find((f: any) => String(f.registration).replace(/\s/g, '').toUpperCase() === plate);
+}
+
+function setFleetVehicleStatus(
+  vendorId: string | null | undefined,
+  vehicleNo: string | null | undefined,
+  status: 'AVAILABLE' | 'ON_TRIP',
+  currentCity?: string,
+) {
+  const row = fleetRow(vendorId, vehicleNo);
+  if (!row || row.status === 'DOCS_DUE' || row.status === 'MAINTENANCE') return;
+  row.status = status;
+  if (currentCity) row.currentCity = currentCity;
+}
+
+/** The truck previously allocated to a load goes back to AVAILABLE when it is swapped or the load is set aside. */
+function releaseFleetVehicle(vendorId: string | null | undefined, vehicleNo: string | null | undefined) {
+  const row = fleetRow(vendorId, vehicleNo);
+  if (row?.status === 'ON_TRIP') row.status = 'AVAILABLE';
 }
 
 /** Where the main pickup cities are, so a truck that has just left appears on the fleet board in the right place. */
@@ -468,6 +501,24 @@ function raiseApproval(input: {
   return status(202, { approvalRequired: true, approval });
 }
 
+/** Lanes proposed for a client, still waiting for approval — `RateRevisionService.pendingLanes`. */
+function pendingLanesFor(clientId: string) {
+  return db.approvals
+    .filter((a: any) => a.kind === 'RATE_CARD_LANE' && a.status === 'PENDING' && a.entityId === clientId && a.action)
+    .map((a: any) => ({
+      approvalId: a.id,
+      requesterName: a.requesterName,
+      proposedAt: a.createdAt,
+      origin: a.action.origin,
+      destination: a.action.destination,
+      truckType: a.action.truckType,
+      ratePaise: a.action.ratePaise,
+      transitDays: a.action.transitDays,
+      validFrom: a.action.validFrom,
+      validTo: a.action.validTo ?? null,
+    }));
+}
+
 /** BR-07 / BR-58 — the advance gate, computed from the document set. */
 function advanceGate(trip: any) {
   const set: string[] = db.config.advance_document_set;
@@ -552,6 +603,32 @@ function branchRowsFor(trips: any[]) {
       costPaise: own.reduce((a, t) => a + tripCost(t), 0),
     };
   }).filter((r) => r.trips > 0);
+}
+
+/** Records a shortage / damage against a delivered trip — from the SDR screen, or from a proof's remarks. */
+function raiseSdrRecord(trip: any, kind: string, description: string, claimedPaise: number, role: RoleCode) {
+  const record = {
+    id: `sdr-${db.sdr.length + 1}-${Date.now()}`,
+    code: nextNumber('SDR'),
+    tripId: trip.id,
+    tripCode: trip.code,
+    vendorId: trip.vendorId,
+    vendorName: trip.vendorName,
+    kind,
+    description: description.trim(),
+    claimedPaise,
+    status: 'OPEN',
+    deductionPaise: null,
+    outstandingPaise: 0,
+    resolutionNote: null,
+    waivedPaise: 0,
+    raisedByName: USERS[role].name,
+    raisedAt: helpers.now(),
+    resolvedByName: null,
+    resolvedAt: null,
+  };
+  db.sdr.unshift(record);
+  return record;
 }
 
 /** An SDR row with where its deduction has been recovered from. */
@@ -749,11 +826,15 @@ export function orderLadder(indent: any, trip: any): MockOrderStatus {
   if (indent.stage !== 'TRIP_CREATED') return 'INDENT_CREATED';
   if (!trip) return 'TRIP_GENERATED';
 
-  const docsIn = advanceDocsUploaded(trip);
-  // Step 3 is conditional — FLOWS.md §6 marks the lorry receipt "if needed".
-  if (!trip.lrCode && trip.advancePaidPaise <= 0 && !docsIn) return 'TRIP_GENERATED';
-  if (trip.advancePaidPaise <= 0) return docsIn ? 'ADVANCE_DOCS_UPLOADED' : 'LR_ISSUED';
-  if (trip.stage === 'OPEN') return 'ADVANCE_PAID';
+  // Where the truck is outranks the paperwork behind it — see `order-ladder.ts`.
+  // Steps 3–5 only describe a truck that has not left yet; a truck that has
+  // departed with its advance still unpaid is on the road, not stuck at step 4.
+  if (trip.stage === 'OPEN') {
+    if (trip.advancePaidPaise > 0) return 'ADVANCE_PAID';
+    if (advanceDocsUploaded(trip)) return 'ADVANCE_DOCS_UPLOADED';
+    // Step 3 is conditional — FLOWS.md §6 marks the lorry receipt "if needed".
+    return trip.lrCode ? 'LR_ISSUED' : 'TRIP_GENERATED';
+  }
   if (trip.stage === 'IN_TRANSIT') return 'TRACKING';
   // Forfeiture first — see `order-ladder.ts`. A closing line that caught
   // "everything else" is what let a forfeited order read as POD_VERIFIED.
@@ -770,6 +851,14 @@ export function orderLadder(indent: any, trip: any): MockOrderStatus {
   // that still beats silently calling an unknown status "proof checked" —
   // which is exactly how FORFEITED went unnoticed.
   throw new Error(`orderLadder: unhandled pod_status ${JSON.stringify(trip.podStatus)}`);
+}
+
+/** An order's comments, oldest first — the shape `OrdersRepository.comments` returns. */
+function orderCommentsFor(orderId: string) {
+  return db.orderComments
+    .filter((c: any) => c.orderId === orderId)
+    .sort((a: any, b: any) => String(a.at).localeCompare(String(b.at)))
+    .map((c: any) => ({ id: c.id, body: c.body, at: c.at, authorName: c.authorName }));
 }
 
 /** There is no order id of its own: an order carries its indent's id. */
@@ -801,6 +890,7 @@ function orderRow(indent: any) {
     stepNo: orderStepNo(status),
     tripId: trip?.id ?? null,
     tripCode: trip?.code ?? null,
+    invoiceId: invoice?.id ?? null,
     invoiceCode: invoice?.code ?? null,
     failureCause: indent.failureCause ?? null,
     closedAt:
@@ -1617,9 +1707,49 @@ const routes: [string, RegExp, Handler][] = [
     /^\/vendors\/market-gap\/([^/]+)$/,
     ({ params, body }) => {
       const row = db.marketGap.find((g) => g.id === params[0]) ?? fail(404, 'NOT_FOUND', 'Row not found');
-      Object.assign(row, body);
+      for (const key of ['target', 'onPanel', 'converted'] as const) {
+        if (body?.[key] === undefined) continue;
+        if (!Number.isInteger(body[key]) || body[key] < 0) fail(400, 'VALIDATION_ERROR', `${key} must be a whole number, 0 or more.`);
+        row[key] = body[key];
+      }
       // Same computed shape the list hands out — the real API answers a write
       // with the full row, and the screen swaps it in for the one it has.
+      return ok({
+        ...row,
+        gap: Math.max(0, row.target - row.onPanel),
+        progressPct: row.target ? Math.round((row.converted / row.target) * 100) : 0,
+      });
+    },
+  ],
+  [
+    'POST',
+    /^\/vendors\/market-gap$/,
+    ({ body, branch }) => {
+      const b = BRANCHES.find((x) => x.id === body?.branchId) ?? fail(400, 'VALIDATION_ERROR', 'Choose a branch.');
+      if (branch && b.code !== branch) fail(403, 'WRONG_BRANCH', 'You can only record a gap for your own branch.');
+      const lane = String(body?.lane ?? '').trim();
+      const truckType = String(body?.truckType ?? '').trim();
+      if (lane.length < 3) fail(400, 'VALIDATION_ERROR', 'Enter the lane, e.g. Nashik → Kolkata.');
+      if (truckType.length < 2) fail(400, 'VALIDATION_ERROR', 'Enter the truck type.');
+      const counts = ['target', 'onPanel', 'converted'].map((k) => body?.[k] ?? 0);
+      if (counts.some((n) => !Number.isInteger(n) || n < 0)) fail(400, 'VALIDATION_ERROR', 'Counts must be whole numbers, 0 or more.');
+      if (
+        db.marketGap.some(
+          (g) => g.branchId === b.id && g.lane.toLowerCase() === lane.toLowerCase() && g.truckType.toLowerCase() === truckType.toLowerCase(),
+        )
+      )
+        fail(409, 'MARKET_GAP_EXISTS', `${lane} · ${truckType} is already on the list for this branch — change its numbers there.`);
+      const row = {
+        id: `mg-${Date.now()}`,
+        branchId: b.id,
+        branchName: b.name,
+        lane,
+        truckType,
+        target: counts[0],
+        onPanel: counts[1],
+        converted: counts[2],
+      };
+      db.marketGap.push(row);
       return ok({
         ...row,
         gap: Math.max(0, row.target - row.onPanel),
@@ -2016,6 +2146,16 @@ const routes: [string, RegExp, Handler][] = [
       ),
   ],
   [
+    'GET',
+    /^\/clients\/([^/]+)\/rate-card\/pending$/,
+    ({ params }) => {
+      const client =
+        db.clients.find((c: any) => c.id === params[0] || c.code === params[0]) ??
+        fail(404, 'NOT_FOUND', `Client ${params[0]} not found`);
+      return ok(pendingLanesFor(client.id));
+    },
+  ],
+  [
     'POST',
     /^\/clients\/([^/]+)\/rate-card$/,
     ({ params, body, role }) => {
@@ -2056,6 +2196,18 @@ const routes: [string, RegExp, Handler][] = [
         fail(400, 'RATE_LANE_BAD_DATES', 'The rate cannot end before it starts.');
       if (reason.length < 20)
         fail(400, 'RATE_LANE_REASON_TOO_SHORT', 'Say where this rate was agreed. The person signing it off decides from this.');
+      // Already proposed and waiting — see `RateRevisionService.addLane`.
+      const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+      const waiting = pendingLanesFor(client.id).find(
+        (p) => same(p.origin, lane.origin) && same(p.destination, lane.destination) && same(p.truckType, lane.truckType),
+      );
+      if (waiting)
+        fail(
+          409,
+          'RATE_LANE_PENDING',
+          `${lane.origin} → ${lane.destination} · ${lane.truckType} is already waiting for approval ` +
+            `(proposed by ${waiting.requesterName}). It appears on the rate card once it is approved.`,
+        );
       const clash = laneClash(client.id, lane);
       if (clash) fail(400, 'RATE_LANE_LANE_EXISTS', clash);
 
@@ -2703,6 +2855,7 @@ const routes: [string, RegExp, Handler][] = [
       const trip = row.tripId ? db.trips.find((t: any) => t.id === row.tripId) : null;
       return ok({
         ...row,
+        clientId: indent.clientId,
         fromCity: indent.fromCity,
         toCity: indent.toCity,
         material: indent.material,
@@ -2711,13 +2864,33 @@ const routes: [string, RegExp, Handler][] = [
         vendorName: trip?.vendorName ?? null,
         vehicleNo: trip?.vehicleNo ?? null,
         driverName: trip?.driverName ?? null,
+        driverPhone: trip?.driverPhone ?? indent.driverPhone ?? null,
         buyRatePaise: indent.buyRatePaise ?? null,
         advancePaidPaise: trip?.advancePaidPaise ?? 0,
         balancePaidPaise: trip?.balancePaidPaise ?? 0,
         remarks: indent.remarks ?? null,
         payments: orderPaymentsFor(indent, trip, role, branch),
         events: orderEvents(row),
+        comments: orderCommentsFor(indent.id),
       });
+    },
+  ],
+  [
+    'POST',
+    /^\/orders\/([^/]+)\/comments$/,
+    ({ params, body, userId }) => {
+      const indent = findIndent(params[0]);
+      const text = String(body?.body ?? '').trim();
+      if (!text) fail(400, 'VALIDATION_ERROR', 'Write something before adding the comment.');
+      if (text.length > 2000) fail(400, 'VALIDATION_ERROR', 'Keep a comment under 2,000 characters.');
+      db.orderComments.push({
+        id: `oc-${Date.now()}-${db.orderComments.length + 1}`,
+        orderId: indent.id,
+        body: text,
+        at: helpers.now(),
+        authorName: ACCOUNTS.find((a) => a.userId === userId)?.name ?? 'You',
+      });
+      return ok(orderCommentsFor(indent.id));
     },
   ],
   [
@@ -2772,21 +2945,30 @@ const routes: [string, RegExp, Handler][] = [
         if (trip.stage !== 'OPEN')
           fail(409, 'TRIP_UNDERWAY', 'The trip has left OPEN; its vehicle can no longer be changed here.');
       }
+      // Same rule as PlacementDto: the vehicle and the driver's mobile are
+      // required; name and licence are optional.
+      const driverPhone = String(body.driverPhone ?? '').replace(/\s/g, '');
+      if (!String(body.vehicleNo ?? '').trim()) fail(400, 'VALIDATION_ERROR', 'Enter the vehicle number.');
+      if (!/^(\+91|0)?[6-9]\d{9}$/.test(driverPhone))
+        fail(400, 'VALIDATION_ERROR', 'Enter the driver’s 10-digit mobile number.');
+      const driver = {
+        vehicleNo: String(body.vehicleNo).trim().toUpperCase(),
+        driverPhone,
+        driverName: String(body.driverName ?? '').trim() || null,
+        driverLicence: String(body.driverLicence ?? '').trim() || null,
+      };
+      // The truck coming off the transporter's "available" list is what the
+      // fleet board and their portal both read — it is on this trip now.
+      releaseFleetVehicle(indent.vendorId, indent.vehicleNo);
       Object.assign(indent, {
-        vehicleNo: body.vehicleNo,
-        driverName: body.driverName,
-        driverLicence: body.driverLicence,
+        ...driver,
         reportedAt: body.reportedAt,
         stage: trip ? 'TRIP_CREATED' : 'VEHICLE_PLACED',
         transitDelay: !!body.transitDelay,
         placementRemarks: body.remarks ?? null,
       });
-      if (trip)
-        Object.assign(trip, {
-          vehicleNo: body.vehicleNo,
-          driverName: body.driverName,
-          driverLicence: body.driverLicence,
-        });
+      setFleetVehicleStatus(indent.vendorId, driver.vehicleNo, 'ON_TRIP');
+      if (trip) Object.assign(trip, driver);
       touchIndent(indent);
       return ok(indentView(indent));
     },
@@ -2816,6 +2998,7 @@ const routes: [string, RegExp, Handler][] = [
           fail(409, 'TRIP_UNDERWAY', 'The truck has already left or an advance has been paid, so this load cannot simply be cancelled. Settle it first.');
         trip.stage = 'CANCELLED';
       }
+      releaseFleetVehicle(indent.vendorId, indent.vehicleNo);
       indent.quotes.forEach((q: any) => {
         if (['SUBMITTED', 'ACCEPTED'].includes(q.status)) q.status = 'WITHDRAWN';
       });
@@ -2849,6 +3032,7 @@ const routes: [string, RegExp, Handler][] = [
       if (trip.lr?.status && !['DRAFT', 'BOOKED'].includes(trip.lr.status))
         fail(409, 'LR_ISSUED', 'A lorry receipt has been issued for this transporter. Cancel it before reassigning.');
       trip.stage = 'CANCELLED';
+      releaseFleetVehicle(indent.vendorId, indent.vehicleNo);
       indent.quotes.forEach((q: any) => {
         if (q.id === indent.awardedQuoteId) q.status = 'WITHDRAWN';
         else if (q.status === 'REJECTED') q.status = 'SUBMITTED';
@@ -2861,6 +3045,7 @@ const routes: [string, RegExp, Handler][] = [
         vehicleNo: null,
         driverName: null,
         driverLicence: null,
+        driverPhone: null,
         reportedAt: null,
       });
       touchIndent(indent);
@@ -2878,10 +3063,6 @@ const routes: [string, RegExp, Handler][] = [
       if (vendor.status !== 'ACTIVE') fail(409, 'VENDOR_NOT_ACTIVE', 'Only an active transporter can be quoted for.');
       if (!Number.isInteger(body.amountPaise) || body.amountPaise < 1)
         fail(400, 'VALIDATION', 'Enter the quote as a positive amount.');
-      if (indent.bidMinPaise != null && body.amountPaise < indent.bidMinPaise)
-        fail(422, 'BELOW_BAND', 'That quote is below the floor for this lane and cannot be entered.', {
-          bidMin: indent.bidMinPaise,
-        });
       if (indent.quotes.some((q: any) => q.vendorId === vendor.id))
         fail(409, 'QUOTE_EXISTS', 'This transporter already has a quote on this indent.');
       indent.quotes.push({
@@ -2892,7 +3073,8 @@ const routes: [string, RegExp, Handler][] = [
         vendorStatus: vendor.status,
         amountPaise: body.amountPaise,
         truckRegistration: body.truckRegistration ?? '',
-        bandPosition: indent.bidMaxPaise != null && body.amountPaise > indent.bidMaxPaise ? 'ABOVE_BAND' : 'IN_BAND',
+        // Below the floor is kept and flagged, not refused.
+        bandPosition: bandPositionFor(body.amountPaise, indent.bidMinPaise ?? null, indent.bidMaxPaise ?? null),
         status: 'SUBMITTED',
         submittedAt: helpers.now(),
         remarks: body.remarks ?? null,
@@ -3188,8 +3370,11 @@ const routes: [string, RegExp, Handler][] = [
     ({ params }) => {
       const trip = findTrip(params[0]);
       if (trip.stage !== 'OPEN') fail(409, 'NOT_OPEN', `Trip ${trip.code} is not OPEN (currently ${trip.stage}).`);
-      if (trip.lr?.status !== 'RELEASED') {
-        fail(409, 'LR_NOT_GENERATED', 'The lorry receipt must be generated before departure.');
+      if (!trip.vehicleNo) fail(409, 'NOT_PLACED', 'Allocate the vehicle before the trip can start.');
+      // The LR is "if needed" — see `TripsService.depart`. Only a started,
+      // unissued one blocks.
+      if (trip.lr && trip.lr.status !== 'RELEASED') {
+        fail(409, 'LR_NOT_GENERATED', 'A lorry receipt was started for this trip — issue it before departure, or it travels unissued.');
       }
       // Once the advance documents are uploaded the truck moves to transit; they do
       // not have to be verified yet — verification is what releases the advance.
@@ -3220,7 +3405,7 @@ const routes: [string, RegExp, Handler][] = [
           alerts: [],
         });
       }
-      trip.lr = { ...trip.lr, status: 'IN_TRANSIT' };
+      if (trip.lr) trip.lr = { ...trip.lr, status: 'IN_TRANSIT' };
       return ok(trip);
     },
   ],
@@ -3248,7 +3433,11 @@ const routes: [string, RegExp, Handler][] = [
       });
       trip.actualTransitDays = transit.actualDays;
       trip.transitPenaltyPaise = transit.penaltyPaise;
-      trip.lr = { ...trip.lr, status: 'DELIVERED' };
+      if (trip.lr) trip.lr = { ...trip.lr, status: 'DELIVERED' };
+      // Unloaded: the truck is free again, at the delivery city.
+      const [, toCity] = String(trip.lane ?? '').split('→').map((x: string) => x.trim());
+      setFleetVehicleStatus(trip.vendorId, trip.vehicleNo, 'AVAILABLE', toCity || undefined);
+      db.telematics = db.telematics.filter((v: any) => v.tripCode !== trip.code);
       return ok(trip);
     },
   ],
@@ -3426,7 +3615,16 @@ const routes: [string, RegExp, Handler][] = [
       trip.podStatus = 'VERIFIED';
       trip.podVerifiedBy = USERS[role].userId;
       trip.podVerifiedByName = USERS[role].name;
-      return ok({ tripId: trip.id, podStatus: trip.podStatus, verifiedBy: USERS[role].name });
+      // A proof showing a shortage or damage raises the SDR from its remarks —
+      // same rule as `sdrKindFromChecklist` in pod.service.ts.
+      const shortOrDamaged = body?.checklist?.noShortageOrDamage === false;
+      const quantityOff = body?.checklist?.quantityMatchesInvoice === false;
+      let sdrCode: string | null = null;
+      if (shortOrDamaged || quantityOff) {
+        const kind = body?.sdrKind ?? (quantityOff && !shortOrDamaged ? 'SHORTAGE' : 'DAMAGE');
+        sdrCode = raiseSdrRecord(trip, kind, String(body.remarks), body?.sdrClaimedAmountPaise ?? 0, role).code;
+      }
+      return ok({ tripId: trip.id, podStatus: trip.podStatus, verifiedBy: USERS[role].name, sdrCode });
     },
   ],
   [
@@ -3622,27 +3820,7 @@ const routes: [string, RegExp, Handler][] = [
       if (!['SHORTAGE', 'DAMAGE', 'UNLOADING_ACK'].includes(body?.kind)) fail(400, 'VALIDATION_ERROR', 'Unknown kind.');
       if (!body?.description || String(body.description).trim().length < 5)
         fail(400, 'VALIDATION_ERROR', 'Describe what happened.');
-      const record = {
-        id: `sdr-${db.sdr.length + 1}`,
-        code: nextNumber('SDR'),
-        tripId: trip.id,
-        tripCode: trip.code,
-        vendorId: trip.vendorId,
-        vendorName: trip.vendorName,
-        kind: body.kind,
-        description: String(body.description).trim(),
-        claimedPaise: body.claimedAmountPaise ?? 0,
-        status: 'OPEN',
-        deductionPaise: null,
-        outstandingPaise: 0,
-        resolutionNote: null,
-        waivedPaise: 0,
-        raisedByName: USERS[role].name,
-        raisedAt: helpers.now(),
-        resolvedByName: null,
-        resolvedAt: null,
-      };
-      db.sdr.unshift(record);
+      const record = raiseSdrRecord(trip, body.kind, String(body.description), body.claimedAmountPaise ?? 0, role);
       return ok(withRecoveries(record));
     },
   ],
@@ -3768,6 +3946,51 @@ const routes: [string, RegExp, Handler][] = [
     const s = query.get('status');
     return ok(s ? db.vendorBills.filter((b) => b.status === s) : db.vendorBills);
   }],
+  [
+    'POST',
+    /^\/payments\/bills$/,
+    ({ body, role }) => {
+      // Same rules as `PaymentsService.raiseBill`.
+      const grants: string[] = SEED_GRANTS[role] ?? [];
+      if (!grants.includes('payment.release') && !grants.includes('indent.manage'))
+        fail(403, 'PERMISSION_DENIED', 'Missing permission: payment.release or indent.manage.');
+      const trip = findTrip(String(body?.tripId ?? ''));
+      const billNo = String(body?.billNo ?? '').trim();
+      if (!billNo) fail(400, 'VALIDATION_ERROR', 'Enter the number printed on the bill.');
+      const billDate = String(body?.billDate ?? '').slice(0, 10);
+      if (!billDate) fail(400, 'VALIDATION_ERROR', 'Enter the date on the bill.');
+      if (billDate > helpers.now().slice(0, 10)) fail(400, 'BILL_DATE_FUTURE', 'The bill date cannot be in the future.');
+      if (!['APPROVED', 'WAIVED'].includes(trip.podStatus))
+        fail(409, 'POD_NOT_APPROVED', 'A bill can be raised once the proof of delivery is approved.');
+      const live = db.vendorBills.find((b) => b.tripId === trip.id && ['SUBMITTED', 'ACCEPTED'].includes(b.status));
+      if (live) fail(409, 'BILL_EXISTS', `This trip already has bill ${live.billNo}. Decide that one first.`);
+      if (db.vendorBills.some((b) => b.vendorId === trip.vendorId && b.billNo === billNo))
+        fail(409, 'BILL_NO_DUPLICATE', `This transporter already has a bill numbered ${billNo}.`);
+      const gate = balanceGate(trip);
+      const computedBalancePaise = gate.breakdown.netPaise;
+      const totalPaise = Number.isInteger(body?.totalPaise) ? body.totalPaise : computedBalancePaise;
+      const bill = {
+        id: `vb-${Date.now()}`,
+        tripId: trip.id,
+        tripCode: trip.code,
+        vendorId: trip.vendorId,
+        vendorName: trip.vendorName,
+        billNo,
+        billDate,
+        attachmentId: body?.attachmentId ?? null,
+        freightPaise: trip.buyRatePaise,
+        chargesPaise: gate.breakdown.chargeCostPaise,
+        totalPaise,
+        submittedAt: helpers.now(),
+        computedBalancePaise,
+        variancePaise: totalPaise - computedBalancePaise,
+        podStatus: trip.podStatus,
+        status: 'SUBMITTED',
+      };
+      db.vendorBills.unshift(bill);
+      return ok(bill);
+    },
+  ],
   [
     'GET',
     /^\/payments\/bills\/([^/]+)$/,

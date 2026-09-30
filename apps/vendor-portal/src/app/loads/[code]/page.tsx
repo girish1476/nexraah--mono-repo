@@ -65,9 +65,9 @@ export default function LoadDetailPage({ params }: { params: { code: string } })
         <p style={{ marginTop: 8, fontSize: 15, lineHeight: 1.5 }}>
           Quote anywhere inside this range and your price goes in as it is.
         </p>
-        <p style={{ marginTop: 10, fontSize: 15, lineHeight: 1.5, color: 'var(--red)' }}>
-          Below {inr(load.bandLowPaise)}: the app will not let you send it. This is a fixed floor
-          for this load.
+        <p style={{ marginTop: 10, fontSize: 15, lineHeight: 1.5 }}>
+          Below {inr(load.bandLowPaise)}: you can still send it — make sure the price covers your
+          costs.
         </p>
         <p style={{ marginTop: 8, fontSize: 15, lineHeight: 1.5 }}>
           Above {inr(load.bandHighPaise)}: you can still send it, but it is not accepted straight

@@ -15,6 +15,7 @@ import {
   EmptyState,
   ErrorState,
   Field,
+  FormGrid,
   Loading,
   ModuleGuard,
   PageHeader,
@@ -27,8 +28,11 @@ import {
   useCan,
   useToast,
 } from '@/lib/ui';
-import { acceptBill, listBills, queryBill } from '../apis';
+import { acceptBill, listBills, queryBill, raiseBill } from '../apis';
 import { PaymentCapture, VendorBill } from '../types';
+import { listTrips } from '@/app/trips/apis';
+import type { TripListRow } from '@/app/trips/types';
+import { uploadAttachment } from '@/lib/attachments';
 
 const BILL_STATUS_LABEL: Record<VendorBill['status'], string> = {
   SUBMITTED: 'Waiting on Finance',
@@ -119,6 +123,51 @@ export default function BillsPage() {
       } else {
         toast(errorMessage(e));
       }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Raising a bill from the desk — a paper or WhatsApp bill from the transporter.
+  const canRaise = can('payment.release') || can('indent.manage');
+  const [raiseOpen, setRaiseOpen] = useState(false);
+  const [billable, setBillable] = useState<TripListRow[]>([]);
+  const [raise, setRaise] = useState({ tripId: '', billNo: '', billDate: new Date().toISOString().slice(0, 10), rupees: '' });
+  const [billFile, setBillFile] = useState<File | null>(null);
+
+  const openRaise = () => {
+    setRaise({ tripId: '', billNo: '', billDate: new Date().toISOString().slice(0, 10), rupees: '' });
+    setBillFile(null);
+    setRaiseOpen(true);
+    // A bill needs an approved proof of delivery, and one live bill per trip.
+    listTrips({ pod_status: 'APPROVED' })
+      .then((trips) => {
+        const billed = new Set((rows ?? []).filter((b) => b.status !== 'QUERIED').map((b) => b.tripId));
+        setBillable(trips.filter((t) => !billed.has(t.id)));
+      })
+      .catch((e) => toast(errorMessage(e)));
+  };
+
+  const submitRaise = async () => {
+    setBusy(true);
+    try {
+      const attachmentId = billFile ? await uploadAttachment(billFile, 'VENDOR_BILL', 'trips', raise.tripId) : undefined;
+      const bill = await raiseBill({
+        tripId: raise.tripId,
+        billNo: raise.billNo.trim(),
+        billDate: raise.billDate,
+        totalPaise: raise.rupees ? Math.round(Number(raise.rupees) * 100) : undefined,
+        attachmentId,
+      });
+      toast(
+        bill.variancePaise === 0
+          ? `Bill ${bill.billNo} raised — it matches our figure`
+          : `Bill ${bill.billNo} raised — ${inr(Math.abs(bill.variancePaise))} ${bill.variancePaise > 0 ? 'above' : 'below'} our figure, flagged for review`,
+      );
+      setRaiseOpen(false);
+      load();
+    } catch (e) {
+      toast(errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -256,6 +305,13 @@ export default function BillsPage() {
         title="Transporter bills"
         sub="Their bill to us, beside the balance we computed. A variance is a conversation, not a rejection."
         module="payments"
+        right={
+          canRaise ? (
+            <button className="btn" onClick={openRaise}>
+              ➕ Raise a bill
+            </button>
+          ) : undefined
+        }
       />
       <PageIntro
         what="The transporter's own bill for a trip, next to what we calculated is owed. A mismatch is a variance to discuss, not an automatic rejection — Finance can accept at either figure or send it back with a question."
@@ -293,7 +349,7 @@ export default function BillsPage() {
               ) : (
               <EmptyState
                 title="No bills submitted"
-                hint="A transporter's bill appears here once they submit it for a trip whose proof of delivery has been approved."
+                hint="A transporter's bill appears here once they submit it from their portal, or once the desk raises it here with “Raise a bill” — for a trip whose proof of delivery has been approved."
               />
               )
             }
@@ -331,6 +387,51 @@ export default function BillsPage() {
           </Field>
         )}
       </ReleaseDialog>
+
+      <Dialog
+        open={raiseOpen}
+        title="Raise a transporter bill"
+        body="For a bill the transporter handed over on paper or sent by message. It joins the list exactly as one sent from their portal would, and is decided the same way."
+        confirmLabel="Raise bill"
+        confirmDisabled={!raise.tripId || !raise.billNo.trim() || !raise.billDate}
+        busy={busy}
+        onConfirm={submitRaise}
+        onClose={() => setRaiseOpen(false)}
+      >
+        <FormGrid>
+          <Field
+            label="Trip"
+            required
+            hint={billable.length === 0 ? 'No trip is ready: a bill needs an approved proof of delivery and no bill already open.' : undefined}
+          >
+            <select value={raise.tripId} onChange={(e) => setRaise({ ...raise, tripId: e.target.value })}>
+              <option value="">Choose a trip…</option>
+              {billable.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.code} · {t.vendorName} · {t.lane}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Bill number" required hint="As printed on their bill">
+            <input value={raise.billNo} onChange={(e) => setRaise({ ...raise, billNo: e.target.value })} />
+          </Field>
+          <Field label="Bill date" required>
+            <input
+              type="date"
+              max={new Date().toISOString().slice(0, 10)}
+              value={raise.billDate}
+              onChange={(e) => setRaise({ ...raise, billDate: e.target.value })}
+            />
+          </Field>
+          <Field label="Their bill total (₹)" hint="Leave blank if it matches the balance we computed">
+            <input type="number" min={0} value={raise.rupees} onChange={(e) => setRaise({ ...raise, rupees: e.target.value })} />
+          </Field>
+          <Field label="Scanned bill" hint="Optional — a photo or PDF of their bill">
+            <input type="file" accept="image/*,application/pdf" onChange={(e) => setBillFile(e.target.files?.[0] ?? null)} />
+          </Field>
+        </FormGrid>
+      </Dialog>
 
       <Dialog
         open={!!querying}

@@ -66,3 +66,13 @@ export function scopedOperations(): FixtureAccount {
   if (!account) throw new Error('No branch-scoped OPS fixture account — see ACCOUNTS in src/mocks/db.ts');
   return account;
 }
+
+/**
+ * On a phone-width viewport the sidebar is a drawer behind the "Open menu"
+ * button, so a spec that clicks a sidebar group must open it first. A no-op on
+ * desktop, where the button is not shown and the sidebar is always there.
+ */
+export async function openMobileMenu(page: Page) {
+  const open = page.getByRole('button', { name: 'Open menu' });
+  if (await open.isVisible()) await open.click();
+}

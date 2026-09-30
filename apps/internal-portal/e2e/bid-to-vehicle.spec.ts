@@ -29,26 +29,18 @@ test.describe('operations: bid to vehicle', () => {
     await setRole(page, 'OPS');
     await page.goto('/indents/i-4462');
 
-    // A price below the lane's floor is refused and nothing is entered.
+    // A price below the lane's floor is no longer refused: it is entered and
+    // flagged "Below band" — cheaper is more margin, and the desk judges it.
+    await expect(page.getByText('No quotes yet')).toBeVisible();
     await page.getByRole('button', { name: 'Enter a quote' }).click();
     let form = dialog(page, 'Enter a quote');
     await fieldControl(form, 'Transporter').selectOption({ label: 'Bhagwati Logistics · Hosur' });
     await fieldControl(form, 'Quote (₹)').fill('40000');
-    await form.getByRole('button', { name: 'Enter quote' }).click();
-    await expect(page.getByText('below the floor for this lane')).toBeVisible();
-    await form.getByRole('button', { name: 'Cancel' }).click();
-    await expect(page.getByText('No quotes yet')).toBeVisible();
-
-    // An in-band price is entered and ranks in the table.
-    await page.getByRole('button', { name: 'Enter a quote' }).click();
-    form = dialog(page, 'Enter a quote');
-    await fieldControl(form, 'Transporter').selectOption({ label: 'Bhagwati Logistics · Hosur' });
-    await fieldControl(form, 'Quote (₹)').fill('44000');
     await fieldControl(form, 'Truck registration').fill('TN 01 AB 1234');
     await form.getByRole('button', { name: 'Enter quote' }).click();
     await expect(page.getByText('Quote entered')).toBeVisible();
     await expect(page.getByRole('link', { name: 'Bhagwati Logistics' })).toBeVisible();
-    await expect(page.getByText('In band', { exact: true })).toBeVisible();
+    await expect(page.getByText('Below band', { exact: true })).toBeVisible();
     // No trip and no vehicle allocation exist until a bid is accepted.
     await expect(page.getByRole('button', { name: 'Allocate vehicle' })).toHaveCount(0);
 
@@ -63,10 +55,11 @@ test.describe('operations: bid to vehicle', () => {
     await page.getByRole('button', { name: 'Allocate vehicle' }).click();
     form = dialog(page, 'Allocate vehicle');
     await expect(fieldControl(form, 'Vehicle number')).toHaveValue('TN 01 AB 1234');
-    await fieldControl(form, 'Driver name').fill('Murugan S');
-    await fieldControl(form, 'Driver licence').fill('TN0120200012345');
+    // Only the driver's mobile is needed; name and licence are optional.
+    await expect(form.getByRole('button', { name: 'Allocate vehicle' })).toBeDisabled();
+    await fieldControl(form, 'Driver mobile number').fill('9876543210');
     await form.getByRole('button', { name: 'Allocate vehicle' }).click();
-    await expect(page.getByText('Placement recorded')).toBeVisible();
+    await expect(page.getByText('Vehicle allocated', { exact: true }).first()).toBeVisible();
     await expect(page.getByRole('button', { name: 'Change vehicle' })).toBeVisible();
 
     // "Open the trip" lands on this indent's own trip, with the vehicle on it.

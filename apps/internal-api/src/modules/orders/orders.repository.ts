@@ -163,6 +163,7 @@ export class OrdersRepository {
         'orders.closed_at as closedAt',
         'orders.created_at as createdAt',
         'orders.branch_id as branchId',
+        'orders.client_id as clientId',
         'indents.id as indentId',
         'indents.code as indentCode',
         'indents.from_city as fromCity',
@@ -180,6 +181,7 @@ export class OrdersRepository {
         'trips.code as tripCode',
         'trips.vehicle_no as vehicleNo',
         'trips.driver_name as driverName',
+        'trips.driver_phone as driverPhone',
         'trips.buy_rate as buyRatePaise',
         'trips.advance_paid as advancePaidPaise',
         'trips.balance_paid as balancePaidPaise',
@@ -242,6 +244,29 @@ export class OrdersRepository {
       acc[r.status] = Number(r.count);
       return acc;
     }, {});
+  }
+
+  comments(orderId: string) {
+    return this.db
+      .selectFrom('order_comments')
+      .innerJoin('users', 'users.id', 'order_comments.author_user_id')
+      .select([
+        'order_comments.id as id',
+        'order_comments.body as body',
+        'order_comments.created_at as at',
+        'users.name as authorName',
+      ])
+      .where('order_comments.order_id', '=', orderId)
+      .orderBy('order_comments.created_at', 'asc')
+      .execute();
+  }
+
+  addComment(orderId: string, authorUserId: string, body: string) {
+    return this.db
+      .insertInto('order_comments')
+      .values({ order_id: orderId, author_user_id: authorUserId, body })
+      .returning(['id'])
+      .executeTakeFirstOrThrow();
   }
 
   events(orderId: string) {

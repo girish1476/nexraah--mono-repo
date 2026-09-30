@@ -154,12 +154,24 @@ export function ladder(facts: LadderFacts): OrderStatus {
   if (indentStage !== 'TRIP_CREATED') return 'INDENT_CREATED';
   if (!trip) return 'TRIP_GENERATED';
 
-  // Step 3 is conditional by design — FLOWS.md §6 marks the lorry receipt
-  // "if needed". An order without one is not stuck at step 2; it simply never
-  // had a step 3, so the ladder steps over it.
-  if (!trip.lrCode && trip.advancePaidPaise <= 0 && !advanceDocsUploaded) return 'TRIP_GENERATED';
-  if (trip.advancePaidPaise <= 0) return advanceDocsUploaded ? 'ADVANCE_DOCS_UPLOADED' : 'LR_ISSUED';
-  if (trip.stage === 'OPEN') return 'ADVANCE_PAID';
+  /*
+   * Where the truck is outranks the paperwork behind it.
+   *
+   * These checks used to run the other way round: "advance unpaid" was asked
+   * before "has the truck left", so a truck that had departed — which only
+   * needs its papers *uploaded*, while the advance waits for them to be
+   * *verified* — sat at "Advance papers in" for the whole journey, delivered
+   * or not, until Finance paid. The order looked stuck while the truck was on
+   * the road. Steps 3–5 only describe a truck that has not left yet.
+   */
+  if (trip.stage === 'OPEN') {
+    if (trip.advancePaidPaise > 0) return 'ADVANCE_PAID';
+    if (advanceDocsUploaded) return 'ADVANCE_DOCS_UPLOADED';
+    // Step 3 is conditional by design — FLOWS.md §6 marks the lorry receipt
+    // "if needed". An order without one is not stuck at step 2; it simply
+    // never had a step 3, so the ladder steps over it.
+    return trip.lrCode ? 'LR_ISSUED' : 'TRIP_GENERATED';
+  }
   if (trip.stage === 'IN_TRANSIT') return 'TRACKING';
 
   // DELIVERED or CLOSED from here.

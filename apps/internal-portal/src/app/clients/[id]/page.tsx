@@ -23,13 +23,14 @@ import {
   useCan,
   useToast,
 } from '@/lib/ui';
-import { getClient, getRateCard, patchClient, setLaneBand } from '../apis';
+import { getClient, getPendingRateLanes, getRateCard, patchClient, setLaneBand } from '../apis';
 import { LiveLane, liveLanes } from '../lanes';
 import {
   CLIENT_STATUS_LABEL,
   CLIENT_STATUS_REASON,
   CLIENT_STATUS_TONE,
   Client,
+  PendingRateLane,
   RateCardLane,
 } from '../types';
 
@@ -148,6 +149,8 @@ export default function ClientDetailPage() {
     }
   };
 
+  const [pending, setPending] = useState<PendingRateLane[]>([]);
+
   const load = () => {
     setError(null);
     Promise.all([getClient(id), getRateCard(id)])
@@ -156,11 +159,24 @@ export default function ClientDetailPage() {
         setLanes(liveLanes(l));
       })
       .catch((e) => setError(errorMessage(e)));
+    getPendingRateLanes(id)
+      .then(setPending)
+      .catch(() => setPending([]));
   };
   useEffect(load, [id]);
 
   if (error) return <ErrorState message={error} retry={load} />;
   if (!client) return <Loading what="Loading the client" />;
+
+  const pendingColumns: Column<PendingRateLane>[] = [
+    { key: 'truck', label: 'Truck type', render: (r) => r.truckType },
+    { key: 'from', label: 'From', render: (r) => r.origin },
+    { key: 'to', label: 'To', render: (r) => r.destination },
+    { key: 'rate', label: 'Lane rate', align: 'right', render: (r) => inr(r.ratePaise) },
+    { key: 'valid', label: 'Valid', render: (r) => `${fmtDate(r.validFrom)} → ${r.validTo ? fmtDate(r.validTo) : 'open'}` },
+    { key: 'by', label: 'Added by', render: (r) => r.requesterName, sub: (r) => fmtDate(r.proposedAt) },
+    { key: 'status', label: '', render: () => <Tag tone="flag">Awaiting approval</Tag> },
+  ];
 
   const columns: Column<LiveLane>[] = [
     { key: 'truck', label: 'Truck type', render: ({ lane: r }) => r.truckType },
@@ -346,6 +362,22 @@ export default function ClientDetailPage() {
             </>
           )}
         </Panel>
+
+        {/* A lane added here is not on the rate card until it is approved, so
+            it used to vanish — and was added again. It shows here meanwhile. */}
+        {pending.length > 0 && (
+          <Panel title="⏳ Lanes waiting for approval" pad={false}>
+            <DataTable
+              columns={pendingColumns}
+              rows={pending}
+              rowKey={(r) => r.approvalId}
+            />
+            <div className="muted" style={{ fontSize: 11.5, padding: '10px 14px', lineHeight: 1.55 }}>
+              These rates were added and are waiting for Compliance or Leadership to sign them off under
+              Approvals. Each moves onto the rate card above once approved — there is no need to add it again.
+            </div>
+          </Panel>
+        )}
       </Split>
 
       <Dialog

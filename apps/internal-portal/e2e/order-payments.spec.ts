@@ -2,7 +2,8 @@ import { test, expect, Page } from '@playwright/test';
 import { setRole } from './helpers';
 
 /**
- * The Payments tab of `/orders/[id]` — order-level accounting.
+ * The order page, `/orders/[id]`: payments on Details, the Invoice tab, the
+ * comment button and the Next step panel.
  *
  * Fixture order 4421 (Apex Ceramics, Gandhidham), all static data in
  * src/mocks/db.ts, so every figure can be pinned exactly:
@@ -21,22 +22,26 @@ import { setRole } from './helpers';
  * stand-in reference (HDFCN + the trip number's digits).
  */
 
-async function openPayments(page: Page) {
+async function openOrder(page: Page) {
   await page.goto('/orders/i-4421');
-  await page.getByRole('tab', { name: /Payments/ }).click();
-  await expect(page.getByText('Money paid out')).toBeVisible();
+  await expect(page.getByText('Payments made to the transporter')).toBeVisible();
 }
 
-test.describe('Order payments tab', () => {
-  test('is offered alongside the other tabs', async ({ page }) => {
+test.describe('Order page', () => {
+  test('has Details, Documents and Invoice tabs — no separate Payments, Delivery proof or Comments tab', async ({ page }) => {
     await setRole(page, 'FINANCE');
     await page.goto('/orders/i-4421');
-    await expect(page.getByRole('tab', { name: /Payments/ })).toBeVisible();
+    for (const name of [/Details/, /Documents/, /Invoice/]) {
+      await expect(page.getByRole('tab', { name })).toBeVisible();
+    }
+    for (const name of [/Payments/, /Delivery proof/, /Comments/]) {
+      await expect(page.getByRole('tab', { name })).toHaveCount(0);
+    }
   });
 
-  test('lists the advance with its UTR, the charges, and the unpaid balance', async ({ page }) => {
+  test('Details lists the advance with its UTR, the charges, and the unpaid balance', async ({ page }) => {
     await setRole(page, 'FINANCE');
-    await openPayments(page);
+    await openOrder(page);
 
     await expect(page.getByText('Advance to the transporter')).toBeVisible();
     // Scoped to the Amount cell: with the balance unpaid, the "paid so far"
@@ -53,25 +58,48 @@ test.describe('Order payments tab', () => {
     await expect(page.getByText('Not paid yet')).toBeVisible();
   });
 
-  test('shows the sourcing rate, the placement rate and the margin to Finance', async ({ page }) => {
+  test('Details shows the sourcing rate, the placement rate and the margin to Finance', async ({ page }) => {
     await setRole(page, 'FINANCE');
-    await openPayments(page);
+    await openOrder(page);
 
     await expect(page.getByText('Sourcing rate (vehicle placed at)')).toBeVisible();
-    await expect(page.getByText('₹29,400', { exact: true })).toBeVisible();
     await expect(page.getByText('Placement rate (client accepted)')).toBeVisible();
-    await expect(page.getByText('₹34,800', { exact: true })).toBeVisible();
     await expect(page.getByText('Profit margin', { exact: true })).toBeVisible();
     await expect(page.getByText('₹4,000 · 11.5%')).toBeVisible();
   });
 
   test('hides the margin, but not the rates, from a desk with no P&L access', async ({ page }) => {
     await setRole(page, 'COMPLIANCE');
-    await openPayments(page);
+    await openOrder(page);
 
     await expect(page.getByText('Sourcing rate (vehicle placed at)')).toBeVisible();
     await expect(page.getByText('Placement rate (client accepted)')).toBeVisible();
     await expect(page.getByText('Profit margin', { exact: true })).toHaveCount(0);
     await expect(page.getByText('HDFCN00120855')).toBeVisible();
+  });
+
+  test('Details carries the next step and the vehicle tracking panel', async ({ page }) => {
+    await setRole(page, 'OPS');
+    await openOrder(page);
+    await expect(page.getByText(/👉 Next step/).first()).toBeVisible();
+    await expect(page.getByText('📍 Vehicle tracking')).toBeVisible();
+  });
+
+  test('the Invoice tab shows the client side of the money', async ({ page }) => {
+    await setRole(page, 'FINANCE');
+    await page.goto('/orders/i-4421');
+    await page.getByRole('tab', { name: /Invoice/ }).click();
+    await expect(page.getByRole('heading', { name: /🧾 (Client invoice|Invoice )/ })).toBeVisible();
+  });
+
+  test('a comment is added from the 💬 button and stays on the order', async ({ page }) => {
+    await setRole(page, 'OPS');
+    await page.goto('/orders/i-4421');
+    await page.getByRole('button', { name: /Comments/ }).click();
+    await page.getByPlaceholder('Add a remark or detail…').fill('Driver called — arriving at the consignee by 6pm.');
+    await page.getByRole('button', { name: 'Add comment' }).click();
+    await expect(page.getByText('Driver called — arriving at the consignee by 6pm.')).toBeVisible();
+    await page.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(page.getByRole('button', { name: /Comments \(\d+\)/ })).toBeVisible();
   });
 });

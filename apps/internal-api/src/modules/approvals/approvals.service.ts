@@ -96,6 +96,23 @@ export class ApprovalsService {
   }
 
   /**
+   * Pending approvals of one kind against one record, with the action each
+   * would replay — for a screen that has to show what is *about* to exist
+   * (a proposed rate card lane) rather than only what already does.
+   */
+  async pendingFor<TAction>(kind: ApprovalKind, entityType: string, entityId: string) {
+    const rows = await this.approvalsRepository.list('PENDING', kind);
+    return rows
+      .filter((r) => r.entityType === entityType && r.entityId === entityId)
+      .map((r) => ({
+        approvalId: r.id,
+        requesterName: r.requesterName,
+        createdAt: String(r.createdAt),
+        action: (r.payload as unknown as ApprovalPayload<TAction>).action,
+      }));
+  }
+
+  /**
    * The stored payload is replayed verbatim (part 01 §3) — never
    * recomputed. If the owning wave hasn't registered a handler for this kind
    * yet, or the handler itself rejects a now-stale payload (vendor

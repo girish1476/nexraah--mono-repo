@@ -181,9 +181,9 @@ Activation refuses outright unless **every** identity item and **every** require
 | Their vehicles | Their own Fleet tab in the transporter portal | Them |
 | Matching open orders | Their Loads tab | Them |
 | A complaint about them | Vendors → Issues, and the Today screen if it's high severity | Operations |
-| Routes where we have too few transporters | Vendors → Market gap | Operations — this is a recruitment target, feeding back to Leads |
+| Routes where we have too few transporters | Vendors → Market gap | Operations — this is a recruitment target, feeding back to Leads. **Add a lane** records a new one (branch, from and to city, truck type, how many transporters we are aiming for), and the three counts — target, on the panel, converted — can each be edited in place on the row. Both need vendor edit access |
 
-**Vehicle statuses in their portal:** Available · On trip · Documents due · Maintenance. "Documents due" is set by the system only, when a compliance document has expired. A transporter cannot clear it by picking a different status — they have to re-upload the document under Profile.
+**Vehicle statuses in their portal:** Available · On trip · Documents due · Maintenance. The status **follows the trip by itself**: a vehicle allocated to an order goes **On trip**; once that trip is delivered, swapped out or cancelled it goes back to **Available** — and on delivery its current city becomes the delivery city. "Documents due" is set by the system only, when a compliance document has expired. A transporter cannot clear it by picking a different status — they have to re-upload the document under Profile. Neither "Documents due" nor "Maintenance" is ever overwritten by a trip moving on.
 
 ---
 
@@ -219,6 +219,8 @@ flowchart TD
 
 A route can also be priced **spot** instead — a one-off, with a confirmation document attached to the order rather than a standing rate card entry.
 
+**Lanes added by hand wait for approval.** A lane proposed straight onto a client's rate card does not count until it is approved. Meanwhile it shows on the client's page under **"Lanes waiting for approval"**. Proposing the same lane a second time while the first is still waiting is refused, so the same lane never waits for approval twice.
+
 ---
 
 ## 6. Stage 3 — The order: the ten steps
@@ -251,21 +253,36 @@ flowchart TD
 
 The two red steps are the **money gates**. Neither opens on judgement — each has a checklist, and the screen tells you by name what is missing.
 
+**The order page moves the order along.** Open any order (`/orders/<id>`) and its **Details** tab has a **Next step** panel. The panel names what is still left and puts the button for it right there: award a quote, allocate the vehicle, start and finish loading, mark the truck departed (starts the trip), mark it delivered, and then work through a checklist of delivery note, balance and client invoice. You rarely need to go hunting for the right screen.
+
+The page has three tabs:
+
+| Tab | What's on it |
+|---|---|
+| **Details** | The Next step panel, the payments made so far (with their UTR reference), vehicle tracking, and the order's history |
+| **Documents** | The lorry receipt, the trip documents, and the delivery proof. A paper delivery note can be **received** here (the paper copy logged) as well as on POD → Receiving |
+| **Invoice** | The client invoice, what has been received, and what is still to collect. **Raise the client invoice** opens the invoice screen already filled in for this order |
+
+**Comments** sit behind a small 💬 button in the header. Anyone who can see the order can add a note. Notes can only be added, never edited or deleted, so the thread stays a true record.
+
 Glossary for this section, once: an **indent** is a request for one truck on one route on one date. A **lorry receipt** is the consignment note that travels with the goods. A **delivery note** (POD, "proof of delivery") is the signed paper the consignee returns proving the goods arrived.
 
 ### Step 1 — Indent created
 
 **Who:** Operations or Compliance. **Where:** Indents → Raise an indent.
 
-You capture three things:
+The form follows the client, because the client decides how the load is priced:
 
-| | What |
+| Client | What you do |
 |---|---|
-| **The requirement** | Client, branch, from and to city, material, weight, truck type, pickup date, transit days, reporting rule |
-| **The pricing** | Contract rate (pulled from the rate card the quote request won) or spot rate; and the sell rate — what we charge the client |
-| **The placement terms** | The price band a transporter's quote must fall inside, and the advance % |
+| **Contract client** | Pick one of their **Agreed lanes** from the dropdown. Everything the lane knows is filled in and **locked**: route, truck type, transit days, reporting rule and the freight. You add the material, weight, pickup date and remarks. The lane goes with the order, so the server **cross-checks the rate** against it and the lane's **late-delivery penalty** applies |
+| **Spot client** — or a contract client on a route their rate card does not cover (**Book it as spot**) | Enter the details by hand, with a **sourcing rate** and a freight above it (never at a loss). The **client's confirmation screenshot** must be attached — you see a preview before attaching — or the order cannot be raised |
 
-**The band locks on publication.** Not when quotes arrive — on publication. Widening it later to force a match is precisely the shortcut this exists to block. A route that keeps missing its band is a supply problem, not a pricing-tweak problem, and it belongs in Market gap.
+The branch is never picked. It is worked out from the pickup city.
+
+**The advance %** is optional. Left blank, the awarded transporter's standing advance policy applies. Fill it in only when this one order needs a different figure.
+
+**The price band is not typed here.** It belongs to the client's rate card lane and is copied onto the order by the server. Only Leadership can change a lane's band. A route that keeps drawing quotes outside its band is a supply problem, not a pricing-tweak problem, and it belongs in Market gap.
 
 **Where it goes next:** two places at once.
 
@@ -275,15 +292,19 @@ flowchart LR
   I --> T2["<b>Today's queue</b><br/>'pending allocation'"]
 
   T1 --> Q{"Transporter quotes"}
-  Q -->|"below the band"| QX["<b>Refused outright</b><br/>never reaches submitted —<br/>blocked in their browser<br/><i>and</i> on the server"]
+  Q -->|"below the band"| QB["Submitted, tagged <b>Below band</b><br/>— no approval needed"]
   Q -->|"inside the band"| QI["Submitted"]
   Q -->|"above the band"| QA["Submitted, but held<br/>— needs approval to award"]
 
+  QB --> AW
   QI --> AW
   QA --> AW["<b>Indent detail → quotes panel</b><br/><i>Operations awards one</i>"]
 
-  style QX fill:#f8d7da,stroke:#721c24
+  style QB fill:#d4edda,stroke:#155724
+  style QA fill:#fff3cd,stroke:#d39e00
 ```
+
+**A quote under the band is fine.** A cheaper truck costs us nothing, so a below-band quote is accepted as-is. It is tagged **"Below band"** on the indent and the order so the price stands out, but it needs no approval. Only **above** the band needs Leadership.
 
 **Awarding.** Operations picks a quote on the indent. Three things happen:
 
@@ -293,9 +314,9 @@ flowchart LR
 
 The award writes the **buy rate** onto the order. That is the moment the margin on this load becomes real.
 
-**Placement.** Operations then keys the vehicle number, driver name, driver licence and the reported-at time, and flags late reporting as a transit delay in its own right.
+**Placement.** Operations then allocates the vehicle. Only two things are required: the **vehicle number** and the **driver's mobile number**. The driver's name and licence are optional and can be added later. Operations also records the reported-at time and flags late reporting as a transit delay in its own right.
 
-> **A quirk worth knowing.** On the Orders board, awarding and placement both still read as **"Indent created"**. Only the trip appearing moves the badge on. This is deliberate — the ten steps are the client-visible milestones, and who the truck is comes up as plain facts in the side panel, not as a step. If you want award and placement detail, open the indent itself.
+> **Worth knowing.** On the Orders board, awarding and placement both still read as **"Indent created"**. Only the trip appearing moves the badge on. The ten steps are the client-visible milestones. Who the truck is shows as plain facts, not as a step. To see exactly what is left, open the order: its **Next step** panel names it.
 
 **If nobody is placed by the deadline,** an overnight sweep at 01:00 tags the indent with a cause. Its status becomes **Placement failed**, and it appears on the Today screen under "Placement failures" so it does not sit looking merely unstarted.
 
@@ -312,6 +333,8 @@ Automatic. Once a vehicle is placed, the indent becomes a **trip** — the recor
 The consignment note: consignor, consignee, goods, the client's invoice reference, the e-way bill, vehicle, driver, transit days, and the charge heads. It moves Draft → Booked → Released → In transit → Delivered.
 
 Printable with a barcode. **Sharing it with the transporter is optional and never a required step** — they can view it in their own portal anyway.
+
+**A truck can leave without one.** The lorry receipt is genuinely optional for departure. The one thing that blocks departure is a lorry receipt that was **started but not issued** — finish it or discard it first.
 
 ### Step 4 — Advance documents uploaded
 
@@ -361,6 +384,8 @@ Transfer can go to the transporter's account, the driver's account, a fuel card,
 
 The trip moves to **in transit**. Two views: the live vehicle board, and the trip's own tracking panel.
 
+**Once the truck has left, the order reads "On the road"** — even if the advance is still unpaid. Steps 3 to 5 describe a truck that has not left yet. A truck that departed with its advance outstanding shows as step 6, not stuck at "Advance papers in". The unpaid advance still sits in the advance queue.
+
 Five alerts, re-derived on every position report: **overspeed · long halt · no signal · e-way expiring · e-way expired.**
 
 > The receiving endpoint for position reports is live and secured. No tracking provider is connected to it yet — the pipe is built, the water is not turned on.
@@ -404,6 +429,8 @@ The 20-day deadline, the ₹100 per day and the 40-day forfeit are all configura
 
 Two distinct actions: **verify** (it was checked) then **approve** (it is accepted). **Rejecting sends it back and does not stop the clock** — the penalty keeps accruing while it is being fixed, which is the entire point.
 
+**Shortage or damage turns into an SDR by itself.** The verify form has two ticks, *"No shortage or damage noted"* and *"Quantity matches the invoice"*. Untick either one and your remarks become a **shortage/damage report (SDR)**; you pick its kind and the cost you believe it caused on the same form. An open SDR **holds the balance** until it is resolved. The POD panel lists every SDR raised on the trip.
+
 A penalty can be **waived** — but that is a proposal, not a decision. It raises an approval that goes to Leadership. Only when they approve does the penalty actually zero.
 
 Statuses in this chain, worded the same on every screen:
@@ -440,6 +467,8 @@ flowchart TD
 
 **The transporter's own bill.** Once the delivery note is approved they can submit their invoice against the trip. If their figure is **above** our computed balance it is **flagged for review, not rejected** — their number might be the correct one. Accepting at their figure requires a written reason, recorded against the bill.
 
+**Bills that arrive on paper or WhatsApp.** Not every transporter uses the portal. Finance or Operations can enter such a bill for them with **Raise a bill** on Payments → Bills. The same rules apply as for a portal bill: the delivery note must be approved, there can be only one live bill per trip, the bill number must be unique for that transporter, and a figure above ours is flagged, not refused.
+
 That is the tenth step. The transporter side of this order is finished.
 
 ---
@@ -454,7 +483,7 @@ Everything in section 6 has a mirror image. Here is that same shipment as the tr
 
 **1 · Loads** — open orders they may bid on, filtered to their truck types and branch.
 
-- Quoting **below the band is refused and nothing is stored** — not saved as a draft, not queued. The error names the minimum.
+- Quoting **below the band is allowed.** Their screen says *"Below the usual range — you can send it"*, and the quote goes in like any other. On our side it is tagged "Below band"; no approval is needed.
 - **Above the band submits but is held** for approval. It does not become a live quote until Leadership signs it.
 - **A vehicle with documents due cannot be offered** at all.
 - One quote per load; a second attempt is refused.
@@ -475,7 +504,7 @@ Never a price. Never a competitor. Never how close they were. They can **withdra
 
 > The consignment note is served as a **signed link that expires in fifteen minutes**, pointing at a document the server renders. It is not drawn from the data the portal holds — the paper legally names consignor and consignee, and the portal's own copy of that trip must not carry either.
 
-**4 · Fleet** — their vehicles: registration, capacity, current city, availability. `Documents due` is derived from document state and **cannot be set by them** — a request naming it is rejected outright, not quietly ignored.
+**4 · Fleet** — their vehicles: registration, capacity, current city, availability. `Documents due` is derived from document state and **cannot be set by them** — a request naming it is rejected outright, not quietly ignored. `On trip` and `Available` follow their trips on their own: allocated → On trip; delivered, swapped or cancelled → Available (at the delivery city, on delivery).
 
 **Profile** sits behind the account link rather than being a fifth tab, and holds company details, identity documents with per-document status and rejection reasons, and a business summary. It is **masked**: the last four digits of the PAN and bank account, never the whole number.
 
@@ -484,7 +513,7 @@ Never a price. Never a competitor. Never how close they were. They can **withdra
 | They do this | It becomes | Picked up by |
 |---|---|---|
 | **Upload the delivery note** — file, courier docket number and sent-on date, all three required | Status `attached` | Nobody yet. **The clock keeps running**, and the confirmation they see is worded so it does not suggest otherwise |
-| **Raise a bill** — only once the delivery note is approved | A bill, with the four-line balance shown beside it | The desk. Above our figure it is **flagged, not rejected** — refusing it silently starts a phone call the branch has no record of |
+| **Raise a bill** — only once the delivery note is approved | A bill, with the four-line balance shown beside it | The desk. Above our figure it is **flagged, not rejected** — refusing it silently starts a phone call the branch has no record of. A bill that comes on paper or WhatsApp instead is keyed in by the desk with **Raise a bill** on Payments → Bills, under the same rules |
 
 Every write carries an idempotency key, so a retry on a bad signal cannot double-submit a quote or a bill.
 

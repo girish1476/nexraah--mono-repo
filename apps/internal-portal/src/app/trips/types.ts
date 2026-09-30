@@ -93,9 +93,9 @@ export interface TripDetail extends TripListRow {
   indentId: string;
   vehicleType: string;
   capacityTn: number;
-  driverName: string;
-  driverLicence: string;
-  /** No `driver_phone` column exists anywhere in the backend schema — genuinely absent data, never sent. */
+  driverName: string | null;
+  driverLicence: string | null;
+  /** The driver's mobile number, captured when the vehicle is allocated. */
   driverPhone?: string | null;
   /** No `distance_km` column exists anywhere in the backend schema — genuinely absent data, never sent. */
   distanceKm?: number;

@@ -9,6 +9,7 @@ import { PaymentsService } from './payments.service';
 import { ReleasePaymentDto } from './dto/release-payment.dto';
 import { AcceptBillDto } from './dto/accept-bill.dto';
 import { QueryBillDto } from './dto/query-bill.dto';
+import { RaiseBillDto } from './dto/raise-bill.dto';
 
 const PAYMENT_RELEASE = 'payment.release'; // fixed to FINANCE — BR-40, permission_fixed_owners
 // Reading a gate is not releasing money. `indent.view` is held by every desk
@@ -90,6 +91,17 @@ export class PaymentsController {
   @RequirePermission(READ_GATE)
   getBill(@Param('id') id: string) {
     return this.paymentsService.getBill(id);
+  }
+
+  /**
+   * Raise a transporter's bill from the desk. Not a release — it moves no
+   * money — so it is open to Finance and to Operations (who often receive the
+   * paper bill), checked in the service because it is "either of two".
+   */
+  @Post('bills')
+  @RequirePermission(READ_GATE)
+  raiseBill(@Body() dto: RaiseBillDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.paymentsService.raiseBill(dto, user);
   }
 
   @Post('bills/:id/accept')

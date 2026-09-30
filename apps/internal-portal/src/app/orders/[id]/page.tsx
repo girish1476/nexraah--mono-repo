@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 import { errorMessage } from '@/apis';
 import { AdvancePanel } from '@/components/advance-panel';
 import { BalancePanel } from '@/components/balance-panel';
+import { TripTrackingPanel } from '@/components/trip-tracking-panel';
 import { LorryReceiptContent } from '@/app/trips/[id]/lr/content';
 import { TripDocumentsContent } from '@/app/trips/[id]/documents/content';
 import { PodVerifyContent } from '@/app/pod/[id]/verify/content';
@@ -26,42 +27,52 @@ import {
 } from '@/lib/ui';
 import { getOrder } from '../apis';
 import { ORDER_STATUS_LABEL, ORDER_STATUS_TONE, OrderDetail } from '../types';
-import { OrderPaymentsTab } from './payments-tab';
+import { OrderCommentsButton } from './comments-button';
+import { OrderInvoiceTab } from './invoice-tab';
+import { OrderMoney } from './order-money';
+import { OrderNextStep, type OrderTabTarget } from './next-step';
 
-type OrderTab = 'details' | 'documents' | 'proof' | 'payments' | 'comments';
+type OrderTab = 'details' | 'documents' | 'invoice';
 
 const TABS: { key: OrderTab; label: string; emoji: string }[] = [
   { key: 'details', label: 'Details', emoji: '📋' },
   { key: 'documents', label: 'Documents', emoji: '📎' },
-  { key: 'proof', label: 'Delivery proof', emoji: '📸' },
-  { key: 'payments', label: 'Payments', emoji: '💰' },
-  { key: 'comments', label: 'Comments', emoji: '💬' },
+  { key: 'invoice', label: 'Invoice', emoji: '🧾' },
 ];
 
 /** A dead end outside the normal ten steps — the ladder shows it as stuck
  *  rather than "done", the same way `JourneyMini` on the orders list does. */
 const STUCK_STATUSES: OrderDetail['status'][] = ['FAILED', 'POD_FORFEITED'];
 
+/** Where the truck is, read off the order's step — for the tracking panel's wording. */
+function tripStageOf(status: OrderDetail['status']): string {
+  if (status === 'TRACKING') return 'IN_TRANSIT';
+  if (['UNLOADED', 'POD_UPLOADED', 'POD_VERIFIED', 'BALANCE_RELEASED', 'POD_FORFEITED'].includes(status)) return 'DELIVERED';
+  return 'OPEN';
+}
+
 /**
  * `/orders/[id]` — the whole lifecycle of one order, one screen, one URL.
  *
- * Rebuilt 2026-09-20 around a real complaint: every "Related record" here —
- * the indent's documents, the lorry receipt, the proof of delivery — used to
- * be a button that navigated away to that record's own page. Someone reading
- * one order lost their place doing it, and the console read as five separate
- * tools stitched together rather than one order management system. The three
- * tabs below are real navigation only in the sense that switching them
- * updates what this one page shows — the URL never changes, and every action
- * (upload a document, verify a proof of delivery, generate the LR) happens
- * right here, because `TripDocumentsContent`, `PodVerifyContent` and
- * `LorryReceiptContent` are the *exact* components the standalone
- * `/trips/[id]/documents`, `/pod/[id]/verify` and `/trips/[id]/lr` routes
- * render — extracted once, not copied, so there is exactly one upload
- * workflow and one verify workflow to keep working, not two.
+ * Reworked 2026-09-30 from the operations team's notes:
  *
- * The advance and balance gates are the same real, permission-checked panels
- * used on the indent/trip pages and the payment queues too — releasing money
- * here does the same thing releasing it there does.
+ * - **The order moves from here.** A "Next step" panel names what is left to
+ *   do and carries the button that does it — award, allocate the vehicle,
+ *   start the trip, mark it delivered — instead of sending people to the
+ *   indent or trip page and leaving the order looking stuck.
+ * - **Payments are on Details** (what went out, with UTRs, beside the advance
+ *   and balance panels that release it), and **tracking** is there too while
+ *   the truck is on the road.
+ * - **Delivery proof lives with the documents.** One Documents tab holds the
+ *   lorry receipt, the trip's documents and the proof of delivery.
+ * - **The old Payments tab is now Invoice** — the client's side of the money,
+ *   which the page never showed.
+ * - **Comments are a small 💬 button** in the header where remarks can be
+ *   added, not a tab that could only show what was typed at the start.
+ *
+ * `TripDocumentsContent`, `PodVerifyContent` and `LorryReceiptContent` are the
+ * exact components the standalone trip, POD and LR routes render — one upload
+ * workflow and one verify workflow, not copies.
  */
 export default function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -79,6 +90,11 @@ export default function OrderDetailPage() {
   };
   useEffect(load, [id]);
 
+  const openTab = (target: OrderTabTarget) => {
+    setTab(target);
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   if (error) return <ErrorState message={error} retry={load} />;
   if (!order) return <Loading what="Loading the order" />;
 
@@ -88,16 +104,20 @@ export default function OrderDetailPage() {
         title={order.indentCode}
         sub={`${order.clientName} · ${order.lane}${order.tripCode ? ` · trip ${order.tripCode}` : ''}`}
         module="orders"
-        right={<Tag tone={ORDER_STATUS_TONE[order.status]}>{ORDER_STATUS_LABEL[order.status]}</Tag>}
+        right={
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <Tag tone={ORDER_STATUS_TONE[order.status]}>{ORDER_STATUS_LABEL[order.status]}</Tag>
+            <OrderCommentsButton orderId={order.id} remarks={order.remarks} initial={order.comments ?? []} />
+          </div>
+        }
       />
       <PageIntro
-        what="Everything about one order on a single screen — its details, its documents and lorry receipt, and its delivery proof, all in place. Nothing here sends you to another page to see or do something."
-        who="Every desk can open this; only Finance can actually release the advance or balance payment shown here."
+        what="Everything about one order on a single screen — where it stands, the next thing to do and the button that does it, its documents and delivery proof, and its invoice."
+        who="Every desk can open this. Operations moves the load forward from the Next step panel; only Finance can release the advance or balance payment shown here."
       />
 
-      {/* The wireframe's header strip: the three record IDs one order is known
-          by, who it's for, and where it's going — the answer to "which order
-          is this" before reading a single tab's content. */}
+      {/* The three record IDs one order is known by, who it's for, and where
+          it's going — "which order is this" before reading any tab. */}
       <div className="record-status" style={{ marginBottom: 20 }}>
         <div>
           <div className="eyebrow">Indent</div>
@@ -137,7 +157,15 @@ export default function OrderDetailPage() {
           <div>
             <div className="eyebrow">Invoice</div>
             <div className="record-status-value">
-              <Link href="/invoices">{order.invoiceCode}</Link>
+              <a
+                href="#invoice"
+                onClick={(e) => {
+                  e.preventDefault();
+                  openTab('invoice');
+                }}
+              >
+                {order.invoiceCode}
+              </a>
             </div>
           </div>
         )}
@@ -163,15 +191,17 @@ export default function OrderDetailPage() {
 
       {tab === 'details' && (
         <>
-          {/* The forward-looking ladder the wireframe calls "Order Stage" —
-              past, current and still-to-come steps together, not just the
-              history of what already happened (that's the panel below).
-              `order.status === 'FAILED'` never reaches step 2, so the ladder
-              renders it as stuck rather than a step quietly skipped. */}
+          {/* Past, current and still-to-come steps together. FAILED never
+              reaches step 2, so the ladder renders it as stuck rather than a
+              step quietly skipped. */}
           <div style={{ marginBottom: 16 }}>
             <Panel title="🚚 Order stage">
               <Journey step={order.stepNo} stuck={STUCK_STATUSES.includes(order.status)} />
             </Panel>
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <OrderNextStep order={order} onChanged={load} openTab={openTab} />
           </div>
 
           <Split
@@ -205,19 +235,25 @@ export default function OrderDetailPage() {
                 <FactList
                   facts={[
                     ['Vendor', order.vendorName],
-                    ['Vehicle', order.vehicleNo ?? 'not placed yet'],
+                    ['Vehicle', order.vehicleNo || 'not allocated yet'],
+                    [
+                      'Driver mobile',
+                      order.driverPhone ? <a href={`tel:${order.driverPhone}`}>{order.driverPhone}</a> : '—',
+                    ],
                     ['Driver', order.driverName ?? '—'],
                   ]}
                 />
               </Panel>
             )}
 
-            {/*
-              What actually happened, in the order it happened.
+            {order.tripId && <TripTrackingPanel vehicleNo={order.vehicleNo || null} tripStage={tripStageOf(order.status)} />}
 
-              These are recorded `order_events`: one row per entry into a step,
-              appended, never overwritten — so a step that failed twice before
-              sailing through looks different from one that never stumbled.
+            <OrderMoney order={order} />
+
+            {/*
+              What actually happened, in the order it happened. Recorded
+              `order_events`: one row per entry into a step, appended, never
+              overwritten.
             */}
             <Panel title="🕘 What has happened so far">
               <Stack gap={0}>
@@ -274,38 +310,28 @@ export default function OrderDetailPage() {
                 <TripDocumentsContent tripId={order.tripId} />
               </div>
             </Panel>
+            {/* Delivery proof is a document too — it is uploaded, received and
+                checked here, with the rest of the order's paperwork. */}
+            <Panel title="📸 Delivery proof" pad={false}>
+              <div style={{ padding: 15 }}>
+                {['UNLOADED', 'POD_UPLOADED', 'POD_VERIFIED', 'BALANCE_RELEASED', 'POD_FORFEITED'].includes(order.status) ? (
+                  <PodVerifyContent tripId={order.tripId} showOrderLink={false} showStatusTag={false} />
+                ) : (
+                  <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
+                    The delivery proof is uploaded here once the truck is marked delivered.
+                  </p>
+                )}
+              </div>
+            </Panel>
           </Stack>
         ) : (
           <EmptyState
             title="No documents yet"
-            hint="Documents and the lorry receipt open up once a transporter is awarded and a trip is generated for this order."
+            hint="Documents, the lorry receipt and the delivery proof open up once a transporter is awarded and a trip is generated for this order."
           />
         ))}
 
-      {tab === 'proof' &&
-        (order.tripId ? (
-          <PodVerifyContent tripId={order.tripId} showOrderLink={false} showStatusTag={false} />
-        ) : (
-          <EmptyState
-            title="Nothing to check yet"
-            hint="Proof of delivery opens up once a transporter is awarded and a trip is generated for this order. Live vehicle position is on the Tracking page while it's on the road."
-          />
-        ))}
-
-      {tab === 'payments' && <OrderPaymentsTab order={order} />}
-
-      {tab === 'comments' && (
-        <Panel title="Special instructions">
-          {order.remarks ? (
-            <p style={{ margin: 0, fontSize: 'var(--text-base)', lineHeight: 1.55 }}>{order.remarks}</p>
-          ) : (
-            <EmptyState
-              title="Nothing noted for this order"
-              hint="Whatever was written when the load request was raised — packing instructions, a gate-closing time, anything the transporter needs to know — shows up here."
-            />
-          )}
-        </Panel>
-      )}
+      {tab === 'invoice' && <OrderInvoiceTab order={order} />}
     </ModuleGuard>
   );
 }

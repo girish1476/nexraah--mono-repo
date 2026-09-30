@@ -8,6 +8,8 @@ import { OrdersService } from '../orders/orders.service';
 import { PaymentsRepository } from './payments.repository';
 import type { ReleasePaymentDto } from './dto/release-payment.dto';
 import type { AcceptBillDto } from './dto/accept-bill.dto';
+import type { RaiseBillDto } from './dto/raise-bill.dto';
+import { assertAnyPermission } from '../../common/guards/assert-any-permission';
 import { planRecovery } from '../sdr/sdr-recovery';
 import { SdrRepository } from '../sdr/sdr.repository';
 
@@ -474,6 +476,81 @@ export class PaymentsService {
     });
     await this.syncOrder(indentId, actor);
     return result;
+  }
+
+  /**
+   * The desk raises a transporter's bill for them.
+   *
+   * The Bills screen could only read and decide bills the transporter had sent
+   * from their portal, so a bill handed over on paper — most of them — had no
+   * way in. Same rules as the portal's own submit: only once the proof of
+   * delivery is approved, one live bill per trip, bill numbers unique per
+   * transporter, and a figure above our computed balance is flagged for
+   * review, never refused (BR-53).
+   */
+  async raiseBill(dto: RaiseBillDto, actor: AuthenticatedUser) {
+    assertAnyPermission(actor, ['payment.release', 'indent.manage']);
+    const billNo = dto.billNo.trim();
+    if (dto.billDate.slice(0, 10) > new Date().toISOString().slice(0, 10)) {
+      throw new DomainException(400, 'BILL_DATE_FUTURE', 'The bill date cannot be in the future.');
+    }
+
+    // The computed balance the bill is measured against — the same figure the
+    // balance gate shows, so the variance on the bill and the gate agree.
+    const gate = await this.balanceGate(dto.tripId);
+    const computedBalancePaise = gate.breakdown.netPaise;
+
+    const id = await this.paymentsRepository.transaction().execute(async (trx) => {
+      const trip = await this.paymentsRepository.findTripForUpdate(trx, dto.tripId);
+      if (!trip) throw new DomainException(404, 'NOT_FOUND', `Unknown trip: ${dto.tripId}`);
+      if (trip.pod_status !== 'APPROVED' && trip.pod_closure_basis !== 'WAIVED') {
+        throw new DomainException(409, 'POD_NOT_APPROVED', 'A bill can be raised once the proof of delivery is approved.');
+      }
+      const live = await trx
+        .selectFrom('vendor_bills')
+        .select(['bill_no'])
+        .where('trip_id', '=', trip.id)
+        .where('status', 'in', ['SUBMITTED', 'ACCEPTED'])
+        .executeTakeFirst();
+      if (live) {
+        throw new DomainException(409, 'BILL_EXISTS', `This trip already has bill ${live.bill_no}. Decide that one first.`);
+      }
+      const clash = await trx
+        .selectFrom('vendor_bills')
+        .select('id')
+        .where('vendor_id', '=', trip.vendor_id)
+        .where('bill_no', '=', billNo)
+        .executeTakeFirst();
+      if (clash) {
+        throw new DomainException(409, 'BILL_NO_DUPLICATE', `This transporter already has a bill numbered ${billNo}.`);
+      }
+
+      const chargeCost = await this.paymentsRepository.chargeCostTotal(trip.id);
+      const total = dto.totalPaise ?? computedBalancePaise;
+      const bill = await trx
+        .insertInto('vendor_bills')
+        .values({
+          trip_id: trip.id,
+          vendor_id: trip.vendor_id,
+          bill_no: billNo,
+          bill_date: dto.billDate.slice(0, 10),
+          attachment_id: dto.attachmentId ?? null,
+          freight: trip.buy_rate,
+          charges: Number(chargeCost.total),
+          total,
+          computed_balance: computedBalancePaise,
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      await this.auditService.record(trx, actor, {
+        action: 'PAYMENT',
+        entityType: 'vendor_bills',
+        entityId: bill.id,
+        after: { raisedBy: 'DESK', tripId: trip.id, billNo, total, computedBalancePaise },
+      });
+      return bill.id;
+    });
+    return this.getBill(id);
   }
 
   async queryBill(id: string, note: string, actor: AuthenticatedUser) {

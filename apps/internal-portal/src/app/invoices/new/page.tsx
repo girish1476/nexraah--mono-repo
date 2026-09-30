@@ -61,6 +61,15 @@ export default function NewInvoicePage() {
     listTrips({ stage: 'DELIVERED' })
       .then(setTrips)
       .catch((e) => setError(errorMessage(e)));
+    // Arriving from an order's Invoice tab: `?client=…&trip=…` picks that
+    // client and ticks that trip, so billing one order is one click, not a hunt.
+    // Read from `window` rather than `useSearchParams`, which would need a
+    // Suspense boundary around the whole page to build statically.
+    const params = new URLSearchParams(window.location.search);
+    const presetClient = params.get('client');
+    const presetTrip = params.get('trip');
+    if (presetClient) setClientId(presetClient);
+    if (presetTrip) setSelected({ [presetTrip]: true });
   }, []);
 
   const client = clients.find((c) => c.id === clientId);

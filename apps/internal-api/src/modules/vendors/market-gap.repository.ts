@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { sql } from 'kysely';
 import { DB } from '../../db/tokens';
 import type { InternalDb } from '../../db/kysely';
 
@@ -37,12 +38,26 @@ export class MarketGapRepository {
     return this.db.selectFrom('market_gap_targets').selectAll().where('id', '=', id).executeTakeFirst();
   }
 
-  updateTarget(id: string, target: number) {
+  update(id: string, patch: { target?: number; on_panel?: number; converted?: number }) {
     return this.db
       .updateTable('market_gap_targets')
-      .set({ target })
+      .set({ ...patch, updated_at: new Date().toISOString() })
       .where('id', '=', id)
       .returningAll()
       .executeTakeFirstOrThrow();
+  }
+
+  findByKey(branchId: string, lane: string, truckType: string) {
+    return this.db
+      .selectFrom('market_gap_targets')
+      .select('id')
+      .where('branch_id', '=', branchId)
+      .where(sql<string>`lower(lane)`, '=', lane.toLowerCase())
+      .where(sql<string>`lower(truck_type)`, '=', truckType.toLowerCase())
+      .executeTakeFirst();
+  }
+
+  insert(row: { branch_id: string; lane: string; truck_type: string; target: number; on_panel: number; converted: number }) {
+    return this.db.insertInto('market_gap_targets').values(row).returning('id').executeTakeFirstOrThrow();
   }
 }

@@ -225,8 +225,21 @@ export function listMarketGap(params: { branch?: string } = {}) {
   return request<MarketGapRow[]>({ url: '/vendors/market-gap', method: 'GET', params });
 }
 
-export function updateMarketGapTarget(id: string, target: number) {
-  return request<MarketGapRow>({ url: `/vendors/market-gap/${id}`, method: 'PATCH', data: { target } });
+/** PATCH /vendors/market-gap/:id · `vendor.edit` — any of target, on panel, converted. */
+export function updateMarketGap(id: string, patch: Partial<Pick<MarketGapRow, 'target' | 'onPanel' | 'converted'>>) {
+  return request<MarketGapRow>({ url: `/vendors/market-gap/${id}`, method: 'PATCH', data: patch });
+}
+
+/** POST /vendors/market-gap · `vendor.edit` — records a lane where the panel is thin. 409 MARKET_GAP_EXISTS. */
+export function createMarketGap(body: {
+  branchId: string;
+  lane: string;
+  truckType: string;
+  target: number;
+  onPanel?: number;
+  converted?: number;
+}) {
+  return request<MarketGapRow>({ url: '/vendors/market-gap', method: 'POST', data: body });
 }
 
 export function listIssues(params: { status?: string } = {}) {

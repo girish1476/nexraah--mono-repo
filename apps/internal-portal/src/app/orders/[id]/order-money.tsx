@@ -33,15 +33,16 @@ function takenOff(line: OrderPaymentLine | null): string | null {
 }
 
 /**
- * The Payments tab of `/orders/[id]` — order-level accounting on one screen.
+ * The money on one order, shown on the Details tab of `/orders/[id]`.
  *
- * Top: every rupee that has gone out against this order, with the UTR of each
- * transfer. Below it: what the load was bought and sold at, and the margin
- * that leaves. Releasing the advance or the balance still happens on the
- * Details tab, where those panels already live; this tab is the record of
- * what they did.
+ * It used to be a Payments tab of its own, and people asked why the advance
+ * and the final payment were there when the Details tab already had them —
+ * two places for the same transfers. Now there is one: the Details tab shows
+ * every rupee that has gone out against this order, with its UTR, beside the
+ * advance and balance panels that release it, and what the load was bought
+ * and sold at. The client's side of the money is the Invoice tab.
  */
-export function OrderPaymentsTab({ order }: { order: OrderDetail }) {
+export function OrderMoney({ order }: { order: OrderDetail }) {
   const p = order.payments;
   const hasTrip = order.tripId !== null;
 
@@ -94,7 +95,7 @@ export function OrderPaymentsTab({ order }: { order: OrderDetail }) {
 
   return (
     <Stack>
-      <Panel title="💸 Money paid out" pad={false}>
+      <Panel title="💸 Payments made to the transporter" pad={false}>
         {hasTrip ? (
           <DataTable columns={columns} rows={rows} rowKey={(r) => r.key} />
         ) : (

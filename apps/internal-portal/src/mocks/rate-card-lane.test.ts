@@ -77,6 +77,24 @@ describe('adding a lane', () => {
     expect(again).toMatch(/already has an agreed rate/);
   });
 
+  it('shows a proposed lane as waiting for approval, and refuses proposing it again meanwhile', async () => {
+    const sent = await call('FINANCE', 'POST', `/clients/${CLIENT}/rate-card`, lane({ destination: 'Nellore' }));
+    const pending = await call('FINANCE', 'GET', `/clients/${CLIENT}/rate-card/pending`);
+    expect(pending).toContainEqual(
+      expect.objectContaining({ approvalId: sent.approval.id, origin: 'Visakhapatnam', destination: 'Nellore', ratePaise: 4500000 }),
+    );
+
+    // The same lane again, differently spaced and cased, is refused by name — not raised twice.
+    expect(await refusal('FINANCE', `/clients/${CLIENT}/rate-card`, lane({ destination: ' nellore ' }))).toMatch(
+      /already waiting for approval/,
+    );
+
+    // Once approved it leaves the waiting list and is on the card.
+    await call('COMPLIANCE', 'POST', `/approvals/${sent.approval.id}/approve`);
+    const stillPending = await call('FINANCE', 'GET', `/clients/${CLIENT}/rate-card/pending`);
+    expect(stillPending.find((p: any) => p.approvalId === sent.approval.id)).toBeUndefined();
+  });
+
   it('refuses a spot client, a short source and identical cities', async () => {
     expect(await refusal('FINANCE', '/clients/c-0088/rate-card', lane())).toMatch(/priced load by load/);
     expect(await refusal('FINANCE', `/clients/${CLIENT}/rate-card`, lane({ reason: 'per call' }))).toMatch(

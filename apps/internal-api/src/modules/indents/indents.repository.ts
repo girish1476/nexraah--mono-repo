@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { DB } from '../../db/tokens';
 import type { DbExecutor, InternalDb } from '../../db/kysely';
+import type { BandPosition } from '../../common/band-position';
 
 export interface IndentListFilters {
   stage?: string;
@@ -286,7 +287,7 @@ export class IndentsRepository {
       amountPaise: number;
       truckRegistration: string | null;
       remarks: string | null;
-      bandPosition: 'IN_BAND' | 'ABOVE_BAND';
+      bandPosition: BandPosition;
     },
   ) {
     return db

@@ -102,4 +102,18 @@ export interface RateCardLane {
   bidMaxPaise: number | null;
 }
 
+/** A lane proposed for a client's rate card, waiting for approval — not on the rate card yet. */
+export interface PendingRateLane {
+  approvalId: string;
+  requesterName: string;
+  proposedAt: string;
+  origin: string;
+  destination: string;
+  truckType: string;
+  ratePaise: number;
+  transitDays: number;
+  validFrom: string;
+  validTo: string | null;
+}
+
 export type ClientDraft = Omit<Client, 'id' | 'code' | 'status' | 'outstandingPaise'>;

@@ -145,8 +145,8 @@ test.describe('load detail', () => {
   });
 });
 
-test.describe('quote form (BR-05 band enforcement)', () => {
-  test('a quote below the band minimum is blocked', async ({ page }) => {
+test.describe('quote form (band handling)', () => {
+  test('a quote below the band minimum can still be sent', async ({ page }) => {
     await page.goto('/loads/LD-4471');
     await page.getByRole('button', { name: /Quote this load/ }).click();
     // Client-side transition into an on-demand-compiled dev route; give it
@@ -154,17 +154,15 @@ test.describe('quote form (BR-05 band enforcement)', () => {
     await expect(page).toHaveURL(/\/loads\/LD-4471\/quote$/, { timeout: 15_000 });
 
     const amount = page.locator('#amount');
-    await expect(amount).toHaveValue('38000'); // defaults to the band floor
+    await expect(amount).toHaveValue('38000'); // defaults to the low end of the range
     await amount.fill('30000'); // below the 38,000 floor
 
-    await expect(page.getByText('Below the band')).toBeVisible();
-    await expect(
-      page.getByText('Nexraah will not award this lane below ₹38,000'),
-    ).toBeVisible();
+    await expect(page.getByText('Below the usual range — you can send it')).toBeVisible();
 
-    const submit = page.getByRole('button', { name: /Submit quote/ });
-    await expect(submit).toBeDisabled();
-    await expect(page.getByText('Blocked: below the published floor of ₹38,000')).toBeVisible();
+    // No barrier: with a truck and driver filled in, the button is live.
+    await page.locator('#vehicle').fill('MH 04 KL 9034');
+    await page.locator('#driver-mobile').fill('9876543210');
+    await expect(page.getByRole('button', { name: /Submit quote/ })).toBeEnabled();
 
     await assertNoRedactedFields(page);
   });

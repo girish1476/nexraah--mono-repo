@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { DomainException } from '../../common/domain-exception';
 import { NumberingService } from '../numbering/numbering.service';
 import { ConfigRepository } from '../config/config.repository';
 import { OrdersRepository, type OrderListFilters, type OrderSearchFilters } from './orders.repository';
@@ -192,7 +193,7 @@ export class OrdersService {
       (await this.repo.getByIndentId(ref)) ??
       (await this.repo.getByIndentCode(ref));
     if (!order) throw new NotFoundException('Order not found');
-    const events = await this.repo.events(order.id);
+    const [events, comments] = await Promise.all([this.repo.events(order.id), this.repo.comments(order.id)]);
 
     // Margin is the one figure here that is not simply "what was on the
     // records": it follows the Profit and loss rule for who may see it —
@@ -220,6 +221,7 @@ export class OrdersService {
       orderNo: order.orderNo,
       indentId: order.indentId,
       indentCode: order.indentCode,
+      clientId: order.clientId,
       clientName: order.clientName,
       lane: `${order.fromCity} → ${order.toCity}`,
       fromCity: order.fromCity,
@@ -231,6 +233,7 @@ export class OrdersService {
       stepNo: order.stepNo,
       tripId: order.tripId,
       tripCode: order.tripCode,
+      invoiceId: order.invoiceId,
       invoiceCode: order.invoiceCode,
       failureCause: order.failureCause,
       closedAt: order.closedAt,
@@ -240,6 +243,7 @@ export class OrdersService {
       vendorName: order.vendorName,
       vehicleNo: order.vehicleNo,
       driverName: order.driverName,
+      driverPhone: order.driverPhone,
       buyRatePaise: order.buyRatePaise,
       advancePaidPaise: order.advancePaidPaise ?? 0,
       balancePaidPaise: order.balancePaidPaise ?? 0,
@@ -250,7 +254,23 @@ export class OrdersService {
       remarks: order.remarks,
       payments,
       events,
+      comments,
     };
+  }
+
+  /**
+   * Adds a note to an order — a remark or a detail somebody wants on record
+   * as the load moves. Append-only: a comment is what was said at the time.
+   */
+  async addComment(ref: string, body: string, user: AuthenticatedUser) {
+    const text = (body ?? '').trim();
+    if (!text) throw new DomainException(400, 'VALIDATION_ERROR', 'Write something before adding the comment.');
+    if (text.length > 2000) throw new DomainException(400, 'VALIDATION_ERROR', 'Keep a comment under 2,000 characters.');
+    const order =
+      (await this.repo.getById(ref)) ?? (await this.repo.getByIndentId(ref)) ?? (await this.repo.getByIndentCode(ref));
+    if (!order) throw new NotFoundException('Order not found');
+    await this.repo.addComment(order.id, user.userId, text);
+    return this.repo.comments(order.id);
   }
 
   /**

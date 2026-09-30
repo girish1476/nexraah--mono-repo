@@ -456,13 +456,33 @@ test.describe('Vendor market gap — /vendors/market-gap', () => {
     await expect(gdm).toContainText('60%'); // round(3/5*100)
   });
 
-  test('OPS (vendor.edit) sees editable target inputs seeded with the current target', async ({ page }) => {
+  test('OPS (vendor.edit) can edit the target, on-panel and converted counts in place', async ({ page }) => {
     await setRole(page, 'OPS');
     await page.goto('/vendors/market-gap');
     const main = page.locator('main');
     const inputs = main.locator('table.table tbody input[type="number"]');
-    await expect(inputs).toHaveCount(4);
-    await expect(inputs.first()).toHaveValue('8'); // mg-1 target
+    await expect(inputs).toHaveCount(12); // three counts per row
+    await expect(main.getByLabel('Target for Nashik → Kolkata')).toHaveValue('8');
+    await expect(main.getByLabel('On panel for Nashik → Kolkata')).toHaveValue('3');
+    await expect(main.getByLabel('Converted for Nashik → Kolkata')).toHaveValue('1');
+  });
+
+  test('OPS adds a lane to the market gap', async ({ page }) => {
+    await setRole(page, 'OPS');
+    await page.goto('/vendors/market-gap');
+    await page.getByRole('button', { name: /Add a lane/ }).click();
+    const form = page.locator('.surface').filter({ has: page.getByRole('heading', { name: 'Add a lane to the market gap' }) });
+    const field = (label: string) => form.locator('div.field').filter({ hasText: label }).locator('input, select');
+    await field('Branch').selectOption({ label: 'Nashik' });
+    await field('Truck type').fill('22 ft');
+    await field('From city').fill('Nashik');
+    await field('To city').fill('Indore');
+    await field('Target (trucks needed)').fill('4');
+    await field('On panel now').fill('1');
+    await form.getByRole('button', { name: 'Add lane' }).click();
+    await expect(page.getByText('Nashik → Indore added to the market gap')).toBeVisible();
+    const row = page.locator('main table.table tbody tr').filter({ hasText: 'Nashik → Indore' });
+    await expect(row).toContainText('22 ft');
   });
 
   test('COMPLIANCE (no vendor.edit) sees plain target numbers, no inputs', async ({ page }) => {

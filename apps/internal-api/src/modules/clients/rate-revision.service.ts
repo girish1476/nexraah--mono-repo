@@ -377,6 +377,30 @@ export class RateRevisionService implements OnModuleInit {
   // ---- Add a lane -----------------------------------------------------
 
   /**
+   * Lanes proposed for this client and still waiting for approval.
+   *
+   * The rate card only lists lanes that exist, and a new lane does not exist
+   * until it is approved — so after "Add a lane" nothing on the client showed
+   * that anything had happened, and the same lane was added again. The client
+   * page lists these beside the rate card as "Waiting for approval".
+   */
+  async pendingLanes(clientId: string) {
+    const rows = await this.approvalsService.pendingFor<RateCardLaneAction>('RATE_CARD_LANE', 'clients', clientId);
+    return rows.map((r) => ({
+      approvalId: r.approvalId,
+      requesterName: r.requesterName,
+      proposedAt: r.createdAt,
+      origin: r.action.origin,
+      destination: r.action.destination,
+      truckType: r.action.truckType,
+      ratePaise: r.action.ratePaise,
+      transitDays: r.action.transitDays,
+      validFrom: r.action.validFrom,
+      validTo: r.action.validTo,
+    }));
+  }
+
+  /**
    * Proposes a lane for a client who has no agreed rate on that route yet.
    * Never writes the lane — the approval handler does, once somebody who can
    * approve a contract agrees. Returns `202 approvalRequired`.
@@ -406,6 +430,22 @@ export class RateRevisionService implements OnModuleInit {
       approvalMailSubject: dto.approvalMailSubject.trim(),
       approvalMailAttachmentId: dto.approvalMailAttachmentId ?? null,
     };
+
+    // A lane already proposed and waiting for approval is not on the rate card
+    // yet, so nothing below would see it — and people re-added lanes they could
+    // not see, raising the same approval twice. Refuse by name instead.
+    const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+    const waiting = (await this.pendingLanes(clientId)).find(
+      (p) => same(p.origin, input.origin) && same(p.destination, input.destination) && same(p.truckType, input.truckType),
+    );
+    if (waiting) {
+      throw new DomainException(
+        409,
+        'RATE_LANE_PENDING',
+        `${input.origin} → ${input.destination} · ${input.truckType} is already waiting for approval ` +
+          `(proposed by ${waiting.requesterName}). It appears on the rate card once it is approved.`,
+      );
+    }
 
     const sameRoute = await this.clientsRepository.findRouteLanes(
       clientId,

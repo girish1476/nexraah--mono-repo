@@ -11,6 +11,8 @@ import { VendorsRepository } from '../vendors/vendors.repository';
 import { canRaiseIndent, indentBlockReason } from '../clients/client-onboarding';
 import { awardBlockReason, vendorExpiryReport } from '../vendors/vendor-document-expiry';
 import { crossCheckRate } from './rate-cross-check';
+import { bandPositionFor } from '../../common/band-position';
+import { setFleetVehicleStatus } from '../../common/fleet-status';
 import { IndentsRepository, type IndentListFilters } from './indents.repository';
 import type { CreateIndentDto } from './dto/create-indent.dto';
 import type { PlacementDto } from './dto/placement.dto';
@@ -169,6 +171,7 @@ export class IndentsService implements OnModuleInit {
       vehicleNo: indent.vehicle_no,
       driverName: indent.driver_name,
       driverLicence: indent.driver_licence,
+      driverPhone: indent.driver_phone,
       reportedAt: indent.reported_at,
       failureCause: indent.failure_cause,
       cancelReason: indent.cancel_reason,
@@ -356,12 +359,8 @@ export class IndentsService implements OnModuleInit {
         throw new DomainException(409, 'VENDOR_NOT_ACTIVE', 'Only an active transporter can be quoted for.');
       }
 
-      if (indent.bid_min !== null && dto.amountPaise < indent.bid_min) {
-        throw new DomainException(422, 'BELOW_BAND', 'That quote is below the floor for this lane and cannot be entered.', {
-          bidMin: indent.bid_min,
-        });
-      }
-      const bandPosition = indent.bid_max !== null && dto.amountPaise > indent.bid_max ? 'ABOVE_BAND' : 'IN_BAND';
+      // Below the floor is kept and flagged, not refused.
+      const bandPosition = bandPositionFor(dto.amountPaise, indent.bid_min, indent.bid_max);
 
       const existing = await this.indentsRepository.findQuoteByVendor(trx, indentId, dto.vendorId);
       if (existing) {
@@ -535,6 +534,7 @@ export class IndentsService implements OnModuleInit {
             vehicle_no: '',
             driver_name: null,
             driver_licence: null,
+            driver_phone: null,
             loading_supervisor_id: null,
             loading_started_at: null,
             loading_completed_at: null,
@@ -576,6 +576,7 @@ export class IndentsService implements OnModuleInit {
       vehicle_no: string | null;
       driver_name: string | null;
       driver_licence: string | null;
+      driver_phone: string | null;
       from_city: string;
       to_city: string;
       weight_kg: number;
@@ -596,6 +597,7 @@ export class IndentsService implements OnModuleInit {
         vehicle_no: indent.vehicle_no ?? '',
         driver_name: indent.driver_name,
         driver_licence: indent.driver_licence,
+        driver_phone: indent.driver_phone,
         lane: `${indent.from_city} → ${indent.to_city}`,
         weight_kg: indent.weight_kg,
         transit_days_required: indent.transit_days,
@@ -647,10 +649,20 @@ export class IndentsService implements OnModuleInit {
             .join(' ')
         : (dto.remarks ?? indent.remarks);
 
+      // Name and licence are optional; a blank one is stored as "not known".
+      const driverName = dto.driverName?.trim() || null;
+      const driverLicence = dto.driverLicence?.trim() || null;
+      const driverPhone = dto.driverPhone.trim();
+      // A swapped-out truck is free again; the allocated one is now on this trip.
+      if (indent.vehicle_no && indent.vehicle_no !== dto.vehicleNo) {
+        await setFleetVehicleStatus(trx, indent.vendor_id, indent.vehicle_no, 'AVAILABLE');
+      }
+      await setFleetVehicleStatus(trx, indent.vendor_id, dto.vehicleNo, 'ON_TRIP');
       const updated = await this.indentsRepository.update(trx, indentId, {
         vehicle_no: dto.vehicleNo,
-        driver_name: dto.driverName,
-        driver_licence: dto.driverLicence,
+        driver_name: driverName,
+        driver_licence: driverLicence,
+        driver_phone: driverPhone,
         reported_at: dto.reportedAt,
         remarks,
         stage: indent.stage === 'TRIP_CREATED' ? 'TRIP_CREATED' : 'VEHICLE_PLACED',
@@ -658,7 +670,13 @@ export class IndentsService implements OnModuleInit {
       if (trip) {
         await trx
           .updateTable('trips')
-          .set({ vehicle_no: dto.vehicleNo, driver_name: dto.driverName, driver_licence: dto.driverLicence, remarks })
+          .set({
+            vehicle_no: dto.vehicleNo,
+            driver_name: driverName,
+            driver_licence: driverLicence,
+            driver_phone: driverPhone,
+            remarks,
+          })
           .where('id', '=', trip.id)
           .execute();
       }
@@ -729,6 +747,7 @@ export class IndentsService implements OnModuleInit {
         }
         await trx.updateTable('trips').set({ stage: 'CANCELLED' }).where('id', '=', trip.id).execute();
       }
+      await setFleetVehicleStatus(trx, indent.vendor_id, indent.vehicle_no, 'AVAILABLE');
       await trx
         .updateTable('quotes')
         .set({ status: 'WITHDRAWN' })
@@ -816,6 +835,7 @@ export class IndentsService implements OnModuleInit {
       await trx.deleteFrom('trip_documents').where('trip_id', '=', trip.id).execute();
       await trx.deleteFrom('lorry_receipts').where('trip_id', '=', trip.id).execute();
       await trx.updateTable('trips').set({ stage: 'CANCELLED', loading_supervisor_id: null, loading_started_at: null, loading_completed_at: null }).where('id', '=', trip.id).execute();
+      await setFleetVehicleStatus(trx, indent.vendor_id, indent.vehicle_no, 'AVAILABLE');
 
       await trx.updateTable('quotes').set({ status: 'WITHDRAWN' }).where('id', '=', indent.awarded_quote_id as string).execute();
       await trx
@@ -832,6 +852,7 @@ export class IndentsService implements OnModuleInit {
         vehicle_no: null,
         driver_name: null,
         driver_licence: null,
+        driver_phone: null,
         reported_at: null,
       });
       await this.auditService.record(trx, actor, {

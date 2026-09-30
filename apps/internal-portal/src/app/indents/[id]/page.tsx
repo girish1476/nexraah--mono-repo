@@ -5,6 +5,7 @@ import { ReactNode, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ApiError, ApprovalRequiredError, errorMessage } from '@/apis';
 import { AdvancePanel } from '@/components/advance-panel';
+import { AllocateVehicleDialog } from '@/components/allocate-vehicle-dialog';
 import { fmtDate, fmtDateTime, inr } from '@/lib/format';
 import { ROLES } from '@/lib/permissions';
 import {
@@ -30,8 +31,14 @@ import {
 } from '@/lib/ui';
 import { listVendors } from '@/app/vendors/apis';
 import type { VendorListRow } from '@/app/vendors/types';
-import { awardQuote, cancelIndent, createTrip, getIndent, reassignTransporter, recordPlacement, recordQuote } from '../apis';
+import { awardQuote, cancelIndent, createTrip, getIndent, reassignTransporter, recordQuote } from '../apis';
 import { IndentDetail, Quote } from '../types';
+
+const BAND_LABEL: Record<Quote['bandPosition'], string> = {
+  BELOW_BAND: 'Below band',
+  IN_BAND: 'In band',
+  ABOVE_BAND: 'Above band',
+};
 
 /** Stage order for the progress stepper — position, not identity, is what "complete" means. */
 const STAGE_ORDER = ['OPEN', 'VENDOR_ASSIGNED', 'VEHICLE_PLACED', 'TRIP_CREATED'];
@@ -54,13 +61,6 @@ export default function IndentDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [awaitingApproval, setAwaitingApproval] = useState<string | null>(null);
   const [placementOpen, setPlacementOpen] = useState(false);
-  const [placement, setPlacement] = useState({
-    vehicleNo: '',
-    driverName: '',
-    driverLicence: '',
-    reportedAt: new Date().toISOString().slice(0, 16),
-    remarks: '',
-  });
   const [busy, setBusy] = useState(false);
   const [quoteOpen, setQuoteOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
@@ -156,33 +156,6 @@ export default function IndentDetailPage() {
     }
   };
 
-  const openPlacement = () => {
-    const awarded = indent?.quotes.find((q) => q.id === indent.awardedQuoteId);
-    setPlacement((p) => ({
-      ...p,
-      vehicleNo: indent?.vehicleNo ?? awarded?.truckRegistration ?? p.vehicleNo,
-      driverName: indent?.driverName ?? p.driverName,
-      driverLicence: indent?.driverLicence ?? p.driverLicence,
-    }));
-    setPlacementOpen(true);
-  };
-
-  const onPlacement = async () => {
-    if (!indent) return;
-    setBusy(true);
-    const late = new Date(placement.reportedAt).getTime() > new Date(indent.pickupDate).getTime();
-    try {
-      const updated = await recordPlacement(id, { ...placement, transitDelay: late });
-      setIndent(updated);
-      setPlacementOpen(false);
-      toast(late ? 'Placement recorded · flagged as a transit delay' : 'Placement recorded');
-    } catch (e) {
-      toast(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const onCreateTrip = async () => {
     setBusy(true);
     try {
@@ -263,8 +236,8 @@ export default function IndentDetailPage() {
       key: 'band',
       label: 'Band',
       render: (r) => (
-        <Tag tone={r.bandPosition === 'IN_BAND' ? 'mint' : 'flag'}>
-          {r.bandPosition === 'IN_BAND' ? 'In band' : 'Out of band'}
+        <Tag tone={r.bandPosition === 'ABOVE_BAND' ? 'flag' : r.bandPosition === 'BELOW_BAND' ? 'blue' : 'mint'}>
+          {BAND_LABEL[r.bandPosition]}
         </Tag>
       ),
     },
@@ -304,7 +277,7 @@ export default function IndentDetailPage() {
           );
         return (
           <button className="btn btn-sm" disabled={busy} onClick={() => onAward(r)}>
-            {r.bandPosition === 'IN_BAND' ? 'Award' : 'Request approval'}
+            {r.bandPosition === 'ABOVE_BAND' ? 'Request approval' : 'Award'}
           </button>
         );
       },
@@ -395,9 +368,9 @@ export default function IndentDetailPage() {
                 }
               />
               <div className="muted" style={{ fontSize: 11.5, padding: '10px 14px', lineHeight: 1.45 }}>
-                A quote below the floor never reaches this desk — it is refused at entry in the transporter portal
-                and never persisted. An above-band quote is kept and shown, because it is the honest market rate on
-                that lane.
+                A quote below the floor is accepted and tagged “Below band” — cheaper is more margin, but check the
+                transporter can really run it at that price. An above-band quote is kept and shown, because it is the
+                honest market rate on that lane; awarding it goes to approval.
               </div>
             </Panel>
           </>
@@ -446,6 +419,7 @@ export default function IndentDetailPage() {
             <FactList
               facts={[
                 ['Vehicle', indent.vehicleNo],
+                ['Driver mobile', indent.driverPhone ?? '—'],
                 ['Driver', indent.driverName ?? '—'],
                 ['Licence', indent.driverLicence ?? '—'],
                 ['Reported at', fmtDateTime(indent.reportedAt)],
@@ -454,13 +428,13 @@ export default function IndentDetailPage() {
           ) : (
             <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }}>
               {indent.stage === 'TRIP_CREATED'
-                ? `Trip ${indent.tripCode ?? ''} is generated. Allocate the vehicle: registration, driver, licence and the reported-at time. Where reporting is later than the client’s requirement, the trip is flagged as a transit delay in its own right.`
+                ? `Trip ${indent.tripCode ?? ''} is generated. Allocate the vehicle: registration, the driver's mobile number and the reported-at time. Where reporting is later than the client’s requirement, the trip is flagged as a transit delay in its own right.`
                 : 'Accept a quote first. Accepting a bid generates the trip, and the vehicle is allocated on it.'}
             </p>
           )}
           <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
             {(indent.stage === 'VENDOR_ASSIGNED' || indent.stage === 'TRIP_CREATED') && can('indent.manage') && (
-              <button className="btn" onClick={openPlacement}>
+              <button className="btn" onClick={() => setPlacementOpen(true)}>
                 {indent.vehicleNo ? 'Change vehicle' : 'Allocate vehicle'}
               </button>
             )}
@@ -534,7 +508,7 @@ export default function IndentDetailPage() {
           <Field
             label="Quote (₹)"
             required
-            hint={bandText ? `Accepted range for this lane: ${bandText}. Above it goes to approval.` : undefined}
+            hint={bandText ? `Usual range for this lane: ${bandText}. Below it is allowed and flagged; above it goes to approval.` : undefined}
           >
             <input
               type="number"
@@ -555,46 +529,12 @@ export default function IndentDetailPage() {
         </FormGrid>
       </Dialog>
 
-      <Dialog
+      <AllocateVehicleDialog
         open={placementOpen}
-        title="Allocate vehicle"
-        confirmLabel="Allocate vehicle"
-        confirmDisabled={!placement.vehicleNo || !placement.driverName || !placement.driverLicence}
-        busy={busy}
-        onConfirm={onPlacement}
+        indent={indent}
         onClose={() => setPlacementOpen(false)}
-      >
-        <FormGrid>
-          <Field label="Vehicle number" required>
-            <input
-              value={placement.vehicleNo}
-              onChange={(e) => setPlacement({ ...placement, vehicleNo: e.target.value })}
-            />
-          </Field>
-          <Field label="Driver name" required>
-            <input
-              value={placement.driverName}
-              onChange={(e) => setPlacement({ ...placement, driverName: e.target.value })}
-            />
-          </Field>
-          <Field label="Driver licence" required>
-            <input
-              value={placement.driverLicence}
-              onChange={(e) => setPlacement({ ...placement, driverLicence: e.target.value })}
-            />
-          </Field>
-          <Field label="Reported at" required hint={`Client requirement: ${indent.reportingRule.replace(/_/g, ' ').toLowerCase()}`}>
-            <input
-              type="datetime-local"
-              value={placement.reportedAt}
-              onChange={(e) => setPlacement({ ...placement, reportedAt: e.target.value })}
-            />
-          </Field>
-          <Field label="Remarks">
-            <input value={placement.remarks} onChange={(e) => setPlacement({ ...placement, remarks: e.target.value })} />
-          </Field>
-        </FormGrid>
-      </Dialog>
+        onAllocated={setIndent}
+      />
     </ModuleGuard>
   );
 }

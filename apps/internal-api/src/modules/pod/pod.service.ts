@@ -14,6 +14,21 @@ import type { AddDocketDto } from './dto/add-docket.dto';
 import type { WaivePenaltyDto } from './dto/waive-pod.dto';
 import type { ReceivePodDto } from './dto/receive-pod.dto';
 import type { VerifyPodDto } from './dto/verify-pod.dto';
+import { SdrRepository } from '../sdr/sdr.repository';
+import type { SdrKind } from '../sdr/dto/sdr.dto';
+
+/**
+ * Which kind of SDR a verified proof calls for, if any. A failed "no shortage
+ * or damage" check, or a quantity that does not match the invoice, is one;
+ * the verifier's own choice of kind wins, else a quantity mismatch reads as a
+ * shortage and anything else as damage.
+ */
+export function sdrKindFromChecklist(dto: Pick<VerifyPodDto, 'checklist' | 'sdrKind'>): SdrKind | null {
+  const shortOrDamaged = dto.checklist.noShortageOrDamage === false;
+  const quantityOff = dto.checklist.quantityMatchesInvoice === false;
+  if (!shortOrDamaged && !quantityOff) return null;
+  return dto.sdrKind ?? (quantityOff && !shortOrDamaged ? 'SHORTAGE' : 'DAMAGE');
+}
 
 interface PenaltyWaiverAction {
   tripId: string;
@@ -29,6 +44,7 @@ export class PodService implements OnModuleInit {
     private readonly approvalsService: ApprovalsService,
     private readonly approvalsRegistry: ApprovalsRegistry,
     private readonly ordersService: OrdersService,
+    private readonly sdrRepository: SdrRepository,
   ) {}
 
   private readonly logger = new Logger('PodService');
@@ -323,7 +339,37 @@ export class PodService implements OnModuleInit {
         after: { podStatus: 'VERIFIED', remarks: dto.remarks },
       });
 
-      return { tripId, podStatus: 'VERIFIED' };
+      /*
+       * The proof says something arrived short or damaged: that is an SDR.
+       *
+       * The verifier used to tick "shortage or damage noted", write it in the
+       * remarks — and then have to go to the SDR screen and type the same
+       * thing again, or more often not, so the balance was paid in full on a
+       * damaged load. The remarks are now the SDR, raised in the same
+       * transaction, which also holds the balance until it is resolved.
+       */
+      const sdrKind = sdrKindFromChecklist(dto);
+      let sdrCode: string | null = null;
+      if (sdrKind) {
+        sdrCode = await this.numberingService.issue(trx, 'SDR');
+        await this.sdrRepository.insert(trx, {
+          code: sdrCode,
+          tripId,
+          vendorId: trip.vendor_id,
+          kind: sdrKind,
+          description: (dto.remarks ?? '').trim(),
+          claimedPaise: dto.sdrClaimedAmountPaise ?? 0,
+          raisedBy: actor.userId,
+        });
+        await this.auditService.record(trx, actor, {
+          action: 'SDR_RAISED',
+          entityType: 'trips',
+          entityId: tripId,
+          after: { sdr: sdrCode, kind: sdrKind, claimedAmountPaise: dto.sdrClaimedAmountPaise ?? 0, from: 'POD_REMARKS' },
+        });
+      }
+
+      return { tripId, podStatus: 'VERIFIED', sdrCode };
     });
     // Step 9, "POD verified". Note the ladder stops here until the balance is
     // released — approval is a separate gate the ten steps don't name.

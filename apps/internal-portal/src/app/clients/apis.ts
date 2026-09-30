@@ -1,5 +1,5 @@
 import { request } from '@/apis';
-import { Client, ClientDraft, RateCardLane } from './types';
+import { Client, ClientDraft, PendingRateLane, RateCardLane } from './types';
 
 /** GET /clients?q= */
 export function listClients(params: { q?: string } = {}) {
@@ -27,6 +27,11 @@ export function patchClient(id: string, patch: Partial<ClientDraft>) {
  */
 export function getRateCard(id: string) {
   return request<RateCardLane[]>({ url: `/clients/${id}/rate-card`, method: 'GET' });
+}
+
+/** GET /clients/:id/rate-card/pending — lanes proposed and waiting for approval. */
+export function getPendingRateLanes(id: string) {
+  return request<PendingRateLane[]>({ url: `/clients/${id}/rate-card/pending`, method: 'GET' });
 }
 
 /**

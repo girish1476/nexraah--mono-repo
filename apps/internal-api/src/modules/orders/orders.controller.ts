@@ -1,4 +1,5 @@
-import { Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { IsString, MaxLength } from 'class-validator';
 import { SupabaseJwtGuard } from '../../common/guards/supabase-jwt.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
@@ -21,6 +22,10 @@ interface OrderSearchQuery {
   truck?: string;
   ref?: string;
   branchName?: string;
+}
+
+export class AddOrderCommentDto {
+  @IsString() @MaxLength(2000) body!: string;
 }
 
 /** A query value is only text when it is one string — `?q=a&q=b` arrives as an array. */
@@ -94,6 +99,17 @@ export class OrdersController {
   @RequirePermission('indent.view')
   getById(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.orders.getById(id, user);
+  }
+
+  /**
+   * Add a comment to an order. The one write here, and it does not touch the
+   * order's step — a comment is a note beside the record, not part of it.
+   * Anyone who can read the order can comment on it.
+   */
+  @Post(':id/comments')
+  @RequirePermission('indent.view')
+  addComment(@Param('id') id: string, @Body() body: AddOrderCommentDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.orders.addComment(id, body.body, user);
   }
 
   /**

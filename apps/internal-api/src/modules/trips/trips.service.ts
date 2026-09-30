@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { DomainException, assertReason } from '../../common/domain-exception';
 import { assertAnyPermission } from '../../common/guards/assert-any-permission';
 import { computeTransitPenalty } from '../../common/transit-penalty';
+import { setFleetVehicleStatus } from '../../common/fleet-status';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
 import type { ApprovalRequiredResponse } from '../../common/approval-required.response';
 import { AuditService } from '../audit/audit.service';
@@ -123,6 +124,7 @@ export class TripsService implements OnModuleInit {
       weightTn: trip.weight_kg != null ? trip.weight_kg / 1000 : null,
       driverName: trip.driver_name,
       driverLicence: trip.driver_licence,
+      driverPhone: trip.driver_phone ?? null,
       transitDaysRequired: trip.transit_days_required,
       actualTransitDays: trip.actual_transit_days,
       transitDelay,
@@ -544,7 +546,7 @@ export class TripsService implements OnModuleInit {
       // vehicle/driver are NOT NULL too — same reasoning as above, seeded
       // from the trip's own placement data rather than left for the caller.
       if (!dto.vehicle) patch.vehicle = JSON.stringify({ registration: trip.vehicle_no, type: trip.vehicle_type ?? '' });
-      if (!dto.driver) patch.driver = JSON.stringify({ name: trip.driver_name ?? '', licence: trip.driver_licence ?? '' });
+      if (!dto.driver) patch.driver = JSON.stringify({ name: trip.driver_name ?? '', licence: trip.driver_licence ?? '', phone: trip.driver_phone ?? '' });
     }
 
     const row = await this.tripsRepository
@@ -623,9 +625,20 @@ export class TripsService implements OnModuleInit {
       if (trip.stage !== 'OPEN') {
         throw new DomainException(409, 'NOT_OPEN', `Trip ${trip.code} is not OPEN (currently ${trip.stage}).`);
       }
+      if (!trip.vehicle_no) {
+        throw new DomainException(409, 'NOT_PLACED', 'Allocate the vehicle before the trip can start.');
+      }
+      // The lorry receipt is "if needed" (FLOWS.md §6 step 3) — the ladder has
+      // always stepped over a missing one, but departure used to demand it, so
+      // a load that needed no LR could never go on the road. A half-finished
+      // one still blocks: an LR somebody started must be issued, not abandoned.
       const lr = await this.tripsRepository.findLrForUpdate(trx, tripId);
-      if (!lr || lr.status !== 'RELEASED') {
-        throw new DomainException(409, 'LR_NOT_GENERATED', 'The lorry receipt must be generated before departure.');
+      if (lr && lr.status !== 'RELEASED') {
+        throw new DomainException(
+          409,
+          'LR_NOT_GENERATED',
+          'A lorry receipt was started for this trip — issue it before departure, or it travels unissued.',
+        );
       }
       // Once the advance documents are uploaded the truck moves to transit. They do
       // not have to be verified yet: verification is what releases the advance, not
@@ -694,6 +707,9 @@ export class TripsService implements OnModuleInit {
         transit_penalty: transit.penaltyPaise,
       });
       await this.tripsRepository.updateLrStatus(trx, tripId, 'DELIVERED');
+      // Unloaded: the truck is free again, at the delivery city.
+      const toCity = (trip.lane ?? '').split('→')[1]?.trim() || null;
+      await setFleetVehicleStatus(trx, trip.vendor_id, trip.vehicle_no, 'AVAILABLE', toCity);
       await this.auditService.record(trx, actor, {
         action: 'STATUS_CHANGE',
         entityType: 'trips',

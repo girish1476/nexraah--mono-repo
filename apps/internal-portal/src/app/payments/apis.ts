@@ -71,6 +71,16 @@ export function getBill(id: string) {
 }
 
 /**
+ * POST /payments/bills — the desk raises a transporter's bill for them (a
+ * paper or WhatsApp bill). Needs the POD approved; `totalPaise` omitted means
+ * "our computed balance". Above it is flagged, never refused (BR-53).
+ * 409 POD_NOT_APPROVED · BILL_EXISTS · BILL_NO_DUPLICATE.
+ */
+export function raiseBill(body: { tripId: string; billNo: string; billDate: string; totalPaise?: number; attachmentId?: string }) {
+  return request<VendorBill>({ url: '/payments/bills', method: 'POST', data: body });
+}
+
+/**
  * POST /payments/bills/:id/accept
  * Accepting a bill releases the balance for its trip — the same five
  * mandatory payment fields and the same `Idempotency-Key` requirement apply

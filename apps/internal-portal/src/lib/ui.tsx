@@ -10,7 +10,7 @@ import {
 } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
-import { permissionsAtom, roleAtom, toastAtom } from '@/store/atoms';
+import { permissionsAtom, roleAtom, sessionAtom, toastAtom } from '@/store/atoms';
 import { CITIES } from './geo';
 import {
   AreaKey,
@@ -1289,12 +1289,19 @@ export function ModuleGuard({ module, children }: { module: ModuleKey; children:
   const level = useLevel(module);
   const role = useRole();
   const router = useRouter();
+  // `undefined` while the session is still being fetched. The role reads as
+  // OPS until then (`roleAtom`'s fallback), so deciding before it arrives sent
+  // every non-Operations desk away from its own screens on a fresh load — a
+  // Compliance user opening /compliance landed on /today, an Admin on /admin
+  // the same. Wait for the real role before judging access.
+  const session = useAtomValue(sessionAtom);
+  const known = session !== undefined;
 
   useEffect(() => {
-    if (level === 'NONE') router.replace(ROLES[role].landsOn);
-  }, [level, role, router]);
+    if (known && level === 'NONE') router.replace(ROLES[role].landsOn);
+  }, [known, level, role, router]);
 
-  if (level === 'NONE') return null;
+  if (!known || level === 'NONE') return null;
   return <>{children}</>;
 }
 

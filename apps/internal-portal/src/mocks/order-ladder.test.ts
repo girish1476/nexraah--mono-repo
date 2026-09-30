@@ -206,6 +206,26 @@ describe('advance papers', () => {
   });
 });
 
+describe('a truck that has left is on the road, paid advance or not', () => {
+  /*
+   * The regression behind "the vehicle is not moving to the road". Departure
+   * needs the advance papers uploaded; the advance itself waits for them to be
+   * verified. The ladder asked about the advance first, so a departed truck
+   * with an unpaid advance read "Advance papers in" all the way to delivery.
+   */
+  it('departed with the advance unpaid is step 6, not step 4', () => {
+    expect(orderLadder(indent(), trip({ stage: 'IN_TRANSIT' }))).toBe('TRACKING');
+  });
+
+  it('delivered with the advance unpaid is step 7', () => {
+    expect(orderLadder(indent(), trip({ stage: 'DELIVERED' }))).toBe('UNLOADED');
+  });
+
+  it('proof approved with no advance ever paid still reaches step 9', () => {
+    expect(orderLadder(indent(), trip({ stage: 'DELIVERED', podStatus: 'APPROVED' }))).toBe('POD_VERIFIED');
+  });
+});
+
 describe('the lorry receipt is optional (FLOWS.md §6, "if needed")', () => {
   it('an order with no LR is not stuck at step 2 once its papers are in', () => {
     expect(orderLadder(indent(), trip({ lrCode: null }))).toBe('ADVANCE_DOCS_UPLOADED');

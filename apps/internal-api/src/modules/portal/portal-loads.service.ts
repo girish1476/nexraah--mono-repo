@@ -14,6 +14,7 @@ import {
   exposeAll,
 } from './portal.dto';
 import type { SubmitQuoteDto } from './portal-write.dto';
+import { bandPositionFor } from '../../common/band-position';
 import { PortalWriteResult, type PortalVendor } from './portal.types';
 
 /**
@@ -165,7 +166,8 @@ export class PortalLoadsService {
    * 3. an indent that has moved off `OPEN`, or already carries a vendor, is
    *    `409 LOAD_CLOSED` — the transporter had it on screen and the desk awarded
    *    it while they typed;
-   * 4. below `bid_min` is `422 BELOW_BAND` and **nothing is persisted**;
+   * 4. below `bid_min` is ACCEPTED, stored `BELOW_BAND` and reported to the
+   *    transporter as an ordinary `SUBMITTED` quote — the flag is for the desk;
    * 5. above `bid_max` is ACCEPTED, stored `ABOVE_BAND`, and reported as
    *    `PENDING_APPROVAL`.
    *
@@ -223,22 +225,10 @@ export class PortalLoadsService {
       throw portalError('LOAD_CLOSED', 'This load is no longer accepting quotes.');
     }
 
-    // BR-05, before anything is written. `details.bidMin` is the one detail the
-    // filter's allow-list lets through, and it is a number already printed on
-    // the load card as `bandLowPaise`.
-    if (indent.bidMinPaise !== null && dto.amountPaise < indent.bidMinPaise) {
-      throw portalError(
-        'BELOW_BAND',
-        `Nexraah will not award this lane below ₹${formatPaise(indent.bidMinPaise)} — ` +
-          'it would run at a loss for you and for the desk.',
-        { bidMin: indent.bidMinPaise },
-      );
-    }
-
-    const bandPosition =
-      indent.bidMaxPaise !== null && dto.amountPaise > indent.bidMaxPaise
-        ? 'ABOVE_BAND'
-        : 'IN_BAND';
+    // A quote under the floor is no longer refused: it is stored and flagged
+    // `BELOW_BAND` for the desk to judge. The transporter is not told it was
+    // flagged — to them it is an ordinary submitted quote.
+    const bandPosition = bandPositionFor(dto.amountPaise, indent.bidMinPaise, indent.bidMaxPaise);
 
     return this.repository.transaction().execute(async (trx) => {
       // `03-P2` §2 / `04-P3` §2: own fleet, `AVAILABLE` only. The quote form
@@ -434,16 +424,6 @@ function quoteStatus(status: string, bandPosition: string | null): string {
 function lostReason(portalStatus: string, indentStage: string): string | null {
   if (portalStatus !== 'LOST') return null;
   return indentStage === 'OPEN' ? 'EXPIRED' : 'AWARDED_ELSEWHERE';
-}
-
-/**
- * `BELOW_BAND`'s sentence names the floor in rupees, because the transporter is
- * looking at that same number on the load card as `bandLowPaise`. It is the only
- * money any portal error message may carry — never a rival's amount, never the
- * ceiling, never a count.
- */
-function formatPaise(paise: number): string {
-  return (paise / 100).toLocaleString('en-IN', { maximumFractionDigits: 0 });
 }
 
 function splitCsv(value?: string): string[] | undefined {

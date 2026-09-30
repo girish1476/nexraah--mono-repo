@@ -29,6 +29,11 @@ function fieldError(page: Page, label: string) {
     .locator('.err');
 }
 
+/** A contract client's "Agreed lane" dropdown. */
+function laneSelect(page: Page) {
+  return fieldControl(page, 'Agreed lane');
+}
+
 /** `FactList` renders `[label span][value span]` as flex siblings. */
 function factValue(page: Page, label: string) {
   return page.getByText(label, { exact: true }).locator('xpath=following-sibling::span[1]');
@@ -104,23 +109,25 @@ test.describe('raise an indent', () => {
     await setRole(page, 'OPS');
     await page.goto('/indents/new');
 
+    // A spot client is priced by hand — no lane dropdown, no rate source to pick.
     await page.locator('select[name="clientId"]').selectOption({ label: 'Sanghvi Metals · SPOT' });
+    await expect(page.getByText('Spot — entered for this load')).toBeVisible();
+    await expect(page.getByText('Agreed lane', { exact: true })).toHaveCount(0);
     await page.locator('input[name="fromCity"]').fill('Nashik');
     await page.locator('input[name="toCity"]').fill('Pune');
     await page.locator('input[name="material"]').fill('Steel coil');
     await page.locator('input[name="weightTn"]').fill('10');
     await page.locator('input[name="truckType"]').fill('32 ft SXL');
     await page.locator('input[name="pickupDate"]').fill('2026-09-01');
-    await page.locator('select[name="rateSource"]').selectOption('SPOT');
     await page.locator('input[name="sourcingRupees"]').fill('30000');
     await page.locator('input[name="sellRupees"]').fill('35000');
 
     // Positive margin banner, but the raise button stays disabled without
-    // the client's written rate approval attached.
+    // the client's confirmation screenshot attached.
     await expect(page.getByText('Margin ₹5,000')).toBeVisible();
     await expect(page.getByText('14.3% over the sourcing rate')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Raise indent' })).toBeDisabled();
-    await expect(page.getByText('written rate approval first')).toBeVisible();
+    await expect(page.getByText('Attach the client’s confirmation screenshot first.')).toBeVisible();
 
     // The attach button is `disabled={!confirmationFile}` — a real file has to
     // be chosen first. This used to click straight through, which only ever
@@ -132,9 +139,9 @@ test.describe('raise an indent', () => {
       mimeType: 'application/pdf',
       buffer: Buffer.from('%PDF-1.4 e2e client rate approval'),
     });
-    await page.getByRole('button', { name: 'Attach client rate approval' }).click();
-    await expect(page.getByText('Client rate approval attached')).toBeVisible();
-    await expect(page.getByText('Rate approval attached', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Attach', exact: true }).click();
+    await expect(page.getByText('Client confirmation attached')).toBeVisible();
+    await expect(page.getByText('Attached', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Raise indent' })).toBeEnabled();
   });
 
@@ -160,13 +167,16 @@ test.describe('raise an indent', () => {
     await page.goto('/indents/new');
 
     await page.locator('select[name="clientId"]').selectOption({ label: 'Berger Paints · CONTRACT' });
-    await page.locator('input[name="fromCity"]').fill('Kolkata');
-    await page.locator('input[name="toCity"]').fill('Nashik');
+    // Choosing the agreed lane fills the route, truck and freight, and locks them.
+    await laneSelect(page).selectOption('rc-1');
+    await expect(page.locator('input[name="fromCity"]')).toHaveValue('Kolkata');
+    await expect(page.locator('input[name="toCity"]')).toHaveValue('Nashik');
+    await expect(page.locator('input[name="truckType"]')).toHaveValue('32 ft SXL');
+    await expect(page.locator('input[name="sellRupees"]')).toHaveValue('64200');
+    await expect(page.locator('input[name="fromCity"]')).not.toBeEditable();
     await page.locator('input[name="material"]').fill('Paint drums');
     await page.locator('input[name="weightTn"]').fill('12');
-    await page.locator('input[name="truckType"]').fill('32 ft SXL');
     await page.locator('input[name="pickupDate"]').fill('2026-09-10');
-    await page.locator('input[name="sellRupees"]').fill('64200');
     await page.getByRole('button', { name: 'Raise indent' }).click();
 
     await expect(page).toHaveURL(/\/indents\/i-\d+$/);
@@ -175,54 +185,65 @@ test.describe('raise an indent', () => {
     await expect(factValue(page, 'Advance %')).toHaveText('Transporter’s standing policy · applies once awarded');
   });
 
-  test('a route the rate card does not cover gets no band, and a typed advance % is kept as this order’s own', async ({
+  test('a contract client’s route the rate card does not cover is booked as spot: no band, confirmation required, typed advance % kept', async ({
     page,
   }) => {
     await setRole(page, 'OPS');
     await page.goto('/indents/new');
 
     await page.locator('select[name="clientId"]').selectOption({ label: 'Berger Paints · CONTRACT' });
+    await page.getByRole('button', { name: 'Book it as spot' }).click();
+    await expect(page.getByText('Booked as spot — off the rate card')).toBeVisible();
     await page.locator('input[name="fromCity"]').fill('Nashik');
     await page.locator('input[name="toCity"]').fill('Surat');
     await page.locator('input[name="material"]').fill('Cotton bales');
     await page.locator('input[name="weightTn"]').fill('12');
     await page.locator('input[name="truckType"]').fill('32 ft SXL');
     await page.locator('input[name="pickupDate"]').fill('2026-09-10');
+    await page.locator('input[name="sourcingRupees"]').fill('34000');
     await page.locator('input[name="sellRupees"]').fill('40000');
     await page.locator('input[name="advancePct"]').fill('25');
+    await expect(page.getByRole('button', { name: 'Raise indent' })).toBeDisabled();
+    await page.locator('input[type="file"]').setInputFiles({
+      name: 'confirmation.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from('89504e470d0a1a0a', 'hex'),
+    });
+    await page.getByRole('button', { name: 'Attach', exact: true }).click();
+    await expect(page.getByText('Client confirmation attached')).toBeVisible();
     await page.getByRole('button', { name: 'Raise indent' }).click();
 
     await expect(page).toHaveURL(/\/indents\/i-\d+$/);
+    await expect(factValue(page, 'Rate source')).toHaveText('SPOT');
     await expect(factValue(page, 'Band')).toHaveText('No limits set on the client’s rate card for this lane');
     await expect(factValue(page, 'Advance %')).toHaveText('25% · set for this order');
   });
 
-  test('a valid contract indent is created and lands on its detail page', async ({ page }) => {
+  test('a valid contract indent is created from its lane and lands on its detail page', async ({ page }) => {
     await setRole(page, 'OPS');
     await page.goto('/indents/new');
 
     await page.locator('select[name="clientId"]').selectOption({ label: 'Berger Paints · CONTRACT' });
-    await page.locator('input[name="fromCity"]').fill('Nashik');
-    await page.locator('input[name="toCity"]').fill('Surat');
+    // A contract load cannot be raised without choosing the agreed lane.
     await page.locator('input[name="material"]').fill('Cotton bales');
     await page.locator('input[name="weightTn"]').fill('12');
-    await page.locator('input[name="truckType"]').fill('32 ft SXL');
     await page.locator('input[name="pickupDate"]').fill('2026-09-10');
-    // rateSource stays CONTRACT (default) — no sourcing rate/attachment needed.
-    await page.locator('input[name="sellRupees"]').fill('40000');
+    await page.getByRole('button', { name: 'Raise indent' }).click();
+    await expect(page.getByText(/Choose the agreed lane/).first()).toBeVisible();
+    await expect(page).toHaveURL(/\/indents\/new$/);
 
+    await laneSelect(page).selectOption('rc-1');
     await page.getByRole('button', { name: 'Raise indent' }).click();
 
     await expect(page).toHaveURL(/\/indents\/i-\d+$/);
     await expect(page.getByRole('heading', { name: '4472' })).toBeVisible();
 
     await expect(factValue(page, 'Client')).toHaveText('Berger Paints');
-    await expect(factValue(page, 'Branch')).toHaveText('Nashik');
     await expect(factValue(page, 'Material')).toHaveText('Cotton bales');
     await expect(factValue(page, 'Truck type')).toHaveText('32 ft SXL');
     await expect(factValue(page, 'Weight')).toHaveText('12 MT');
     await expect(factValue(page, 'Rate source')).toHaveText('CONTRACT');
-    await expect(factValue(page, 'Client sell rate')).toHaveText('₹40,000');
+    await expect(factValue(page, 'Client sell rate')).toHaveText('₹64,200');
     await expect(factValue(page, 'Buy rate')).toHaveText('not yet awarded');
   });
 });
@@ -251,7 +272,7 @@ test.describe('indent detail', () => {
     await expect(page.getByRole('link', { name: 'Bhagwati Logistics' })).toBeVisible();
     await expect(page.getByText('been cleared by Compliance yet')).toHaveCount(2);
     await expect(page.getByText('In band', { exact: true })).toHaveCount(2);
-    await expect(page.getByText('Out of band', { exact: true })).toHaveCount(1);
+    await expect(page.getByText('Above band', { exact: true })).toHaveCount(1);
     await expect(page.getByRole('button', { name: 'Request approval' })).toBeVisible();
   });
 
