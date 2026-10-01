@@ -26,7 +26,7 @@ const STEPS: { key: string; label: string; emoji: string }[] = [
   { key: 'LOADED', label: 'Loaded', emoji: '📦' },
   { key: 'DEPARTED', label: 'On the road', emoji: '🚚' },
   { key: 'REACHED', label: 'Reached the unloading point', emoji: '🏁' },
-  { key: 'UNLOADED', label: 'Unloaded', emoji: '✅' },
+  { key: 'UNLOADED', label: 'Unloaded', emoji: '📤' },
 ];
 
 const KIND_LABEL: Record<TrackingKind, string> = {

@@ -711,7 +711,7 @@ export interface JourneyStep {
 export const JOURNEY_STEPS: JourneyStep[] = [
   { label: 'Load requested', emoji: '📝', term: 'Indent created' },
   { label: 'Vehicle booked', emoji: '🚚', term: 'Trip generated' },
-  { label: 'Lorry receipt issued', emoji: '🧾', term: 'LR issued' },
+  { label: 'Lorry receipt (if needed)', emoji: '🧾', term: 'LR issued — only when the load needs one' },
   { label: 'Advance papers in', emoji: '📄', term: 'Advance documents uploaded' },
   { label: 'Advance paid', emoji: '⏩', term: 'Advance released to transporter' },
   { label: 'On the road', emoji: '📍', term: 'In transit / tracking' },
