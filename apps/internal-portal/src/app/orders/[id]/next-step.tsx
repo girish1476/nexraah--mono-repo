@@ -6,14 +6,16 @@ import { ApprovalRequiredError, errorMessage } from '@/apis';
 import { AllocateVehicleDialog } from '@/components/allocate-vehicle-dialog';
 import { awardQuote, getIndent } from '@/app/indents/apis';
 import type { IndentDetail, Quote } from '@/app/indents/types';
-import { completeLoading, deliverTrip, departTrip, getTrip, startLoading } from '@/app/trips/apis';
+import { useAtomValue } from 'jotai';
+import { addTracking, deliverTrip, departTrip, getTrip } from '@/app/trips/apis';
 import type { TripDetail } from '@/app/trips/types';
-import { inr } from '@/lib/format';
+import { fmtDateTime, inr } from '@/lib/format';
 import { Banner, Panel, Tag, useCan, useToast } from '@/lib/ui';
+import { sessionAtom } from '@/store/atoms';
 import type { OrderDetail } from '../types';
 
 /** Where the order page can send someone to finish a step in place. */
-export type OrderTabTarget = 'documents' | 'invoice';
+export type OrderTabTarget = 'documents' | 'tracking';
 
 interface Check {
   label: string;
@@ -48,6 +50,7 @@ export function OrderNextStep({
 }) {
   const can = useCan();
   const toast = useToast();
+  const session = useAtomValue(sessionAtom);
   const [indent, setIndent] = useState<IndentDetail | null>(null);
   const [trip, setTrip] = useState<TripDetail | null>(null);
   const [busy, setBusy] = useState(false);
@@ -178,7 +181,9 @@ export function OrderNextStep({
     const gating = trip.documents.filter((d) => d.gatesAdvance);
     const docsIn = gating.filter((d) => d.status === 'PENDING' || d.status === 'VERIFIED').length;
     const lrStarted = !!trip.lr && trip.lr.status !== 'RELEASED';
-    const loadingNeeded = !!trip.loadingSupervisorId;
+    const canMark = canRun || (!!trip.loadingSupervisorId && trip.loadingSupervisorId === session?.userId);
+    // The order cycle, in the order Operations works it: vehicle → reached the
+    // loading point → loaded → advance documents → (LR if needed) → on the road.
     const checks: Check[] = [
       {
         label: trip.vehicleNo ? `Vehicle allocated · ${trip.vehicleNo}` : 'Vehicle allocated',
@@ -192,12 +197,44 @@ export function OrderNextStep({
         ),
       },
       {
+        label: trip.reachedLoadingAt ? `Reached the loading point · ${fmtDateTime(trip.reachedLoadingAt)}` : 'Reached the loading point',
+        done: !!trip.reachedLoadingAt || !!trip.loadingCompletedAt,
+        todo: !canMark ? (
+          opsOnly
+        ) : (
+          <button
+            className="btn btn-sm"
+            disabled={busy || !trip.vehicleNo}
+            onClick={() => run(() => addTracking(trip.id, { kind: 'REACHED_LOADING' }), 'Marked · reached the loading point')}
+          >
+            📍 Reached the loading point
+          </button>
+        ),
+      },
+      {
+        label: trip.loadingCompletedAt ? `Loaded · ${fmtDateTime(trip.loadingCompletedAt)}` : 'Loaded',
+        done: !!trip.loadingCompletedAt,
+        todo: !canMark ? (
+          opsOnly
+        ) : (
+          <button
+            className="btn btn-sm"
+            disabled={busy || !trip.reachedLoadingAt}
+            onClick={() => run(() => addTracking(trip.id, { kind: 'LOADED' }), 'Marked loaded · upload the advance documents next')}
+          >
+            📦 Loaded
+          </button>
+        ),
+      },
+      {
         label: `Advance documents uploaded · ${docsIn} of ${gating.length}`,
         done: docsIn === gating.length,
-        todo: (
+        todo: trip.loadingCompletedAt ? (
           <button className="btn btn-secondary btn-sm" onClick={() => openTab('documents')}>
             Upload documents
           </button>
+        ) : (
+          <span className="muted">Uploaded once the truck is loaded</span>
         ),
       },
       {
@@ -210,34 +247,15 @@ export function OrderNextStep({
           </button>
         ),
       },
-      ...(loadingNeeded
-        ? [
-            {
-              label: `Loading complete · ${trip.loadingSupervisorName ?? 'supervisor'}`,
-              done: !!trip.loadingCompletedAt,
-              todo: !canRun ? (
-                opsOnly
-              ) : !trip.loadingStartedAt ? (
-                <button
-                  className="btn btn-sm"
-                  disabled={busy || !trip.vehicleNo}
-                  onClick={() => run(() => startLoading(trip.id), 'Loading started')}
-                >
-                  Start loading
-                </button>
-              ) : (
-                <button className="btn btn-sm" disabled={busy} onClick={() => run(() => completeLoading(trip.id), 'Loading marked complete')}>
-                  Loading complete
-                </button>
-              ),
-            } satisfies Check,
-          ]
-        : []),
       {
         label: trip.advancePaidPaise > 0 ? `Advance paid · ${inr(trip.advancePaidPaise)}` : 'Advance paid',
         done: trip.advancePaidPaise > 0,
         optional: true,
-        todo: <span className="muted">Finance releases it once Compliance verifies the documents — it does not hold the truck</span>,
+        todo: (
+          <span className="muted">
+            Finance releases it once Compliance verifies the documents — then the truck moves to the road by itself
+          </span>
+        ),
       },
     ];
     const blocking = checks.filter((c) => !c.done && !c.optional);
@@ -280,13 +298,30 @@ export function OrderNextStep({
   // ---- On the road ----------------------------------------------------------------
   if (trip.stage === 'IN_TRANSIT') {
     return (
-      <Panel title="👉 Next step · deliver">
+      <Panel
+        title="👉 Next step · deliver"
+        right={
+          <button className="btn btn-secondary btn-sm" onClick={() => openTab('tracking')}>
+            🧭 Open Tracking
+          </button>
+        }
+      >
         <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }}>
-          The truck is on the road — its live position is in the tracking panel below. Mark it delivered when it
-          is unloaded; that starts the delivery-proof clock.
+          The truck is on the road. Keep the Tracking tab updated, mark it at the unloading point, then mark it
+          unloaded — that starts the delivery-proof clock.
+          {trip.reachedDestinationAt ? ` Reached the unloading point ${fmtDateTime(trip.reachedDestinationAt)}.` : ''}
         </p>
         {canRun ? (
           <div style={{ display: 'flex', gap: 10, alignItems: 'end', flexWrap: 'wrap' }}>
+            {!trip.reachedDestinationAt && (
+              <button
+                className="btn btn-secondary"
+                disabled={busy}
+                onClick={() => run(() => addTracking(trip.id, { kind: 'REACHED' }), 'Marked · reached the unloading point')}
+              >
+                🏁 Reached the unloading point
+              </button>
+            )}
             <label className="field" style={{ margin: 0 }}>
               <span className="muted" style={{ fontSize: 11.5 }}>
                 Unloaded at
@@ -299,11 +334,11 @@ export function OrderNextStep({
               onClick={() =>
                 run(
                   () => deliverTrip(trip.id, new Date(deliveredAt).toISOString()),
-                  'Marked delivered — the delivery-proof clock starts now',
+                  'Marked unloaded — upload the proof of delivery next',
                 )
               }
             >
-              📦 Mark delivered
+              📦 Mark unloaded
             </button>
           </div>
         ) : (
@@ -318,11 +353,11 @@ export function OrderNextStep({
   const podDone = pod === 'APPROVED' || pod === 'WAIVED';
   const checks: Check[] = [
     {
-      label: 'Delivery proof received',
+      label: 'Proof of delivery in — E-POD or H-POD',
       done: pod !== 'PENDING' && pod !== 'ATTACHED' && pod !== 'FORFEITED',
       todo: (
         <button className="btn btn-sm" onClick={() => openTab('documents')}>
-          {pod === 'ATTACHED' ? 'Receive the paper copy' : 'Upload or receive the proof'}
+          {pod === 'ATTACHED' ? 'Receive the proof' : 'Upload E-POD or log H-POD'}
         </button>
       ),
     },
@@ -343,10 +378,12 @@ export function OrderNextStep({
     {
       label: order.invoiceCode ? `Client invoiced · ${order.invoiceCode}` : 'Client invoiced',
       done: !!order.invoiceId,
-      todo: (
-        <button className="btn btn-secondary btn-sm" onClick={() => openTab('invoice')}>
-          Go to invoice
-        </button>
+      todo: can('invoice.create') ? (
+        <Link className="btn btn-secondary btn-sm" href={`/invoices/new?client=${order.clientId}&trip=${trip.id}`}>
+          Raise the invoice
+        </Link>
+      ) : (
+        <span className="muted">Finance raises it</span>
       ),
     },
   ];

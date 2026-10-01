@@ -252,6 +252,31 @@ export class OrdersService {
       // receipt's own Remarks field already; surfaced here too as the order
       // page's Comments tab, so it doesn't take opening the LR to read it.
       remarks: order.remarks,
+      // Everything about the order on its Details tab: where it loads and
+      // delivers, who carries it, where the truck has got to, and the invoice.
+      pickupAddress: order.pickupAddress ?? null,
+      dropAddress: order.dropAddress ?? null,
+      vendorCode: order.vendorCode ?? null,
+      vendorPhone: order.vendorPhone ?? null,
+      tripStage: order.tripStage ?? null,
+      milestones: {
+        reachedLoadingAt: order.reachedLoadingAt ?? null,
+        loadedAt: order.loadedAt ?? null,
+        departedAt: order.departedAt ?? null,
+        reachedDestinationAt: order.reachedDestinationAt ?? null,
+        deliveredAt: order.deliveredAt ?? null,
+      },
+      podStatus: order.podStatus ?? null,
+      invoice: order.invoiceId
+        ? {
+            id: order.invoiceId,
+            code: order.invoiceCode,
+            status: order.invoiceStatus,
+            invoiceDate: order.invoiceDate,
+            totalPaise: Number(order.invoiceTotalPaise ?? 0),
+            receivedPaise: Number(order.invoiceReceivedPaise ?? 0),
+          }
+        : null,
       payments,
       events,
       comments,

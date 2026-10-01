@@ -14,6 +14,7 @@ import type { AddDocketDto } from './dto/add-docket.dto';
 import type { WaivePenaltyDto } from './dto/waive-pod.dto';
 import type { ReceivePodDto } from './dto/receive-pod.dto';
 import type { VerifyPodDto } from './dto/verify-pod.dto';
+import type { UploadEpodDto } from './dto/upload-epod.dto';
 import { SdrRepository } from '../sdr/sdr.repository';
 import type { SdrKind } from '../sdr/dto/sdr.dto';
 
@@ -241,6 +242,53 @@ export class PodService implements OnModuleInit {
     return receipt;
   }
 
+  /**
+   * E-POD: the proof of delivery as a photo or scan, uploaded from the desk.
+   * The other way in is H-POD — the signed hard copy by courier (`receive`).
+   * Either one stops the clock and opens verification; an E-POD needs no
+   * courier docket because nothing was couriered.
+   */
+  async uploadEpod(tripId: string, dto: UploadEpodDto, actor: AuthenticatedUser) {
+    let indentId: string | null = null;
+    const receipt = await this.podRepository.transaction().execute(async (trx) => {
+      const trip = await this.podRepository.findTripForUpdate(trx, tripId);
+      if (!trip) throw new DomainException(404, 'NOT_FOUND', `Unknown trip: ${tripId}`);
+      indentId = trip.indent_id;
+      if (!trip.delivered_at) {
+        throw new DomainException(409, 'NOT_DELIVERED', 'The proof of delivery is uploaded once the truck is unloaded.');
+      }
+      if (!['PENDING', 'ATTACHED', 'REJECTED'].includes(trip.pod_status)) {
+        throw new DomainException(409, 'POD_NOT_AWAITED', `This delivery proof is ${trip.pod_status.toLowerCase()}; there is nothing left to receive.`);
+      }
+      await this.podRepository.ensureSeriesForBranch(trx, trip.branch_id);
+      const code = await this.numberingService.issue(trx, 'POD_RECEIPT', trip.branch_id);
+      const today = new Date().toISOString().slice(0, 10);
+      const row = await this.podRepository.insertEpod(trx, {
+        code,
+        tripId,
+        attachmentIds: dto.attachmentIds,
+        receivedOn: today,
+        pages: dto.attachmentIds.length,
+        receivedBy: actor.name,
+      });
+      await this.podRepository.updateTrip(trx, tripId, {
+        pod_status: 'RECEIVED',
+        pod_received_at: new Date().toISOString(),
+      });
+      await this.auditService.record(trx, actor, {
+        action: 'STATUS_CHANGE',
+        entityType: 'trips',
+        entityId: tripId,
+        before: { podStatus: trip.pod_status },
+        after: { podStatus: 'RECEIVED', podKind: 'EPOD', receiptCode: code, note: dto.note ?? null },
+      });
+      return { id: row.id, code: row.code, tripId, podKind: 'EPOD', attachmentIds: dto.attachmentIds, receivedOn: today };
+    });
+    // Step 8, "POD uploaded".
+    await this.syncOrder(indentId, actor);
+    return receipt;
+  }
+
   async getById(tripId: string) {
     const trip = await this.podRepository.findTripDetailById(tripId);
     if (!trip) throw new DomainException(404, 'NOT_FOUND', `Unknown trip: ${tripId}`);
@@ -280,8 +328,10 @@ export class PodService implements OnModuleInit {
             pages: receipt.pages,
             receivedBy: receipt.received_by,
             condition: receipt.condition,
+            podKind: receipt.pod_kind,
           }
         : null,
+      podKind: receipt?.pod_kind ?? null,
       pages: receipt?.pages ?? null,
       attachmentIds: receipt?.attachment_ids ?? [],
       // BR-50 presentation half: the frontend withholds Approve when this

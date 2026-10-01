@@ -88,3 +88,16 @@ export function waivePenalty(
 ) {
   return request<{ tripId: string; kind: string; waivedPaise: number }>({ url: `/pod/${tripId}/waive`, method: 'POST', data: body });
 }
+
+/**
+ * POST /pod/:tripId/epod · `pod.receive` — E-POD: the proof of delivery as a
+ * photo or scan, uploaded through `/attachments` first. It stops the clock and
+ * can be verified at once; H-POD (`receivePod`) is the courier hard copy.
+ */
+export function uploadEpod(tripId: string, attachmentIds: string[]) {
+  return request<{ id: string; code: string; tripId: string; podKind: 'EPOD'; attachmentIds: string[]; receivedOn: string }>({
+    url: `/pod/${tripId}/epod`,
+    method: 'POST',
+    data: { attachmentIds },
+  });
+}

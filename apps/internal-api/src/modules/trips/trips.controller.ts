@@ -11,6 +11,7 @@ import { CreateChargeDto } from './dto/create-charge.dto';
 import { PatchLrDto } from './dto/patch-lr.dto';
 import { CrossCheckOverrideDto } from './dto/cross-check-override.dto';
 import { DeliverTripDto } from './dto/deliver-trip.dto';
+import { AddTrackingDto } from './dto/add-tracking.dto';
 import { AssignLoadingSupervisorDto } from './dto/assign-loading-supervisor.dto';
 
 @Controller('trips')
@@ -26,8 +27,9 @@ export class TripsController {
     @Query('branch') branchId?: string,
     @Query('transporter') vendorId?: string,
     @Query('pod_status') podStatus?: string,
+    @Query('invoiceable') invoiceable?: string,
   ) {
-    return this.tripsService.list({ q, field, stage, branchId, vendorId, podStatus });
+    return this.tripsService.list({ q, field, stage, branchId, vendorId, podStatus, invoiceable: invoiceable === '1' });
   }
 
   @Get(':id')
@@ -172,5 +174,21 @@ export class TripsController {
   @RequirePermission('indent.manage')
   deliver(@Param('id') id: string, @Body() dto: DeliverTripDto, @CurrentUser() user: AuthenticatedUser) {
     return this.tripsService.deliver(id, dto, user);
+  }
+
+  /** The trip's tracking sheet — milestones and position updates. Anyone who can see the trip. */
+  @Get(':id/tracking')
+  tracking(@Param('id') id: string) {
+    return this.tripsService.trackingSheet(id);
+  }
+
+  /**
+   * One line on the tracking sheet: a position update, or a milestone —
+   * reached the loading point, loaded, reached the unloading point. The trip's
+   * loading supervisor or Operations (`indent.manage`), checked in the service.
+   */
+  @Post(':id/tracking')
+  addTracking(@Param('id') id: string, @Body() dto: AddTrackingDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.tripsService.addTracking(id, dto, user);
   }
 }

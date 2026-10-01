@@ -186,8 +186,23 @@ export class OrdersRepository {
         'trips.advance_paid as advancePaidPaise',
         'trips.balance_paid as balancePaidPaise',
         'vendors.legal_name as vendorName',
+        'vendors.code as vendorCode',
+        'vendors.phone as vendorPhone',
+        'indents.pickup_address as pickupAddress',
+        'indents.drop_address as dropAddress',
+        'trips.stage as tripStage',
+        'trips.reached_loading_at as reachedLoadingAt',
+        'trips.loading_completed_at as loadedAt',
+        'trips.departed_at as departedAt',
+        'trips.reached_destination_at as reachedDestinationAt',
+        'trips.delivered_at as deliveredAt',
+        'trips.pod_status as podStatus',
         'invoices.id as invoiceId',
         'invoices.code as invoiceCode',
+        'invoices.status as invoiceStatus',
+        'invoices.invoice_date as invoiceDate',
+        'invoices.total as invoiceTotalPaise',
+        'invoices.received as invoiceReceivedPaise',
       ]);
   }
 

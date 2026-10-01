@@ -28,13 +28,14 @@ async function openOrder(page: Page) {
 }
 
 test.describe('Order page', () => {
-  test('has Details, Documents and Invoice tabs — no separate Payments, Delivery proof or Comments tab', async ({ page }) => {
+  test('has only Details, Documents and Tracking tabs — no Payments, Delivery proof, Invoice or Comments tab', async ({ page }) => {
     await setRole(page, 'FINANCE');
     await page.goto('/orders/i-4421');
-    for (const name of [/Details/, /Documents/, /Invoice/]) {
+    await expect(page.getByRole('tab')).toHaveCount(3);
+    for (const name of [/Details/, /Documents/, /Tracking/]) {
       await expect(page.getByRole('tab', { name })).toBeVisible();
     }
-    for (const name of [/Payments/, /Delivery proof/, /Comments/]) {
+    for (const name of [/Payments/, /Delivery proof/, /Invoice/, /Comments/]) {
       await expect(page.getByRole('tab', { name })).toHaveCount(0);
     }
   });
@@ -85,11 +86,32 @@ test.describe('Order page', () => {
     await expect(page.getByText('📍 Vehicle tracking')).toBeVisible();
   });
 
-  test('the Invoice tab shows the client side of the money', async ({ page }) => {
+  test('Details carries the client invoice, the addresses, the transporter and the document record', async ({ page }) => {
     await setRole(page, 'FINANCE');
-    await page.goto('/orders/i-4421');
-    await page.getByRole('tab', { name: /Invoice/ }).click();
+    await openOrder(page);
     await expect(page.getByRole('heading', { name: /🧾 (Client invoice|Invoice )/ })).toBeVisible();
+    await expect(page.getByText('Loading address', { exact: true })).toBeVisible();
+    await expect(page.getByText('Transporter phone')).toBeVisible();
+    await expect(page.getByText('📎 Documents — uploaded and verified')).toBeVisible();
+  });
+
+  test('Documents shows each document’s photo beside the details on it, not who uploaded it', async ({ page }) => {
+    await setRole(page, 'OPS');
+    await page.goto('/orders/i-4421');
+    await page.getByRole('tab', { name: /Documents/ }).click();
+    const invoiceCard = page.locator('[data-doc="invoice"]');
+    await expect(invoiceCard.getByText('Invoice number')).toBeVisible();
+    await expect(page.locator('[data-doc="vehicle"]').getByText('RC number')).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'Verified by' })).toHaveCount(0);
+  });
+
+  test('Tracking shows the order cycle, the map and the tracking sheet', async ({ page }) => {
+    await setRole(page, 'OPS');
+    await page.goto('/orders/i-4421');
+    await page.getByRole('tab', { name: /Tracking/ }).click();
+    await expect(page.getByRole('list', { name: 'Order cycle' })).toBeVisible();
+    await expect(page.locator('iframe[title^="Map"]')).toBeVisible();
+    await expect(page.getByText('📋 Tracking sheet')).toBeVisible();
   });
 
   test('a comment is added from the 💬 button and stays on the order', async ({ page }) => {

@@ -446,6 +446,12 @@ export interface RateCardLanesTable {
   /** The BD/Leadership approval mail behind this rate. */
   approval_mail_subject: string | null;
   approval_mail_attachment_id: string | null;
+  /** FTL — the rate is for the whole truck; PMT — per metric tonne. */
+  rate_basis: Generated<string>;
+  /** A duplicate removed by Leadership or an administrator. Kept, never read as live. */
+  deleted_at: string | null;
+  deleted_by: string | null;
+  delete_reason: string | null;
   created_at: Generated<string>;
   updated_at: Generated<string>;
 }
@@ -514,6 +520,8 @@ export interface IndentsTable {
   driver_name: string | null;
   driver_licence: string | null;
   driver_phone: string | null;
+  pickup_address: string | null;
+  drop_address: string | null;
   reported_at: string | null;
   failure_cause: string | null;
   created_at: Generated<string>;
@@ -616,10 +624,29 @@ export interface TripsTable {
   loading_started_at: string | null;
   loading_completed_at: string | null;
   departed_at: string | null;
+  /** When the truck reached the loading point — before it is loaded. */
+  reached_loading_at: string | null;
+  /** When the truck reached the unloading point — before it is unloaded. */
+  reached_destination_at: string | null;
   transit_penalty: Generated<number>;
   transit_penalty_waived: Generated<boolean>;
   created_at: Generated<string>;
   updated_at: Generated<string>;
+}
+
+/** The manual tracking sheet for a trip on the road. Internal only. */
+export interface TripTrackingUpdatesTable {
+  id: Generated<string>;
+  trip_id: string;
+  kind: Generated<string>;
+  location: string;
+  /** pg `numeric` — arrives as a string. Both set or both null. */
+  lat: string | null;
+  lng: string | null;
+  note: string | null;
+  recorded_by: string | null;
+  recorded_at: Generated<string>;
+  created_at: Generated<string>;
 }
 
 export interface TripDocumentsTable {
@@ -689,6 +716,8 @@ export interface PodReceiptsTable {
   approved_at: string | null;
   reject_reason: string | null;
   supersedes_id: string | null;
+  /** EPOD — an electronic copy uploaded by the desk; HPOD — the signed hard copy received by courier. */
+  pod_kind: Generated<string>;
   created_at: Generated<string>;
   updated_at: Generated<string>;
 }
@@ -959,5 +988,6 @@ export interface Database {
   orders: OrdersTable;
   order_events: OrderEventsTable;
   order_comments: OrderCommentsTable;
+  trip_tracking_updates: TripTrackingUpdatesTable;
   client_documents: ClientDocumentsTable;
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { crossCheckRate, laneInEffect, type RateCardLaneLike } from './rate-cross-check';
+import { agreedFreightPaise, crossCheckRate, laneInEffect, type RateCardLaneLike } from './rate-cross-check';
 
 /**
  * Rate cross-verification.
@@ -94,5 +94,24 @@ describe('when the contract is in force', () => {
 
   it('treats an open-ended lane as still running', () => {
     expect(laneInEffect({ ...lane, validTo: null }, '2030-01-01')).toBe(true);
+  });
+});
+
+describe('per-tonne (PMT) lanes', () => {
+  it('prices a whole-truck lane at its rate, whatever the weight', () => {
+    expect(agreedFreightPaise({ ratePaise: 6_420_000, rateBasis: 'FTL' }, 21)).toBe(6_420_000);
+    expect(agreedFreightPaise({ ratePaise: 6_420_000 }, 21)).toBe(6_420_000);
+  });
+
+  it('prices a per-tonne lane at rate × weight', () => {
+    expect(agreedFreightPaise({ ratePaise: 245_000, rateBasis: 'PMT' }, 21.5)).toBe(5_267_500);
+  });
+
+  it('accepts a per-tonne load billed at rate × weight, and refuses one billed at the bare rate', () => {
+    const pmt = { ...lane, rateBasis: 'PMT' as const, ratePaise: 245_000 };
+    expect(crossCheckRate(indent({ sellRatePaise: 5_145_000, weightTn: 21 }), pmt).ok).toBe(true);
+    const wrong = crossCheckRate(indent({ sellRatePaise: 245_000, weightTn: 21 }), pmt);
+    expect(wrong.mismatch).toBe('RATE_MISMATCH');
+    expect(wrong.agreedRatePaise).toBe(5_145_000);
   });
 });

@@ -23,10 +23,18 @@ import {
   useCan,
   useToast,
 } from '@/lib/ui';
-import { getRateCard, listClients } from '../apis';
+import {
+  deletePendingRateLane,
+  deleteRateLane,
+  deleteRateRevision,
+  getPendingRateLanes,
+  getRateCard,
+  listClients,
+} from '../apis';
 import { AddLaneDialog } from '../add-lane-dialog';
+import { DeleteRateDialog, useCanDeleteRates } from '../delete-rate-dialog';
 import { LiveLane, liveLanes } from '../lanes';
-import { Client, RateCardLane } from '../types';
+import { Client, PendingRateLane, RateCardLane, rateWithBasis } from '../types';
 import { listRateRevisions, proposeRateRevision } from './apis';
 import {
   RateRevision,
@@ -77,6 +85,11 @@ export default function RateChangesPage() {
   const [mailSubject, setMailSubject] = useState('');
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState(false);
+  // Lanes added and still waiting for sign-off — shown here too, so a lane
+  // sent a moment ago does not seem to have vanished.
+  const [pendingLanes, setPendingLanes] = useState<PendingRateLane[]>([]);
+  const canDelete = useCanDeleteRates();
+  const [deleting, setDeleting] = useState<{ label: string; run: (reason: string) => Promise<unknown> } | null>(null);
 
   const loadClients = () => {
     setError(null);
@@ -101,7 +114,8 @@ export default function RateChangesPage() {
     setLanes(null);
     setHistory(null);
     getRateCard(id).then((rows) => setLanes(liveLanes(rows))).catch((e) => toast(errorMessage(e)));
-    listRateRevisions(id).then(setHistory).catch((e) => toast(errorMessage(e)));
+    listRateRevisions(id).then(setHistory).catch(() => setHistory([]));
+    getPendingRateLanes(id).then(setPendingLanes).catch(() => setPendingLanes([]));
   };
   useEffect(() => loadClient(clientId), [clientId]);
 
@@ -174,13 +188,34 @@ export default function RateChangesPage() {
     { key: 'from', label: 'From location', render: ({ lane: l }) => l.origin },
     { key: 'to', label: 'To location', render: ({ lane: l }) => l.destination },
     { key: 'transit', label: 'Transit days', render: ({ lane: l }) => l.transitDays },
-    { key: 'rate', label: 'Lane rate', render: ({ lane: l }) => inr(l.ratePaise) },
+    { key: 'rate', label: 'Lane rate', render: ({ lane: l }) => rateWithBasis(inr(l.ratePaise), l.rateBasis) },
     {
       key: 'period',
       label: 'In force',
       render: ({ lane: l }) =>
         `${fmtDate(l.validFrom)} — ${l.validTo ? fmtDate(l.validTo) : 'open-ended'}`,
     },
+    ...(canDelete
+      ? [
+          {
+            key: 'delete',
+            label: '',
+            render: ({ lane: l }: LiveLane) => (
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() =>
+                  setDeleting({
+                    label: `${l.origin} → ${l.destination} · ${l.truckType} at ${rateWithBasis(inr(l.ratePaise), l.rateBasis)}`,
+                    run: (reason) => deleteRateLane(clientId, l.id, reason),
+                  })
+                }
+              >
+                🗑 Delete
+              </button>
+            ),
+          },
+        ]
+      : []),
     {
       key: 'go',
       label: '',
@@ -235,6 +270,60 @@ export default function RateChangesPage() {
       sub: (r) => (r.requestedByName ? `asked for by ${r.requestedByName}` : ''),
     },
     { key: 'when', label: 'Raised', render: (r) => fmtDate(r.createdAt) },
+    ...(canDelete
+      ? [
+          {
+            key: 'delete',
+            label: '',
+            render: (r: RateRevision) =>
+              r.status === 'PENDING' ? (
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() =>
+                    setDeleting({
+                      label: `Rate change ${r.lane ?? ''} · ${inr(r.oldRatePaise)} → ${inr(r.newRatePaise)} (waiting for sign-off)`,
+                      run: (reason) => deleteRateRevision(clientId, r.id, reason),
+                    })
+                  }
+                >
+                  🗑 Delete
+                </button>
+              ) : null,
+          },
+        ]
+      : []),
+  ];
+
+  const pendingLaneColumns: Column<PendingRateLane>[] = [
+    { key: 'truck', label: 'Truck type', primary: true, render: (r) => r.truckType },
+    { key: 'from', label: 'From location', render: (r) => r.origin },
+    { key: 'to', label: 'To location', render: (r) => r.destination },
+    { key: 'rate', label: 'Lane rate', render: (r) => rateWithBasis(inr(r.ratePaise), r.rateBasis) },
+    { key: 'by', label: 'Added by', render: (r) => r.requesterName, sub: (r) => fmtDate(r.proposedAt) },
+    {
+      key: 'state',
+      label: '',
+      render: (r) => (
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Tag tone="flag" emoji="⏳">
+            Waiting for sign-off
+          </Tag>
+          {canDelete && (
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() =>
+                setDeleting({
+                  label: `${r.origin} → ${r.destination} · ${r.truckType} at ${rateWithBasis(inr(r.ratePaise), r.rateBasis)} (waiting for approval)`,
+                  run: (reason) => deletePendingRateLane(clientId, r.approvalId, reason),
+                })
+              }
+            >
+              🗑 Delete
+            </button>
+          )}
+        </div>
+      ),
+    },
   ];
 
   return (
@@ -246,7 +335,7 @@ export default function RateChangesPage() {
       />
       <PageIntro
         what="Pick a client. Add a lane to their rate card, or pick a lane whose rate is changing and say what it is changing to and why."
-        who="Finance asks for the change. Somebody who can approve a contract has to agree to it before it takes effect."
+        who="Finance or BD asks for the change. Compliance, Leadership or an administrator approves it under Approvals before it takes effect. Leadership or an administrator can delete a duplicate."
       >
         The old rate is never wiped. It closes on the day before the new one starts, so a load that
         moved last month is still priced at what was agreed last month — and a billing query can be
@@ -347,6 +436,19 @@ export default function RateChangesPage() {
         )}
       </Panel>
 
+      {pendingLanes.length > 0 && (
+        <>
+          <SectionHead
+            emoji="⏳"
+            title="Lanes waiting for approval"
+            note="Added, not yet on the rate card. Compliance, Leadership or an administrator approves them under Approvals."
+          />
+          <Panel pad={false}>
+            <DataTable columns={pendingLaneColumns} rows={pendingLanes} rowKey={(r) => r.approvalId} />
+          </Panel>
+        </>
+      )}
+
       <SectionHead
         emoji="🕘"
         title="What has changed before"
@@ -381,6 +483,8 @@ export default function RateChangesPage() {
           onSent={() => loadClient(selected.id)}
         />
       )}
+
+      <DeleteRateDialog target={deleting} onClose={() => setDeleting(null)} onDeleted={() => loadClient(clientId)} />
 
       {/* ---- propose one change ------------------------------------------ */}
       <Dialog

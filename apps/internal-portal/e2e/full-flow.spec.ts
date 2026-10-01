@@ -92,7 +92,8 @@ test.describe('one load, first indent to last rupee', () => {
       await expect(page).toHaveURL(/\/indents\/i-\d+$/, { timeout: 4_000 });
     }).toPass({ timeout: 30_000 });
     indentId = page.url().split('/').pop()!;
-    await expect(page.getByRole('heading', { name: '1001' })).toBeVisible();
+    // A slow first click can be pressed twice by the retry above, so the number is not pinned.
+    await expect(page.getByRole('heading', { level: 1, name: /^10\d\d$/ })).toBeVisible();
   });
 
   test('2 · Operations enters the transporter’s quote and accepts it: the trip is generated', async () => {
@@ -218,17 +219,22 @@ test.describe('one load, first indent to last rupee', () => {
     await expect(page.getByText(/Advance released/)).toBeVisible();
   });
 
-  test('8 · the truck departs, is tracked, and is delivered', async () => {
+  test('8 · paying the advance put the truck on the road; it is tracked to the unloading point and unloaded', async () => {
     await signOut(page);
     await signInAs(page, 'OPS');
-    await page.goto(`/trips/${tripId}`);
-    await page.getByRole('button', { name: /Start trip/ }).click();
-    await expect(page.getByText('Trip started')).toBeVisible();
+    // Loaded, documents in, advance paid: the order moved to tracking by itself.
     await page.goto('/telematics');
     await expect(page.getByText('MH 15 GT 4482').first()).toBeVisible();
-    await page.goto(`/trips/${tripId}`);
-    await page.getByRole('button', { name: 'Mark delivered' }).click();
-    await expect(page.getByText(/Marked delivered/)).toBeVisible();
+    await page.goto(`/orders/${indentId}`);
+    await page.getByRole('tab', { name: /Tracking/ }).click();
+    await expect(page.getByRole('listitem').filter({ hasText: 'On the road' })).toHaveAttribute('aria-current', 'step');
+    await fieldControl(page, 'Location').fill('Nagpur bypass');
+    await page.getByRole('button', { name: 'Add update' }).click();
+    await expect(page.getByText('Tracking updated')).toBeVisible();
+    await page.getByRole('button', { name: /Reached the unloading point/ }).click();
+    await expect(page.getByText('Marked · reached the unloading point')).toBeVisible();
+    await page.getByRole('button', { name: /Mark unloaded/ }).click();
+    await expect(page.getByText(/Marked unloaded/)).toBeVisible();
   });
 
   test('9 · the proof of delivery is received, verified, and approved by a second person', async () => {
@@ -239,6 +245,8 @@ test.describe('one load, first indent to last rupee', () => {
     // order page's Documents tab shows — rather than only on the register.
     await page.goto(`/pod/${tripId}/verify`);
     await expect(page.getByRole('heading', { name: 'Receive the proof of delivery' })).toBeVisible();
+    // The signed hard copy (H-POD) by courier; E-POD is the other way in.
+    await page.getByRole('tab', { name: /H-POD/ }).click();
     // Its field labels appear nowhere else on the page.
     const receive = page;
     await fieldControl(receive, 'Courier docket').fill('DKT-556677');
@@ -364,7 +372,7 @@ test.describe('one load, first indent to last rupee', () => {
     await fieldControl(lane, 'Transit days').fill('2');
     await lane.locator('div.field').filter({ hasText: 'From location' }).locator('input').fill('Hosur');
     await lane.locator('div.field').filter({ hasText: 'To location' }).locator('input').fill('Pune');
-    await fieldControl(lane, 'Lane rate (₹)').fill('52000');
+    await fieldControl(lane, 'Lane rate per truck (₹)').fill('52000');
     await fieldControl(lane, 'Late-delivery penalty').selectOption('YES');
     await fieldControl(lane, 'Penalty per late day (₹)').fill('750');
     await fieldControl(lane, 'Approval mail subject').fill('RE: Sundaram Hosur–Pune rate approved by BD and Leadership');

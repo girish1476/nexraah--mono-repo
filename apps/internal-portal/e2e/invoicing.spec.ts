@@ -38,7 +38,7 @@ test.describe('invoices list', () => {
 
     await expect(page.getByRole('link', { name: 'New invoice' })).toBeVisible();
 
-    const rows = page.locator('table.table tbody tr');
+    const rows = page.getByTestId('invoice-ledger').locator('table.table tbody tr');
     await expect(rows.filter({ hasText: 'NEX-INV-000411' })).toBeVisible();
     await expect(rows.filter({ hasText: 'NEX-INV-000410' })).toBeVisible();
 
@@ -57,7 +57,7 @@ test.describe('invoices list', () => {
     await page.goto('/invoices');
 
     await fieldControl(page, 'Status').selectOption('PART_PAID');
-    const rows = page.locator('table.table tbody tr');
+    const rows = page.getByTestId('invoice-ledger').locator('table.table tbody tr');
     await expect(rows).toHaveCount(1);
     await expect(rows.first()).toContainText('NEX-INV-000411');
 
@@ -74,7 +74,7 @@ test.describe('invoices list', () => {
     await search.fill('apex');
     await search.press('Enter');
 
-    const rows = page.locator('table.table tbody tr');
+    const rows = page.getByTestId('invoice-ledger').locator('table.table tbody tr');
     await expect(rows).toHaveCount(1);
     await expect(rows.first()).toContainText('NEX-INV-000410');
   });
@@ -85,7 +85,7 @@ test.describe('invoices list', () => {
 
     await expect(page.getByTestId('view-only')).toBeVisible();
     await expect(page.getByRole('link', { name: 'New invoice' })).toHaveCount(0);
-    await expect(page.locator('table.table tbody tr').first()).toBeVisible();
+    await expect(page.getByTestId('invoice-ledger').locator('table.table tbody tr').first()).toBeVisible();
   });
 });
 
@@ -124,7 +124,7 @@ test.describe('new invoice form', () => {
 
     await fieldControl(page, 'Client').selectOption({ label: 'Sanghvi Metals' });
     await expect(
-      page.getByText('No delivered unbilled consignments for this client.'),
+      page.getByText('No unbilled consignments in transit or delivered for this client.'),
     ).toBeVisible();
     await expect(page.getByRole('button', { name: 'Generate invoice' })).toBeDisabled();
   });

@@ -23,7 +23,16 @@ import {
   useCan,
   useToast,
 } from '@/lib/ui';
-import { getClient, getPendingRateLanes, getRateCard, patchClient, setLaneBand } from '../apis';
+import {
+  deletePendingRateLane,
+  deleteRateLane,
+  getClient,
+  getPendingRateLanes,
+  getRateCard,
+  patchClient,
+  setLaneBand,
+} from '../apis';
+import { DeleteRateDialog, useCanDeleteRates } from '../delete-rate-dialog';
 import { LiveLane, liveLanes } from '../lanes';
 import {
   CLIENT_STATUS_LABEL,
@@ -32,6 +41,7 @@ import {
   Client,
   PendingRateLane,
   RateCardLane,
+  rateWithBasis,
 } from '../types';
 
 /**
@@ -150,6 +160,8 @@ export default function ClientDetailPage() {
   };
 
   const [pending, setPending] = useState<PendingRateLane[]>([]);
+  const canDelete = useCanDeleteRates();
+  const [deleting, setDeleting] = useState<{ label: string; run: (reason: string) => Promise<unknown> } | null>(null);
 
   const load = () => {
     setError(null);
@@ -172,10 +184,32 @@ export default function ClientDetailPage() {
     { key: 'truck', label: 'Truck type', render: (r) => r.truckType },
     { key: 'from', label: 'From', render: (r) => r.origin },
     { key: 'to', label: 'To', render: (r) => r.destination },
-    { key: 'rate', label: 'Lane rate', align: 'right', render: (r) => inr(r.ratePaise) },
+    { key: 'rate', label: 'Lane rate', align: 'right', render: (r) => rateWithBasis(inr(r.ratePaise), r.rateBasis) },
     { key: 'valid', label: 'Valid', render: (r) => `${fmtDate(r.validFrom)} → ${r.validTo ? fmtDate(r.validTo) : 'open'}` },
     { key: 'by', label: 'Added by', render: (r) => r.requesterName, sub: (r) => fmtDate(r.proposedAt) },
-    { key: 'status', label: '', render: () => <Tag tone="flag">Awaiting approval</Tag> },
+    {
+      key: 'status',
+      label: '',
+      align: 'right',
+      render: (r) => (
+        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap' }}>
+          <Tag tone="flag">Awaiting approval</Tag>
+          {canDelete && (
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() =>
+                setDeleting({
+                  label: `${r.origin} → ${r.destination} · ${r.truckType} at ${rateWithBasis(inr(r.ratePaise), r.rateBasis)} (waiting for approval)`,
+                  run: (reason) => deletePendingRateLane(id, r.approvalId, reason),
+                })
+              }
+            >
+              🗑 Delete
+            </button>
+          )}
+        </div>
+      ),
+    },
   ];
 
   const columns: Column<LiveLane>[] = [
@@ -189,7 +223,8 @@ export default function ClientDetailPage() {
       render: ({ lane: r }) =>
         r.transitPenaltyApplies ? `${inr(r.transitPenaltyPerDayPaise)} per day` : <span className="muted">Not applied</span>,
     },
-    { key: 'rate', label: 'Lane rate', align: 'right', render: ({ lane: r }) => inr(r.ratePaise) },
+    { key: 'rate', label: 'Lane rate', align: 'right', render: ({ lane: r }) => rateWithBasis(inr(r.ratePaise), r.rateBasis) },
+    { key: 'basis', label: 'Rate basis', render: ({ lane: r }) => (r.rateBasis === 'PMT' ? 'PMT' : 'FTL') },
     {
       key: 'band',
       label: 'Bid limits',
@@ -241,6 +276,28 @@ export default function ClientDetailPage() {
       ),
     },
     { key: 'rfq', label: 'Won in quote (RFQ)', mono: true, render: ({ lane: r }) => r.rfqLaneId },
+    ...(canDelete
+      ? [
+          {
+            key: 'delete',
+            label: '',
+            align: 'right' as const,
+            render: ({ lane: r }: LiveLane) => (
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() =>
+                  setDeleting({
+                    label: `${r.origin} → ${r.destination} · ${r.truckType} at ${rateWithBasis(inr(r.ratePaise), r.rateBasis)}`,
+                    run: (reason) => deleteRateLane(id, r.id, reason),
+                  })
+                }
+              >
+                🗑 Delete
+              </button>
+            ),
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -373,12 +430,16 @@ export default function ClientDetailPage() {
               rowKey={(r) => r.approvalId}
             />
             <div className="muted" style={{ fontSize: 11.5, padding: '10px 14px', lineHeight: 1.55 }}>
-              These rates were added and are waiting for Compliance or Leadership to sign them off under
-              Approvals. Each moves onto the rate card above once approved — there is no need to add it again.
+              <strong>Who approves:</strong> Compliance, Leadership or an administrator — anyone who can approve
+              contracts — under Control → Approvals. Finance and BD add rates; they cannot approve their own. Each
+              moves onto the rate card above once approved, so there is no need to add it again. A duplicate can be
+              deleted by Leadership or an administrator.
             </div>
           </Panel>
         )}
       </Split>
+
+      <DeleteRateDialog target={deleting} onClose={() => setDeleting(null)} onDeleted={load} />
 
       <Dialog
         open={bandLane !== null}

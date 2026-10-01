@@ -22,6 +22,8 @@ import {
   Tone,
   useCan,
 } from '@/lib/ui';
+import { listTrips } from '@/app/trips/apis';
+import type { TripListRow } from '@/app/trips/types';
 import { listInvoices } from './apis';
 import { Invoice, InvoiceStatus } from './types';
 
@@ -43,14 +45,52 @@ export default function InvoicesPage() {
   const [status, setStatus] = useState<'' | InvoiceStatus>('');
   const [q, setQ] = useState('');
 
+  // Orders on the road or delivered, not on an invoice yet — billing starts the
+  // moment the truck is in transit, so these show here with a button to bill.
+  const [ready, setReady] = useState<TripListRow[] | null>(null);
+
   const load = () => {
     setError(null);
     setRows(null);
     listInvoices({ status: status || undefined, q: q || undefined })
       .then(setRows)
       .catch((e) => setError(errorMessage(e)));
+    listTrips({ invoiceable: '1' })
+      .then(setReady)
+      .catch(() => setReady([]));
   };
   useEffect(load, [status, q]);
+
+  const readyColumns: Column<TripListRow>[] = [
+    { key: 'trip', label: 'Trip', mono: true, render: (r) => r.code },
+    { key: 'client', label: 'Client', render: (r) => r.clientName },
+    { key: 'lane', label: 'Route', render: (r) => r.lane },
+    {
+      key: 'stage',
+      label: 'Where it is',
+      render: (r) => (
+        <Tag tone={r.stage === 'IN_TRANSIT' ? 'blue' : 'mint'}>
+          {r.stage === 'IN_TRANSIT' ? 'In transit' : r.stage === 'DELIVERED' ? 'Delivered' : 'Closed'}
+        </Tag>
+      ),
+    },
+    { key: 'freight', label: 'Freight', align: 'right', render: (r) => inr(r.sellRatePaise) },
+    {
+      key: 'go',
+      label: '',
+      align: 'right',
+      render: (r) =>
+        can('invoice.create') ? (
+          <Link
+            className="btn btn-sm"
+            href={`/invoices/new?${r.clientId ? `client=${r.clientId}&` : ''}trip=${r.id}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            Raise invoice
+          </Link>
+        ) : null,
+    },
+  ];
 
   const columns: Column<Invoice>[] = [
     {
@@ -134,6 +174,16 @@ export default function InvoicesPage() {
           </div>
         </Panel>
 
+        {ready && ready.length > 0 && (
+          <Panel title={`🧾 Ready to invoice · ${ready.length}`} pad={false}>
+            <p className="muted" style={{ fontSize: 12.5, margin: 0, padding: '10px 14px 0' }}>
+              Orders in transit or delivered that are not on a client invoice yet.
+            </p>
+            <DataTable columns={readyColumns} rows={ready} rowKey={(r) => r.id} />
+          </Panel>
+        )}
+
+        <div data-testid="invoice-ledger">
         <Panel pad={false}>
           <DataTable
             columns={columns}
@@ -159,6 +209,7 @@ export default function InvoicesPage() {
             }
           />
         </Panel>
+        </div>
       </Stack>
     </ModuleGuard>
   );

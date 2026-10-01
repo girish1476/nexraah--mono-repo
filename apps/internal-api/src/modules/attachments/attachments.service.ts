@@ -101,6 +101,9 @@ export class AttachmentsService {
       );
     }
 
-    return this.storageService.createSignedUrl(row.storage_path);
+    // The file's type rides along so a screen can show a photo as a photo and a
+    // PDF as a PDF without fetching it first.
+    const signed = await this.storageService.createSignedUrl(row.storage_path);
+    return { ...signed, mime: row.mime };
   }
 }

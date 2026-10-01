@@ -259,9 +259,11 @@ export default function TripDetailPage() {
                 <p className="muted" style={{ fontSize: 12.5, marginBottom: 0 }}>
                   Allocate the vehicle before this trip can start.
                 </p>
-              ) : trip.loadingSupervisorId && !trip.loadingCompletedAt ? (
+              ) : !trip.loadingCompletedAt ? (
                 <p className="muted" style={{ fontSize: 12.5, marginBottom: 0 }}>
-                  Loading has to be marked complete before this trip can start.
+                  Mark the truck as reached the loading point and loaded before this trip can start — on the order’s{' '}
+                  <Link href={`/orders/${trip.indentId}`}>Tracking tab</Link>
+                  {trip.loadingSupervisorId ? ', or with Loading complete below' : ''}.
                 </p>
               ) : trip.lr && trip.lr.status !== 'RELEASED' ? (
                 <p className="muted" style={{ fontSize: 12.5, marginBottom: 0 }}>

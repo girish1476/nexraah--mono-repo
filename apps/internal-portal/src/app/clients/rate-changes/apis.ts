@@ -46,6 +46,7 @@ export function proposeRateLane(
     destination: string;
     truckType: string;
     ratePaise: number;
+    rateBasis: 'FTL' | 'PMT';
     transitDays: number;
     validFrom: string;
     validTo?: string;

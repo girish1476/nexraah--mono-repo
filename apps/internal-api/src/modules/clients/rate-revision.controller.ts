@@ -1,6 +1,8 @@
-import { Body, Controller, Get, Param, Post, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, UseGuards } from '@nestjs/common';
+import { IsString, MinLength } from 'class-validator';
 import { SupabaseJwtGuard } from '../../common/guards/supabase-jwt.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { assertAnyPermission } from '../../common/guards/assert-any-permission';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
@@ -8,6 +10,11 @@ import { RateRevisionService } from './rate-revision.service';
 import { ProposeRateRevisionDto } from './dto/propose-rate-revision.dto';
 import { AddRateLaneDto } from './dto/add-rate-lane.dto';
 import { SetLaneBandDto } from './dto/set-lane-band.dto';
+
+/** Why a duplicate rate is being removed — kept with the deleted row and in the audit trail. */
+class DeleteRateDto {
+  @IsString() @MinLength(10) reason!: string;
+}
 
 /**
  * Client rate revision — Finance's routes.
@@ -34,9 +41,48 @@ export class RateRevisionController {
    * is commercially sensitive — it names what was conceded and to whom.
    */
   @Get(':id/rate-revisions')
-  @RequirePermission('rate.revise')
-  list(@Param('id') id: string) {
+  list(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    // Also the desks that sign a change off (`approve.contract`) — Leadership
+    // and an administrator delete a duplicate from this list, so they must see it.
+    assertAnyPermission(user, ['rate.revise', 'approve.contract']);
     return this.revisions.list(id);
+  }
+
+  /**
+   * Deletes a duplicate lane from the rate card. Leadership or an
+   * administrator only — checked in the service by role. The lane is kept and
+   * marked deleted; loads already raised on it keep their price.
+   */
+  @Delete(':id/rate-card/:laneId')
+  deleteLane(
+    @Param('id') id: string,
+    @Param('laneId') laneId: string,
+    @Body() dto: DeleteRateDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.revisions.deleteLane(id, laneId, dto.reason, user);
+  }
+
+  /** Deletes a lane still waiting for sign-off. Leadership or an administrator only. */
+  @Delete(':id/rate-card/pending/:approvalId')
+  deletePendingLane(
+    @Param('id') id: string,
+    @Param('approvalId') approvalId: string,
+    @Body() dto: DeleteRateDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.revisions.deletePendingLane(id, approvalId, dto.reason, user);
+  }
+
+  /** Deletes a rate change still waiting for sign-off. Leadership or an administrator only. */
+  @Delete(':id/rate-revisions/:revisionId')
+  deleteRevision(
+    @Param('id') id: string,
+    @Param('revisionId') revisionId: string,
+    @Body() dto: DeleteRateDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.revisions.deleteRevision(id, revisionId, dto.reason, user);
   }
 
   /**

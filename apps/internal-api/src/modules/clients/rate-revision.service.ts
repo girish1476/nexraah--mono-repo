@@ -32,6 +32,32 @@ interface RateCardLaneAction {
   transitPenaltyPerDayPaise: number;
   approvalMailSubject: string;
   approvalMailAttachmentId: string | null;
+  /** FTL (whole truck) or PMT (per metric tonne). Proposals raised before this existed replay as FTL. */
+  rateBasis?: RateBasis;
+}
+
+export type RateBasis = 'FTL' | 'PMT';
+
+/** Removing a duplicate rate is Leadership's or an administrator's call — nobody else's. */
+export const RATE_DELETE_ROLES: readonly string[] = ['LEADERSHIP', 'ADMIN'];
+
+function assertCanDeleteRates(actor: AuthenticatedUser): void {
+  if (!RATE_DELETE_ROLES.includes(actor.role)) {
+    throw new DomainException(403, 'PERMISSION_DENIED', 'Only Leadership or an administrator can delete a rate.');
+  }
+}
+
+function assertDeleteReason(reason: string | undefined): string {
+  const text = (reason ?? '').trim();
+  if (text.length < 10) {
+    throw new DomainException(400, 'REASON_TOO_SHORT', 'Say why this rate is being deleted (at least 10 characters).');
+  }
+  return text;
+}
+
+/** "₹2,450 per tonne" or "₹64,200 per truck" — how a lane's rate reads anywhere a person sees it. */
+function rateLabel(paise: number, basis: RateBasis | string | undefined): string {
+  return `${rupees(paise)} ${basis === 'PMT' ? 'per tonne' : 'per truck'}`;
 }
 
 /** Replayed on approval: the lane and the band that was asked for. */
@@ -151,6 +177,7 @@ export class RateRevisionService implements OnModuleInit {
         transit_penalty_per_day: action.transitPenaltyApplies ? action.transitPenaltyPerDayPaise : 0,
         approval_mail_subject: action.approvalMailSubject,
         approval_mail_attachment_id: action.approvalMailAttachmentId,
+        rate_basis: action.rateBasis ?? 'FTL',
       });
 
       await this.auditService.record(
@@ -166,6 +193,7 @@ export class RateRevisionService implements OnModuleInit {
             route: `${action.origin} → ${action.destination}`,
             truckType: action.truckType,
             rate: action.ratePaise,
+            rateBasis: action.rateBasis ?? 'FTL',
             transitDays: action.transitDays,
             transitPenaltyApplies: action.transitPenaltyApplies,
             transitPenaltyPerDayPaise: action.transitPenaltyApplies ? action.transitPenaltyPerDayPaise : 0,
@@ -263,6 +291,8 @@ export class RateRevisionService implements OnModuleInit {
         transit_penalty_per_day: Number(revision.transit_penalty_per_day ?? lane.transit_penalty_per_day),
         approval_mail_subject: revision.approval_mail_subject,
         approval_mail_attachment_id: revision.approval_mail_attachment_id,
+        // A new price on the same basis: a per-tonne lane stays per tonne.
+        rate_basis: lane.rate_basis,
       });
 
       await this.clientsRepository.updateRevision(ctx.db, revision.id, {
@@ -394,10 +424,102 @@ export class RateRevisionService implements OnModuleInit {
       destination: r.action.destination,
       truckType: r.action.truckType,
       ratePaise: r.action.ratePaise,
+      rateBasis: r.action.rateBasis ?? 'FTL',
       transitDays: r.action.transitDays,
       validFrom: r.action.validFrom,
       validTo: r.action.validTo,
     }));
+  }
+
+  // ---- Delete a duplicate ---------------------------------------------
+
+  /**
+   * Takes a lane off the rate card — a duplicate entered twice. Leadership or
+   * an administrator only. The row is kept and marked deleted: loads already
+   * raised on it still point at it and keep the price they were raised at. A
+   * rate change waiting on the lane is withdrawn with it, since it would
+   * otherwise re-create the lane on approval.
+   */
+  async deleteLane(clientId: string, laneId: string, reason: string, actor: AuthenticatedUser) {
+    assertCanDeleteRates(actor);
+    const why = assertDeleteReason(reason);
+    const lane = await this.clientsRepository.findLane(laneId);
+    if (!lane || lane.client_id !== clientId || lane.deleted_at) {
+      throw new DomainException(404, 'NOT_FOUND', 'That rate is not on this client’s rate card.');
+    }
+
+    const open = await this.clientsRepository.findOpenRevisionForLane(lane.id);
+    if (open?.approval_id) {
+      await this.approvalsService.withdraw(open.approval_id, `Deleted with its lane: ${why}`, actor, {
+        kind: 'RATE_REVISION',
+        entityType: 'clients',
+        entityId: clientId,
+      });
+    }
+
+    await this.clientsRepository.transaction().execute(async (trx) => {
+      if (open) await this.clientsRepository.updateRevision(trx, open.id, { status: 'REJECTED' });
+      const deleted = await this.clientsRepository.markLaneDeleted(trx, lane.id, {
+        deleted_by: actor.userId,
+        delete_reason: why,
+      });
+      if (!deleted) throw new DomainException(409, 'ALREADY_DELETED', 'That rate has already been deleted.');
+      await this.auditService.record(trx, actor, {
+        action: 'RATE_LANE_DELETED',
+        entityType: 'rate_card_lanes',
+        entityId: lane.id,
+        before: {
+          route: `${lane.origin} → ${lane.destination}`,
+          truckType: lane.truck_type,
+          rate: Number(lane.rate),
+          rateBasis: lane.rate_basis,
+        },
+        after: { deleted: true, reason: why },
+      });
+    });
+    return { laneId: lane.id, deleted: true };
+  }
+
+  /** Removes a lane still waiting for sign-off — a duplicate proposal. Leadership or an administrator only. */
+  async deletePendingLane(clientId: string, approvalId: string, reason: string, actor: AuthenticatedUser) {
+    assertCanDeleteRates(actor);
+    const why = assertDeleteReason(reason);
+    await this.approvalsService.withdraw(approvalId, `Deleted: ${why}`, actor, {
+      kind: 'RATE_CARD_LANE',
+      entityType: 'clients',
+      entityId: clientId,
+    });
+    return { approvalId, deleted: true };
+  }
+
+  /** Removes a rate change still waiting for sign-off. Leadership or an administrator only. */
+  async deleteRevision(clientId: string, revisionId: string, reason: string, actor: AuthenticatedUser) {
+    assertCanDeleteRates(actor);
+    const why = assertDeleteReason(reason);
+    const revision = await this.clientsRepository.findRevision(revisionId);
+    if (!revision || revision.client_id !== clientId) {
+      throw new DomainException(404, 'NOT_FOUND', 'That rate change is not on this client.');
+    }
+    if (revision.status !== 'PENDING') {
+      throw new DomainException(409, 'ALREADY_DECIDED', 'Only a rate change still waiting for sign-off can be deleted.');
+    }
+    if (revision.approval_id) {
+      await this.approvalsService.withdraw(revision.approval_id, `Deleted: ${why}`, actor, {
+        kind: 'RATE_REVISION',
+        entityType: 'clients',
+        entityId: clientId,
+      });
+    }
+    await this.clientsRepository.transaction().execute(async (trx) => {
+      await this.clientsRepository.updateRevision(trx, revisionId, { status: 'REJECTED' });
+      await this.auditService.record(trx, actor, {
+        action: 'RATE_REVISION_DELETED',
+        entityType: 'rate_revisions',
+        entityId: revisionId,
+        after: { reason: why },
+      });
+    });
+    return { revisionId, deleted: true };
   }
 
   /**
@@ -429,6 +551,7 @@ export class RateRevisionService implements OnModuleInit {
       transitPenaltyPerDayPaise: dto.transitPenaltyApplies ? (dto.transitPenaltyPerDayPaise ?? 0) : 0,
       approvalMailSubject: dto.approvalMailSubject.trim(),
       approvalMailAttachmentId: dto.approvalMailAttachmentId ?? null,
+      rateBasis: (dto.rateBasis ?? 'FTL') as RateBasis,
     };
 
     // A lane already proposed and waiting for approval is not on the rate card
@@ -470,7 +593,7 @@ export class RateRevisionService implements OnModuleInit {
         reason: input.reason,
         title: `New agreed rate · ${client.name} · ${input.origin} → ${input.destination}`,
         detail:
-          `${rupees(input.ratePaise)} · ${input.truckType} · ${input.transitDays} days · from ${input.validFrom}` +
+          `${rateLabel(input.ratePaise, input.rateBasis)} · ${input.truckType} · ${input.transitDays} days · from ${input.validFrom}` +
           (input.transitPenaltyApplies ? ` · late penalty ${rupees(input.transitPenaltyPerDayPaise)}/day` : ' · no late penalty') +
           ` · mail: ${input.approvalMailSubject}`,
         amountPaise: input.ratePaise,

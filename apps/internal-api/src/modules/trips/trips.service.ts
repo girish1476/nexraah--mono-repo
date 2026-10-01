@@ -17,6 +17,7 @@ import type { SubmitTripDocumentDto } from './dto/submit-document.dto';
 import type { CreateChargeDto } from './dto/create-charge.dto';
 import type { PatchLrDto } from './dto/patch-lr.dto';
 import type { DeliverTripDto } from './dto/deliver-trip.dto';
+import type { AddTrackingDto } from './dto/add-tracking.dto';
 
 interface CrossCheckOverrideAction {
   tripId: string;
@@ -145,6 +146,9 @@ export class TripsService implements OnModuleInit {
       loadingSupervisorName: trip.loadingSupervisorName ?? null,
       loadingStartedAt: trip.loading_started_at,
       loadingCompletedAt: trip.loading_completed_at,
+      reachedLoadingAt: trip.reached_loading_at ?? null,
+      departedAt: trip.departed_at ?? null,
+      reachedDestinationAt: trip.reached_destination_at ?? null,
       podPenaltyPaise: trip.podPenaltyPaise,
       transitPenaltyPaise: Number(trip.transit_penalty ?? 0),
       billed: trip.billed,
@@ -222,7 +226,12 @@ export class TripsService implements OnModuleInit {
       if (trip.loading_started_at) {
         throw new DomainException(409, 'LOADING_STARTED', 'Loading has already started.');
       }
-      await this.tripsRepository.update(trx, tripId, { loading_started_at: new Date().toISOString() });
+      const startedAt = new Date().toISOString();
+      // Loading starts at the loading point, so the truck has reached it.
+      await this.tripsRepository.update(trx, tripId, {
+        loading_started_at: startedAt,
+        reached_loading_at: trip.reached_loading_at ?? startedAt,
+      });
       await this.auditService.record(trx, actor, {
         action: 'LOADING_STARTED',
         entityType: 'trips',
@@ -304,6 +313,10 @@ export class TripsService implements OnModuleInit {
     const trip = await this.assertTripExists(tripId);
     if (trip.stage === 'CLOSED') {
       throw new DomainException(409, 'TRIP_CLOSED', 'This trip is closed; documents can no longer be added.');
+    }
+    // The proof of delivery comes after unloading, never before.
+    if (kind === 'POD' && !trip.delivered_at) {
+      throw new DomainException(409, 'NOT_DELIVERED', 'The proof of delivery is uploaded once the truck is unloaded.');
     }
     // A document is a file. Recording one with nothing behind it would let a
     // "verified" paper exist that nobody can open.
@@ -649,14 +662,27 @@ export class TripsService implements OnModuleInit {
           unmet: missing.map((kind) => ({ key: kind, label: `${kind.replace(/_/g, ' ').toLowerCase()} is not uploaded`, state: 'MISSING' })),
         });
       }
-      // A trip with a loading supervisor is not sent off until they have said
-      // loading is finished. Trips with no supervisor keep the old behaviour.
-      if (trip.loading_supervisor_id && !trip.loading_completed_at) {
-        throw new DomainException(409, 'LOADING_NOT_COMPLETE', 'Loading is not complete yet.');
+      // The order cycle: reached the loading point, loaded, then on the road.
+      // A truck is not sent off until someone has marked it loaded — the
+      // loading supervisor where there is one, otherwise Operations from the
+      // tracking sheet.
+      if (!trip.loading_completed_at) {
+        throw new DomainException(409, 'LOADING_NOT_COMPLETE', 'Mark the truck as loaded first.');
       }
 
-      await this.tripsRepository.update(trx, tripId, { stage: 'IN_TRANSIT', departed_at: new Date().toISOString() });
+      const departedAt = new Date().toISOString();
+      await this.tripsRepository.update(trx, tripId, { stage: 'IN_TRANSIT', departed_at: departedAt });
       await this.tripsRepository.updateLrStatus(trx, tripId, 'IN_TRANSIT');
+      await this.tripsRepository.insertTracking(trx, {
+        trip_id: tripId,
+        kind: 'DEPARTED',
+        location: (trip.lane ?? '').split('→')[0]?.trim() || 'Loading point',
+        lat: null,
+        lng: null,
+        note: null,
+        recorded_by: actor.userId,
+        recorded_at: departedAt,
+      });
       await this.auditService.record(trx, actor, {
         action: 'STATUS_CHANGE',
         entityType: 'trips',
@@ -705,10 +731,22 @@ export class TripsService implements OnModuleInit {
         pod_status: 'PENDING',
         actual_transit_days: transit.actualDays,
         transit_penalty: transit.penaltyPaise,
+        // Unloading happens at the unloading point, whether or not anyone marked arriving there.
+        reached_destination_at: trip.reached_destination_at ?? deliveredAt,
       });
       await this.tripsRepository.updateLrStatus(trx, tripId, 'DELIVERED');
       // Unloaded: the truck is free again, at the delivery city.
       const toCity = (trip.lane ?? '').split('→')[1]?.trim() || null;
+      await this.tripsRepository.insertTracking(trx, {
+        trip_id: tripId,
+        kind: 'UNLOADED',
+        location: toCity ?? 'Unloading point',
+        lat: null,
+        lng: null,
+        note: null,
+        recorded_by: actor.userId,
+        recorded_at: deliveredAt,
+      });
       await setFleetVehicleStatus(trx, trip.vendor_id, trip.vehicle_no, 'AVAILABLE', toCity);
       await this.auditService.record(trx, actor, {
         action: 'STATUS_CHANGE',
@@ -722,6 +760,134 @@ export class TripsService implements OnModuleInit {
     // moves to UNLOADED here and waits for a receipt to reach step 8.
     await this.syncOrder(indentId, actor);
     return this.getById(tripId);
+  }
+
+  // ---- Tracking sheet ---------------------------------------------------
+  //
+  // The operations team's order cycle, from the moment a vehicle is allocated:
+  // on the way to the loading point → reached it → loaded (only then are the
+  // advance documents uploaded) → on the road → reached the unloading point →
+  // unloaded (only then is the proof of delivery uploaded). Each milestone is a
+  // line on the sheet, with the plain position updates typed in between.
+
+  async trackingSheet(tripId: string) {
+    const trip = await this.assertTripExists(tripId);
+    const rows = await this.tripsRepository.listTracking(tripId);
+    return {
+      tripId,
+      stage: trip.stage,
+      vehicleNo: trip.vehicle_no || null,
+      fromCity: (trip.lane ?? '').split('→')[0]?.trim() || null,
+      toCity: (trip.lane ?? '').split('→')[1]?.trim() || null,
+      reachedLoadingAt: trip.reached_loading_at ?? null,
+      loadedAt: trip.loading_completed_at ?? null,
+      departedAt: trip.departed_at ?? null,
+      reachedDestinationAt: trip.reached_destination_at ?? null,
+      deliveredAt: trip.delivered_at ?? null,
+      updates: rows.map((r) => ({
+        id: r.id,
+        kind: r.kind,
+        location: r.location,
+        lat: r.lat === null ? null : Number(r.lat),
+        lng: r.lng === null ? null : Number(r.lng),
+        note: r.note,
+        recordedAt: r.recordedAt,
+        recordedByName: r.recordedByName ?? null,
+      })),
+    };
+  }
+
+  async addTracking(tripId: string, dto: AddTrackingDto, actor: AuthenticatedUser) {
+    if ((dto.lat === undefined) !== (dto.lng === undefined)) {
+      throw new DomainException(400, 'VALIDATION_ERROR', 'Give both latitude and longitude, or neither.');
+    }
+    let indentId: string | null = null;
+    await this.tripsRepository.transaction().execute(async (trx) => {
+      const trip = await this.tripsRepository.findByIdForUpdate(trx, tripId);
+      if (!trip) throw new DomainException(404, 'NOT_FOUND', `Unknown trip: ${tripId}`);
+      indentId = trip.indent_id;
+      this.assertCanRunLoading(trip, actor);
+      const at = dto.at ?? new Date().toISOString();
+      const fromCity = (trip.lane ?? '').split('→')[0]?.trim() || 'Loading point';
+      const toCity = (trip.lane ?? '').split('→')[1]?.trim() || 'Unloading point';
+      if (!trip.vehicle_no) {
+        throw new DomainException(409, 'NOT_PLACED', 'Allocate the vehicle first — tracking starts once a truck is on this load.');
+      }
+
+      let location = dto.location?.trim() ?? '';
+      const patch: Record<string, unknown> = {};
+      switch (dto.kind) {
+        case 'UPDATE':
+          if (trip.stage !== 'OPEN' && trip.stage !== 'IN_TRANSIT') {
+            throw new DomainException(409, 'TRACKING_CLOSED', 'This truck has been unloaded; the tracking sheet is closed.');
+          }
+          if (location.length < 2) throw new DomainException(400, 'VALIDATION_ERROR', 'Say where the truck is.');
+          break;
+        case 'REACHED_LOADING':
+          if (trip.stage !== 'OPEN') throw new DomainException(409, 'NOT_OPEN', 'This truck has already left the loading point.');
+          if (trip.reached_loading_at) throw new DomainException(409, 'ALREADY_MARKED', 'Already marked as reached the loading point.');
+          location ||= fromCity;
+          patch.reached_loading_at = at;
+          if (!trip.loading_started_at) patch.loading_started_at = at;
+          break;
+        case 'LOADED':
+          if (trip.stage !== 'OPEN') throw new DomainException(409, 'NOT_OPEN', 'This truck has already left the loading point.');
+          if (trip.loading_completed_at) throw new DomainException(409, 'ALREADY_MARKED', 'Already marked as loaded.');
+          if (!trip.reached_loading_at) {
+            throw new DomainException(409, 'NOT_AT_LOADING_POINT', 'Mark the truck as reached the loading point first.');
+          }
+          location ||= fromCity;
+          patch.loading_completed_at = at;
+          if (!trip.loading_started_at) patch.loading_started_at = trip.reached_loading_at;
+          break;
+        case 'REACHED':
+          if (trip.stage !== 'IN_TRANSIT') {
+            throw new DomainException(409, 'NOT_IN_TRANSIT', 'Only a truck on the road can reach the unloading point.');
+          }
+          if (trip.reached_destination_at) throw new DomainException(409, 'ALREADY_MARKED', 'Already marked as reached the unloading point.');
+          location ||= toCity;
+          patch.reached_destination_at = at;
+          break;
+      }
+
+      if (Object.keys(patch).length > 0) await this.tripsRepository.update(trx, tripId, patch);
+      await this.tripsRepository.insertTracking(trx, {
+        trip_id: tripId,
+        kind: dto.kind,
+        location,
+        lat: dto.lat ?? null,
+        lng: dto.lng ?? null,
+        note: dto.note?.trim() || null,
+        recorded_by: actor.userId,
+        recorded_at: at,
+      });
+      await this.auditService.record(trx, actor, {
+        action: 'TRACKING_UPDATE',
+        entityType: 'trips',
+        entityId: tripId,
+        after: { kind: dto.kind, location },
+      });
+    });
+    if (dto.kind !== 'UPDATE') await this.syncOrder(indentId, actor);
+    return this.trackingSheet(tripId);
+  }
+
+  /**
+   * Starts the trip if nothing stands in its way, and says nothing if
+   * something does. Called once the advance is paid: by then the documents are
+   * uploaded and verified, so a truck that is loaded moves to the road without
+   * someone having to remember a second button.
+   */
+  async departIfReady(tripId: string, actor: AuthenticatedUser): Promise<boolean> {
+    try {
+      const trip = await this.tripsRepository.findById(tripId);
+      if (!trip || trip.stage !== 'OPEN') return false;
+      await this.depart(tripId, actor);
+      return true;
+    } catch (e) {
+      if (e instanceof DomainException) return false;
+      throw e;
+    }
   }
 
   // ---- Helpers ------------------------------------------------------

@@ -1158,6 +1158,9 @@ export function Toast() {
         bottom: 26,
         transform: 'translateX(-50%)',
         zIndex: 90,
+        // A toast is read, never pressed — on a phone it sat over the buttons at
+        // the bottom of the screen (the comment box's Add comment) and swallowed taps.
+        pointerEvents: 'none',
         padding: '12px 18px',
         borderRadius: 'var(--radius-md)',
         background: 'var(--color-accent-900)',

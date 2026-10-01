@@ -1,4 +1,4 @@
-import { IsIn, IsInt, IsOptional, IsPositive, IsString, Max, Min } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsPositive, IsString, Max, MaxLength, Min } from 'class-validator';
 
 /** `POST /indents` — docs/api/03-clients-indents.md. */
 export class CreateIndentDto {
@@ -18,6 +18,10 @@ export class CreateIndentDto {
   @IsOptional() @IsInt() @Min(0) transitDays?: number;
   @IsOptional() @IsIn(['SAME_DAY', 'NEXT_DAY', 'SCHEDULED']) reportingRule?: string;
   @IsOptional() @IsString() remarks?: string;
+
+  /** Where the goods are loaded and delivered — shown on the order page. Optional. */
+  @IsOptional() @IsString() @MaxLength(300) pickupAddress?: string;
+  @IsOptional() @IsString() @MaxLength(300) dropAddress?: string;
 
   @IsIn(['CONTRACT', 'SPOT']) rateSource!: 'CONTRACT' | 'SPOT';
   @IsPositive() sellRatePaise!: number;

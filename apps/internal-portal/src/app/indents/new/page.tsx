@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { errorMessage, request } from '@/apis';
 import { getRateCard, listClients } from '@/app/clients/apis';
 import { liveLanes } from '@/app/clients/lanes';
-import { Client, RateCardLane } from '@/app/clients/types';
+import { Client, RateCardLane, laneFreightPaise, rateWithBasis } from '@/app/clients/types';
 import { capitalizeWords, fmtDate, inr, pct } from '@/lib/format';
 import {
   Banner,
@@ -56,6 +56,8 @@ const schema = z
     transitDays: z.number({ error: 'Enter the transit days' }).int('Whole days only').min(0),
     reportingRule: z.enum(['SAME_DAY', 'NEXT_DAY', 'SCHEDULED']),
     remarks: z.string().optional(),
+    pickupAddress: z.string().max(300, 'Keep it under 300 characters').optional(),
+    dropAddress: z.string().max(300, 'Keep it under 300 characters').optional(),
     rateSource: z.enum(['CONTRACT', 'SPOT']),
     rateCardLaneId: z.string().optional(),
     sellRupees: z.number({ error: 'Required' }).min(1, 'Required'),
@@ -121,6 +123,7 @@ export default function NewIndentPage() {
   const laneId = form.watch('rateCardLaneId');
   const sell = form.watch('sellRupees') ?? 0;
   const sourcing = form.watch('sourcingRupees') ?? 0;
+  const weightTn = form.watch('weightTn');
 
   const client = clients.find((c) => c.id === clientId);
   const isContractClient = client?.engagement === 'CONTRACT';
@@ -128,6 +131,16 @@ export default function NewIndentPage() {
   const lane = live.find((l) => l.id === laneId) ?? null;
   // Every detail a chosen lane carries is locked to it.
   const locked = rateSource === 'CONTRACT' && !!lane;
+  const perTonne = locked && lane?.rateBasis === 'PMT';
+
+  // A per-tonne lane bills rate × weight, so the freight follows the weight.
+  useEffect(() => {
+    if (!locked || !lane) return;
+    const w = Number(weightTn);
+    const paise = laneFreightPaise(lane, Number.isFinite(w) ? w : 0);
+    form.setValue('sellRupees', paise / 100, { shouldValidate: lane.rateBasis !== 'PMT' || w > 0 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locked, lane?.id, lane?.rateBasis, weightTn]);
 
   useEffect(() => {
     // Only clients Compliance has cleared can be booked against, so the others
@@ -172,7 +185,8 @@ export default function NewIndentPage() {
     // A lane added directly (not won at RFQ) carries no reporting rule — keep
     // whatever the form has, and leave the choice open, rather than blanking it.
     if (l.reportingRule) form.setValue('reportingRule', l.reportingRule);
-    form.setValue('sellRupees', l.ratePaise / 100, { shouldValidate: true });
+    const w = Number(form.getValues('weightTn'));
+    form.setValue('sellRupees', laneFreightPaise(l, Number.isFinite(w) ? w : 0) / 100, { shouldValidate: true });
   };
 
   const bookAsSpot = (spot: boolean) => {
@@ -232,6 +246,8 @@ export default function NewIndentPage() {
         transitDays: v.transitDays,
         reportingRule: v.reportingRule,
         remarks: v.remarks,
+        pickupAddress: v.pickupAddress?.trim() || undefined,
+        dropAddress: v.dropAddress?.trim() || undefined,
         rateSource: v.rateSource,
         rateCardLaneId: v.rateSource === 'CONTRACT' ? v.rateCardLaneId : undefined,
         sellRatePaise: Math.round(v.sellRupees * 100),
@@ -350,7 +366,7 @@ export default function NewIndentPage() {
                       <option value="">Choose a lane…</option>
                       {live.map((l) => (
                         <option key={l.id} value={l.id}>
-                          {l.origin} → {l.destination} · {l.truckType} · {inr(l.ratePaise)}
+                          {l.origin} → {l.destination} · {l.truckType} · {rateWithBasis(inr(l.ratePaise), l.rateBasis)}
                         </option>
                       ))}
                     </select>
@@ -364,7 +380,8 @@ export default function NewIndentPage() {
               )}
               {lane && (
                 <p className="muted" style={{ fontSize: 12, marginBottom: 0, marginTop: 10 }}>
-                  Agreed {inr(lane.ratePaise)} · valid {fmtDate(lane.validFrom)} → {lane.validTo ? fmtDate(lane.validTo) : 'open'}
+                  Agreed {rateWithBasis(inr(lane.ratePaise), lane.rateBasis)}
+                  {lane.rateBasis === 'PMT' ? ' — the freight is this × the weight' : ''} · valid {fmtDate(lane.validFrom)} → {lane.validTo ? fmtDate(lane.validTo) : 'open'}
                   {lane.bidMinPaise !== null && lane.bidMaxPaise !== null
                     ? ` · transporter bids ${inr(lane.bidMinPaise)}–${inr(lane.bidMaxPaise)}`
                     : ''}
@@ -445,6 +462,12 @@ export default function NewIndentPage() {
             <Field label="Remarks" hint="Carried to the trip and the lorry receipt.">
               <input {...form.register('remarks')} />
             </Field>
+            <Field label="Loading address" hint="Where the truck reports to load. Shown on the order." error={errors.pickupAddress?.message}>
+              <textarea rows={2} {...form.register('pickupAddress')} placeholder="e.g. Gate 3, MIDC Ambad, Nashik 422010" />
+            </Field>
+            <Field label="Unloading address" hint="Where the goods are delivered. Shown on the order." error={errors.dropAddress?.message}>
+              <textarea rows={2} {...form.register('dropAddress')} placeholder="e.g. Consignee warehouse, Dankuni, Kolkata 712311" />
+            </Field>
           </FormGrid>
         </Panel>
 
@@ -455,7 +478,18 @@ export default function NewIndentPage() {
                 <input type="number" {...form.register('sourcingRupees', { setValueAs: optionalNumber })} />
               </Field>
             )}
-            <Field label="Freight to client (₹)" required hint={locked ? 'The agreed lane rate' : undefined} error={errors.sellRupees?.message}>
+            <Field
+              label="Freight to client (₹)"
+              required
+              hint={
+                perTonne && lane
+                  ? `${inr(lane.ratePaise)} per tonne × ${Number(weightTn) > 0 ? `${weightTn} MT` : 'the weight (enter it above)'}`
+                  : locked
+                    ? 'The agreed lane rate'
+                    : undefined
+              }
+              error={errors.sellRupees?.message}
+            >
               <input type="number" readOnly={locked} style={lockedStyle} {...form.register('sellRupees', { valueAsNumber: true })} />
             </Field>
           </FormGrid>

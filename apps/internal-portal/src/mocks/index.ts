@@ -2,6 +2,7 @@ import { planRecovery } from './sdr-recovery';
 import { computeTransitPenalty } from './transit-penalty';
 import { bandPositionFor } from './band-position';
 import { isDemoData, persist } from './persist';
+import { fileFor, keepFile } from './files';
 import { AxiosAdapter, AxiosError, AxiosRequestConfig, AxiosResponse } from 'axios';
 import { RoleCode, SEED_GRANTS } from '@/lib/permissions';
 import {
@@ -220,7 +221,7 @@ interface Ctx {
 }
 
 type Result = any | { __status: number; body: any };
-type Handler = (ctx: Ctx) => Result;
+type Handler = (ctx: Ctx) => Result | Promise<Result>;
 
 const ok = (data: any) => data;
 const status = (code: number, body: any) => ({ __status: code, body });
@@ -502,6 +503,15 @@ function raiseApproval(input: {
 }
 
 /** Lanes proposed for a client, still waiting for approval — `RateRevisionService.pendingLanes`. */
+/** Only Leadership or an administrator delete a rate; a reason is kept. Mirrors `assertCanDeleteRates`. */
+function rateDeleteReason(role: string, body: any): string {
+  if (role !== 'LEADERSHIP' && role !== 'ADMIN')
+    fail(403, 'PERMISSION_DENIED', 'Only Leadership or an administrator can delete a rate.');
+  const why = String(body?.reason ?? '').trim();
+  if (why.length < 10) fail(400, 'REASON_TOO_SHORT', 'Say why this rate is being deleted (at least 10 characters).');
+  return why;
+}
+
 function pendingLanesFor(clientId: string) {
   return db.approvals
     .filter((a: any) => a.kind === 'RATE_CARD_LANE' && a.status === 'PENDING' && a.entityId === clientId && a.action)
@@ -513,6 +523,7 @@ function pendingLanesFor(clientId: string) {
       destination: a.action.destination,
       truckType: a.action.truckType,
       ratePaise: a.action.ratePaise,
+      rateBasis: a.action.rateBasis ?? 'FTL',
       transitDays: a.action.transitDays,
       validFrom: a.action.validFrom,
       validTo: a.action.validTo ?? null,
@@ -730,10 +741,97 @@ function balanceGate(trip: any) {
   };
 }
 
+function roleCan(role: string, permission: string): boolean {
+  return ((SEED_GRANTS as Record<string, string[]>)[role] ?? []).includes(permission);
+}
+
+/** One line on a trip's tracking sheet — same shape as `TripsService.trackingSheet`'s updates. */
+function addTrackingRow(
+  trip: any,
+  row: { kind: string; location: string; lat: number | null; lng: number | null; note: string | null; at: string; userId: string | null },
+) {
+  db.tripTracking.push({
+    id: `trk-${Date.now()}-${db.tripTracking.length + 1}`,
+    tripId: trip.id,
+    kind: row.kind,
+    location: row.location,
+    lat: row.lat,
+    lng: row.lng,
+    note: row.note,
+    recordedAt: row.at,
+    recordedByName: ACCOUNTS.find((a) => a.userId === row.userId)?.name ?? null,
+  });
+}
+
+function trackingSheetFor(trip: any) {
+  const [fromCity, toCity] = String(trip.lane ?? '').split('→').map((x: string) => x.trim());
+  return {
+    tripId: trip.id,
+    stage: trip.stage,
+    vehicleNo: trip.vehicleNo || null,
+    fromCity: fromCity || null,
+    toCity: toCity || null,
+    reachedLoadingAt: trip.reachedLoadingAt ?? null,
+    loadedAt: trip.loadingCompletedAt ?? null,
+    departedAt: trip.departedAt ?? null,
+    reachedDestinationAt: trip.reachedDestinationAt ?? null,
+    deliveredAt: trip.deliveredAt ?? null,
+    updates: db.tripTracking
+      .filter((u: any) => u.tripId === trip.id)
+      .sort((a: any, b: any) => String(a.recordedAt).localeCompare(String(b.recordedAt))),
+  };
+}
+
+/**
+ * Puts a trip on the road — `TripsService.depart`. Vehicle allocated, the
+ * truck marked loaded, the advance documents uploaded (not yet verified), and
+ * any lorry receipt that was started issued.
+ */
+function departMockTrip(trip: any, userId: string | null) {
+  if (trip.stage !== 'OPEN') fail(409, 'NOT_OPEN', `Trip ${trip.code} is not OPEN (currently ${trip.stage}).`);
+  if (!trip.vehicleNo) fail(409, 'NOT_PLACED', 'Allocate the vehicle before the trip can start.');
+  // The LR is "if needed". Only a started, unissued one blocks.
+  if (trip.lr && trip.lr.status !== 'RELEASED') {
+    fail(409, 'LR_NOT_GENERATED', 'A lorry receipt was started for this trip — issue it before departure, or it travels unissued.');
+  }
+  const missingDocs = advanceGate(trip).unmet.filter((u: any) => u.state === 'MISSING' || u.state === 'REJECTED');
+  if (missingDocs.length)
+    fail(409, 'ADVANCE_DOCS_NOT_UPLOADED', 'The advance documents are not all uploaded yet.', { unmet: missingDocs });
+  if (!trip.loadingCompletedAt) fail(409, 'LOADING_NOT_COMPLETE', 'Mark the truck as loaded first.');
+  trip.stage = 'IN_TRANSIT';
+  trip.departedAt = helpers.now();
+  const [from] = String(trip.lane ?? '').split('→').map((x: string) => x.trim());
+  addTrackingRow(trip, { kind: 'DEPARTED', location: from || 'Loading point', lat: null, lng: null, note: null, at: trip.departedAt, userId });
+  // Once the truck is moving it is on the fleet board, starting from where it loaded.
+  if (trip.vehicleNo && !db.telematics.some((v: any) => v.vehicleNo === trip.vehicleNo)) {
+    const [lat, lng] = CITY_COORDS[(from ?? '').toLowerCase()] ?? [20.5937, 78.9629];
+    const eway = (trip.documents ?? []).find((d: any) => d.kind === 'EWAY_BILL');
+    db.telematics.unshift({
+      vehicleNo: trip.vehicleNo,
+      tripCode: trip.code,
+      vendorName: trip.vendorName,
+      lane: trip.lane,
+      progressPct: 0,
+      speedKmph: 0,
+      fuelPct: 100,
+      lastPingAt: helpers.now(),
+      lat,
+      lng,
+      ewayValidTill: eway?.keyedValues?.validTill ? `${eway.keyedValues.validTill}T23:59:00+05:30` : null,
+      alerts: [],
+    });
+  }
+  if (trip.lr) trip.lr = { ...trip.lr, status: 'IN_TRANSIT' };
+  return trip;
+}
+
 function tripSummary(t: any) {
   return {
     id: t.id,
     code: t.code,
+    clientId: t.clientId ?? null,
+    indentId: t.indentId ?? null,
+    departedAt: t.departedAt ?? null,
     lrCode: t.lrCode,
     indentCode: t.indentCode,
     clientName: t.clientName,
@@ -1564,6 +1662,7 @@ const routes: [string, RegExp, Handler][] = [
           destination: newLane.destination,
           truckType: newLane.truckType,
           ratePaise: newLane.ratePaise,
+          rateBasis: (newLane as any).rateBasis ?? 'FTL',
           transitDays: newLane.transitDays,
           reportingRule: null,
           validFrom: newLane.validFrom,
@@ -1631,8 +1730,24 @@ const routes: [string, RegExp, Handler][] = [
       const file: any =
         typeof FormData !== 'undefined' && body instanceof FormData ? body.get('file') : body.file;
 
+      // Kept so the document can be shown again — see `files.ts`.
+      const id = `att-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      if (typeof Blob !== 'undefined' && file instanceof Blob) {
+        const blob = file as Blob & { name?: string };
+        return keepFile(id, blob).then(() =>
+          ok({
+            id,
+            filename: blob.name ?? 'upload.bin',
+            contentType: file?.type ?? 'application/octet-stream',
+            bytes: file?.size ?? 0,
+            sha256: 'e3b0c44298fc1c149afbf4c8996fb924',
+            uploadedAt: helpers.now(),
+          }),
+        );
+      }
+
       return ok({
-        id: `att-${Date.now()}`,
+        id,
         filename: file?.name ?? 'upload.bin',
         contentType: file?.type ?? 'application/octet-stream',
         bytes: file?.size ?? 0,
@@ -1644,8 +1759,10 @@ const routes: [string, RegExp, Handler][] = [
   [
     'GET',
     /^\/attachments\/([^/]+)\/url$/,
-    ({ params }) =>
-      ok({ url: `https://storage.local/signed/${params[0]}`, expiresAt: new Date(Date.now() + 900_000).toISOString() }),
+    ({ params }) => {
+      const file = fileFor(params[0]);
+      return ok({ url: file.url, mime: file.mime, expiresAt: new Date(Date.now() + 900_000).toISOString() });
+    },
   ],
 
   /* ------------------------------------------------------------- C2 ----- */
@@ -2136,8 +2253,9 @@ const routes: [string, RegExp, Handler][] = [
     // real API answers null for those, so normalise rather than send undefined.
     ({ params }) =>
       ok(
-        (db.rateCards[params[0]] ?? []).map((l: any) => ({
+        (db.rateCards[params[0]] ?? []).filter((l: any) => !l.deletedAt).map((l: any) => ({
           ...l,
+          rateBasis: l.rateBasis ?? 'FTL',
           bidMinPaise: l.bidMinPaise ?? null,
           bidMaxPaise: l.bidMaxPaise ?? null,
           transitPenaltyApplies: l.transitPenaltyApplies ?? false,
@@ -2155,6 +2273,53 @@ const routes: [string, RegExp, Handler][] = [
       return ok(pendingLanesFor(client.id));
     },
   ],
+  // Deleting a duplicate rate — Leadership or an administrator only, the same
+  // rule as `RateRevisionService.deleteLane` / `deletePendingLane` / `deleteRevision`.
+  [
+    'DELETE',
+    /^\/clients\/([^/]+)\/rate-card\/pending\/([^/]+)$/,
+    ({ params, body, role, userId }) => {
+      const why = rateDeleteReason(role, body);
+      const approval = db.approvals.find(
+        (a: any) => a.id === params[1] && a.kind === 'RATE_CARD_LANE' && a.entityId === params[0],
+      );
+      if (!approval) fail(404, 'NOT_FOUND', `Unknown request: ${params[1]}`);
+      if (approval.status !== 'PENDING') fail(409, 'ALREADY_DECIDED', `That request is already ${String(approval.status).toLowerCase()}.`);
+      Object.assign(approval, { status: 'REJECTED', note: `Deleted: ${why}`, approverId: userId, decidedAt: helpers.now() });
+      return ok({ approvalId: approval.id, deleted: true });
+    },
+  ],
+  [
+    'DELETE',
+    /^\/clients\/([^/]+)\/rate-card\/([^/]+)$/,
+    ({ params, body, role, userId }) => {
+      const why = rateDeleteReason(role, body);
+      const lane = (db.rateCards[params[0]] ?? []).find((l: any) => l.id === params[1] && !l.deletedAt);
+      if (!lane) fail(404, 'NOT_FOUND', 'That rate is not on this client’s rate card.');
+      // A change waiting on the lane goes with it — it would otherwise re-create the lane on approval.
+      for (const r of db.rateRevisions.filter((x: any) => x.fromLaneId === lane.id && x.status === 'PENDING')) {
+        r.status = 'REJECTED';
+        const a = db.approvals.find((x: any) => x.action?.revisionId === r.id && x.status === 'PENDING');
+        if (a) Object.assign(a, { status: 'REJECTED', note: `Deleted with its lane: ${why}`, approverId: userId, decidedAt: helpers.now() });
+      }
+      Object.assign(lane, { deletedAt: helpers.now(), deletedBy: userId, deleteReason: why });
+      return ok({ laneId: lane.id, deleted: true });
+    },
+  ],
+  [
+    'DELETE',
+    /^\/clients\/([^/]+)\/rate-revisions\/([^/]+)$/,
+    ({ params, body, role, userId }) => {
+      const why = rateDeleteReason(role, body);
+      const r = db.rateRevisions.find((x: any) => x.id === params[1] && x.clientId === params[0]);
+      if (!r) fail(404, 'NOT_FOUND', 'That rate change is not on this client.');
+      if (r.status !== 'PENDING') fail(409, 'ALREADY_DECIDED', 'Only a rate change still waiting for sign-off can be deleted.');
+      r.status = 'REJECTED';
+      const a = db.approvals.find((x: any) => x.action?.revisionId === r.id && x.status === 'PENDING');
+      if (a) Object.assign(a, { status: 'REJECTED', note: `Deleted: ${why}`, approverId: userId, decidedAt: helpers.now() });
+      return ok({ revisionId: r.id, deleted: true });
+    },
+  ],
   [
     'POST',
     /^\/clients\/([^/]+)\/rate-card$/,
@@ -2170,6 +2335,7 @@ const routes: [string, RegExp, Handler][] = [
         destination: String(body?.destination ?? '').trim().replace(/\s+/g, ' '),
         truckType: String(body?.truckType ?? '').trim().replace(/\s+/g, ' '),
         ratePaise: Number(body?.ratePaise),
+        rateBasis: body?.rateBasis === 'PMT' ? 'PMT' : 'FTL',
         transitDays: Number(body?.transitDays),
         validFrom: String(body?.validFrom ?? ''),
         validTo: body?.validTo ? String(body.validTo) : null,
@@ -2217,7 +2383,7 @@ const routes: [string, RegExp, Handler][] = [
         entityId: client.id,
         title: `New agreed rate · ${client.name} · ${lane.origin} → ${lane.destination}`,
         detail:
-          `${rupeesOf(lane.ratePaise)} · ${lane.truckType} · ${lane.transitDays} days · from ${lane.validFrom}` +
+          `${rupeesOf(lane.ratePaise)} ${lane.rateBasis === 'PMT' ? 'per tonne' : 'per truck'} · ${lane.truckType} · ${lane.transitDays} days · from ${lane.validFrom}` +
           (penalty.transitPenaltyApplies ? ` · late penalty ${rupeesOf(penalty.transitPenaltyPerDayPaise)}/day` : ' · no late penalty') +
           ` · mail: ${penalty.approvalMailSubject}`,
         amountPaise: lane.ratePaise,
@@ -2538,6 +2704,7 @@ const routes: [string, RegExp, Handler][] = [
         requiredPermission: 'approve.contract',
         reason: body.reason,
         role,
+        action: { revisionId: db.rateRevisions[0].id },
       });
     },
   ],
@@ -2776,6 +2943,7 @@ const routes: [string, RegExp, Handler][] = [
           const lane = (db.rateCards[body.clientId] ?? [])
             .filter(
               (l: any) =>
+                !l.deletedAt &&
                 norm(l.origin) === norm(body.fromCity) &&
                 norm(l.destination) === norm(body.toCity) &&
                 norm(l.truckType) === norm(body.truckType) &&
@@ -2869,6 +3037,34 @@ const routes: [string, RegExp, Handler][] = [
         advancePaidPaise: trip?.advancePaidPaise ?? 0,
         balancePaidPaise: trip?.balancePaidPaise ?? 0,
         remarks: indent.remarks ?? null,
+        // Everything about the order on its Details tab — same fields as
+        // `OrdersService.getById`.
+        pickupAddress: indent.pickupAddress ?? null,
+        dropAddress: indent.dropAddress ?? null,
+        vendorCode: trip ? (db.vendors.find((v: any) => v.id === trip.vendorId)?.code ?? null) : null,
+        vendorPhone: trip ? (db.vendors.find((v: any) => v.id === trip.vendorId)?.phone ?? null) : null,
+        tripStage: trip?.stage ?? null,
+        milestones: {
+          reachedLoadingAt: trip?.reachedLoadingAt ?? null,
+          loadedAt: trip?.loadingCompletedAt ?? null,
+          departedAt: trip?.departedAt ?? null,
+          reachedDestinationAt: trip?.reachedDestinationAt ?? null,
+          deliveredAt: trip?.deliveredAt ?? null,
+        },
+        podStatus: trip?.podStatus ?? null,
+        invoice: (() => {
+          const inv = row.invoiceId ? db.invoices.find((i: any) => i.id === row.invoiceId) : null;
+          return inv
+            ? {
+                id: inv.id,
+                code: inv.code ?? null,
+                status: inv.status,
+                invoiceDate: inv.invoiceDate ?? null,
+                totalPaise: Number(inv.totalPaise ?? 0),
+                receivedPaise: Number(inv.receivedPaise ?? 0),
+              }
+            : null;
+        })(),
         payments: orderPaymentsFor(indent, trip, role, branch),
         events: orderEvents(row),
         comments: orderCommentsFor(indent.id),
@@ -3113,9 +3309,12 @@ const routes: [string, RegExp, Handler][] = [
       const q = (query.get('q') ?? '').toLowerCase();
       const stage = query.get('stage');
       const podStatus = query.get('pod_status');
+      // On the road or later, and not on a client invoice yet — the trips a bill can be raised for.
+      const invoiceable = query.get('invoiceable') === '1';
       return ok(
         scopeBranch(db.trips, branch)
-          .filter((t) => !stage || t.stage === stage)
+          .filter((t) => !stage || stage.split(',').includes(t.stage))
+          .filter((t) => !invoiceable || (['IN_TRANSIT', 'DELIVERED', 'CLOSED'].includes(t.stage) && !t.billed))
           .filter((t) => !podStatus || t.podStatus === podStatus)
           .filter(
             (t) =>
@@ -3187,6 +3386,8 @@ const routes: [string, RegExp, Handler][] = [
       if (!trip.vehicleNo) fail(409, 'NO_VEHICLE', 'Allocate the vehicle before loading starts.');
       if (trip.loadingStartedAt) fail(409, 'LOADING_STARTED', 'Loading has already started.');
       trip.loadingStartedAt = helpers.now();
+      // Loading starts at the loading point, so the truck has reached it.
+      trip.reachedLoadingAt ??= trip.loadingStartedAt;
       return ok(trip);
     },
   ],
@@ -3234,6 +3435,9 @@ const routes: [string, RegExp, Handler][] = [
     /^\/trips\/([^/]+)\/documents\/([^/]+)$/,
     ({ params, body }) => {
       const trip = findTrip(params[0]);
+      // The proof of delivery comes after unloading, never before.
+      if (params[1] === 'POD' && !trip.deliveredAt)
+        fail(409, 'NOT_DELIVERED', 'The proof of delivery is uploaded once the truck is unloaded.');
       let doc = trip.documents.find((d: any) => d.kind === params[1]);
       if (!doc) {
         doc = {
@@ -3259,6 +3463,9 @@ const routes: [string, RegExp, Handler][] = [
         status: 'PENDING',
         attachmentId: body?.attachmentId ?? `att-${params[1].toLowerCase()}`,
         uploadedAt: helpers.now(),
+        // A new file is checked again — the old verification was of the old file.
+        verifiedBy: null,
+        verifiedAt: null,
         rejectReason: null,
         keyedValues: { ...(doc.keyedValues ?? {}), ...(body?.keyedValues ?? {}) },
       });
@@ -3367,52 +3574,76 @@ const routes: [string, RegExp, Handler][] = [
   [
     'POST',
     /^\/trips\/([^/]+)\/depart$/,
-    ({ params }) => {
+    ({ params, userId }) => ok(departMockTrip(findTrip(params[0]), userId)),
+  ],
+  [
+    'GET',
+    /^\/trips\/([^/]+)\/tracking$/,
+    ({ params }) => ok(trackingSheetFor(findTrip(params[0]))),
+  ],
+  [
+    'POST',
+    /^\/trips\/([^/]+)\/tracking$/,
+    // Mirrors `TripsService.addTracking`: a position update, or a milestone in
+    // the order cycle — reached the loading point, loaded, reached the unloading point.
+    ({ params, body, userId, role }) => {
       const trip = findTrip(params[0]);
-      if (trip.stage !== 'OPEN') fail(409, 'NOT_OPEN', `Trip ${trip.code} is not OPEN (currently ${trip.stage}).`);
-      if (!trip.vehicleNo) fail(409, 'NOT_PLACED', 'Allocate the vehicle before the trip can start.');
-      // The LR is "if needed" — see `TripsService.depart`. Only a started,
-      // unissued one blocks.
-      if (trip.lr && trip.lr.status !== 'RELEASED') {
-        fail(409, 'LR_NOT_GENERATED', 'A lorry receipt was started for this trip — issue it before departure, or it travels unissued.');
+      if (!(trip.loadingSupervisorId === userId) && !roleCan(role, 'indent.manage'))
+        fail(403, 'PERMISSION_DENIED', 'Missing permission: indent.manage.');
+      if (!trip.vehicleNo)
+        fail(409, 'NOT_PLACED', 'Allocate the vehicle first — tracking starts once a truck is on this load.');
+      const kind = String(body?.kind ?? '');
+      if (!['UPDATE', 'REACHED_LOADING', 'LOADED', 'REACHED'].includes(kind)) fail(400, 'VALIDATION_ERROR', 'Unknown tracking step.');
+      const hasLat = body?.lat !== undefined && body?.lat !== null && body?.lat !== '';
+      const hasLng = body?.lng !== undefined && body?.lng !== null && body?.lng !== '';
+      if (hasLat !== hasLng) fail(400, 'VALIDATION_ERROR', 'Give both latitude and longitude, or neither.');
+      const at = body?.at ?? helpers.now();
+      const [fromCity, toCity] = String(trip.lane ?? '').split('→').map((x: string) => x.trim());
+      let location = String(body?.location ?? '').trim();
+      if (kind === 'UPDATE') {
+        if (trip.stage !== 'OPEN' && trip.stage !== 'IN_TRANSIT')
+          fail(409, 'TRACKING_CLOSED', 'This truck has been unloaded; the tracking sheet is closed.');
+        if (location.length < 2) fail(400, 'VALIDATION_ERROR', 'Say where the truck is.');
+      } else if (kind === 'REACHED_LOADING') {
+        if (trip.stage !== 'OPEN') fail(409, 'NOT_OPEN', 'This truck has already left the loading point.');
+        if (trip.reachedLoadingAt) fail(409, 'ALREADY_MARKED', 'Already marked as reached the loading point.');
+        location ||= fromCity || 'Loading point';
+        trip.reachedLoadingAt = at;
+        trip.loadingStartedAt ??= at;
+      } else if (kind === 'LOADED') {
+        if (trip.stage !== 'OPEN') fail(409, 'NOT_OPEN', 'This truck has already left the loading point.');
+        if (trip.loadingCompletedAt) fail(409, 'ALREADY_MARKED', 'Already marked as loaded.');
+        if (!trip.reachedLoadingAt) fail(409, 'NOT_AT_LOADING_POINT', 'Mark the truck as reached the loading point first.');
+        location ||= fromCity || 'Loading point';
+        trip.loadingCompletedAt = at;
+        trip.loadingStartedAt ??= trip.reachedLoadingAt;
+      } else if (kind === 'REACHED') {
+        if (trip.stage !== 'IN_TRANSIT') fail(409, 'NOT_IN_TRANSIT', 'Only a truck on the road can reach the unloading point.');
+        if (trip.reachedDestinationAt) fail(409, 'ALREADY_MARKED', 'Already marked as reached the unloading point.');
+        location ||= toCity || 'Unloading point';
+        trip.reachedDestinationAt = at;
       }
-      // Once the advance documents are uploaded the truck moves to transit; they do
-      // not have to be verified yet — verification is what releases the advance.
-      const missingDocs = advanceGate(trip).unmet.filter((u: any) => u.state === 'MISSING' || u.state === 'REJECTED');
-      if (missingDocs.length)
-        fail(409, 'ADVANCE_DOCS_NOT_UPLOADED', 'The advance documents are not all uploaded yet.', { unmet: missingDocs });
-      if (trip.loadingSupervisorId && !trip.loadingCompletedAt)
-        fail(409, 'LOADING_NOT_COMPLETE', 'Loading is not complete yet.');
-      trip.stage = 'IN_TRANSIT';
-      trip.departedAt = helpers.now();
-      // Once the truck is moving it is on the fleet board, starting from where it loaded.
-      if (trip.vehicleNo && !db.telematics.some((v: any) => v.vehicleNo === trip.vehicleNo)) {
-        const [from] = String(trip.lane ?? '').split('→').map((x: string) => x.trim());
-        const [lat, lng] = CITY_COORDS[from.toLowerCase()] ?? [20.5937, 78.9629];
-        const eway = (trip.documents ?? []).find((d: any) => d.kind === 'EWAY_BILL');
-        db.telematics.unshift({
-          vehicleNo: trip.vehicleNo,
-          tripCode: trip.code,
-          vendorName: trip.vendorName,
-          lane: trip.lane,
-          progressPct: 0,
-          speedKmph: 0,
-          fuelPct: 100,
-          lastPingAt: helpers.now(),
-          lat,
-          lng,
-          ewayValidTill: eway?.keyedValues?.validTill ? `${eway.keyedValues.validTill}T23:59:00+05:30` : null,
-          alerts: [],
-        });
+      addTrackingRow(trip, {
+        kind,
+        location,
+        lat: hasLat ? Number(body.lat) : null,
+        lng: hasLat ? Number(body.lng) : null,
+        note: String(body?.note ?? '').trim() || null,
+        at,
+        userId,
+      });
+      // A typed position with coordinates also moves the truck on the fleet board.
+      if (hasLat && trip.stage === 'IN_TRANSIT') {
+        const row = db.telematics.find((v: any) => v.vehicleNo === trip.vehicleNo);
+        if (row) Object.assign(row, { lat: Number(body.lat), lng: Number(body.lng), lastPingAt: at });
       }
-      if (trip.lr) trip.lr = { ...trip.lr, status: 'IN_TRANSIT' };
-      return ok(trip);
+      return ok(trackingSheetFor(trip));
     },
   ],
   [
     'POST',
     /^\/trips\/([^/]+)\/deliver$/,
-    ({ params, body }) => {
+    ({ params, body, userId }) => {
       const trip = findTrip(params[0]);
       if (trip.stage !== 'IN_TRANSIT') {
         fail(409, 'NOT_IN_TRANSIT', `Trip ${trip.code} is not IN_TRANSIT (currently ${trip.stage}).`);
@@ -3420,6 +3651,17 @@ const routes: [string, RegExp, Handler][] = [
       trip.stage = 'DELIVERED';
       trip.deliveredAt = body?.deliveredAt ?? helpers.now();
       trip.podStatus = 'PENDING';
+      // Unloading happens at the unloading point, whether or not anyone marked arriving there.
+      trip.reachedDestinationAt ??= trip.deliveredAt;
+      addTrackingRow(trip, {
+        kind: 'UNLOADED',
+        location: String(trip.lane ?? '').split('→')[1]?.trim() || 'Unloading point',
+        lat: null,
+        lng: null,
+        note: null,
+        at: trip.deliveredAt,
+        userId,
+      });
       // By the lane's own terms, counted from the day loading was done.
       const laneOfTrip = (db.rateCards[trip.clientId] ?? []).find(
         (l: any) => l.id === db.indents.find((i: any) => i.id === trip.indentId)?.rateCardLaneId,
@@ -3554,8 +3796,11 @@ const routes: [string, RegExp, Handler][] = [
         ageDays,
         penaltyPaise: Math.max(0, ageDays - db.config.pod_tat_days) * db.config.pod_penalty_per_day_paise,
         receipt: db.podReceipts.find((r) => r.tripId === trip.id) ?? null,
+        podKind: db.podReceipts.find((r) => r.tripId === trip.id)?.podKind ?? null,
         pages: trip.podPages ?? 2,
-        attachmentIds: ['att-pod-1', 'att-pod-2'],
+        attachmentIds: db.podReceipts.find((r) => r.tripId === trip.id)?.attachmentIds?.length
+          ? db.podReceipts.find((r) => r.tripId === trip.id)!.attachmentIds
+          : ['att-pod-1', 'att-pod-2'],
         verifiedBy: trip.podVerifiedBy ?? null,
         approvedBy: trip.podApprovedBy ?? null,
         charges: trip.charges,
@@ -3592,11 +3837,42 @@ const routes: [string, RegExp, Handler][] = [
         receivedBy: body.receivedBy ?? USERS[role].name,
         condition: body.condition ?? null,
       };
-      db.podReceipts.unshift(receipt);
+      db.podReceipts.unshift({ ...receipt, podKind: 'HPOD', attachmentIds: [] });
       trip.podStatus = 'RECEIVED';
       trip.podReceivedAt = body.receivedOn;
       trip.podCourierDocket = body.courierDocket;
       return ok(receipt);
+    },
+  ],
+  [
+    'POST',
+    /^\/pod\/([^/]+)\/epod$/,
+    // E-POD — `PodService.uploadEpod`: the proof as a photo or scan, no courier docket.
+    ({ params, body, role }) => {
+      const trip = findTrip(params[0]);
+      if (!trip.deliveredAt) fail(409, 'NOT_DELIVERED', 'The proof of delivery is uploaded once the truck is unloaded.');
+      if (!['PENDING', 'ATTACHED', 'REJECTED'].includes(trip.podStatus))
+        fail(409, 'POD_NOT_AWAITED', `This delivery proof is ${String(trip.podStatus).toLowerCase()}; there is nothing left to receive.`);
+      const ids: string[] = Array.isArray(body?.attachmentIds) ? body.attachmentIds : [];
+      if (ids.length === 0) fail(400, 'VALIDATION_ERROR', 'Attach the photo or scan of the signed delivery note.');
+      const today = helpers.now().slice(0, 10);
+      const receipt = {
+        id: `pdr-${Date.now()}`,
+        code: nextNumber('POD_RECEIPT'),
+        tripId: trip.id,
+        courierDocket: null,
+        sentOn: null,
+        receivedOn: today,
+        pages: ids.length,
+        receivedBy: USERS[role].name,
+        condition: null,
+        podKind: 'EPOD',
+        attachmentIds: ids,
+      };
+      db.podReceipts.unshift(receipt);
+      trip.podStatus = 'RECEIVED';
+      trip.podReceivedAt = today;
+      return ok({ id: receipt.id, code: receipt.code, tripId: trip.id, podKind: 'EPOD', attachmentIds: ids, receivedOn: today });
     },
   ],
   [
@@ -3778,6 +4054,16 @@ const routes: [string, RegExp, Handler][] = [
       };
       db.payments.unshift(payment);
       trip.advancePaidPaise = gate.grossPaise;
+      // Advance uploaded, verified and paid: a loaded truck goes on the road
+      // now, as `PaymentsService.releaseAdvance` does. Anything still missing
+      // leaves it where it is, and the order's Next step says what.
+      if (trip.stage === 'OPEN') {
+        try {
+          departMockTrip(trip, USERS[role].userId);
+        } catch {
+          // Not ready to leave yet — nothing to do.
+        }
+      }
       return ok(payment);
     },
   ],
@@ -4126,8 +4412,8 @@ const routes: [string, RegExp, Handler][] = [
           for (const tripId of body.tripIds) {
             const trip = db.trips.find((t) => t.id === tripId);
             if (!trip) fail(404, 'NOT_FOUND', `Unknown trip: ${tripId}`);
-            if (trip.stage !== 'DELIVERED')
-              fail(409, 'TRIP_NOT_DELIVERED', `Trip ${trip.code} has not been delivered yet.`);
+            if (!['IN_TRANSIT', 'DELIVERED', 'CLOSED'].includes(trip.stage))
+              fail(409, 'TRIP_NOT_ON_ROAD', `Trip ${trip.code} has not left the loading point yet.`);
             if (trip.billed && !currentTripIds.includes(tripId))
               fail(409, 'TRIP_ALREADY_BILLED', `Trip ${trip.code} is already on another invoice.`);
           }
@@ -4772,7 +5058,8 @@ export const mockAdapter: AxiosAdapter = async (config) => {
     const match = pattern.exec(path);
     if (!match) continue;
     try {
-      const result = handler({
+      // A handler may answer later — the upload one reads the file first.
+      const result = await handler({
         params: match.slice(1),
         query,
         body,

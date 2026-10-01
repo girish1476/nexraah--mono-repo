@@ -5,6 +5,7 @@ import { ApprovalRequiredError, errorMessage, request } from '@/apis';
 import { TRUCK_TYPES } from '@/lib/vehicles';
 import { CityField, Dialog, Field, FormGrid, useToast } from '@/lib/ui';
 import { proposeRateLane } from './rate-changes/apis';
+import { RATE_BASIS_LABEL, RateBasis } from './types';
 
 /** The floor the server enforces, repeated here so the form says so before you submit. */
 const MIN_REASON = 20;
@@ -40,6 +41,7 @@ export function AddLaneDialog({
   const [destination, setDestination] = useState('');
   const [transitDays, setTransitDays] = useState('');
   const [rate, setRate] = useState('');
+  const [rateBasis, setRateBasis] = useState<RateBasis>('FTL');
   const [validFrom, setValidFrom] = useState(today());
   const [validTo, setValidTo] = useState('');
   const [reason, setReason] = useState('');
@@ -59,6 +61,7 @@ export function AddLaneDialog({
     setDestination('');
     setTransitDays('');
     setRate('');
+    setRateBasis('FTL');
     setValidFrom(today());
     setValidTo('');
     setReason('');
@@ -106,6 +109,7 @@ export function AddLaneDialog({
         destination: destination.trim(),
         truckType: truckType.trim(),
         ratePaise: Math.round(rupees * 100),
+        rateBasis,
         transitDays: days,
         validFrom,
         ...(validTo ? { validTo } : {}),
@@ -117,7 +121,9 @@ export function AddLaneDialog({
       });
     } catch (e) {
       if (e instanceof ApprovalRequiredError) {
-        toast('Sent for sign-off — it shows on the client under “Lanes waiting for approval” and moves to the rate card once approved.');
+        toast(
+          'Sent for sign-off — it shows under “Lanes waiting for approval” until Compliance, Leadership or an administrator approves it, then moves to the rate card.',
+        );
         reset();
         onClose();
         onSent();
@@ -133,7 +139,7 @@ export function AddLaneDialog({
     <Dialog
       open={open}
       title={`Add a lane · ${clientName}`}
-      body="One route at one truck type, with the rate agreed for it. It is sent for sign-off and joins the rate card once approved."
+      body="One route at one truck type, with the rate agreed for it. It is sent for sign-off — Compliance, Leadership or an administrator approves it under Approvals — and joins the rate card once approved."
       confirmLabel="Send for sign-off"
       confirmDisabled={Boolean(problem)}
       busy={busy}
@@ -164,7 +170,25 @@ export function AddLaneDialog({
         <Field label="To location" required>
           <CityField listId="add-lane-to" value={destination} onChange={(e) => setDestination(e.target.value)} />
         </Field>
-        <Field label="Lane rate (₹)" required hint="What we charge this client for one load on this route.">
+        <Field
+          label="Rate basis"
+          required
+          hint="How this client gives the price: for the full truck (FTL) or per metric tonne (PMT)."
+        >
+          <select value={rateBasis} onChange={(e) => setRateBasis(e.target.value as RateBasis)}>
+            <option value="FTL">{RATE_BASIS_LABEL.FTL}</option>
+            <option value="PMT">{RATE_BASIS_LABEL.PMT}</option>
+          </select>
+        </Field>
+        <Field
+          label={rateBasis === 'PMT' ? 'Lane rate per tonne (₹)' : 'Lane rate per truck (₹)'}
+          required
+          hint={
+            rateBasis === 'PMT'
+              ? 'What we charge this client per metric tonne. A load is billed at this rate × its weight.'
+              : 'What we charge this client for one full truck on this route.'
+          }
+        >
           <input type="number" min={1} value={rate} onChange={(e) => setRate(e.target.value)} />
         </Field>
         <Field

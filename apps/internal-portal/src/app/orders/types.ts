@@ -297,4 +297,28 @@ export interface OrderDetail extends OrderListRow {
   events: OrderEvent[];
   /** Notes added from the order page's comment button, oldest first. */
   comments: OrderComment[];
+  /** Where the goods are loaded and delivered, as typed on the load request. */
+  pickupAddress?: string | null;
+  dropAddress?: string | null;
+  vendorCode?: string | null;
+  vendorPhone?: string | null;
+  tripStage?: 'OPEN' | 'IN_TRANSIT' | 'DELIVERED' | 'CLOSED' | null;
+  /** The order cycle's milestones, as marked on the tracking sheet. */
+  milestones?: {
+    reachedLoadingAt: string | null;
+    loadedAt: string | null;
+    departedAt: string | null;
+    reachedDestinationAt: string | null;
+    deliveredAt: string | null;
+  };
+  podStatus?: string | null;
+  /** The client invoice this order is billed on, once one exists. */
+  invoice?: {
+    id: string;
+    code: string | null;
+    status: string;
+    invoiceDate: string | null;
+    totalPaise: number;
+    receivedPaise: number;
+  } | null;
 }

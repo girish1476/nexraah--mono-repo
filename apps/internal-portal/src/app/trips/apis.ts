@@ -1,5 +1,14 @@
 import { request } from '@/apis';
-import { CrossCheckResult, LorryReceipt, TripCharge, TripDetail, TripDocument, TripListRow } from './types';
+import {
+  CrossCheckResult,
+  LorryReceipt,
+  TrackingPostKind,
+  TrackingSheet,
+  TripCharge,
+  TripDetail,
+  TripDocument,
+  TripListRow,
+} from './types';
 
 /** GET /trips?q=&field=&stage=&branch=&transporter=&pod_status= */
 export function listTrips(params: {
@@ -9,6 +18,8 @@ export function listTrips(params: {
   branch?: string;
   transporter?: string;
   pod_status?: string;
+  /** '1' — on the road or later, and not on a client invoice yet. */
+  invoiceable?: '1';
 } = {}) {
   return request<TripListRow[]>({ url: '/trips', method: 'GET', params });
 }
@@ -186,4 +197,24 @@ export function deliverTrip(id: string, deliveredAt?: string) {
     method: 'POST',
     data: deliveredAt ? { deliveredAt } : {},
   });
+}
+
+/* ---- tracking sheet ------------------------------------------------------ */
+
+/** GET /trips/:id/tracking — the milestones and position updates, oldest first. */
+export function getTracking(id: string) {
+  return request<TrackingSheet>({ url: `/trips/${id}/tracking`, method: 'GET' });
+}
+
+/**
+ * POST /trips/:id/tracking — a position update, or a milestone in the order
+ * cycle: reached the loading point, loaded, reached the unloading point.
+ * Starting the trip and unloading have their own actions (`departTrip`,
+ * `deliverTrip`), which write their own lines.
+ */
+export function addTracking(
+  id: string,
+  body: { kind: TrackingPostKind; location?: string; lat?: number; lng?: number; note?: string; at?: string },
+) {
+  return request<TrackingSheet>({ url: `/trips/${id}/tracking`, method: 'POST', data: body });
 }

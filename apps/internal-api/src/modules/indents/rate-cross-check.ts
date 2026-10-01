@@ -24,8 +24,10 @@ export interface RateCardLaneLike {
   origin: string;
   destination: string;
   truckType: string;
-  /** The agreed price, in paise. */
+  /** The agreed price, in paise — for the whole truck (FTL) or per tonne (PMT). */
   ratePaise: number;
+  /** Absent reads as FTL, the only basis before per-tonne rates existed. */
+  rateBasis?: 'FTL' | 'PMT' | string | null;
   validFrom: string;
   validTo: string | null;
 }
@@ -37,6 +39,8 @@ export interface IndentRateFacts {
   truckType: string;
   sellRatePaise: number;
   pickupDate: string;
+  /** The load's weight, which a per-tonne lane multiplies by. */
+  weightTn?: number;
 }
 
 export type RateMismatch =
@@ -117,7 +121,8 @@ export function crossCheckRate(indent: IndentRateFacts, lane: RateCardLaneLike):
     };
   }
 
-  if (lane.ratePaise !== indent.sellRatePaise) {
+  const agreedPaise = agreedFreightPaise(lane, indent.weightTn);
+  if (agreedPaise !== indent.sellRatePaise) {
     /*
      * Exact match, deliberately — no tolerance band.
      *
@@ -132,9 +137,22 @@ export function crossCheckRate(indent: IndentRateFacts, lane: RateCardLaneLike):
       mismatch: 'RATE_MISMATCH',
       reason:
         'This price does not match the rate agreed with the client for this lane. Raise it as a spot load with the client’s written confirmation, or have the rate revised.',
-      agreedRatePaise: lane.ratePaise,
+      agreedRatePaise: agreedPaise,
     };
   }
 
   return { ok: true, mismatch: null, reason: null };
+}
+
+/**
+ * What one load on this lane is billed at. A whole-truck (FTL) lane is its
+ * rate; a per-tonne (PMT) lane is its rate times the load's weight, rounded to
+ * the paisa. A PMT lane with no weight to multiply by cannot be priced — it
+ * answers the bare rate, which the weight-less indent then fails to match.
+ */
+export function agreedFreightPaise(lane: Pick<RateCardLaneLike, 'ratePaise' | 'rateBasis'>, weightTn?: number): number {
+  if (lane.rateBasis === 'PMT' && typeof weightTn === 'number' && weightTn > 0) {
+    return Math.round(lane.ratePaise * weightTn);
+  }
+  return lane.ratePaise;
 }

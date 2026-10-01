@@ -247,6 +247,7 @@ export class IndentsService implements OnModuleInit {
           truckType: dto.truckType,
           sellRatePaise: dto.sellRatePaise,
           pickupDate: dto.pickupDate,
+          weightTn: dto.weightTn,
         },
         lane,
       );
@@ -307,6 +308,8 @@ export class IndentsService implements OnModuleInit {
         transit_days: dto.transitDays ?? null,
         reporting_rule: dto.reportingRule ?? null,
         remarks: dto.remarks ?? null,
+        pickup_address: dto.pickupAddress?.trim() || null,
+        drop_address: dto.dropAddress?.trim() || null,
         rate_source: dto.rateSource,
         sell_rate: dto.sellRatePaise,
         sourcing_rate: dto.sourcingRatePaise ?? null,

@@ -193,6 +193,38 @@ export class ApprovalsService {
   }
 
   /**
+   * Takes a pending request off the queue without deciding it on its merits —
+   * a duplicate rate removed by Leadership or an administrator. Recorded as
+   * REJECTED with the note, so the history still shows it was asked for. The
+   * caller decides who may do this; the row must match the kind and entity the
+   * caller names, so an id from one screen cannot withdraw another's request.
+   */
+  async withdraw(
+    id: string,
+    note: string,
+    actor: AuthenticatedUser,
+    expect: { kind: ApprovalKind; entityType: string; entityId: string },
+  ): Promise<ApprovalDto> {
+    return this.approvalsRepository.transaction().execute(async (trx) => {
+      const row = await this.approvalsRepository.findById(trx, id);
+      if (!row || row.kind !== expect.kind || row.entity_type !== expect.entityType || row.entity_id !== expect.entityId) {
+        throw new DomainException(404, 'NOT_FOUND', `Unknown request: ${id}`);
+      }
+      if (row.status !== 'PENDING') {
+        throw new DomainException(409, 'ALREADY_DECIDED', `That request is already ${row.status.toLowerCase()}.`);
+      }
+      const decided = await this.approvalsRepository.decide(trx, id, 'REJECTED', actor.userId, note);
+      await this.auditService.record(trx, actor, {
+        action: 'APPROVAL_WITHDRAWN',
+        entityType: 'approvals',
+        entityId: id,
+        after: { note },
+      });
+      return this.toDto(decided, actor.name);
+    });
+  }
+
+  /**
    * `requiredPermission` varies per kind (`REQUIRED_PERMISSION_BY_KIND`), so
    * a static `@RequirePermission(...)` on the controller route can't express
    * it — the check has to happen here, once the row's `kind` is known.

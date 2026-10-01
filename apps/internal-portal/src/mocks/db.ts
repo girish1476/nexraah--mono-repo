@@ -1175,6 +1175,8 @@ export const db = {
   podReceipts: [] as Record<string, any>[],
   /** Append-only notes on an order, keyed by the order's (indent's) id. */
   orderComments: [] as Record<string, any>[],
+  /** Trip tracking sheet — milestones and position updates, `trip_tracking_updates`. */
+  tripTracking: [] as Record<string, any>[],
   payments: [] as Record<string, any>[],
   sdrRecoveries: [] as Record<string, any>[],
   penaltyWaivers: [] as Record<string, any>[],

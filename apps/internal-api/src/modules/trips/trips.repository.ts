@@ -9,6 +9,8 @@ export interface TripListFilters {
   branchId?: string;
   vendorId?: string;
   podStatus?: string;
+  /** On the road or later, and not yet on a client invoice. */
+  invoiceable?: boolean;
 }
 
 @Injectable()
@@ -50,6 +52,9 @@ export class TripsRepository {
         'trips.stage as stage',
         'trips.pod_status as podStatus',
         'trips.delivered_at as deliveredAt',
+        'trips.departed_at as departedAt',
+        'trips.client_id as clientId',
+        'indents.id as indentId',
         'trips.buy_rate as buyRatePaise',
         'indents.sell_rate as sellRatePaise',
         'trips.advance_paid as advancePaidPaise',
@@ -93,6 +98,9 @@ export class TripsRepository {
     if (filters.branchId) query = query.where('trips.branch_id', '=', filters.branchId);
     if (filters.vendorId) query = query.where('trips.vendor_id', '=', filters.vendorId);
     if (filters.podStatus) query = query.where('trips.pod_status', 'in', filters.podStatus.split(','));
+    if (filters.invoiceable) {
+      query = query.where('trips.stage', 'in', ['IN_TRANSIT', 'DELIVERED', 'CLOSED']).where('trips.billed', '=', false);
+    }
 
     return query.orderBy('trips.created_at', 'desc').execute();
   }
@@ -353,5 +361,46 @@ export class TripsRepository {
 
   update(db: DbExecutor, id: string, patch: Record<string, unknown>) {
     return db.updateTable('trips').set(patch).where('id', '=', id).returningAll().executeTakeFirstOrThrow();
+  }
+
+  // ---- Tracking sheet ------------------------------------------------
+
+  insertTracking(
+    db: DbExecutor,
+    row: {
+      trip_id: string;
+      kind: string;
+      location: string;
+      lat: number | null;
+      lng: number | null;
+      note: string | null;
+      recorded_by: string | null;
+      recorded_at?: string;
+    },
+  ) {
+    return db
+      .insertInto('trip_tracking_updates')
+      .values({ ...row, lat: row.lat === null ? null : String(row.lat), lng: row.lng === null ? null : String(row.lng) })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+  }
+
+  listTracking(tripId: string) {
+    return this.db
+      .selectFrom('trip_tracking_updates')
+      .leftJoin('users', 'users.id', 'trip_tracking_updates.recorded_by')
+      .select([
+        'trip_tracking_updates.id as id',
+        'trip_tracking_updates.kind as kind',
+        'trip_tracking_updates.location as location',
+        'trip_tracking_updates.lat as lat',
+        'trip_tracking_updates.lng as lng',
+        'trip_tracking_updates.note as note',
+        'trip_tracking_updates.recorded_at as recordedAt',
+        'users.name as recordedByName',
+      ])
+      .where('trip_tracking_updates.trip_id', '=', tripId)
+      .orderBy('trip_tracking_updates.recorded_at', 'asc')
+      .execute();
   }
 }

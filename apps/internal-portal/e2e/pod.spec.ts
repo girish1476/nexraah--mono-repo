@@ -232,8 +232,8 @@ test.describe('POD verify and approve', () => {
     // The page header's subtitle also mentions the transporter's name — this
     // one is the exact match in the fact list.
     await expect(page.getByText('Bhagwati Logistics', { exact: true })).toBeVisible();
-    await expect(page.getByText('Page 1')).toBeVisible();
-    await expect(page.getByText('Page 2')).toBeVisible();
+    await expect(page.getByRole('img', { name: 'Proof of delivery, page 1' })).toBeVisible();
+    await expect(page.getByRole('img', { name: 'Proof of delivery, page 2' })).toBeVisible();
 
     for (const label of [
       'Consignee stamp present',
@@ -291,7 +291,7 @@ test.describe('POD verify and approve', () => {
     await confirm.click();
 
     await expect(page.getByText('Rejected · sent back to the transporter, and the penalty clock keeps running.')).toBeVisible();
-    await expect(page.getByText('The physical copy has not been logged')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Receive the proof of delivery' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Verify' })).toHaveCount(0);
   });
 
@@ -300,7 +300,7 @@ test.describe('POD verify and approve', () => {
     await page.goto('/pod/t-120869/verify');
 
     await expect(page.getByTestId('view-only')).toBeVisible();
-    await expect(page.getByText('Page 1')).toBeVisible();
+    await expect(page.getByRole('img', { name: 'Proof of delivery, page 1' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Verify' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Reject and request a replacement' })).toHaveCount(0);
     await expect(page.locator('input[type="checkbox"]')).toHaveCount(0);

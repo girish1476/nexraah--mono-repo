@@ -12,6 +12,7 @@ import type { RaiseBillDto } from './dto/raise-bill.dto';
 import { assertAnyPermission } from '../../common/guards/assert-any-permission';
 import { planRecovery } from '../sdr/sdr-recovery';
 import { SdrRepository } from '../sdr/sdr.repository';
+import { TripsService } from '../trips/trips.service';
 
 const DOC_LABEL: Record<string, string> = {
   CLIENT_INVOICE_OR_PO: 'Client invoice or purchase order',
@@ -33,6 +34,7 @@ export class PaymentsService {
     private readonly auditService: AuditService,
     private readonly ordersService: OrdersService,
     private readonly sdrRepository: SdrRepository,
+    private readonly tripsService: TripsService,
   ) {}
 
   private readonly logger = new Logger('PaymentsService');
@@ -168,6 +170,15 @@ export class PaymentsService {
     });
     // Step 5, "Advance paid".
     await this.syncOrder(indentId, actor);
+    // Advance uploaded, verified and paid: the order moves to tracking. The
+    // operations team found orders sitting at "Advance paid" with a loaded
+    // truck already gone, because nobody pressed Start trip. If the truck is
+    // loaded and nothing else holds it, it goes on the road now; otherwise the
+    // order's Next step still says what is missing.
+    if (indentId) {
+      const tripId = (result as { tripId?: string }).tripId;
+      if (tripId) await this.tripsService.departIfReady(tripId, actor);
+    }
     return result;
   }
 

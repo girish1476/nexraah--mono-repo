@@ -12,5 +12,7 @@ import { TripsRepository } from './trips.repository';
   imports: [ControlPanelModule, OrdersModule],
   controllers: [TripsController],
   providers: [TripsService, TripsRepository],
+  // Payments starts a loaded truck on its way once the advance is paid.
+  exports: [TripsService],
 })
 export class TripsModule {}

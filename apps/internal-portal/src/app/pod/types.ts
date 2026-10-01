@@ -74,6 +74,8 @@ export interface PodDetail {
   ageDays: number;
   penaltyPaise: number;
   receipt: PodReceipt | null;
+  /** E-POD or H-POD, once one has come in. */
+  podKind?: PodKind | null;
   /** Null before a receipt is logged — mirrors `receipt?.pages`, not a separately captured value. */
   pages: number | null;
   attachmentIds: string[];
@@ -87,13 +89,26 @@ export interface PodReceipt {
   id: string;
   code: string;
   tripId: string;
-  courierDocket: string;
+  /** Null for an E-POD — nothing was couriered. */
+  courierDocket: string | null;
   sentOn: string | null;
   receivedOn: string;
   pages: number;
   receivedBy: string;
   condition: string | null;
+  podKind?: PodKind;
 }
+
+/**
+ * How the proof of delivery came in. E-POD — a photo or scan uploaded from the
+ * desk; H-POD — the signed hard copy received by courier.
+ */
+export type PodKind = 'EPOD' | 'HPOD';
+
+export const POD_KIND_LABEL: Record<PodKind, string> = {
+  EPOD: 'E-POD — photo or scan',
+  HPOD: 'H-POD — signed hard copy',
+};
 
 /** The clerical check. Remarks are mandatory when any of these is false. */
 export interface VerifyChecklist {

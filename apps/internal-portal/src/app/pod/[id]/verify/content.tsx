@@ -23,8 +23,10 @@ import {
   useCan,
   useToast,
 } from '@/lib/ui';
-import { approvePod, getPod, receivePod, rejectPod, verifyPod } from '../../apis';
-import { PodDetail, VerifyChecklist } from '../../types';
+import { approvePod, getPod, receivePod, rejectPod, uploadEpod, verifyPod } from '../../apis';
+import { POD_KIND_LABEL, PodDetail, PodKind, VerifyChecklist } from '../../types';
+import { DocPreview } from '@/components/doc-preview';
+import { uploadAttachment } from '@/lib/attachments';
 import { listSdr } from '@/app/sdr/apis';
 import { SDR_KIND_LABEL, SdrKind, SdrRecord } from '@/app/sdr/types';
 
@@ -89,6 +91,9 @@ export function PodVerifyContent({
   const [sdrKind, setSdrKind] = useState<SdrKind>('DAMAGE');
   const [sdrClaimedRupees, setSdrClaimedRupees] = useState(0);
   const [sdrs, setSdrs] = useState<SdrRecord[]>([]);
+  // E-POD (a photo or scan uploaded now) or H-POD (the hard copy by courier).
+  const [podMode, setPodMode] = useState<PodKind>('EPOD');
+  const [epodFiles, setEpodFiles] = useState<File[]>([]);
   const [receive, setReceive] = useState({
     courierDocket: '',
     sentOn: '',
@@ -129,6 +134,22 @@ export function PodVerifyContent({
         condition: receive.condition.trim() || undefined,
       });
       toast(`${receipt.code} logged · the clock has stopped — it can be verified now`);
+      load();
+    } catch (e) {
+      toast(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitEpod = async () => {
+    setBusy(true);
+    try {
+      const ids: string[] = [];
+      for (const f of epodFiles) ids.push(await uploadAttachment(f, 'POD', 'trips', tripId));
+      const receipt = await uploadEpod(tripId, ids);
+      toast(`${receipt.code} · E-POD uploaded · the clock has stopped — it can be verified now`);
+      setEpodFiles([]);
       load();
     } catch (e) {
       toast(errorMessage(e));
@@ -236,7 +257,8 @@ export function PodVerifyContent({
                 <FactList
                   facts={[
                     ['Receipt', pod.receipt.code],
-                    ['Courier docket', pod.receipt.courierDocket],
+                    ['Came in as', pod.receipt.podKind ? POD_KIND_LABEL[pod.receipt.podKind] : POD_KIND_LABEL.HPOD],
+                    ['Courier docket', pod.receipt.courierDocket ?? '—'],
                     ['Sent on', fmtDate(pod.receipt.sentOn)],
                     ['Received on', fmtDate(pod.receipt.receivedOn)],
                     ['Received by', pod.receipt.receivedBy],
@@ -248,48 +270,80 @@ export function PodVerifyContent({
           </>
         }
       >
-        <Panel title="Document">
-          <div
-            style={{
-              display: 'flex',
-              gap: 10,
-              flexWrap: 'wrap',
-              padding: 20,
-              background: 'var(--grey-tint)',
-              justifyContent: 'center',
-            }}
-          >
-            {pod.attachmentIds.map((attachmentId, i) => (
-              <div
-                key={attachmentId}
-                style={{
-                  width: 150,
-                  height: 200,
-                  border: '1px solid var(--color-divider)',
-                  borderRadius: 'var(--radius-sm)',
-                  background: '#fff',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: 12,
-                }}
-                className="muted"
-              >
-                Page {i + 1}
+        <Panel
+          title="Document"
+          right={pod.podKind ? <Tag tone="blue">{POD_KIND_LABEL[pod.podKind]}</Tag> : undefined}
+        >
+          {pod.podStatus === 'PENDING' ? (
+            <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>
+              Nothing has come in yet. Upload the E-POD, or log the H-POD when the hard copy arrives.
+            </p>
+          ) : (
+            <>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+                {pod.attachmentIds.map((attachmentId, i) => (
+                  <DocPreview key={attachmentId} attachmentId={attachmentId} label={`Proof of delivery, page ${i + 1}`} />
+                ))}
               </div>
-            ))}
-          </div>
-          <p className="muted" style={{ fontSize: 11.5, marginBottom: 0 }}>
-            Pages are served on 15-minute signed URLs. Nothing is downloaded permanently.
-          </p>
+              <p className="muted" style={{ fontSize: 11.5, marginBottom: 0 }}>
+                Click a page to open it full size. Pages are served on short-lived signed links.
+              </p>
+            </>
+          )}
         </Panel>
 
         {pod.podStatus === 'PENDING' || pod.podStatus === 'ATTACHED' ? (
           <Panel title="Receive the proof of delivery">
-            <Banner tone="flag" title="The physical copy has not been logged">
+            <div className="stage-tabs" role="tablist" style={{ marginBottom: 12 }}>
+              {(['EPOD', 'HPOD'] as PodKind[]).map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  role="tab"
+                  aria-selected={podMode === k}
+                  className={podMode === k ? 'stage-tab is-active' : 'stage-tab'}
+                  onClick={() => setPodMode(k)}
+                >
+                  <span className="glyph" aria-hidden>
+                    {k === 'EPOD' ? '📱' : '📄'}
+                  </span>
+                  {k === 'EPOD' ? 'E-POD' : 'H-POD'}
+                </button>
+              ))}
+            </div>
+            {podMode === 'EPOD' ? (
+              <>
+                <Banner tone="blue" title="E-POD — upload the photo or scan of the signed delivery note">
+                  It stops the clock and can be checked straight away. If the hard copy follows by courier, it can still
+                  be logged later.
+                </Banner>
+                {can('pod.receive') ? (
+                  <div style={{ marginTop: 12, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'end' }}>
+                    <Field label="Photo or scan" hint="One or more pages — photos or a PDF.">
+                      <input
+                        type="file"
+                        multiple
+                        accept="image/*,application/pdf"
+                        aria-label="E-POD photo or scan"
+                        onChange={(e) => setEpodFiles(Array.from(e.target.files ?? []))}
+                      />
+                    </Field>
+                    <button className="btn" disabled={busy || epodFiles.length === 0} onClick={submitEpod}>
+                      Upload E-POD — stop the clock
+                    </button>
+                  </div>
+                ) : (
+                  <p className="muted" style={{ fontSize: 12.5, marginBottom: 0 }}>
+                    Operations or the branch uploads the E-POD.
+                  </p>
+                )}
+              </>
+            ) : (
+              <>
+            <Banner tone="flag" title="H-POD — the signed hard copy has not been logged">
               {pod.podStatus === 'ATTACHED'
                 ? 'The transporter has sent a photo. Log the paper copy when it reaches the branch — that is what stops the clock.'
-                : 'Nothing has come in yet. Log the paper copy when it reaches the branch — that is what stops the clock and lets it be verified.'}
+                : 'Waiting for the hard copy by courier. Log it when it reaches the branch — that is what stops the clock and lets it be verified.'}
             </Banner>
             {can('pod.receive') ? (
               <div style={{ marginTop: 12 }}>
@@ -328,6 +382,8 @@ export function PodVerifyContent({
               <p className="muted" style={{ fontSize: 12.5, marginBottom: 0 }}>
                 The branch receiving desk logs the paper copy.
               </p>
+            )}
+              </>
             )}
           </Panel>
         ) : null}

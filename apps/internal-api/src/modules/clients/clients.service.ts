@@ -110,6 +110,7 @@ export class ClientsService {
       destination: r.destination,
       truckType: r.truck_type,
       ratePaise: r.rate,
+      rateBasis: r.rate_basis,
       transitDays: r.transit_days,
       reportingRule: r.reporting_rule,
       validFrom: r.valid_from,

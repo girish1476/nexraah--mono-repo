@@ -11,6 +11,14 @@ import type { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import type { CancelInvoiceDto } from './dto/cancel-invoice.dto';
 import type { RecordReceiptDto } from './dto/record-receipt.dto';
 
+/**
+ * A client can be invoiced once the truck is on the road — in transit,
+ * delivered, or closed after the transporter is paid. The operations team
+ * bills while the load is moving; only a load that has not left (or was
+ * cancelled) has nothing to bill yet.
+ */
+export const INVOICEABLE_STAGES: readonly string[] = ['IN_TRANSIT', 'DELIVERED', 'CLOSED'];
+
 const AGEING_BUCKETS = ['CURRENT', 'D0_30', 'D31_60', 'D61_90', 'D90_PLUS'] as const;
 type AgeingBucket = (typeof AGEING_BUCKETS)[number];
 
@@ -84,8 +92,8 @@ export class InvoicingService {
           // client may be billed the moment the load is delivered; the
           // transporter's payment stays gated on delivery proof separately.
           // Not a gap to close — bill early, pay once proof is confirmed.
-          if (trip.stage !== 'DELIVERED') {
-            throw new DomainException(409, 'TRIP_NOT_DELIVERED', `Trip ${trip.code} has not been delivered yet.`);
+          if (!INVOICEABLE_STAGES.includes(trip.stage)) {
+            throw new DomainException(409, 'TRIP_NOT_ON_ROAD', `Trip ${trip.code} has not left the loading point yet.`);
           }
           if (trip.billed) {
             throw new DomainException(409, 'TRIP_ALREADY_BILLED', `Trip ${trip.code} is already on another invoice.`);
@@ -190,8 +198,8 @@ export class InvoicingService {
           for (const tripId of dto.tripIds) {
             const trip = found.get(tripId);
             if (!trip) throw new DomainException(404, 'NOT_FOUND', `Unknown trip: ${tripId}`);
-            if (trip.stage !== 'DELIVERED') {
-              throw new DomainException(409, 'TRIP_NOT_DELIVERED', `Trip ${trip.code} has not been delivered yet.`);
+            if (!INVOICEABLE_STAGES.includes(trip.stage)) {
+              throw new DomainException(409, 'TRIP_NOT_ON_ROAD', `Trip ${trip.code} has not left the loading point yet.`);
             }
             // A trip already on *this* draft is fine to keep; one billed
             // onto some other invoice is not up for grabs.

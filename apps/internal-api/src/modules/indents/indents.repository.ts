@@ -25,10 +25,12 @@ export class IndentsRepository {
         'destination',
         'truck_type as truckType',
         'rate as ratePaise',
+        'rate_basis as rateBasis',
         'valid_from as validFrom',
         'valid_to as validTo',
       ])
       .where('id', '=', laneId)
+      .where('deleted_at', 'is', null)
       .executeTakeFirst();
   }
 
@@ -49,6 +51,7 @@ export class IndentsRepository {
       .selectFrom('rate_card_lanes')
       .select(['bid_min as bidMin', 'bid_max as bidMax'])
       .where('client_id', '=', clientId)
+      .where('deleted_at', 'is', null)
       .where(sql<boolean>`lower(origin) = lower(${fromCity})`)
       .where(sql<boolean>`lower(destination) = lower(${toCity})`)
       .where(sql<boolean>`lower(truck_type) = lower(${truckType})`)
@@ -220,6 +223,8 @@ export class IndentsRepository {
       transit_days: number | null;
       reporting_rule: string | null;
       remarks: string | null;
+      pickup_address?: string | null;
+      drop_address?: string | null;
       rate_source: string;
       sell_rate: number;
       sourcing_rate: number | null;

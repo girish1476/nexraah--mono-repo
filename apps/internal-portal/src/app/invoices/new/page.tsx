@@ -58,7 +58,8 @@ export default function NewInvoicePage() {
 
   useEffect(() => {
     listClients().then(setClients).catch(() => setClients([]));
-    listTrips({ stage: 'DELIVERED' })
+    // In transit or later and not billed yet — the client is billed once the truck is on the road.
+    listTrips({ invoiceable: '1' })
       .then(setTrips)
       .catch((e) => setError(errorMessage(e)));
     // Arriving from an order's Invoice tab: `?client=…&trip=…` picks that
@@ -156,7 +157,11 @@ export default function NewInvoicePage() {
     { key: 'trip', label: 'Trip', mono: true, render: (r) => r.code },
     { key: 'lr', label: 'LR', mono: true, render: (r) => r.lrCode ?? '—' },
     { key: 'lane', label: 'Lane', render: (r) => r.lane },
-    { key: 'delivered', label: 'Delivered', render: (r) => fmtDate(r.deliveredAt) },
+    {
+      key: 'delivered',
+      label: 'Where it is',
+      render: (r) => (r.deliveredAt ? `Delivered ${fmtDate(r.deliveredAt)}` : 'In transit'),
+    },
     { key: 'freight', label: 'Freight', align: 'right', render: (r) => inr(r.sellRatePaise) },
   ];
 
@@ -218,7 +223,7 @@ export default function NewInvoicePage() {
             columns={columns}
             rows={billable}
             rowKey={(r) => r.id}
-            empty="No delivered unbilled consignments for this client."
+            empty="No unbilled consignments in transit or delivered for this client."
           />
         </Panel>
 

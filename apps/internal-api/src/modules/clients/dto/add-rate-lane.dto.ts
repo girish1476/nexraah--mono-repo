@@ -1,4 +1,4 @@
-import { IsBoolean, IsDateString, IsInt, IsOptional, IsString, IsUUID, Max, Min, MinLength, ValidateIf } from 'class-validator';
+import { IsBoolean, IsDateString, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, Min, MinLength, ValidateIf } from 'class-validator';
 
 /** `POST /clients/:id/rate-card` — a lane agreed outside an RFQ. Paise, like every money field here. */
 export class AddRateLaneDto {
@@ -8,6 +8,12 @@ export class AddRateLaneDto {
 
   /** The agreed lane rate. `> 0` matches the column check. */
   @IsInt() @Min(1) ratePaise!: number;
+
+  /**
+   * FTL — the rate is for the whole truck. PMT — per metric tonne, so a load is
+   * priced at rate x weight. Some clients agree one, some the other.
+   */
+  @IsOptional() @IsIn(['FTL', 'PMT']) rateBasis?: 'FTL' | 'PMT';
 
   /** Days the client expects the load to take. Required: an indent copies it from the lane. */
   @IsInt() @Min(0) @Max(60) transitDays!: number;

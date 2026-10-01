@@ -7,6 +7,7 @@ import type { AuthenticatedUser } from '../../common/interfaces/authenticated-us
 import { PodService } from './pod.service';
 import { AddDocketDto } from './dto/add-docket.dto';
 import { ReceivePodDto } from './dto/receive-pod.dto';
+import { UploadEpodDto } from './dto/upload-epod.dto';
 import { VerifyPodDto } from './dto/verify-pod.dto';
 import { RejectPodDto } from './dto/reject-pod.dto';
 import { WaivePenaltyDto } from './dto/waive-pod.dto';
@@ -31,6 +32,13 @@ export class PodController {
   @RequirePermission('pod.receive')
   receive(@Param('tripId') tripId: string, @Body() dto: ReceivePodDto, @CurrentUser() user: AuthenticatedUser) {
     return this.podService.receive(tripId, dto, user);
+  }
+
+  /** E-POD — the proof as an uploaded photo or scan, instead of waiting for the hard copy. */
+  @Post(':tripId/epod')
+  @RequirePermission('pod.receive')
+  uploadEpod(@Param('tripId') tripId: string, @Body() dto: UploadEpodDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.podService.uploadEpod(tripId, dto, user);
   }
 
   @Get('pending')

@@ -76,7 +76,7 @@ test.describe('operations: bid to vehicle', () => {
     await form.getByRole('button', { name: 'Assign' }).click();
     await expect(page.getByText('Loading supervisor assigned')).toBeVisible();
     await expect(page.getByText('Ravi Kumar').first()).toBeVisible();
-    await expect(page.getByText('Loading has to be marked complete before this trip can start.')).toBeVisible();
+    await expect(page.getByText(/Mark the truck as reached the loading point and loaded before this trip can start/)).toBeVisible();
 
     await page.getByRole('button', { name: 'Start loading' }).click();
     await expect(page.getByText('Loading started', { exact: true }).first()).toBeVisible();

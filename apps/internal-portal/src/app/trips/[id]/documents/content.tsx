@@ -54,6 +54,8 @@ export function TripDocumentsContent({ tripId }: { tripId: string }) {
   const toast = useToast();
   const session = useAtomValue(sessionAtom);
   const [supervisorId, setSupervisorId] = useState<string | null>(null);
+  // The proof of delivery comes after unloading — its row is not offered before.
+  const [unloaded, setUnloaded] = useState(false);
 
   const [docs, setDocs] = useState<TripDocument[] | null>(null);
   const [crossCheck, setCrossCheck] = useState<CrossCheckResult | null>(null);
@@ -77,6 +79,7 @@ export function TripDocumentsContent({ tripId }: { tripId: string }) {
         setDocs(d);
         setCrossCheck(c);
         setSupervisorId(t.loadingSupervisorId ?? null);
+        setUnloaded(!!t.deliveredAt);
       })
       .catch((e) => setError(errorMessage(e)));
   };
@@ -348,7 +351,7 @@ export function TripDocumentsContent({ tripId }: { tripId: string }) {
           </Panel>
         )}
 
-        {DOC_GROUPS.map((group) => {
+        {DOC_GROUPS.filter((group) => group.key !== 'POD' || unloaded).map((group) => {
           const rows = docs.filter((d) => group.kinds.includes(d.kind));
           if (rows.length === 0) return null;
           return (

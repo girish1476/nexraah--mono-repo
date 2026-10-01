@@ -35,6 +35,19 @@ export function OrderCommentsButton({
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => setComments(initial), [initial]);
+  // While the panel is open the page behind it does not scroll — on a phone a
+  // scrolled page slid the panel's header off screen and taps missed the button.
+  useEffect(() => {
+    if (!open) return;
+    const html = document.documentElement;
+    const before = { html: html.style.overflow, body: document.body.style.overflow };
+    html.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden';
+    return () => {
+      html.style.overflow = before.html;
+      document.body.style.overflow = before.body;
+    };
+  }, [open]);
   useEffect(() => {
     if (open) endRef.current?.scrollIntoView({ block: 'nearest' });
   }, [open, comments.length]);
@@ -145,7 +158,9 @@ export function OrderCommentsButton({
               <div ref={endRef} />
             </div>
 
-            <div style={{ padding: 16, borderTop: '1px solid var(--color-divider)' }}>
+            <div style={{ flex: 'none', padding: 16, borderTop: '1px solid var(--color-divider)' }}>
+              {/* Block, border-box and a fixed height: on a phone the box used to
+                  spill over the Add comment button below it and swallow its taps. */}
               <textarea
                 rows={3}
                 placeholder="Add a remark or detail…"
@@ -155,9 +170,20 @@ export function OrderCommentsButton({
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) add();
                 }}
-                style={{ width: '100%' }}
+                style={{ display: 'block', width: '100%', boxSizing: 'border-box', height: 84, minHeight: 0, resize: 'none' }}
               />
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: 8,
+                  flexWrap: 'wrap',
+                  marginTop: 8,
+                  position: 'relative',
+                  zIndex: 1,
+                }}
+              >
                 <span className="muted" style={{ fontSize: 11 }}>
                   Ctrl + Enter to add · comments cannot be edited
                 </span>

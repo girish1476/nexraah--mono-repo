@@ -53,3 +53,35 @@ export function setLaneBand(
     data: body,
   });
 }
+
+/*
+ * Deleting a duplicate rate — Leadership or an administrator only (the server
+ * checks the role). Each takes the reason, which is kept with the record.
+ */
+
+/** DELETE /clients/:id/rate-card/:laneId — a lane on the rate card. Loads already raised keep their price. */
+export function deleteRateLane(clientId: string, laneId: string, reason: string) {
+  return request<{ laneId: string; deleted: true }>({
+    url: `/clients/${clientId}/rate-card/${laneId}`,
+    method: 'DELETE',
+    data: { reason },
+  });
+}
+
+/** DELETE /clients/:id/rate-card/pending/:approvalId — a lane still waiting for sign-off. */
+export function deletePendingRateLane(clientId: string, approvalId: string, reason: string) {
+  return request<{ approvalId: string; deleted: true }>({
+    url: `/clients/${clientId}/rate-card/pending/${approvalId}`,
+    method: 'DELETE',
+    data: { reason },
+  });
+}
+
+/** DELETE /clients/:id/rate-revisions/:revisionId — a rate change still waiting for sign-off. */
+export function deleteRateRevision(clientId: string, revisionId: string, reason: string) {
+  return request<{ revisionId: string; deleted: true }>({
+    url: `/clients/${clientId}/rate-revisions/${revisionId}`,
+    method: 'DELETE',
+    data: { reason },
+  });
+}

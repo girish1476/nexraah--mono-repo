@@ -131,6 +131,9 @@ export interface IndentDraft {
   transitDays: number;
   reportingRule: ReportingRule;
   remarks?: string;
+  /** Where the goods are loaded and delivered — shown on the order page. */
+  pickupAddress?: string;
+  dropAddress?: string;
   rateSource: RateSource;
   sellRatePaise: number;
   sourcingRatePaise?: number;

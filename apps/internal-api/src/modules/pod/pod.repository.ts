@@ -138,8 +138,14 @@ export class PodRepository {
     return query.orderBy('trips.delivered_at').execute();
   }
 
+  /** The latest receipt — a docket logged ahead of an E-POD, or a rejected one, is older. */
   findReceipt(tripId: string) {
-    return this.db.selectFrom('pod_receipts').selectAll().where('trip_id', '=', tripId).executeTakeFirst();
+    return this.db
+      .selectFrom('pod_receipts')
+      .selectAll()
+      .where('trip_id', '=', tripId)
+      .orderBy('created_at', 'desc')
+      .executeTakeFirst();
   }
 
   findReceiptForUpdate(db: DbExecutor, tripId: string) {
@@ -179,6 +185,30 @@ export class PodRepository {
         pages: row.pages,
         received_by: row.receivedBy,
         condition: row.condition,
+        pod_kind: 'HPOD',
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+  }
+
+  /** An electronic proof — the file, no courier docket. BR-51 allows no docket when there is no sent-on date. */
+  insertEpod(
+    db: DbExecutor,
+    row: { code: string; tripId: string; attachmentIds: string[]; receivedOn: string; pages: number | null; receivedBy: string },
+  ) {
+    return db
+      .insertInto('pod_receipts')
+      .values({
+        code: row.code,
+        trip_id: row.tripId,
+        courier_docket: null,
+        sent_on: null,
+        received_on: row.receivedOn,
+        pages: row.pages,
+        received_by: row.receivedBy,
+        condition: null,
+        attachment_ids: row.attachmentIds,
+        pod_kind: 'EPOD',
       })
       .returningAll()
       .executeTakeFirstOrThrow();

@@ -6,12 +6,13 @@ import { useParams } from 'next/navigation';
 import { errorMessage } from '@/apis';
 import { AdvancePanel } from '@/components/advance-panel';
 import { BalancePanel } from '@/components/balance-panel';
-import { TripTrackingPanel } from '@/components/trip-tracking-panel';
-import { LorryReceiptContent } from '@/app/trips/[id]/lr/content';
-import { TripDocumentsContent } from '@/app/trips/[id]/documents/content';
-import { PodVerifyContent } from '@/app/pod/[id]/verify/content';
-import { fmtDate, inr } from '@/lib/format';
+import { getTracking, getTripDocuments } from '@/app/trips/apis';
+import type { TrackingSheet, TripDocument } from '@/app/trips/types';
+import { docLabel } from '@/lib/documents';
+import { fmtDate, fmtDateTime, inr } from '@/lib/format';
 import {
+  Column,
+  DataTable,
   EmptyState,
   ErrorState,
   FactList,
@@ -28,60 +29,53 @@ import {
 import { getOrder } from '../apis';
 import { ORDER_STATUS_LABEL, ORDER_STATUS_TONE, OrderDetail } from '../types';
 import { OrderCommentsButton } from './comments-button';
+import { OrderDocumentsTab } from './documents-tab';
 import { OrderInvoiceTab } from './invoice-tab';
 import { OrderMoney } from './order-money';
 import { OrderNextStep, type OrderTabTarget } from './next-step';
+import { OrderTrackingTab } from './tracking-tab';
 
-type OrderTab = 'details' | 'documents' | 'invoice';
+type OrderTab = 'details' | 'documents' | 'tracking';
 
 const TABS: { key: OrderTab; label: string; emoji: string }[] = [
   { key: 'details', label: 'Details', emoji: '📋' },
   { key: 'documents', label: 'Documents', emoji: '📎' },
-  { key: 'invoice', label: 'Invoice', emoji: '🧾' },
+  { key: 'tracking', label: 'Tracking', emoji: '🧭' },
 ];
 
 /** A dead end outside the normal ten steps — the ladder shows it as stuck
  *  rather than "done", the same way `JourneyMini` on the orders list does. */
 const STUCK_STATUSES: OrderDetail['status'][] = ['FAILED', 'POD_FORFEITED'];
 
-/** Where the truck is, read off the order's step — for the tracking panel's wording. */
-function tripStageOf(status: OrderDetail['status']): string {
-  if (status === 'TRACKING') return 'IN_TRANSIT';
-  if (['UNLOADED', 'POD_UPLOADED', 'POD_VERIFIED', 'BALANCE_RELEASED', 'POD_FORFEITED'].includes(status)) return 'DELIVERED';
-  return 'OPEN';
-}
+const DOC_STATE: Record<string, { tone: 'mint' | 'flag' | 'red' | 'grey'; label: string }> = {
+  MISSING: { tone: 'grey', label: 'Not uploaded' },
+  PENDING: { tone: 'flag', label: 'Waiting for check' },
+  VERIFIED: { tone: 'mint', label: 'Verified' },
+  REJECTED: { tone: 'red', label: 'Rejected' },
+};
 
 /**
  * `/orders/[id]` — the whole lifecycle of one order, one screen, one URL.
  *
- * Reworked 2026-09-30 from the operations team's notes:
+ * Three tabs, as the operations team asked (30 Sep 2026):
  *
- * - **The order moves from here.** A "Next step" panel names what is left to
- *   do and carries the button that does it — award, allocate the vehicle,
- *   start the trip, mark it delivered — instead of sending people to the
- *   indent or trip page and leaving the order looking stuck.
- * - **Payments are on Details** (what went out, with UTRs, beside the advance
- *   and balance panels that release it), and **tracking** is there too while
- *   the truck is on the road.
- * - **Delivery proof lives with the documents.** One Documents tab holds the
- *   lorry receipt, the trip's documents and the proof of delivery.
- * - **The old Payments tab is now Invoice** — the client's side of the money,
- *   which the page never showed.
- * - **Comments are a small 💬 button** in the header where remarks can be
- *   added, not a tab that could only show what was typed at the start.
+ * - **Details** — everything about the order: the next step and the button
+ *   that does it, where it loads and delivers, the transporter and truck, the
+ *   payments and the client invoice, which documents are uploaded and who
+ *   checked them, and the latest tracking.
+ * - **Documents** — each document's photo (or the vehicle PDF) beside the
+ *   details written on it; the lorry receipt if the load needs one; the proof
+ *   of delivery once the truck is unloaded, as an E-POD or an H-POD.
+ * - **Tracking** — the tracking sheet and the map, from "on the way to the
+ *   loading point" to "unloaded".
  *
- * `TripDocumentsContent`, `PodVerifyContent` and `LorryReceiptContent` are the
- * exact components the standalone trip, POD and LR routes render — one upload
- * workflow and one verify workflow, not copies.
+ * Comments are the 💬 button in the header, not a tab.
  */
 export default function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<OrderTab>('details');
-  // Mirrored up from the embedded `LorryReceiptContent` (its own `onLoaded`
-  // callback) so the header strip can show the LR number without a second
-  // fetch — null until the Documents tab has loaded it at least once.
   const [lrCode, setLrCode] = useState<string | null>(null);
 
   const load = () => {
@@ -90,7 +84,7 @@ export default function OrderDetailPage() {
   };
   useEffect(load, [id]);
 
-  const openTab = (target: OrderTabTarget) => {
+  const openTab = (target: OrderTabTarget | OrderTab) => {
     setTab(target);
     if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -112,12 +106,11 @@ export default function OrderDetailPage() {
         }
       />
       <PageIntro
-        what="Everything about one order on a single screen — where it stands, the next thing to do and the button that does it, its documents and delivery proof, and its invoice."
-        who="Every desk can open this. Operations moves the load forward from the Next step panel; only Finance can release the advance or balance payment shown here."
+        what="Everything about one order on a single screen — where it stands and the button for the next step, its documents, and where the truck is."
+        who="Every desk can open this. Operations moves the load forward; Compliance checks the documents; Finance releases the payments."
       />
 
-      {/* The three record IDs one order is known by, who it's for, and where
-          it's going — "which order is this" before reading any tab. */}
+      {/* The record IDs one order is known by, who it's for, and where it's going. */}
       <div className="record-status" style={{ marginBottom: 20 }}>
         <div>
           <div className="eyebrow">Indent</div>
@@ -135,11 +128,7 @@ export default function OrderDetailPage() {
           <div>
             <div className="eyebrow">LR</div>
             <div className="record-status-value">
-              {lrCode ? (
-                <Link href={`/trips/${order.tripId}/lr`}>{lrCode}</Link>
-              ) : (
-                <span className="muted">Not issued yet</span>
-              )}
+              {lrCode ? <Link href={`/trips/${order.tripId}/lr`}>{lrCode}</Link> : <span className="muted">Not issued</span>}
             </div>
           </div>
         )}
@@ -157,15 +146,7 @@ export default function OrderDetailPage() {
           <div>
             <div className="eyebrow">Invoice</div>
             <div className="record-status-value">
-              <a
-                href="#invoice"
-                onClick={(e) => {
-                  e.preventDefault();
-                  openTab('invoice');
-                }}
-              >
-                {order.invoiceCode}
-              </a>
+              <Link href={`/invoices/${order.invoiceId}`}>{order.invoiceCode}</Link>
             </div>
           </div>
         )}
@@ -189,149 +170,216 @@ export default function OrderDetailPage() {
         ))}
       </div>
 
-      {tab === 'details' && (
-        <>
-          {/* Past, current and still-to-come steps together. FAILED never
-              reaches step 2, so the ladder renders it as stuck rather than a
-              step quietly skipped. */}
-          <div style={{ marginBottom: 16 }}>
-            <Panel title="🚚 Order stage">
-              <Journey step={order.stepNo} stuck={STUCK_STATUSES.includes(order.status)} />
-            </Panel>
-          </div>
-
-          <div style={{ marginBottom: 16 }}>
-            <OrderNextStep order={order} onChanged={load} openTab={openTab} />
-          </div>
-
-          <Split
-            aside={
-              order.tripId && (
-                <>
-                  <AdvancePanel indentId={order.indentId} onReleased={load} hideOrderLink />
-                  <BalancePanel tripId={order.tripId} onReleased={load} hideOrderLink />
-                </>
-              )
-            }
-          >
-            <Panel title="Order" pad={false}>
-              <FactList
-                facts={[
-                  ['Client', order.clientName],
-                  ['Lane', order.lane],
-                  ['Material', order.material],
-                  ['Weight', `${order.weightTn} MT`],
-                  ['Truck type', order.truckType],
-                  ['Pickup date', fmtDate(order.pickupDate)],
-                  ['Branch', order.branchName],
-                  ['Freight (sell)', inr(order.sellRatePaise)],
-                  ['Freight (buy)', order.buyRatePaise !== null ? inr(order.buyRatePaise) : 'not awarded yet'],
-                ]}
-              />
-            </Panel>
-
-            {order.vendorName && (
-              <Panel title="Vendor and vehicle" pad={false}>
-                <FactList
-                  facts={[
-                    ['Vendor', order.vendorName],
-                    ['Vehicle', order.vehicleNo || 'not allocated yet'],
-                    [
-                      'Driver mobile',
-                      order.driverPhone ? <a href={`tel:${order.driverPhone}`}>{order.driverPhone}</a> : '—',
-                    ],
-                    ['Driver', order.driverName ?? '—'],
-                  ]}
-                />
-              </Panel>
-            )}
-
-            {order.tripId && <TripTrackingPanel vehicleNo={order.vehicleNo || null} tripStage={tripStageOf(order.status)} />}
-
-            <OrderMoney order={order} />
-
-            {/*
-              What actually happened, in the order it happened. Recorded
-              `order_events`: one row per entry into a step, appended, never
-              overwritten.
-            */}
-            <Panel title="🕘 What has happened so far">
-              <Stack gap={0}>
-                {order.events.length === 0 && (
-                  <div className="hint">Nothing recorded yet. Steps appear here as the order moves.</div>
-                )}
-                {order.events.map((m, i) => (
-                  <div key={m.id} style={{ display: 'flex', gap: 12, paddingBottom: i === order.events.length - 1 ? 0 : 14 }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 'none' }}>
-                      <div
-                        style={{
-                          width: 13,
-                          height: 13,
-                          borderRadius: '50%',
-                          flex: 'none',
-                          background: m.status === 'FAILED' ? 'var(--red)' : 'var(--mint)',
-                          border: `2px solid ${m.status === 'FAILED' ? 'var(--red)' : 'var(--mint)'}`,
-                        }}
-                      />
-                      {i < order.events.length - 1 && (
-                        <div style={{ width: 2, flex: 1, minHeight: 18, background: 'var(--color-divider)', marginTop: 2 }} />
-                      )}
-                    </div>
-                    <div style={{ paddingTop: 0 }}>
-                      <div style={{ fontSize: 'var(--text-md)', fontWeight: 600 }}>{ORDER_STATUS_LABEL[m.status]}</div>
-                      <div className="muted" style={{ fontSize: 'var(--text-sm)', marginTop: 1 }}>
-                        {fmtDate(m.at)}
-                        {` · ${m.actorName ?? 'automatic'}`}
-                      </div>
-                      {m.note && (
-                        <div className="muted" style={{ fontSize: 'var(--text-sm)', marginTop: 1 }}>
-                          {m.note}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </Stack>
-            </Panel>
-          </Split>
-        </>
-      )}
+      {tab === 'details' && <DetailsTab order={order} reload={load} openTab={openTab} />}
 
       {tab === 'documents' &&
         (order.tripId ? (
-          <Stack>
-            <Panel title="Lorry receipt" pad={false}>
-              <div style={{ padding: 15 }}>
-                <LorryReceiptContent tripId={order.tripId} onLoaded={(d) => setLrCode(d.lr.code)} />
-              </div>
-            </Panel>
-            <Panel title="Documents" pad={false}>
-              <div style={{ padding: 15 }}>
-                <TripDocumentsContent tripId={order.tripId} />
-              </div>
-            </Panel>
-            {/* Delivery proof is a document too — it is uploaded, received and
-                checked here, with the rest of the order's paperwork. */}
-            <Panel title="📸 Delivery proof" pad={false}>
-              <div style={{ padding: 15 }}>
-                {['UNLOADED', 'POD_UPLOADED', 'POD_VERIFIED', 'BALANCE_RELEASED', 'POD_FORFEITED'].includes(order.status) ? (
-                  <PodVerifyContent tripId={order.tripId} showOrderLink={false} showStatusTag={false} />
-                ) : (
-                  <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
-                    The delivery proof is uploaded here once the truck is marked delivered.
-                  </p>
-                )}
-              </div>
-            </Panel>
-          </Stack>
+          <OrderDocumentsTab tripId={order.tripId} onChanged={load} openTracking={() => openTab('tracking')} onLrLoaded={setLrCode} />
         ) : (
           <EmptyState
             title="No documents yet"
-            hint="Documents, the lorry receipt and the delivery proof open up once a transporter is awarded and a trip is generated for this order."
+            hint="Documents open up once a transporter is awarded and a trip is generated for this order."
           />
         ))}
 
-      {tab === 'invoice' && <OrderInvoiceTab order={order} />}
+      {tab === 'tracking' &&
+        (order.tripId ? (
+          <OrderTrackingTab tripId={order.tripId} onChanged={load} openDocuments={() => openTab('documents')} />
+        ) : (
+          <EmptyState
+            title="Tracking starts once a vehicle is allocated"
+            hint="Award the load to a transporter and allocate the truck from the Next step on the Details tab."
+          />
+        ))}
     </ModuleGuard>
+  );
+}
+
+function DetailsTab({
+  order,
+  reload,
+  openTab,
+}: {
+  order: OrderDetail;
+  reload: () => void;
+  openTab: (t: OrderTabTarget | OrderTab) => void;
+}) {
+  return (
+    <>
+      <div style={{ marginBottom: 16 }}>
+        <Panel title="🚚 Order stage">
+          <Journey step={order.stepNo} stuck={STUCK_STATUSES.includes(order.status)} />
+        </Panel>
+      </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <OrderNextStep order={order} onChanged={reload} openTab={openTab} />
+      </div>
+
+      <Split
+        aside={
+          order.tripId && (
+            <>
+              <AdvancePanel indentId={order.indentId} onReleased={reload} hideOrderLink />
+              <BalancePanel tripId={order.tripId} onReleased={reload} hideOrderLink />
+            </>
+          )
+        }
+      >
+        <Panel title="📦 Order" pad={false}>
+          <FactList
+            facts={[
+              ['Client', order.clientName],
+              ['Material', order.material],
+              ['Weight', `${order.weightTn} MT`],
+              ['Truck type', order.truckType],
+              ['Pickup date', fmtDate(order.pickupDate)],
+              ['Branch', order.branchName],
+              ['Freight (sell)', inr(order.sellRatePaise)],
+              ['Freight (buy)', order.buyRatePaise !== null ? inr(order.buyRatePaise) : 'not awarded yet'],
+            ]}
+          />
+        </Panel>
+
+        <Panel title="📍 From and to" pad={false}>
+          <FactList
+            facts={[
+              ['From', order.fromCity],
+              ['Loading address', order.pickupAddress || <span className="muted">Not given on the load request</span>],
+              ['To', order.toCity],
+              ['Unloading address', order.dropAddress || <span className="muted">Not given on the load request</span>],
+            ]}
+          />
+        </Panel>
+
+        <Panel title="🚛 Transporter and vehicle" pad={false}>
+          <FactList
+            facts={[
+              ['Transporter', order.vendorName ?? <span className="muted">Not awarded yet</span>],
+              ['Transporter code', order.vendorCode ?? '—'],
+              ['Transporter phone', order.vendorPhone ?? '—'],
+              ['Vehicle', order.vehicleNo || <span className="muted">Not allocated yet</span>],
+              ['Driver mobile', order.driverPhone ? <a href={`tel:${order.driverPhone}`}>{order.driverPhone}</a> : '—'],
+              ['Driver', order.driverName ?? '—'],
+            ]}
+          />
+        </Panel>
+
+        {order.tripId && <TrackingSummary tripId={order.tripId} status={order.status} openTracking={() => openTab('tracking')} />}
+
+        {order.tripId && <DocumentStatus tripId={order.tripId} openDocuments={() => openTab('documents')} />}
+
+        <OrderMoney order={order} />
+
+        <OrderInvoiceTab order={order} />
+
+        <Panel title="🕘 What has happened so far">
+          <Stack gap={0}>
+            {order.events.length === 0 && <div className="hint">Nothing recorded yet. Steps appear here as the order moves.</div>}
+            {order.events.map((m, i) => (
+              <div key={m.id} style={{ display: 'flex', gap: 12, paddingBottom: i === order.events.length - 1 ? 0 : 14 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 'none' }}>
+                  <div
+                    style={{
+                      width: 13,
+                      height: 13,
+                      borderRadius: '50%',
+                      flex: 'none',
+                      background: m.status === 'FAILED' ? 'var(--red)' : 'var(--mint)',
+                      border: `2px solid ${m.status === 'FAILED' ? 'var(--red)' : 'var(--mint)'}`,
+                    }}
+                  />
+                  {i < order.events.length - 1 && (
+                    <div style={{ width: 2, flex: 1, minHeight: 18, background: 'var(--color-divider)', marginTop: 2 }} />
+                  )}
+                </div>
+                <div>
+                  <div style={{ fontSize: 'var(--text-md)', fontWeight: 600 }}>{ORDER_STATUS_LABEL[m.status]}</div>
+                  <div className="muted" style={{ fontSize: 'var(--text-sm)', marginTop: 1 }}>
+                    {fmtDate(m.at)}
+                    {` · ${m.actorName ?? 'automatic'}`}
+                  </div>
+                  {m.note && (
+                    <div className="muted" style={{ fontSize: 'var(--text-sm)', marginTop: 1 }}>
+                      {m.note}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </Stack>
+        </Panel>
+      </Split>
+    </>
+  );
+}
+
+/** The latest line of the tracking sheet and the milestones reached, on Details. */
+function TrackingSummary({ tripId, status, openTracking }: { tripId: string; status: string; openTracking: () => void }) {
+  const [sheet, setSheet] = useState<TrackingSheet | null>(null);
+  useEffect(() => {
+    getTracking(tripId).then(setSheet).catch(() => setSheet(null));
+  }, [tripId, status]);
+  const latest = sheet ? [...sheet.updates].reverse()[0] : undefined;
+  return (
+    <Panel
+      title="📍 Vehicle tracking"
+      right={
+        <button className="btn btn-secondary btn-sm" onClick={openTracking}>
+          Open Tracking
+        </button>
+      }
+      pad={false}
+    >
+      <FactList
+        facts={[
+          ['Reached loading point', sheet?.reachedLoadingAt ? fmtDateTime(sheet.reachedLoadingAt) : '—'],
+          ['Loaded', sheet?.loadedAt ? fmtDateTime(sheet.loadedAt) : '—'],
+          ['On the road since', sheet?.departedAt ? fmtDateTime(sheet.departedAt) : '—'],
+          ['Reached unloading point', sheet?.reachedDestinationAt ? fmtDateTime(sheet.reachedDestinationAt) : '—'],
+          ['Unloaded', sheet?.deliveredAt ? fmtDateTime(sheet.deliveredAt) : '—'],
+          [
+            'Last update',
+            latest ? `${latest.location} · ${fmtDateTime(latest.recordedAt)}${latest.note ? ` · ${latest.note}` : ''}` : 'Nothing yet',
+          ],
+        ]}
+      />
+    </Panel>
+  );
+}
+
+/** Which documents are uploaded, and who checked them — the record, kept off the Documents tab. */
+function DocumentStatus({ tripId, openDocuments }: { tripId: string; openDocuments: () => void }) {
+  const [docs, setDocs] = useState<TripDocument[] | null>(null);
+  useEffect(() => {
+    getTripDocuments(tripId).then(setDocs).catch(() => setDocs([]));
+  }, [tripId]);
+  const rows = (docs ?? []).filter((d) => d.kind !== 'POD');
+  const columns: Column<TripDocument>[] = [
+    { key: 'doc', label: 'Document', render: (r) => r.label || docLabel(r.kind) },
+    { key: 'up', label: 'Uploaded', render: (r) => (r.uploadedAt ? fmtDateTime(r.uploadedAt) : <span className="muted">—</span>) },
+    {
+      key: 'ver',
+      label: 'Verified by',
+      render: (r) => (r.verifiedBy ? `${r.verifiedBy} · ${fmtDateTime(r.verifiedAt)}` : <span className="muted">—</span>),
+    },
+    {
+      key: 'state',
+      label: 'State',
+      render: (r) => <Tag tone={DOC_STATE[r.status]?.tone ?? 'grey'}>{DOC_STATE[r.status]?.label ?? r.status}</Tag>,
+    },
+  ];
+  return (
+    <Panel
+      title="📎 Documents — uploaded and verified"
+      right={
+        <button className="btn btn-secondary btn-sm" onClick={openDocuments}>
+          Open Documents
+        </button>
+      }
+      pad={false}
+    >
+      {docs === null ? <Loading what="Loading documents" /> : <DataTable columns={columns} rows={rows} rowKey={(r) => r.kind} />}
+    </Panel>
   );
 }

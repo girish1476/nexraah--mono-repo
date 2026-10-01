@@ -22,6 +22,10 @@ export interface TripListRow {
   advancePaidPaise: number;
   balancePaidPaise: number;
   podPenaltyPaise: number;
+  /** When the truck left — the list's "on the road since". */
+  departedAt?: string | null;
+  clientId?: string | null;
+  indentId?: string | null;
 }
 
 export interface TripDocument {
@@ -117,7 +121,46 @@ export interface TripDetail extends TripListRow {
   loadingSupervisorName: string | null;
   loadingStartedAt: string | null;
   loadingCompletedAt: string | null;
+  /** Order-cycle milestones — marked on the tracking sheet. */
+  reachedLoadingAt?: string | null;
+  departedAt?: string | null;
+  reachedDestinationAt?: string | null;
   documents: TripDocument[];
   charges: TripCharge[];
   lr: LorryReceipt | null;
+}
+
+/**
+ * One line on a trip's tracking sheet. `UPDATE` is a typed position; the rest
+ * are the order cycle's milestones, in order: reached the loading point,
+ * loaded, started (`DEPARTED`), reached the unloading point, unloaded.
+ */
+export type TrackingKind = 'UPDATE' | 'REACHED_LOADING' | 'LOADED' | 'DEPARTED' | 'REACHED' | 'UNLOADED';
+
+/** What can be posted — starting the trip and unloading have their own actions. */
+export type TrackingPostKind = 'UPDATE' | 'REACHED_LOADING' | 'LOADED' | 'REACHED';
+
+export interface TrackingUpdate {
+  id: string;
+  kind: TrackingKind;
+  location: string;
+  lat: number | null;
+  lng: number | null;
+  note: string | null;
+  recordedAt: string;
+  recordedByName: string | null;
+}
+
+export interface TrackingSheet {
+  tripId: string;
+  stage: TripStage;
+  vehicleNo: string | null;
+  fromCity: string | null;
+  toCity: string | null;
+  reachedLoadingAt: string | null;
+  loadedAt: string | null;
+  departedAt: string | null;
+  reachedDestinationAt: string | null;
+  deliveredAt: string | null;
+  updates: TrackingUpdate[];
 }

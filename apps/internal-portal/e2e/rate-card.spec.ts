@@ -37,7 +37,7 @@ test.describe('Add a lane to a rate card', () => {
     await field(page, 'From location').locator('input').fill(origin);
     await field(page, 'To location').locator('input').fill(destination);
     await field(page, 'Transit days').locator('input').fill('3');
-    await field(page, 'Lane rate (₹)').locator('input').fill('45000');
+    await field(page, 'Lane rate per truck (₹)').locator('input').fill('45000');
     await field(page, 'Approval mail subject').locator('input').fill('RE: rate approval from BD and Leadership');
     await field(page, 'Where this rate was agreed')
       .locator('textarea')
@@ -45,14 +45,52 @@ test.describe('Add a lane to a rate card', () => {
 
     await expect(send).toBeEnabled();
     await send.click();
-    await expect(page.getByText(/^Sent for sign-off — it shows on the client under “Lanes waiting for approval”/)).toBeVisible();
+    await expect(page.getByText(/^Sent for sign-off — it shows under “Lanes waiting for approval”/)).toBeVisible();
 
     // A proposal changes nothing anybody is billed against: the lane is not on
     // the card until it is approved. (The approve-and-land step is covered in
     // `src/mocks/rate-card-lane.test.ts` — the fixture db lives inside one
     // browser page, so a second page playing Compliance could never see this one.)
     await expect(page.getByText('This client has no agreed rates yet')).toBeVisible();
-    await expect(page.getByText(origin)).toHaveCount(0);
+    // It is not lost either: it waits, rate and all, under "Lanes waiting for approval".
+    await expect(page.getByRole('heading', { name: /Lanes waiting for approval/ })).toBeVisible();
+    await expect(page.getByRole('row').filter({ hasText: origin })).toContainText('₹45,000 / truck');
+  });
+
+  test('a lane can be agreed per tonne (PMT) as well as per truck (FTL)', async ({ page }) => {
+    const stamp = Date.now().toString().slice(-6);
+    const origin = `Pmt${stamp}`;
+    await setRole(page, 'FINANCE');
+    await page.goto('/clients/rate-changes?client=c-0101&add=1');
+    await field(page, 'Rate basis').locator('select').selectOption('PMT');
+    await field(page, 'Truck type').locator('input').fill('32 ft MXL');
+    await field(page, 'From location').locator('input').fill(origin);
+    await field(page, 'To location').locator('input').fill(`To${stamp}`);
+    await field(page, 'Transit days').locator('input').fill('3');
+    await field(page, 'Lane rate per tonne (₹)').locator('input').fill('2450');
+    await field(page, 'Approval mail subject').locator('input').fill('RE: per tonne rate approval');
+    await field(page, 'Where this rate was agreed').locator('textarea').fill('Client mail of 30 September, per tonne');
+    await page.getByRole('button', { name: 'Send for sign-off' }).click();
+    await expect(page.getByRole('row').filter({ hasText: origin })).toContainText('₹2,450 / tonne');
+  });
+
+  test('only Leadership or an administrator sees Delete, and deleting takes the lane off the card', async ({ page }) => {
+    await setRole(page, 'FINANCE');
+    await page.goto('/clients/c-0090');
+    await expect(page.getByRole('button', { name: /Delete/ })).toHaveCount(0);
+
+    await setRole(page, 'LEADERSHIP');
+    await page.goto('/clients/c-0090');
+    const lanes = page.locator('main table').first().locator('tbody tr');
+    await expect(lanes.first()).toBeVisible();
+    const before = await lanes.count();
+    await lanes.first().getByRole('button', { name: /Delete/ }).click();
+    const confirm = page.getByRole('button', { name: 'Delete rate' });
+    await expect(confirm).toBeDisabled();
+    await page.locator('.field').filter({ hasText: 'Why is it being deleted?' }).locator('textarea').fill('Duplicate entered twice by mistake');
+    await confirm.click();
+    await expect(page.getByText(/^Deleted · /)).toBeVisible();
+    await expect(lanes).toHaveCount(before - 1);
   });
 
   test('the same route cannot be added twice over the same dates', async ({ page }) => {
@@ -64,7 +102,7 @@ test.describe('Add a lane to a rate card', () => {
     await field(page, 'From location').locator('input').fill('Mundra');
     await field(page, 'To location').locator('input').fill('Jaipur');
     await field(page, 'Transit days').locator('input').fill('2');
-    await field(page, 'Lane rate (₹)').locator('input').fill('60000');
+    await field(page, 'Lane rate per truck (₹)').locator('input').fill('60000');
     await field(page, 'Approval mail subject').locator('input').fill('RE: rate approval from BD and Leadership');
     await field(page, 'Where this rate was agreed')
       .locator('textarea')

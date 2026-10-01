@@ -75,6 +75,8 @@ export interface RateCardLane {
   destination: string;
   truckType: string;
   ratePaise: number;
+  /** FTL — the rate is for the whole truck; PMT — per metric tonne. Absent reads as FTL. */
+  rateBasis?: RateBasis;
   transitDays: number;
   /** Whether a late delivery on this lane is charged to the transporter, and what a late day costs. */
   transitPenaltyApplies: boolean;
@@ -111,9 +113,35 @@ export interface PendingRateLane {
   destination: string;
   truckType: string;
   ratePaise: number;
+  rateBasis?: RateBasis;
   transitDays: number;
   validFrom: string;
   validTo: string | null;
 }
+
+/**
+ * How a client's lane rate is agreed. Some clients give a price for the whole
+ * truck (FTL, full truck load); others per metric tonne (PMT), so a load is
+ * priced at rate × weight.
+ */
+export type RateBasis = 'FTL' | 'PMT';
+
+export const RATE_BASIS_LABEL: Record<RateBasis, string> = {
+  FTL: 'FTL — per truck',
+  PMT: 'PMT — per tonne',
+};
+
+/** "₹64,200 / truck" or "₹2,450 / tonne" — how a lane rate reads everywhere. */
+export function rateWithBasis(inrText: string, basis: RateBasis | undefined | null): string {
+  return `${inrText} / ${basis === 'PMT' ? 'tonne' : 'truck'}`;
+}
+
+/** What one load on a lane is billed at: the rate, or rate × weight for a per-tonne lane. */
+export function laneFreightPaise(lane: { ratePaise: number; rateBasis?: RateBasis | null }, weightTn: number): number {
+  return lane.rateBasis === 'PMT' && weightTn > 0 ? Math.round(lane.ratePaise * weightTn) : lane.ratePaise;
+}
+
+/** Only Leadership or an administrator delete a duplicate rate. */
+export const RATE_DELETE_ROLES = ['LEADERSHIP', 'ADMIN'] as const;
 
 export type ClientDraft = Omit<Client, 'id' | 'code' | 'status' | 'outstandingPaise'>;

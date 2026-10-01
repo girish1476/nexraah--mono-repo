@@ -121,9 +121,24 @@ export class ClientsRepository {
       transit_penalty_per_day?: number;
       approval_mail_subject?: string | null;
       approval_mail_attachment_id?: string | null;
+      rate_basis?: string;
     },
   ) {
     return db.insertInto('rate_card_lanes').values(row).returningAll().executeTakeFirstOrThrow();
+  }
+
+  /**
+   * A duplicate taken off the rate card. The row stays — loads already raised
+   * point at it — but every read of the rate card skips it from now on.
+   */
+  markLaneDeleted(db: DbExecutor, laneId: string, by: { deleted_by: string; delete_reason: string }) {
+    return db
+      .updateTable('rate_card_lanes')
+      .set({ ...by, deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .where('id', '=', laneId)
+      .where('deleted_at', 'is', null)
+      .returningAll()
+      .executeTakeFirst();
   }
 
   /**
@@ -169,6 +184,10 @@ export class ClientsRepository {
       .executeTakeFirstOrThrow();
   }
 
+  findRevision(id: string) {
+    return this.db.selectFrom('rate_revisions').selectAll().where('id', '=', id).executeTakeFirst();
+  }
+
   /** The pending revision raised for one approval, found on the way back in. */
   findRevisionByApproval(db: DbExecutor, approvalId: string) {
     return db
@@ -193,6 +212,7 @@ export class ClientsRepository {
       .selectFrom('rate_card_lanes')
       .select(['id', 'valid_from', 'valid_to'])
       .where('client_id', '=', clientId)
+      .where('deleted_at', 'is', null)
       .where(sql<boolean>`lower(origin) = lower(${origin})`)
       .where(sql<boolean>`lower(destination) = lower(${destination})`)
       .where(sql<boolean>`lower(truck_type) = lower(${truckType})`)
@@ -289,6 +309,7 @@ export class ClientsRepository {
       .selectFrom('rate_card_lanes')
       .selectAll()
       .where('client_id', '=', clientId)
+      .where('deleted_at', 'is', null)
       .orderBy('origin')
       .execute();
   }
