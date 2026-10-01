@@ -229,6 +229,21 @@ test.describe('the order cycle, from the order page', () => {
     await page.getByRole('button', { name: /Upload E-POD/ }).click();
     await expect(page.getByText(/E-POD uploaded · the clock has stopped/)).toBeVisible();
     await expect(page.getByRole('img', { name: 'Proof of delivery, page 1' })).toBeVisible();
+    // The soft copy is in; follow up until the hard copy reaches HO, with its courier slip.
+    const follow = page.locator('.surface').filter({ has: page.getByRole('heading', { name: /Hard copy follow-up/ }) }).last();
+    await expect(follow).toContainText('Waiting for the hard copy');
+    const today = new Date().toISOString().slice(0, 10);
+    await field(follow, 'Hard copy courier docket').fill('DTDC-55667788');
+    await field(follow, 'Hard copy sent on').fill(today);
+    await follow.getByLabel('Hard copy courier slip photo').setInputFiles(photo);
+    await follow.getByRole('button', { name: /Save the hard copy/ }).click();
+    await expect(page.getByText(/Hard copy on its way/)).toBeVisible();
+    await expect(follow).toContainText('On its way');
+    await field(follow, 'Received at HO on').fill(today);
+    await follow.getByRole('button', { name: /Mark the hard copy received at HO/ }).click();
+    await expect(page.getByText(/Hard copy received at HO/).first()).toBeVisible();
+    await expect(follow).toContainText('Received at HO');
+    await expect(page.getByRole('img', { name: 'Courier slip of the hard copy' })).toBeVisible();
     await shot('10-epod');
   });
 

@@ -146,41 +146,33 @@ test.describe('one load, first indent to last rupee', () => {
     // button swapping to "Loading complete" is what shows the start was saved.
     await expect(page.getByRole('button', { name: 'Loading complete' })).toBeVisible();
 
-    await page.goto(`/trips/${tripId}/documents`);
-    const scan = { name: 'scan.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 scanned document') };
-    const upload = async (label: string, keyed?: (form: Locator) => Promise<void>) => {
-      await row(page, label).getByRole('button', { name: /^Upload$/ }).click();
-      await page.locator('input[type="file"]').first().setInputFiles(scan);
-      if (keyed) {
-        const form = dialog(page, /^Key in details/);
-        await keyed(form);
-        await form.getByRole('button', { name: 'Upload' }).click();
-      }
-      await expect(page.getByText(`${label} uploaded`)).toBeVisible();
-    };
-    await upload('Client invoice or purchase order', async (form) => {
-      await fieldControl(form, 'Invoice number').fill('BRG/26/0412');
-      await fieldControl(form, 'Invoice value (₹)').fill('64200');
-    });
-    await upload('E-way bill', async (form) => {
-      await fieldControl(form, 'Vehicle number').fill('MH 15 GT 4482');
-      await fieldControl(form, 'Valid till').fill(new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10));
-    });
-    for (const label of [
-      'Registration certificate',
-      'Goods insurance',
-      'Fitness certificate',
-      'National permit',
-      'Pollution certificate',
-      'Driving licence',
-      'Loading slip',
-    ]) {
-      await upload(label);
-    }
-
-    await page.goto(`/trips/${tripId}`);
+    // Loading is finished first; the documents are uploaded after it.
     await page.getByRole('button', { name: 'Loading complete' }).click();
     await expect(page.getByText('Loading marked complete')).toBeVisible();
+
+    await page.goto(`/trips/${tripId}/documents`);
+    const scan = { name: 'scan.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 scanned document') };
+    const inTen = new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10);
+    const nextYear = new Date(Date.now() + 365 * 86_400_000).toISOString().slice(0, 10);
+    const upload = async (card: string, fill: Record<string, string> = {}) => {
+      await page.locator(`[data-doc="${card}"]`).getByRole('button', { name: /^Upload/ }).click();
+      const form = page.locator('.surface').filter({ has: page.locator('input[type="file"]') }).last();
+      await form.locator('input[type="file"]').setInputFiles(scan);
+      for (const [label, value] of Object.entries(fill)) await fieldControl(form, label).first().fill(value);
+      await form.getByRole('button', { name: 'Save' }).click();
+      await expect(page.locator(`[data-doc="${card}"]`)).toContainText('Waiting for check');
+    };
+    await upload('invoice', { 'Invoice number': 'BRG/26/0412', 'Invoice value (₹)': '64200' });
+    await upload('eway', { 'Vehicle number on it': 'MH 15 GT 4482', 'Valid till': inTen });
+    // The vehicle papers are one PDF, with the numbers and dates typed against it.
+    await upload('vehicle', {
+      'RC number': 'MH15GT4482',
+      'Permit valid till': nextYear,
+      'Insurance (IC) valid till': nextYear,
+      'Fitness valid till': nextYear,
+    });
+    await upload('dl', { 'Licence number': 'TN1220190045678', 'Valid till': nextYear });
+    await upload('loading-slip');
   });
 
   test('5 · Compliance verifies the documents', async () => {

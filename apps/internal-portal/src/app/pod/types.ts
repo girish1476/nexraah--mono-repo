@@ -76,6 +76,20 @@ export interface PodDetail {
   receipt: PodReceipt | null;
   /** E-POD or H-POD, once one has come in. */
   podKind?: PodKind | null;
+  /**
+   * The signed hard copy: for an E-POD, the follow-up until it reaches head
+   * office; for an H-POD, the copy that was logged. With its courier slip.
+   */
+  hardCopy?: {
+    courierDocket: string | null;
+    sentOn: string | null;
+    receivedOn: string | null;
+    courierSlipAttachmentId: string | null;
+  } | null;
+  /** The POD check covers shortage, damage and the late-delivery (transit) penalty. */
+  transitPenaltyPaise?: number;
+  actualTransitDays?: number | null;
+  transitDaysRequired?: number | null;
   /** Null before a receipt is logged — mirrors `receipt?.pages`, not a separately captured value. */
   pages: number | null;
   attachmentIds: string[];

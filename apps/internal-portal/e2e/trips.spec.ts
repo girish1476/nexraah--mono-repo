@@ -186,16 +186,20 @@ test.describe('trip detail — 120881 (OPS, edit)', () => {
 });
 
 test.describe('trip detail sub-pages — 120881 (OPS)', () => {
-  test('documents page groups the eleven-document set with per-group verified counts', async ({ page }) => {
+  test('documents page shows each document as a card, grouped, with the vehicle papers as one PDF', async ({ page }) => {
     await setRole(page, 'OPS');
     await page.goto('/trips/t-120881/documents');
-    await expect(page.getByText('Waiting on e-way bill')).toBeVisible();
-
-    await expect(panel(page, 'Client').getByText('1 of 2 verified')).toBeVisible();
-    await expect(panel(page, 'Vehicle').getByText('4 of 5 verified')).toBeVisible();
-    await expect(panel(page, 'Driver').getByText('0 of 1 verified')).toBeVisible();
-    await expect(panel(page, 'Lorry receipt').getByText('1 of 1 verified')).toBeVisible();
-    await expect(panel(page, 'Proof of delivery').getByText('0 of 1 verified')).toBeVisible();
+    await expect(panel(page, '🧾 Client documents')).toBeVisible();
+    await expect(panel(page, '🚛 Vehicle documents')).toBeVisible();
+    await expect(panel(page, '🪪 Driver')).toBeVisible();
+    await expect(panel(page, '📦 Loading')).toBeVisible();
+    // Four of the five vehicle papers are verified: the one PDF card is partly checked.
+    await expect(page.locator('[data-doc="vehicle"]')).toContainText('Partly checked');
+    await expect(page.locator('[data-doc="vehicle"]').getByText('RC number')).toBeVisible();
+    // Delivered, so the proof of delivery is offered here too.
+    await expect(panel(page, '📸 Proof of delivery')).toBeVisible();
+    // Who uploaded and verified is on the order's Details, not on these cards.
+    await expect(page.getByRole('columnheader', { name: 'Verified by' })).toHaveCount(0);
   });
 
   test('charges page lists the captured charge, its markup and the totals', async ({ page }) => {

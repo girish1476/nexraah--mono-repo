@@ -382,9 +382,6 @@ export default function NewIndentPage() {
                 <p className="muted" style={{ fontSize: 12, marginBottom: 0, marginTop: 10 }}>
                   Agreed {rateWithBasis(inr(lane.ratePaise), lane.rateBasis)}
                   {lane.rateBasis === 'PMT' ? ' — the freight is this × the weight' : ''} · valid {fmtDate(lane.validFrom)} → {lane.validTo ? fmtDate(lane.validTo) : 'open'}
-                  {lane.bidMinPaise !== null && lane.bidMaxPaise !== null
-                    ? ` · transporter bids ${inr(lane.bidMinPaise)}–${inr(lane.bidMaxPaise)}`
-                    : ''}
                   {lane.transitPenaltyApplies ? ` · late delivery ${inr(lane.transitPenaltyPerDayPaise)}/day` : ''}
                 </p>
               )}

@@ -36,6 +36,10 @@ export class PodRepository {
         'trips.pod_received_at as podReceivedAt',
         'trips.pod_closure_basis as podClosureBasis',
         'trips.pod_penalty as podPenalty',
+        'trips.transit_penalty as transitPenalty',
+        'trips.transit_penalty_waived as transitPenaltyWaived',
+        'trips.actual_transit_days as actualTransitDays',
+        'trips.transit_days_required as transitDaysRequired',
         'lorry_receipts.code as lrCode',
         'vendors.legal_name as vendorName',
         'clients.name as clientName',
@@ -138,6 +142,20 @@ export class PodRepository {
     return query.orderBy('trips.delivered_at').execute();
   }
 
+  /** The hard copy followed up after an E-POD — its courier and when it reached head office. */
+  updateHardCopy(
+    db: DbExecutor,
+    receiptId: string,
+    patch: { hard_copy_docket: string; hard_copy_sent_on: string; hard_copy_received_on: string | null; courier_slip_attachment_id?: string | null },
+  ) {
+    return db
+      .updateTable('pod_receipts')
+      .set({ ...patch, updated_at: new Date().toISOString() })
+      .where('id', '=', receiptId)
+      .returningAll()
+      .executeTakeFirstOrThrow();
+  }
+
   /** The latest receipt — a docket logged ahead of an E-POD, or a rejected one, is older. */
   findReceipt(tripId: string) {
     return this.db
@@ -172,11 +190,13 @@ export class PodRepository {
       pages: number | null;
       receivedBy: string;
       condition: string | null;
+      courierSlipAttachmentId?: string | null;
     },
   ) {
     return db
       .insertInto('pod_receipts')
       .values({
+        courier_slip_attachment_id: row.courierSlipAttachmentId ?? null,
         code: row.code,
         trip_id: row.tripId,
         courier_docket: row.courierDocket,

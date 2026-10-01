@@ -8,6 +8,7 @@ import { PodService } from './pod.service';
 import { AddDocketDto } from './dto/add-docket.dto';
 import { ReceivePodDto } from './dto/receive-pod.dto';
 import { UploadEpodDto } from './dto/upload-epod.dto';
+import { HardCopyDto } from './dto/hard-copy.dto';
 import { VerifyPodDto } from './dto/verify-pod.dto';
 import { RejectPodDto } from './dto/reject-pod.dto';
 import { WaivePenaltyDto } from './dto/waive-pod.dto';
@@ -39,6 +40,13 @@ export class PodController {
   @RequirePermission('pod.receive')
   uploadEpod(@Param('tripId') tripId: string, @Body() dto: UploadEpodDto, @CurrentUser() user: AuthenticatedUser) {
     return this.podService.uploadEpod(tripId, dto, user);
+  }
+
+  /** The hard copy followed up after an E-POD: courier docket, slip photo, and when it reached head office. */
+  @Post(':tripId/hard-copy')
+  @RequirePermission('pod.receive')
+  logHardCopy(@Param('tripId') tripId: string, @Body() dto: HardCopyDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.podService.logHardCopy(tripId, dto, user);
   }
 
   @Get('pending')

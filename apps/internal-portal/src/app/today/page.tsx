@@ -515,7 +515,17 @@ export default function TodayPage() {
 
             {issues > 0 && (
               <div id="issues">
-                <Panel title="🛠️ Transporter issues" pad={false}>
+                <Panel
+                  title="🛠️ Transporter issues"
+                  pad={false}
+                  right={
+                    // Payments stuck for a shortage, damage or an unloading
+                    // acknowledgement are worked in SDR, not here.
+                    <Link className="btn btn-secondary btn-sm" href="/sdr">
+                      Payments held → SDR
+                    </Link>
+                  }
+                >
                   <DataTable
                     columns={[
                       {

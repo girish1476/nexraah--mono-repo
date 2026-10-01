@@ -1,21 +1,20 @@
 'use client';
 
 import { useParams } from 'next/navigation';
+import { OrderDocumentsTab } from '@/app/orders/[id]/documents-tab';
 import { ModuleGuard, PageHeader, PageIntro } from '@/lib/ui';
 import { TripTabs } from '../tabs';
-import { TripDocumentsContent } from './content';
 
 /**
- * Documents tab — `/trips/[id]/documents` (part 05 §3).
+ * Documents tab — `/trips/[id]/documents`.
  *
- * Six groups, twelve documents. Nine gate the advance — the loading slip the
- * loading supervisor uploads among them, and fitness, permit and PUC. A cross-check mismatch blocks LR generation until
- * it is rejected or overridden — catching it after dispatch catches nothing.
+ * The same document cards as the order page's Documents tab — each document's
+ * photo (or the vehicle papers as one PDF) beside the details on it — so the
+ * loading supervisor, who works from the trip rather than the order, uploads
+ * the loading and vehicle documents the same way Operations does. Uploads open
+ * once loading is complete; Compliance verifies or rejects on each card.
  *
- * The actual upload/verify/reject/cross-check workflow lives in
- * `TripDocumentsContent` (`./content.tsx`) — this route is now just that
- * component wrapped in this page's own header and tab strip, so the order
- * detail page's Documents tab can embed the identical, fully working thing.
+ * The lorry receipt has its own tab here, so it is left out of this page.
  */
 export default function TripDocumentsPage() {
   const { id } = useParams<{ id: string }>();
@@ -25,16 +24,16 @@ export default function TripDocumentsPage() {
       <PageHeader
         path={`/trips/${id}/documents`}
         title="Trip documents"
-        sub="Twelve documents in six groups. Nine of them must be verified before the advance can be released."
+        sub="Each document with its photo and the details on it. The advance is released once they are verified."
         module="trips"
       />
       <PageIntro
-        what="Upload, verify or reject each of this trip's required documents — a cross-check mismatch here blocks LR generation until it's resolved."
-        who="Operations desk uploads; compliance verifies."
+        what="Upload the loading and vehicle documents once loading is complete; Compliance verifies or rejects each one on its card."
+        who="The trip's loading supervisor or Operations uploads; Compliance verifies."
       />
       <TripTabs tripId={id} />
 
-      <TripDocumentsContent tripId={id} />
+      <OrderDocumentsTab tripId={id} onChanged={() => undefined} showLr={false} />
     </ModuleGuard>
   );
 }

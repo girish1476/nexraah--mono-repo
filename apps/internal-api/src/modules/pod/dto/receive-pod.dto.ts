@@ -13,4 +13,6 @@ export class ReceivePodDto {
    */
   @IsOptional() @IsString() receivedBy?: string;
   @IsOptional() @IsString() condition?: string;
+  /** A photo of the courier slip, uploaded through `/attachments`. */
+  @IsOptional() @IsString() courierSlipAttachmentId?: string;
 }

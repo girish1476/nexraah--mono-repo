@@ -180,28 +180,15 @@ export function OrderTrackingTab({
     <Stack>
       <Panel title={`🧭 Where the truck is · ${sheet.vehicleNo}`}>
         {/* The order cycle as a row of steps: done, current, still to come. */}
-        <ol
-          aria-label="Order cycle"
-          style={{ listStyle: 'none', margin: '0 0 14px', padding: 0, display: 'flex', flexWrap: 'wrap', gap: 6 }}
-        >
+        <ol aria-label="Order cycle" className="cycle">
           {STEPS.map((s, i) => {
             const state = i < step || (i === step && done) ? 'done' : i === step ? 'now' : 'next';
             return (
-              <li
-                key={s.key}
-                aria-current={state === 'now' ? 'step' : undefined}
-                style={{
-                  flex: '1 1 120px',
-                  padding: '8px 10px',
-                  borderRadius: 8,
-                  fontSize: 12,
-                  border: `1px solid ${state === 'now' ? 'var(--accent, #c8631f)' : 'var(--color-divider)'}`,
-                  background: state === 'done' ? 'var(--mint-tint, #e3f4ec)' : 'transparent',
-                  fontWeight: state === 'now' ? 600 : 400,
-                  opacity: state === 'next' ? 0.65 : 1,
-                }}
-              >
-                <span aria-hidden>{state === 'done' ? '✅' : s.emoji}</span> {s.label}
+              <li key={s.key} aria-current={state === 'now' ? 'step' : undefined} className={`cycle-step is-${state}`}>
+                <span className="cycle-dot" aria-hidden>
+                  {state === 'done' ? '✓' : s.emoji}
+                </span>
+                <span>{s.label}</span>
               </li>
             );
           })}
@@ -209,7 +196,7 @@ export function OrderTrackingTab({
 
         {/* The one thing to do next, as a button. */}
         {canRun && open && !sheet.reachedLoadingAt && (
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="cycle-action">
             <span className="muted" style={{ fontSize: 12.5 }}>
               The truck is on its way to {sheet.fromCity ?? 'the loading point'}.
             </span>
@@ -219,7 +206,7 @@ export function OrderTrackingTab({
           </div>
         )}
         {canRun && open && sheet.reachedLoadingAt && !sheet.loadedAt && (
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="cycle-action">
             <span className="muted" style={{ fontSize: 12.5 }}>
               At the loading point since {fmtDateTime(sheet.reachedLoadingAt)}.
             </span>
@@ -229,7 +216,7 @@ export function OrderTrackingTab({
           </div>
         )}
         {open && sheet.loadedAt && (
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="cycle-action">
             <span className="muted" style={{ fontSize: 12.5 }}>
               Loaded {fmtDateTime(sheet.loadedAt)}. Upload the advance documents, then start the trip — once the advance is
               paid the truck moves to the road by itself.
@@ -249,7 +236,7 @@ export function OrderTrackingTab({
           </div>
         )}
         {canRun && onRoad && (
-          <div style={{ display: 'flex', gap: 10, alignItems: 'end', flexWrap: 'wrap' }}>
+          <div className="cycle-action">
             {!sheet.reachedDestinationAt && (
               <button className="btn" disabled={busy} onClick={() => mark('REACHED', 'Marked · reached the unloading point')}>
                 🏁 Reached the unloading point
@@ -273,7 +260,7 @@ export function OrderTrackingTab({
           </div>
         )}
         {done && (
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="cycle-action">
             <span className="muted" style={{ fontSize: 12.5 }}>
               Unloaded {fmtDateTime(sheet.deliveredAt)}. The proof of delivery — E-POD or H-POD — is uploaded on the
               Documents tab.

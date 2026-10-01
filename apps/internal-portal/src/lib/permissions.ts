@@ -823,11 +823,11 @@ export const NAV: NavGroup[] = [
         note: 'Routes where nobody quoted — recruit here',
       },
       {
-        label: 'SDR',
+        label: 'SDR · transporter issues',
         href: '/sdr',
         module: 'pod',
         emoji: '🛠️',
-        note: 'Shortage and damage records — and what is recovered from transporters',
+        note: 'Payments held for shortage, damage or unloading not acknowledged — and what is recovered',
       },
       {
         label: 'Document verification',

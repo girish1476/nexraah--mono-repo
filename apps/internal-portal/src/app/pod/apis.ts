@@ -37,7 +37,15 @@ export function addDocket(tripId: string, body: { docketNo: string; sentOn?: str
  */
 export function receivePod(
   tripId: string,
-  body: { courierDocket: string; sentOn: string; receivedOn: string; pages: number; receivedBy?: string; condition?: string },
+  body: {
+    courierDocket: string;
+    sentOn: string;
+    receivedOn: string;
+    pages: number;
+    receivedBy?: string;
+    condition?: string;
+    courierSlipAttachmentId?: string;
+  },
 ) {
   return request<PodReceipt>({ url: `/pod/${tripId}/receive`, method: 'POST', data: body });
 }
@@ -99,5 +107,21 @@ export function uploadEpod(tripId: string, attachmentIds: string[]) {
     url: `/pod/${tripId}/epod`,
     method: 'POST',
     data: { attachmentIds },
+  });
+}
+
+/**
+ * POST /pod/:tripId/hard-copy · `pod.receive` — the hard copy followed up
+ * after an E-POD: courier docket, sent on, received at head office (once it
+ * has), and a photo of the courier slip.
+ */
+export function logHardCopy(
+  tripId: string,
+  body: { courierDocket: string; sentOn: string; receivedOn?: string; courierSlipAttachmentId?: string },
+) {
+  return request<{ tripId: string; courierDocket: string; sentOn: string; receivedOn: string | null; courierSlipAttachmentId: string | null }>({
+    url: `/pod/${tripId}/hard-copy`,
+    method: 'POST',
+    data: body,
   });
 }

@@ -3797,6 +3797,21 @@ const routes: [string, RegExp, Handler][] = [
         penaltyPaise: Math.max(0, ageDays - db.config.pod_tat_days) * db.config.pod_penalty_per_day_paise,
         receipt: db.podReceipts.find((r) => r.tripId === trip.id) ?? null,
         podKind: db.podReceipts.find((r) => r.tripId === trip.id)?.podKind ?? null,
+        // Same shape as `PodService.getById`.
+        hardCopy: (() => {
+          const r = db.podReceipts.find((x) => x.tripId === trip.id);
+          if (!r) return null;
+          const epod = r.podKind === 'EPOD';
+          return {
+            courierDocket: epod ? (r.hardCopyDocket ?? null) : (r.courierDocket ?? null),
+            sentOn: epod ? (r.hardCopySentOn ?? null) : (r.sentOn ?? null),
+            receivedOn: epod ? (r.hardCopyReceivedOn ?? null) : (r.receivedOn ?? null),
+            courierSlipAttachmentId: r.courierSlipAttachmentId ?? null,
+          };
+        })(),
+        transitPenaltyPaise: trip.transitPenaltyWaived ? 0 : Number(trip.transitPenaltyPaise ?? 0),
+        actualTransitDays: trip.actualTransitDays ?? null,
+        transitDaysRequired: trip.transitDaysRequired ?? null,
         pages: trip.podPages ?? 2,
         attachmentIds: db.podReceipts.find((r) => r.tripId === trip.id)?.attachmentIds?.length
           ? db.podReceipts.find((r) => r.tripId === trip.id)!.attachmentIds
@@ -3837,11 +3852,45 @@ const routes: [string, RegExp, Handler][] = [
         receivedBy: body.receivedBy ?? USERS[role].name,
         condition: body.condition ?? null,
       };
-      db.podReceipts.unshift({ ...receipt, podKind: 'HPOD', attachmentIds: [] });
+      db.podReceipts.unshift({
+        ...receipt,
+        podKind: 'HPOD',
+        attachmentIds: [],
+        courierSlipAttachmentId: body.courierSlipAttachmentId ?? null,
+      });
       trip.podStatus = 'RECEIVED';
       trip.podReceivedAt = body.receivedOn;
       trip.podCourierDocket = body.courierDocket;
       return ok(receipt);
+    },
+  ],
+  [
+    'POST',
+    /^\/pod\/([^/]+)\/hard-copy$/,
+    // The hard copy followed up after an E-POD — `PodService.logHardCopy`.
+    ({ params, body }) => {
+      const trip = findTrip(params[0]);
+      const receipt = db.podReceipts.find((r) => r.tripId === trip.id);
+      if (!receipt || receipt.podKind !== 'EPOD')
+        fail(409, 'NO_EPOD', 'The hard copy is followed up after an E-POD. Upload the E-POD first, or log the H-POD directly.');
+      const docket = String(body?.courierDocket ?? '').trim();
+      if (docket.length < 3) fail(400, 'VALIDATION_ERROR', 'Enter the courier docket number.');
+      if (!body?.sentOn) fail(400, 'VALIDATION_ERROR', 'Say when the hard copy was sent.');
+      if (body.receivedOn && body.receivedOn < body.sentOn)
+        fail(400, 'VALIDATION_ERROR', 'The hard copy cannot reach head office before it was sent.');
+      Object.assign(receipt, {
+        hardCopyDocket: docket,
+        hardCopySentOn: body.sentOn,
+        hardCopyReceivedOn: body.receivedOn ?? null,
+        ...(body.courierSlipAttachmentId ? { courierSlipAttachmentId: body.courierSlipAttachmentId } : {}),
+      });
+      return ok({
+        tripId: trip.id,
+        courierDocket: docket,
+        sentOn: body.sentOn,
+        receivedOn: body.receivedOn ?? null,
+        courierSlipAttachmentId: receipt.courierSlipAttachmentId ?? null,
+      });
     },
   ],
   [

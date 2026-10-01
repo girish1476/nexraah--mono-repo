@@ -23,7 +23,7 @@ import {
   useCan,
   useToast,
 } from '@/lib/ui';
-import { approvePod, getPod, receivePod, rejectPod, uploadEpod, verifyPod } from '../../apis';
+import { approvePod, getPod, logHardCopy, receivePod, rejectPod, uploadEpod, verifyPod } from '../../apis';
 import { POD_KIND_LABEL, PodDetail, PodKind, VerifyChecklist } from '../../types';
 import { DocPreview } from '@/components/doc-preview';
 import { uploadAttachment } from '@/lib/attachments';
@@ -123,16 +123,44 @@ export function PodVerifyContent({
     setSdrKind(!checklist.quantityMatchesInvoice && checklist.noShortageOrDamage ? 'SHORTAGE' : 'DAMAGE');
   }, [checklist.quantityMatchesInvoice, checklist.noShortageOrDamage]);
 
+  // The courier slip photo — on the H-POD form, and on the hard-copy follow-up after an E-POD.
+  const [slipFile, setSlipFile] = useState<File | null>(null);
+  const [hardCopy, setHardCopy] = useState({ courierDocket: '', sentOn: '', receivedOn: '' });
+
+  const submitHardCopy = async (values: { courierDocket: string; sentOn: string; receivedOn: string }) => {
+    setBusy(true);
+    try {
+      const courierSlipAttachmentId = slipFile ? await uploadAttachment(slipFile, 'COURIER_SLIP', 'trips', tripId) : undefined;
+      const saved = await logHardCopy(tripId, {
+        courierDocket: values.courierDocket.trim(),
+        sentOn: values.sentOn,
+        ...(values.receivedOn ? { receivedOn: values.receivedOn } : {}),
+        ...(courierSlipAttachmentId ? { courierSlipAttachmentId } : {}),
+      });
+      setHardCopy({ courierDocket: '', sentOn: '', receivedOn: '' });
+      toast(saved.receivedOn ? 'Hard copy received at HO · follow-up closed' : 'Hard copy on its way · docket saved — mark it received when it reaches HO');
+      setSlipFile(null);
+      load();
+    } catch (e) {
+      toast(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const submitReceive = async () => {
     setBusy(true);
     try {
+      const courierSlipAttachmentId = slipFile ? await uploadAttachment(slipFile, 'COURIER_SLIP', 'trips', tripId) : undefined;
       const receipt = await receivePod(tripId, {
         courierDocket: receive.courierDocket.trim(),
         sentOn: receive.sentOn,
         receivedOn: receive.receivedOn,
         pages: receive.pages,
         condition: receive.condition.trim() || undefined,
+        ...(courierSlipAttachmentId ? { courierSlipAttachmentId } : {}),
       });
+      setSlipFile(null);
       toast(`${receipt.code} logged · the clock has stopped — it can be verified now`);
       load();
     } catch (e) {
@@ -247,11 +275,26 @@ export function PodVerifyContent({
                   ['Transporter', pod.vendorName],
                   ['Delivered', fmtDate(pod.deliveredAt)],
                   ['Day', pod.ageDays],
-                  ['Penalty accrued', inr(pod.penaltyPaise)],
+                  ['Late-proof penalty', inr(pod.penaltyPaise)],
+                  [
+                    'Transit penalty',
+                    (pod.transitPenaltyPaise ?? 0) > 0
+                      ? `${inr(pod.transitPenaltyPaise ?? 0)}${
+                          pod.actualTransitDays != null && pod.transitDaysRequired != null
+                            ? ` · ${pod.actualTransitDays} days against ${pod.transitDaysRequired}`
+                            : ''
+                        }`
+                      : 'None — delivered on time',
+                  ],
                   ['Pages', pod.pages],
                 ]}
               />
             </Panel>
+            {pod.hardCopy?.courierSlipAttachmentId && (
+              <Panel title="Courier slip">
+                <DocPreview attachmentId={pod.hardCopy.courierSlipAttachmentId} label="Courier slip of the hard copy" width={140} height={170} />
+              </Panel>
+            )}
             {pod.receipt && (
               <Panel title="Receiving record" pad={false}>
                 <FactList
@@ -368,6 +411,14 @@ export function PodVerifyContent({
                   <Field label="Condition" hint="Optional — e.g. torn, water-damaged">
                     <input value={receive.condition} onChange={(e) => setReceive({ ...receive, condition: e.target.value })} />
                   </Field>
+                  <Field label="Courier slip photo" hint="Optional — the slip the hard copy came with.">
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      aria-label="Courier slip photo"
+                      onChange={(e) => setSlipFile(e.target.files?.[0] ?? null)}
+                    />
+                  </Field>
                 </FormGrid>
                 <button
                   className="btn"
@@ -388,8 +439,104 @@ export function PodVerifyContent({
           </Panel>
         ) : null}
 
+        {/* The soft copy is in; follow up until the signed hard copy reaches HO. */}
+        {pod.podKind === 'EPOD' && pod.podStatus !== 'FORFEITED' && (
+          <Panel
+            title="📮 Hard copy follow-up"
+            right={
+              pod.hardCopy?.receivedOn ? (
+                <Tag tone="mint">Received at HO</Tag>
+              ) : pod.hardCopy?.courierDocket ? (
+                <Tag tone="blue">On its way</Tag>
+              ) : (
+                <Tag tone="flag">Waiting for the hard copy</Tag>
+              )
+            }
+          >
+            {pod.hardCopy?.receivedOn ? (
+              <FactList
+                facts={[
+                  ['Courier docket', pod.hardCopy.courierDocket ?? '—'],
+                  ['Sent on', fmtDate(pod.hardCopy.sentOn)],
+                  ['Received at HO', fmtDate(pod.hardCopy.receivedOn)],
+                ]}
+              />
+            ) : (
+              <>
+                <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }}>
+                  The soft copy (E-POD) is in. Follow up with the transporter until the signed hard copy reaches head
+                  office, and upload its courier slip.
+                </p>
+                {can('pod.receive') ? (
+                  <>
+                    <FormGrid>
+                      <Field label="Hard copy courier docket" required>
+                        <input
+                          value={hardCopy.courierDocket || pod.hardCopy?.courierDocket || ''}
+                          onChange={(e) => setHardCopy({ ...hardCopy, courierDocket: e.target.value })}
+                        />
+                      </Field>
+                      <Field label="Hard copy sent on" required>
+                        <input
+                          type="date"
+                          value={hardCopy.sentOn || pod.hardCopy?.sentOn || ''}
+                          onChange={(e) => setHardCopy({ ...hardCopy, sentOn: e.target.value })}
+                        />
+                      </Field>
+                      <Field label="Received at HO on" hint="Leave empty while it is still on its way.">
+                        <input type="date" value={hardCopy.receivedOn} onChange={(e) => setHardCopy({ ...hardCopy, receivedOn: e.target.value })} />
+                      </Field>
+                      <Field label="Courier slip photo">
+                        <input
+                          type="file"
+                          accept="image/*,application/pdf"
+                          aria-label="Hard copy courier slip photo"
+                          onChange={(e) => setSlipFile(e.target.files?.[0] ?? null)}
+                        />
+                      </Field>
+                    </FormGrid>
+                    <button
+                      className="btn"
+                      style={{ marginTop: 12 }}
+                      disabled={
+                        busy ||
+                        !(hardCopy.courierDocket || pod.hardCopy?.courierDocket || '').trim() ||
+                        !(hardCopy.sentOn || pod.hardCopy?.sentOn)
+                      }
+                      onClick={() =>
+                        submitHardCopy({
+                          courierDocket: hardCopy.courierDocket || pod.hardCopy?.courierDocket || '',
+                          sentOn: hardCopy.sentOn || pod.hardCopy?.sentOn || '',
+                          receivedOn: hardCopy.receivedOn,
+                        })
+                      }
+                    >
+                      {hardCopy.receivedOn ? 'Mark the hard copy received at HO' : 'Save the hard copy’s courier details'}
+                    </button>
+                  </>
+                ) : (
+                  <p className="muted" style={{ fontSize: 12.5, marginBottom: 0 }}>
+                    Operations follows up the hard copy.
+                  </p>
+                )}
+              </>
+            )}
+          </Panel>
+        )}
+
         {canVerify && (
           <Panel title="Verify">
+            {(pod.transitPenaltyPaise ?? 0) > 0 && (
+              <div style={{ marginBottom: 10 }}>
+                <Banner tone="flag" title={`Transit penalty ${inr(pod.transitPenaltyPaise ?? 0)}`}>
+                  Delivered late by the lane’s terms
+                  {pod.actualTransitDays != null && pod.transitDaysRequired != null
+                    ? ` — ${pod.actualTransitDays} days against ${pod.transitDaysRequired}`
+                    : ''}
+                  . It comes off the final payment with any shortage or damage.
+                </Banner>
+              </div>
+            )}
             <div style={{ display: 'grid', gap: 8 }}>
               {CHECKS.map((c) => (
                 <label key={c.key} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>

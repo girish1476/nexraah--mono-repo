@@ -56,17 +56,17 @@ const FILTER_FIELDS: FilterField[] = [
   {
     kind: 'select',
     key: 'stage',
-    label: 'Stage',
+    label: 'Order stage',
     allLabel: 'Any stage',
     options: ALL_STATUSES.map((s) => ({ value: s, label: ORDER_STATUS_LABEL[s] })),
   },
-  { kind: 'text', key: 'vendor', label: 'Transporter', placeholder: 'Transporter name' },
-  { kind: 'text', key: 'clientName', label: 'Client', placeholder: 'Name, GST number, contact…' },
-  { kind: 'text', key: 'from', label: 'From', placeholder: 'Pick-up city' },
-  { kind: 'text', key: 'to', label: 'To', placeholder: 'Delivery city' },
+  { kind: 'text', key: 'vendor', label: 'Name of the vendor', placeholder: 'Transporter name' },
+  { kind: 'text', key: 'clientName', label: 'Client details', placeholder: 'Name, GST number, contact…' },
+  { kind: 'text', key: 'from', label: 'From location', placeholder: 'Pick-up city' },
+  { kind: 'text', key: 'to', label: 'To location', placeholder: 'Delivery city' },
   { kind: 'text', key: 'truck', label: 'Truck number', placeholder: 'e.g. MH12AB1234' },
-  { kind: 'text', key: 'ref', label: 'Load request or trip number', placeholder: 'Load request, trip or LR number' },
-  { kind: 'text', key: 'branchName', label: 'Branch', placeholder: 'Branch name' },
+  { kind: 'text', key: 'ref', label: 'Indent ID / Trip ID', placeholder: 'Indent, trip or LR number' },
+  { kind: 'text', key: 'branchName', label: 'Branch name', placeholder: 'Branch name' },
 ];
 
 /** The steps that belong to one tab, so a tab is a server-side filter and not a view of one page. */
@@ -230,34 +230,34 @@ export default function OrdersPage() {
   const columns: Column<OrderListRow>[] = [
     {
       key: 'order',
-      label: 'Order',
+      label: 'Client details',
       primary: true,
       render: (r) => r.clientName,
       sub: (r) => r.lane,
     },
     {
       key: 'transporter',
-      label: 'Transporter',
+      label: 'Name of the vendor',
       render: (r) => r.vendorName ?? <span className="muted">Not booked yet</span>,
     },
     // Each thing the owner listed for this page is a column of its own: where it
     // loads, where it goes, which truck, and which branch owns it.
-    { key: 'from', label: 'From', render: (r) => r.fromCity },
-    { key: 'to', label: 'To', render: (r) => r.toCity },
+    { key: 'from', label: 'From location', render: (r) => r.fromCity },
+    { key: 'to', label: 'To location', render: (r) => r.toCity },
     {
       key: 'truck',
       label: 'Truck number',
       mono: true,
       render: (r) => r.vehicleNo ?? <span className="muted">—</span>,
     },
-    { key: 'branch', label: 'Branch', render: (r) => r.branchName },
+    { key: 'branch', label: 'Branch name', render: (r) => r.branchName },
     // Indent ID, trip ID and status as their own columns — a dispatcher scans
     // by number, not just by client name. There is no separate order id.
     { key: 'indentId', label: 'Indent ID', mono: true, render: (r) => r.indentCode },
     { key: 'tripId', label: 'Trip ID', mono: true, render: (r) => r.tripCode ?? <span className="muted">—</span> },
     {
       key: 'status',
-      label: 'Status',
+      label: 'Order stage',
       render: (r) => <Tag tone={ORDER_STATUS_TONE[r.status]}>{ORDER_STATUS_LABEL[r.status]}</Tag>,
     },
     {
@@ -300,7 +300,7 @@ export default function OrdersPage() {
   return (
     <ModuleGuard module="orders">
       <PageHeader
-        title="Orders"
+        title="All orders"
         sub="Every load we are moving, and how far along it is"
         module="orders"
         right={

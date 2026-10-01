@@ -2,11 +2,19 @@
 
 import { ChangeEvent, ReactNode, useEffect, useRef, useState } from 'react';
 import { useAtomValue } from 'jotai';
-import { errorMessage } from '@/apis';
+import { ApprovalRequiredError, errorMessage } from '@/apis';
 import { DocPreview } from '@/components/doc-preview';
 import { LorryReceiptContent } from '@/app/trips/[id]/lr/content';
 import { PodVerifyContent } from '@/app/pod/[id]/verify/content';
-import { getCrossCheck, getTrip, getTripDocuments, rejectTripDocument, uploadTripDocument, verifyTripDocument } from '@/app/trips/apis';
+import {
+  getCrossCheck,
+  getTrip,
+  getTripDocuments,
+  overrideCrossCheck,
+  rejectTripDocument,
+  uploadTripDocument,
+  verifyTripDocument,
+} from '@/app/trips/apis';
 import type { CrossCheckResult, TripDetail, TripDocument } from '@/app/trips/types';
 import { uploadAttachment } from '@/lib/attachments';
 import { fmtDate, inr } from '@/lib/format';
@@ -173,15 +181,23 @@ export function OrderDocumentsTab({
   onChanged,
   openTracking,
   onLrLoaded,
+  showLr = true,
+  showPod = true,
 }: {
   tripId: string;
   onChanged: () => void;
-  openTracking: () => void;
+  /** Absent on the trip page, which has no Tracking tab. */
+  openTracking?: () => void;
   onLrLoaded?: (code: string | null) => void;
+  /** The trip page has its own LR tab and POD route, so it leaves these out. */
+  showLr?: boolean;
+  showPod?: boolean;
 }) {
   const can = useCan();
   const toast = useToast();
   const session = useAtomValue(sessionAtom);
+  const [overrideOpen, setOverrideOpen] = useState(false);
+  const [overrideReason, setOverrideReason] = useState('');
   const [trip, setTrip] = useState<TripDetail | null>(null);
   const [docs, setDocs] = useState<TripDocument[] | null>(null);
   const [crossCheck, setCrossCheck] = useState<CrossCheckResult | null>(null);
@@ -316,36 +332,25 @@ export function OrderDocumentsTab({
     const rejectedWhy = current.find((d) => d.rejectReason)?.rejectReason;
     const uploaded = state !== 'MISSING';
     return (
-      <div
-        key={item.id}
-        data-doc={item.id}
-        style={{
-          display: 'flex',
-          gap: 16,
-          flexWrap: 'wrap',
-          padding: 14,
-          border: '1px solid var(--color-divider)',
-          borderRadius: 'var(--radius-md, 10px)',
-        }}
-      >
+      <div key={item.id} data-doc={item.id} className="doc-card">
         <DocPreview attachmentId={attachmentId} label={item.title} width={item.pdf ? 130 : 150} height={item.pdf ? 160 : 190} />
-        <div style={{ flex: '1 1 240px', minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+        <div style={{ minWidth: 0 }}>
+          <div className="doc-card-head">
             <strong>{item.title}</strong>
             <Tag tone={STATE[state].tone}>{STATE[state].label}</Tag>
           </div>
-          <dl style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, max-content) 1fr', gap: '4px 14px', margin: 0, fontSize: 13 }}>
+          <dl className="doc-facts">
             {item.fields.map((f) => (
               <div key={f.key} style={{ display: 'contents' }}>
-                <dt className="muted">{f.label}</dt>
-                <dd style={{ margin: 0 }}>{shown(f, valueOf(item, f, current))}</dd>
+                <dt>{f.label}</dt>
+                <dd>{shown(f, valueOf(item, f, current))}</dd>
               </div>
             ))}
           </dl>
           {rejectedWhy && state === 'REJECTED' && (
-            <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>Rejected: {rejectedWhy}</div>
+            <div style={{ color: 'var(--red)', fontSize: 'var(--text-sm)', marginTop: 8 }}>Rejected: {rejectedWhy}</div>
           )}
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+          <div className="doc-actions">
             {canUpload && loaded && (
               <button className={uploaded ? 'btn btn-secondary btn-sm' : 'btn btn-sm'} disabled={busy} onClick={() => openUpload(item)}>
                 {uploaded ? (state === 'REJECTED' ? 'Upload again' : 'Replace or edit details') : `Upload ${item.pdf ? 'PDF' : 'photo'}`}
@@ -379,20 +384,31 @@ export function OrderDocumentsTab({
           tone="flag"
           title="The advance documents are uploaded once the truck is loaded"
           right={
-            <button className="btn btn-sm" onClick={openTracking}>
-              Open Tracking
-            </button>
+            openTracking ? (
+              <button className="btn btn-sm" onClick={openTracking}>
+                Open Tracking
+              </button>
+            ) : undefined
           }
         >
-          Mark the truck as reached the loading point and then loaded on the Tracking tab. The upload buttons appear
-          here after that.
+          {openTracking
+            ? 'Mark the truck as reached the loading point and then loaded on the Tracking tab. The upload buttons appear here after that.'
+            : 'The loading supervisor marks loading complete on the trip page (or Operations marks it loaded on the order’s Tracking tab). The upload buttons appear here after that.'}
         </Banner>
       )}
 
       {crossCheck && crossCheck.mismatches.length > 0 && (
-        <Banner tone="red" title={`${crossCheck.mismatches.length} cross-check mismatch${crossCheck.mismatches.length === 1 ? '' : 'es'}`}>
+        <Banner
+          tone="red"
+          title={`${crossCheck.mismatches.length} cross-check mismatch${crossCheck.mismatches.length === 1 ? '' : 'es'}`}
+          right={
+            <button className="btn btn-secondary btn-sm" onClick={() => setOverrideOpen(true)}>
+              Override and proceed
+            </button>
+          }
+        >
           {crossCheck.mismatches.map((m) => `${m.field}: ${m.a.value || '—'} vs ${m.b.value || '—'}`).join(' · ')}. Fix the
-          document, or override it from the trip’s Documents page.
+          document, or override it with a reason — a role senior to Operations approves the override.
         </Banner>
       )}
 
@@ -409,22 +425,57 @@ export function OrderDocumentsTab({
         );
       })}
 
-      <Panel title="📄 Lorry receipt (if needed)" pad={false}>
-        <div style={{ padding: 15 }}>
-          <LorryReceiptContent tripId={tripId} onLoaded={(d) => onLrLoaded?.(d.lr.code)} />
-        </div>
-      </Panel>
+      {showLr && (
+        <Panel title="📄 Lorry receipt (if needed)" pad={false}>
+          <div style={{ padding: 15 }}>
+            <LorryReceiptContent tripId={tripId} onLoaded={(d) => onLrLoaded?.(d.lr.code)} />
+          </div>
+        </Panel>
+      )}
 
-      <Panel title="📸 Proof of delivery">
-        {unloaded ? (
-          <PodVerifyContent tripId={tripId} showOrderLink={false} showStatusTag={false} />
-        ) : (
-          <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
-            The proof of delivery — an E-POD (photo or scan) or the H-POD (signed hard copy) — is uploaded here once the
-            truck is marked unloaded on the Tracking tab.
-          </p>
-        )}
-      </Panel>
+      {showPod && (
+        <Panel title="📸 Proof of delivery">
+          {unloaded ? (
+            <PodVerifyContent tripId={tripId} showOrderLink={false} showStatusTag={false} />
+          ) : (
+            <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
+              The proof of delivery — an E-POD (photo or scan) or the H-POD (signed hard copy) — is uploaded here once the
+              truck is marked unloaded on the Tracking tab.
+            </p>
+          )}
+        </Panel>
+      )}
+
+      <Dialog
+        open={overrideOpen}
+        title="Override the cross-check"
+        body="An override does not correct the document — it proceeds in spite of it. A role senior to Operations approves it, and it is kept on the audit trail."
+        confirmLabel="Request override"
+        confirmDisabled={overrideReason.trim().length < 20}
+        busy={busy}
+        onConfirm={async () => {
+          setBusy(true);
+          try {
+            await overrideCrossCheck(tripId, overrideReason.trim());
+            toast('Override requested');
+          } catch (e) {
+            toast(
+              e instanceof ApprovalRequiredError
+                ? 'Sent for approval · the mismatch stays open until it is approved'
+                : errorMessage(e),
+            );
+          } finally {
+            setBusy(false);
+            setOverrideOpen(false);
+            setOverrideReason('');
+          }
+        }}
+        onClose={() => setOverrideOpen(false)}
+      >
+        <Field label="Reason" required hint="At least 20 characters.">
+          <textarea rows={3} value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)} />
+        </Field>
+      </Dialog>
 
       <Dialog
         open={!!editing}

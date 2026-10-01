@@ -718,6 +718,12 @@ export interface PodReceiptsTable {
   supersedes_id: string | null;
   /** EPOD — an electronic copy uploaded by the desk; HPOD — the signed hard copy received by courier. */
   pod_kind: Generated<string>;
+  /** The hard copy followed up after an E-POD: its courier, and when it reached head office. */
+  hard_copy_docket: string | null;
+  hard_copy_sent_on: string | null;
+  hard_copy_received_on: string | null;
+  /** A photo of the courier slip of the hard copy. */
+  courier_slip_attachment_id: string | null;
   created_at: Generated<string>;
   updated_at: Generated<string>;
 }

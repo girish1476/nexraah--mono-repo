@@ -15,6 +15,7 @@ import type { WaivePenaltyDto } from './dto/waive-pod.dto';
 import type { ReceivePodDto } from './dto/receive-pod.dto';
 import type { VerifyPodDto } from './dto/verify-pod.dto';
 import type { UploadEpodDto } from './dto/upload-epod.dto';
+import type { HardCopyDto } from './dto/hard-copy.dto';
 import { SdrRepository } from '../sdr/sdr.repository';
 import type { SdrKind } from '../sdr/dto/sdr.dto';
 
@@ -210,6 +211,7 @@ export class PodService implements OnModuleInit {
         pages: dto.pages ?? null,
         receivedBy: dto.receivedBy ?? actor.name,
         condition: dto.condition ?? null,
+        courierSlipAttachmentId: dto.courierSlipAttachmentId ?? null,
       });
 
       await this.podRepository.updateTrip(trx, tripId, {
@@ -289,6 +291,45 @@ export class PodService implements OnModuleInit {
     return receipt;
   }
 
+  /**
+   * The hard copy behind an E-POD. Operations take the soft copy first and
+   * follow up until the signed hard copy reaches head office; its courier
+   * docket and a photo of the courier slip are recorded here. The proof's
+   * status does not move — the soft copy already stopped the clock.
+   */
+  async logHardCopy(tripId: string, dto: HardCopyDto, actor: AuthenticatedUser) {
+    return this.podRepository.transaction().execute(async (trx) => {
+      const trip = await this.podRepository.findTripForUpdate(trx, tripId);
+      if (!trip) throw new DomainException(404, 'NOT_FOUND', `Unknown trip: ${tripId}`);
+      const receipt = await this.podRepository.findReceiptForUpdate(trx, tripId);
+      if (!receipt || receipt.pod_kind !== 'EPOD') {
+        throw new DomainException(409, 'NO_EPOD', 'The hard copy is followed up after an E-POD. Upload the E-POD first, or log the H-POD directly.');
+      }
+      if (dto.receivedOn && dto.receivedOn < dto.sentOn) {
+        throw new DomainException(400, 'VALIDATION_ERROR', 'The hard copy cannot reach head office before it was sent.');
+      }
+      const row = await this.podRepository.updateHardCopy(trx, receipt.id, {
+        hard_copy_docket: dto.courierDocket.trim(),
+        hard_copy_sent_on: dto.sentOn,
+        hard_copy_received_on: dto.receivedOn ?? null,
+        ...(dto.courierSlipAttachmentId ? { courier_slip_attachment_id: dto.courierSlipAttachmentId } : {}),
+      });
+      await this.auditService.record(trx, actor, {
+        action: dto.receivedOn ? 'POD_HARD_COPY_RECEIVED' : 'POD_HARD_COPY_SENT',
+        entityType: 'trips',
+        entityId: tripId,
+        after: { docket: dto.courierDocket.trim(), sentOn: dto.sentOn, receivedOn: dto.receivedOn ?? null },
+      });
+      return {
+        tripId,
+        courierDocket: row.hard_copy_docket,
+        sentOn: row.hard_copy_sent_on,
+        receivedOn: row.hard_copy_received_on,
+        courierSlipAttachmentId: row.courier_slip_attachment_id,
+      };
+    });
+  }
+
   async getById(tripId: string) {
     const trip = await this.podRepository.findTripDetailById(tripId);
     if (!trip) throw new DomainException(404, 'NOT_FOUND', `Unknown trip: ${tripId}`);
@@ -332,6 +373,19 @@ export class PodService implements OnModuleInit {
           }
         : null,
       podKind: receipt?.pod_kind ?? null,
+      // The hard copy followed up after an E-POD (or the courier slip of an H-POD).
+      hardCopy: receipt
+        ? {
+            courierDocket: receipt.pod_kind === 'EPOD' ? receipt.hard_copy_docket : receipt.courier_docket,
+            sentOn: receipt.pod_kind === 'EPOD' ? receipt.hard_copy_sent_on : receipt.sent_on,
+            receivedOn: receipt.pod_kind === 'EPOD' ? receipt.hard_copy_received_on : receipt.received_on,
+            courierSlipAttachmentId: receipt.courier_slip_attachment_id,
+          }
+        : null,
+      // The POD check covers shortage, damage and the transit penalty.
+      transitPenaltyPaise: trip.transitPenaltyWaived ? 0 : Number(trip.transitPenalty ?? 0),
+      actualTransitDays: trip.actualTransitDays ?? null,
+      transitDaysRequired: trip.transitDaysRequired ?? null,
       pages: receipt?.pages ?? null,
       attachmentIds: receipt?.attachment_ids ?? [],
       // BR-50 presentation half: the frontend withholds Approve when this
