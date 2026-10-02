@@ -2150,113 +2150,152 @@ details[open] > summary::before {
   to { transform: translate(160px, -220px); }
 }
 
+/* ---- the brand side --------------------------------------------------
+   The logo itself — the original artwork with its navy cut away — floating
+   on the page, lit from below in its own sky blue. Everything is sized by
+   the screen's height as well as its width, so the brand side always fits
+   one screen. */
 .auth-brand {
-  flex: 1 1 520px;
+  flex: 1 1 560px;
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
+  gap: clamp(20px, 4vh, 44px);
   padding: var(--space-8) var(--space-7);
   position: relative;
   z-index: 1;
+}
+/* A hairline between the two halves, brightest at the middle. */
+.auth-brand::after {
+  content: '';
+  position: absolute;
+  top: 12%;
+  bottom: 12%;
+  right: 0;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, rgba(79, 179, 255, 0.35) 50%, transparent);
 }
 .auth-brand-head {
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
+  animation: auth-rise 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
-/* The logo, on a plate of its own navy (#060e32 — the logo's background
-   and the page's), framed by a thin sky-blue ring and lit from behind. Sized
-   by the screen's height as well as its width, so the brand side never runs
-   off the bottom of a laptop screen. */
-.auth-logo-plate {
-  --plate: min(30vw, 46vh, 380px);
-  width: var(--plate);
-  aspect-ratio: 226 / 262;
-  max-width: 100%;
-  border-radius: 28px;
+.auth-logo-wrap {
   position: relative;
-  display: grid;
-  place-items: center;
-  padding: 6%;
-  background: var(--auth-navy);
-  box-shadow:
-    0 0 0 1px rgba(79, 179, 255, 0.35),
-    0 0 0 8px rgba(33, 150, 230, 0.07),
-    0 0 90px 6px rgba(33, 150, 230, 0.32),
-    0 36px 70px -24px rgba(0, 0, 0, 0.65);
-  animation: auth-logo-float 7s ease-in-out infinite;
+  display: block;
+  /* 1000 × 1178 artwork: no wider than a third of the screen, no taller than half of it. */
+  width: min(30vw, calc((100vh - 520px) * 1000 / 1178), 400px);
+  min-width: 180px;
+  max-width: 100%;
 }
-.auth-logo-plate::before {
+/* The light the logo stands in. */
+.auth-logo-wrap::before {
   content: '';
   position: absolute;
-  inset: -18%;
-  border-radius: 50%;
+  inset: 8% -22% -6%;
   z-index: -1;
-  background: radial-gradient(closest-side, rgba(33, 150, 230, 0.4), transparent 70%);
-  animation: auth-halo 5s ease-in-out infinite;
+  border-radius: 50%;
+  background:
+    radial-gradient(closest-side, rgba(33, 150, 230, 0.34), rgba(33, 150, 230, 0.1) 55%, transparent 75%);
+  filter: blur(6px);
+  animation: auth-halo 6s ease-in-out infinite;
 }
 .auth-logo {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
   display: block;
-  image-rendering: auto;
+  width: 100%;
+  height: auto;
+  filter: drop-shadow(0 18px 36px rgba(0, 0, 0, 0.45)) drop-shadow(0 0 28px rgba(33, 150, 230, 0.18));
 }
-@keyframes auth-logo-float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-8px); }
+@keyframes auth-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 @keyframes auth-halo {
-  0%, 100% { opacity: 0.7; transform: scale(0.97); }
+  0%, 100% { opacity: 0.75; transform: scale(0.97); }
   50% { opacity: 1; transform: scale(1.03); }
 }
 .auth-brand-console {
-  margin-top: var(--space-5);
-  font-size: var(--text-sm);
+  margin-top: clamp(14px, 2.4vh, 26px);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.32em;
   text-transform: uppercase;
-  color: var(--auth-ink-soft);
+  color: rgba(226, 236, 255, 0.62);
 }
-.auth-brand-tag {
-  margin-top: var(--space-4);
-  display: inline-block;
-  padding: 5px 14px;
-  border-radius: 999px;
-  font-size: var(--text-sm);
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: #fff;
-  background: linear-gradient(90deg, #1565c0, var(--auth-sky));
-  box-shadow: 0 8px 24px -8px rgba(33, 150, 230, 0.8);
+.auth-brand-console span {
+  width: 36px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(79, 179, 255, 0.6));
+}
+.auth-brand-console span:last-child {
+  background: linear-gradient(90deg, rgba(79, 179, 255, 0.6), transparent);
 }
 .auth-brand-points {
   list-style: none;
-  margin: var(--space-7) 0 0;
+  margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  max-width: 420px;
+  display: grid;
+  gap: 10px;
+  width: min(440px, 100%);
+  animation: auth-rise 0.9s 0.15s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 .auth-brand-points li {
   display: flex;
-  gap: var(--space-3);
-  align-items: flex-start;
-  padding: 10px 14px;
+  gap: 14px;
+  align-items: center;
+  padding: 12px 16px;
   border-radius: 14px;
-  border: 1px solid var(--auth-line);
-  background: rgba(255, 255, 255, 0.03);
-  font-size: var(--text-base);
-  line-height: 1.5;
-  color: var(--auth-ink-soft);
+  border: 1px solid rgba(140, 180, 255, 0.12);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.015));
+  backdrop-filter: blur(6px);
+  transition: border-color 0.2s ease, background 0.2s ease;
 }
-.auth-brand-points li span:first-child {
-  font-size: 18px;
+.auth-brand-points li:hover {
+  border-color: rgba(79, 179, 255, 0.32);
+  background: linear-gradient(180deg, rgba(79, 179, 255, 0.08), rgba(255, 255, 255, 0.02));
+}
+.auth-brand-points li > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.auth-brand-points strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--auth-ink);
+}
+.auth-brand-points li > div > span {
+  font-size: 13px;
+  line-height: 1.45;
+  color: rgba(226, 236, 255, 0.62);
+}
+.auth-point-icon {
   flex: none;
-  font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  color: var(--auth-sky-2);
+  background: rgba(33, 150, 230, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(79, 179, 255, 0.25);
+}
+.auth-point-icon svg {
+  width: 20px;
+  height: 20px;
+}
+.auth-brand-foot {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: rgba(226, 236, 255, 0.42);
 }
 
 .auth-form-col {
@@ -2289,9 +2328,14 @@ details[open] > summary::before {
   }
 }
 /* Short laptop screens: the three points give way to the logo. */
-@media (min-width: 901px) and (max-height: 760px) {
-  .auth-brand-points {
+@media (min-width: 901px) and (max-height: 820px) {
+  .auth-brand-points,
+  .auth-brand-foot {
     display: none;
+  }
+  /* Without the points, the logo takes the height they left. */
+  .auth-logo-wrap {
+    width: min(30vw, calc((100vh - 170px) * 1000 / 1178), 400px);
   }
 }
 
@@ -2616,8 +2660,9 @@ details[open] > summary::before {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .auth-logo-plate,
-  .auth-logo-plate::before,
+  .auth-brand-head,
+  .auth-brand-points,
+  .auth-logo-wrap::before,
   .auth-shell::after,
   .auth-otp.shake {
     animation: none;
@@ -2632,12 +2677,15 @@ details[open] > summary::before {
     flex: none;
     padding: var(--space-6) var(--space-4) 0;
   }
-  .auth-logo-plate {
-    --plate: 190px;
-    border-radius: 22px;
+  .auth-logo-wrap {
+    width: 200px;
   }
-  .auth-brand-console {
-    margin-top: var(--space-3);
+  .auth-brand::after,
+  .auth-brand-foot {
+    display: none;
+  }
+  .auth-brand {
+    gap: 0;
   }
   .auth-brand-points {
     display: none;
@@ -2647,8 +2695,8 @@ details[open] > summary::before {
   }
 }
 @media (max-width: 480px) {
-  .auth-logo-plate {
-    --plate: 160px;
+  .auth-logo-wrap {
+    width: 168px;
   }
   .auth-card {
     padding: var(--space-6) var(--space-4) var(--space-5);
