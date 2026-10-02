@@ -33,9 +33,14 @@ const SEVERITIES = Object.keys(TICKET_SEVERITY_LABEL) as TicketSeverity[];
 export function ReportProblemButton({
   entityType,
   entityId,
+  label = '🎫 Report a problem',
+  className = 'btn btn-ghost btn-sm',
 }: {
   entityType?: string;
   entityId?: string;
+  /** What the button says, where a screen puts one against a single record. */
+  label?: string;
+  className?: string;
 }) {
   const pathname = usePathname() ?? '';
   const toast = useToast();
@@ -81,8 +86,8 @@ export function ReportProblemButton({
 
   return (
     <>
-      <button className="btn btn-ghost btn-sm" onClick={() => setOpen(true)}>
-        🎫 Report a problem
+      <button className={className} onClick={() => setOpen(true)}>
+        {label}
       </button>
 
       <Dialog
@@ -98,6 +103,7 @@ export function ReportProblemButton({
           <div className="hint">
             This goes to Administration with the screen you are on — <code>{pathname}</code> — so
             they can find what you are looking at. You do not need to describe where you are.
+            {entityId ? ` It is raised against ${entityId}.` : ''}
           </div>
 
           <Field label="What kind of problem?">

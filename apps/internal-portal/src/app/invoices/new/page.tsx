@@ -25,6 +25,13 @@ import {
   useToast,
 } from '@/lib/ui';
 import { createInvoice, generateInvoice } from '../apis';
+import {
+  ExtraChargeFields,
+  ExtraChargeRow,
+  extraChargesPaise,
+  hasUnnamedExtraCharge,
+  toExtraCharges,
+} from '../extra-charges';
 
 /**
  * Raise an invoice — `/invoices/new` · `invoice.create` (part 08 §1).
@@ -52,9 +59,9 @@ export default function NewInvoicePage() {
     unloadingRupees: 0,
     detentionRupees: 0,
     otherRupees: 0,
-    discountRupees: 0,
     notes: '',
   });
+  const [extraRows, setExtraRows] = useState<ExtraChargeRow[]>([]);
 
   useEffect(() => {
     listClients().then(setClients).catch(() => setClients([]));
@@ -82,12 +89,17 @@ export default function NewInvoicePage() {
   const chosen = billable.filter((t) => selected[t.id]);
   const freightPaise = chosen.reduce((a, t) => a + t.sellRatePaise, 0);
   const extras =
-    (form.loadingRupees + form.unloadingRupees + form.detentionRupees + form.otherRupees - form.discountRupees) * 100;
+    (form.loadingRupees + form.unloadingRupees + form.detentionRupees + form.otherRupees) * 100 +
+    extraChargesPaise(extraRows);
   const subtotal = freightPaise + extras;
   const roundOffPaise = Math.round(subtotal / 100) * 100 - subtotal;
   const totalPaise = subtotal + roundOffPaise;
 
   const submit = async (issue: boolean) => {
+    if (hasUnnamedExtraCharge(extraRows)) {
+      toast('Give every added charge a name.');
+      return;
+    }
     setBusy(true);
     try {
       // Rounding and the total stay on screen only — the server computes both
@@ -109,7 +121,7 @@ export default function NewInvoicePage() {
         unloadingPaise: form.unloadingRupees * 100,
         detentionPaise: form.detentionRupees * 100,
         otherPaise: form.otherRupees * 100,
-        discountPaise: form.discountRupees * 100,
+        extraCharges: toExtraCharges(extraRows),
         notes: form.notes,
       });
       if (issue) {
@@ -239,7 +251,6 @@ export default function NewInvoicePage() {
                 ['unloadingRupees', 'Unloading'],
                 ['detentionRupees', 'Detention'],
                 ['otherRupees', 'Other'],
-                ['discountRupees', 'Discount'],
               ] as [keyof typeof form, string][]
             ).map(([key, label]) => (
               <Field key={key} label={`${label} (₹)`}>
@@ -254,12 +265,13 @@ export default function NewInvoicePage() {
               <input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
             </Field>
           </FormGrid>
+          <ExtraChargeFields rows={extraRows} onChange={setExtraRows} />
         </Panel>
 
         <Panel title="Total">
           <div style={{ display: 'grid', gap: 4, maxWidth: 380 }}>
             <Row label="Freight" value={inr(freightPaise)} />
-            <Row label="Charges and discount" value={inr(extras)} />
+            <Row label="Charges" value={inr(extras)} />
             <Row label="Round off" value={inr(roundOffPaise)} />
             <div
               style={{

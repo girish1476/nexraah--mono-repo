@@ -1,5 +1,5 @@
 import { request } from '@/apis';
-import { PendingResponse, PodDetail, PodReceipt, ReceivingResponse, VerifyBody } from './types';
+import { PendingResponse, PodDetail, PodFindings, PodReceipt, ReceivingResponse, VerifyBody } from './types';
 
 /** GET /pod/receiving?branch= · `pod.receive` */
 export function getReceiving(params: { branch?: string } = {}) {
@@ -53,7 +53,7 @@ export function receivePod(
 /** POST /pod/:tripId/verify · `pod.verify` — checklist, remarks and charges. */
 export function verifyPod(tripId: string, body: VerifyBody) {
   // `sdrCode` is set when a failed shortage/damage or quantity check raised an SDR from the remarks.
-  return request<{ tripId: string; podStatus: string; sdrCode?: string | null }>({
+  return request<{ tripId: string; podStatus: string; sdrCode?: string | null; sdrCodes?: string[] }>({
     url: `/pod/${tripId}/verify`,
     method: 'POST',
     data: body,
@@ -140,9 +140,10 @@ export function logHardCopy(
 }
 
 /** POST /pod/:tripId/hard-copy/verify · `pod.verify` — the check that lifts the hold on the balance. */
-export function verifyHardCopy(tripId: string) {
-  return request<{ tripId: string; verifiedAt: string; verifiedBy: string }>({
+export function verifyHardCopy(tripId: string, body: PodFindings = {}) {
+  return request<{ tripId: string; verifiedAt: string; verifiedBy: string; sdrCodes?: string[] }>({
     url: `/pod/${tripId}/hard-copy/verify`,
     method: 'POST',
+    data: body,
   });
 }

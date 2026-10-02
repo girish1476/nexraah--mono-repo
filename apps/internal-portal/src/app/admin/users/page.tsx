@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { errorMessage } from '@/apis';
-import { ROLE_CODES, ROLES, RoleCode } from '@/lib/permissions';
+import { ROLE_CODES, ROLES } from '@/lib/permissions';
 import {
   Column,
   DataTable,
@@ -19,6 +19,8 @@ import {
 } from '@/lib/ui';
 import { listBranches } from '../branches/apis';
 import { Branch } from '../branches/types';
+import { getRoleMatrix } from '../roles/apis';
+import { CustomRole } from '../roles/types';
 import { AllowedEmail, allowEmail, listAllowedEmails, updateAllowedEmail } from './apis';
 
 /**
@@ -42,7 +44,14 @@ export default function AllowedEmailsPage() {
 
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<RoleCode | ''>('');
+  const [role, setRole] = useState('');
+  // Built-in roles, then any added from Access control.
+  const [customRoles, setCustomRoles] = useState<CustomRole[]>([]);
+  const roleOptions = [
+    ...ROLE_CODES.map((code) => ({ code: code as string, label: ROLES[code].label })),
+    ...customRoles.map((r) => ({ code: r.code, label: r.label })),
+  ];
+  const roleLabel = (code: string) => roleOptions.find((o) => o.code === code)?.label ?? code;
   const [name, setName] = useState('');
   const [branchId, setBranchId] = useState('');
   const [busy, setBusy] = useState(false);
@@ -54,6 +63,9 @@ export default function AllowedEmailsPage() {
   useEffect(() => {
     load();
     listBranches().then(setBranches).catch(() => setBranches([]));
+    getRoleMatrix()
+      .then((m) => setCustomRoles(m.customRoles ?? []))
+      .catch(() => setCustomRoles([]));
   }, []);
 
   const emailValid = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
@@ -68,7 +80,7 @@ export default function AllowedEmailsPage() {
         name: name.trim() || undefined,
         branchId: branchId || undefined,
       });
-      toast(`${added.email} can now sign in as ${ROLES[added.role]?.label ?? added.role}`);
+      toast(`${added.email} can now sign in as ${roleLabel(added.role)}`);
       setRows((prev) => [added, ...(prev ?? [])]);
       setOpen(false);
       setEmail('');
@@ -116,18 +128,16 @@ export default function AllowedEmailsPage() {
             value={r.role}
             disabled={saving === r.id}
             aria-label={`Role for ${r.email}`}
-            onChange={(e) =>
-              patchRow(r, { role: e.target.value as RoleCode }, `${r.email} is now ${ROLES[e.target.value as RoleCode].label}`)
-            }
+            onChange={(e) => patchRow(r, { role: e.target.value }, `${r.email} is now ${roleLabel(e.target.value)}`)}
           >
-            {ROLE_CODES.map((c) => (
-              <option key={c} value={c}>
-                {ROLES[c].label}
+            {roleOptions.map((o) => (
+              <option key={o.code} value={o.code}>
+                {o.label}
               </option>
             ))}
           </select>
         ) : (
-          (ROLES[r.role]?.label ?? r.role)
+          roleLabel(r.role)
         ),
     },
     {
@@ -238,11 +248,11 @@ export default function AllowedEmailsPage() {
           />
         </Field>
         <Field label="Role" required hint="What they can see and do once signed in. You can change it later.">
-          <select value={role} onChange={(e) => setRole(e.target.value as RoleCode | '')}>
+          <select value={role} onChange={(e) => setRole(e.target.value)}>
             <option value="">Select a role</option>
-            {ROLE_CODES.map((c) => (
-              <option key={c} value={c}>
-                {ROLES[c].label}
+            {roleOptions.map((o) => (
+              <option key={o.code} value={o.code}>
+                {o.label}
               </option>
             ))}
           </select>

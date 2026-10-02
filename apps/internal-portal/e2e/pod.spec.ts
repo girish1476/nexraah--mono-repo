@@ -235,33 +235,39 @@ test.describe('POD verify and approve', () => {
     await expect(page.getByRole('img', { name: 'Proof of delivery, page 1' })).toBeVisible();
     await expect(page.getByRole('img', { name: 'Proof of delivery, page 2' })).toBeVisible();
 
+    // The check opens beside the scan, with the details and findings to type in.
+    await page.getByRole('button', { name: 'Verify', exact: true }).click();
     for (const label of [
-      'Consignee stamp present',
-      'Signed and dated',
-      'LR number matches',
-      'Quantity matches the invoice',
-      'No shortage or damage noted',
+      'Details on the proof',
+      'Transit delay',
+      'Shortages and damages',
+      'Charges written on the proof',
+      'Unloading detention',
+      'Unloading charges',
+      'Other charges',
     ]) {
-      await expect(page.getByText(label)).toBeVisible();
+      await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
     }
-    await expect(page.getByRole('button', { name: 'Verify' })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Verify', exact: true }).last()).toBeEnabled();
+    await page.getByRole('button', { name: 'Cancel' }).click();
     await expect(page.getByRole('button', { name: 'Reject and request a replacement' })).toBeVisible();
     // No prior receiving-register entry was logged for this seeded trip.
     await expect(page.getByText('Receiving record')).toHaveCount(0);
   });
 
-  test('the Verify button is disabled until remarks are given for a failed check', async ({ page }) => {
+  test('a damage ticked in the check must be described before it can be verified', async ({ page }) => {
     await setRole(page, 'COMPLIANCE');
     await page.goto('/pod/t-120869/verify');
 
-    const verify = page.getByRole('button', { name: 'Verify' });
+    await page.getByRole('button', { name: 'Verify', exact: true }).click();
+    const verify = page.getByRole('button', { name: 'Verify', exact: true }).last();
     await expect(verify).toBeEnabled();
 
-    await page.getByText('No shortage or damage noted').click();
+    await page.getByText('Goods arrived damaged').click();
     await expect(verify).toBeDisabled();
-    await expect(page.getByText('Remarks are mandatory when any check fails')).toBeVisible();
+    await expect(page.getByText('Describe the damage in a few words.')).toBeVisible();
 
-    await page.locator('textarea').first().fill('One carton corner crushed; consignee accepted with a remark on the LR.');
+    await page.getByPlaceholder(/drums dented/).fill('One carton corner crushed; consignee accepted with a remark.');
     await expect(verify).toBeEnabled();
   });
 
@@ -269,13 +275,29 @@ test.describe('POD verify and approve', () => {
     await setRole(page, 'COMPLIANCE');
     await page.goto('/pod/t-120869/verify');
 
-    await page.getByRole('button', { name: 'Verify' }).click();
+    await page.getByRole('button', { name: 'Verify', exact: true }).click();
+    // The check opens beside the scan, like every other document; confirm it there.
+    await page.getByRole('button', { name: 'Verify', exact: true }).last().click();
     await expect(page.getByText('Verified · a second person needs to approve it before the balance is released.')).toBeVisible();
 
     await expect(page.getByText('Checked, awaiting approval', { exact: true })).toBeVisible();
     await expect(page.getByText('You verified this proof of delivery')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Approve' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Verify' })).toHaveCount(0);
+  });
+
+  test('an administrator can approve the proof they verified themselves', async ({ page }) => {
+    await setRole(page, 'ADMIN');
+    await page.goto('/pod/t-120869/verify');
+
+    await page.getByRole('button', { name: 'Verify', exact: true }).click();
+    // The check opens beside the scan, like every other document; confirm it there.
+    await page.getByRole('button', { name: 'Verify', exact: true }).last().click();
+    await expect(page.getByText('Verified · approve it to unblock the balance.')).toBeVisible();
+    await expect(page.getByText('You verified this proof of delivery')).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Approve' }).click();
+    await expect(page.getByText('Approved · the balance is unblocked. Finance still releases it.')).toBeVisible();
   });
 
   test('rejecting returns the proof to the transporter and the clock resumes (BR-52)', async ({ page }) => {

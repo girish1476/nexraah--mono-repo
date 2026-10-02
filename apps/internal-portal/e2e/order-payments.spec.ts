@@ -110,7 +110,7 @@ test.describe('Order page', () => {
     await page.goto('/orders/i-4421');
     await page.getByRole('tab', { name: /Tracking/ }).click();
     await expect(page.getByRole('list', { name: 'Order cycle' })).toBeVisible();
-    await expect(page.locator('iframe[title^="Map"]')).toBeVisible();
+    await expect(page.locator('iframe[title^="Route"]')).toBeVisible();
     await expect(page.getByText('📋 Tracking sheet')).toBeVisible();
   });
 

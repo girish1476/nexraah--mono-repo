@@ -5,20 +5,12 @@ import { ApiError, errorMessage } from '@/apis';
 import { addTracking, deliverTrip, departTrip, extendEway, getTracking } from '@/app/trips/apis';
 import { TRACKING_STATUS_LABEL } from '@/app/trips/types';
 import type { TrackingKind, TrackingSheet, TrackingStatus, TrackingUpdate } from '@/app/trips/types';
+import { RoutePoints, ShareState, getRoutePoints, getShare } from '@/app/trips/tracking-share';
 import { fmtDate, fmtDateTime } from '@/lib/format';
+import { placeQuery, routeMapLink, routeMapSrc } from '@/lib/route-map';
+import { RoutePointsPanel, ShareTrackingPanel } from './tracking-share-panels';
 import { Banner, Column, DataTable, ErrorState, Field, FormGrid, Loading, Panel, Stack, Tag, useCan, useToast } from '@/lib/ui';
 
-/**
- * Google Maps, embedded. With `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` set it uses the
- * Maps Embed API; without one, Google's plain embed — same map, no key.
- */
-function mapSrc(query: string): string {
-  const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-  const q = encodeURIComponent(query);
-  return key
-    ? `https://www.google.com/maps/embed/v1/place?key=${encodeURIComponent(key)}&q=${q}&zoom=11`
-    : `https://maps.google.com/maps?q=${q}&z=11&output=embed`;
-}
 
 /** The order cycle, from the moment a vehicle is allocated, in the words Operations uses. */
 const STEPS: { key: string; label: string; emoji: string }[] = [
@@ -92,11 +84,18 @@ export function OrderTrackingTab({
   const [eway, setEway] = useState({ validTill: '', ewayNo: '', reason: '' });
   const [unloadedAt, setUnloadedAt] = useState(nowLocal);
 
+  // The exact loading / unloading points (kept per client and route) and the shareable link.
+  const [points, setPoints] = useState<RoutePoints | null>(null);
+  const [share, setShare] = useState<ShareState | null>(null);
+
   const load = () => {
     setError(null);
     getTracking(tripId)
       .then(setSheet)
       .catch((e) => setError(errorMessage(e)));
+    // Neither is needed to run the trip, so a failure here must not blank the tab.
+    getRoutePoints(tripId).then(setPoints).catch(() => setPoints(null));
+    getShare(tripId).then(setShare).catch(() => setShare(null));
   };
   useEffect(load, [tripId]);
 
@@ -159,9 +158,19 @@ export function OrderTrackingTab({
   // coordinates, else the place typed, else where it loads.
   const latest = [...sheet.updates].reverse()[0] as TrackingUpdate | undefined;
   const withCoords = [...sheet.updates].reverse().find((u) => u.lat !== null && u.lng !== null);
-  const mapQuery = withCoords
-    ? `${withCoords.lat},${withCoords.lng}`
-    : latest?.location ?? (done ? sheet.toCity : sheet.fromCity) ?? 'India';
+  // The route: from the loading point to the unloading point — the exact
+  // places when they are on file, else the cities — through wherever the truck
+  // was last reported, while it is on the road.
+  const origin = placeQuery(points?.loading, sheet.fromCity);
+  const destination = placeQuery(points?.unloading, sheet.toCity);
+  const lastPosition = [...sheet.updates].reverse().find((u) => u.kind === 'UPDATE');
+  const via =
+    onRoad && lastPosition
+      ? lastPosition.lat !== null && lastPosition.lng !== null
+        ? `${lastPosition.lat},${lastPosition.lng}`
+        : lastPosition.location
+      : null;
+  const truckAt = withCoords ? `${withCoords.location} (${withCoords.lat}, ${withCoords.lng})` : latest?.location ?? null;
 
   const columns: Column<TrackingUpdate>[] = [
     { key: 'when', label: 'When', render: (r) => fmtDateTime(r.recordedAt) },
@@ -374,21 +383,38 @@ export function OrderTrackingTab({
         </Panel>
       )}
 
-      <Panel title="🗺️ Map" pad={false}>
+      <Panel title="🗺️ Route map" pad={false}>
         <iframe
-          title={`Map — ${mapQuery}`}
-          src={mapSrc(mapQuery)}
-          style={{ width: '100%', height: 320, border: 0, display: 'block' }}
+          title={`Route — ${sheet.fromCity ?? 'loading point'} to ${sheet.toCity ?? 'unloading point'}`}
+          src={routeMapSrc(origin, destination, via)}
+          style={{ width: '100%', height: 360, border: 0, display: 'block' }}
           loading="lazy"
           referrerPolicy="no-referrer-when-downgrade"
         />
         <div className="muted" style={{ fontSize: 11.5, padding: '8px 14px' }}>
-          Showing {withCoords ? `${withCoords.location} (${withCoords.lat}, ${withCoords.lng})` : mapQuery}.{' '}
-          <a href={`https://www.google.com/maps?q=${encodeURIComponent(mapQuery)}`} target="_blank" rel="noreferrer">
+          Route from {sheet.fromCity ?? 'the loading point'} to {sheet.toCity ?? 'the unloading point'}
+          {via && truckAt ? ` · truck last reported at ${truckAt}` : done ? ' · unloaded' : ''}.{' '}
+          <a href={routeMapLink(origin, destination, via)} target="_blank" rel="noreferrer">
             Open in Google Maps ↗
           </a>
         </div>
       </Panel>
+
+      {points && (
+        <RoutePointsPanel tripId={tripId} vehicleNo={sheet.vehicleNo} points={points} canEdit={canRun} onSaved={setPoints} />
+      )}
+
+      {share && (
+        <ShareTrackingPanel
+          tripId={tripId}
+          vehicleNo={sheet.vehicleNo}
+          fromCity={sheet.fromCity}
+          toCity={sheet.toCity}
+          share={share}
+          canShare={canRun}
+          onChanged={setShare}
+        />
+      )}
 
       {canRun && !done && (
         <Panel title="✍️ Add a tracking update">

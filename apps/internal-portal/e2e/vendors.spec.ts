@@ -341,33 +341,30 @@ test.describe('Vendor detail page', () => {
     await expect(moneyPanel).toContainText('₹35,040'); // balance pending
   });
 
-  test('lists the loads placed with the transporter, and the search narrows them', async ({ page }) => {
+  test('the placed loads are a download, not a list, and the dates narrow it', async ({ page }) => {
     await setRole(page, 'OPS');
     await page.goto('/vendors/v-2301');
     const placed = panel(page.locator('main'), 'Loads placed with this transporter');
 
-    // Two seeded loads: 4436 Hosur → Gurugram and 4421 Gandhidham → Jaipur.
-    await expect(placed).toContainText('Hosur → Gurugram');
-    await expect(placed).toContainText('Gandhidham → Jaipur');
-    await expect(placed).toContainText('Apex Ceramics');
-
-    await placed.getByPlaceholder(/Order, client, city/).fill('jaipur');
-    await expect(placed).toContainText('Gandhidham → Jaipur');
+    // Two seeded loads, neither listed on the page any more.
+    const download = placed.getByRole('button', { name: /Download/ });
+    await expect(download).toHaveText(/\(2\)/);
     await expect(placed).not.toContainText('Hosur → Gurugram');
+    await expect(placed.getByRole('table')).toHaveCount(0);
 
-    await placed.getByPlaceholder(/Order, client, city/).fill('zzz-nothing');
-    await expect(placed.getByText('Nothing matches that search')).toBeVisible();
+    await placed.getByLabel('Pickup from').fill('2099-01-01');
+    await expect(download).toBeDisabled();
+    await expect(placed.getByText('No loads were picked up in that range.')).toBeVisible();
   });
 
   test('exports the placements as a spreadsheet named for the transporter', async ({ page }) => {
     await setRole(page, 'OPS');
     await page.goto('/vendors/v-2301');
     const placed = panel(page.locator('main'), 'Loads placed with this transporter');
-    await expect(placed).toContainText('Hosur → Gurugram');
 
     const [download] = await Promise.all([
       page.waitForEvent('download'),
-      placed.getByRole('button', { name: /Export/ }).click(),
+      placed.getByRole('button', { name: /Download/ }).click(),
     ]);
     expect(download.suggestedFilename()).toMatch(/^VND-2301-placements-\d{4}-\d{2}-\d{2}\.csv$/);
   });
@@ -389,12 +386,12 @@ test.describe('Vendor detail page', () => {
     await expect(main.getByText('Compliance clears vendors.')).toBeVisible();
   });
 
-  test('an ACTIVE vendor shows the active banner instead of the blocked panel', async ({ page }) => {
+  test('an ACTIVE vendor shows the active pill beside its name instead of the blocked panel', async ({ page }) => {
     await setRole(page, 'COMPLIANCE');
     await page.goto('/vendors/v-2301');
     const main = page.locator('main');
     await expect(main.getByText('Vendor active')).toBeVisible();
-    await expect(main.getByText('Cleared by Meera Iyer · may be awarded indents on any branch')).toBeVisible();
+    await expect(main.getByText('Cleared by Meera Iyer')).toBeVisible();
     await expect(main.getByText('Vendor not yet active')).toHaveCount(0);
   });
 });

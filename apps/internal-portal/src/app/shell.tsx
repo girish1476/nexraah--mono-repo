@@ -86,7 +86,14 @@ export function Shell({ session, children }: { session: Session | null; children
   // The grants the server issued, with the same fallback `permissionsAtom`
   // uses — so a row gated on a permission shows exactly when the page's own
   // button would.
-  const groups = navFor(role, session?.permissions?.length ? session.permissions : SEED_GRANTS[role]);
+  const groups = navFor(
+    role,
+    session?.customRole
+      ? (session.permissions ?? [])
+      : session?.permissions?.length
+        ? session.permissions
+        : SEED_GRANTS[role],
+  );
 
   /**
    * True when a preset row (one carrying a query string) matches the URL we
@@ -410,7 +417,7 @@ function RoleStrip({ role, session }: { role: RoleCode; session: Session | null 
             {session?.name ?? 'Signing in…'}
           </div>
           <div className="muted" style={{ fontSize: 'var(--text-sm)' }}>
-            {ROLES[role].label}
+            {session?.roleLabel ?? ROLES[role].label}
           </div>
         </div>
       </div>

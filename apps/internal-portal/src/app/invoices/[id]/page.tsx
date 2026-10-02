@@ -169,7 +169,10 @@ export default function InvoiceDetailPage() {
             <Line label="Unloading" value={invoice.unloadingPaise} />
             <Line label="Detention" value={invoice.detentionPaise} />
             <Line label="Other" value={invoice.otherPaise} />
-            <Line label="Discount" value={-invoice.discountPaise} />
+            {(invoice.extraCharges ?? []).map((c, i) => (
+              <Line key={i} label={c.label} value={c.amountPaise} />
+            ))}
+            {invoice.discountPaise > 0 && <Line label="Discount" value={-invoice.discountPaise} />}
             <Line label="Round off" value={invoice.roundOffPaise} />
             <div
               style={{

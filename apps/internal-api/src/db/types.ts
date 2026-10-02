@@ -51,6 +51,8 @@ export interface RolesTable {
   code: string;
   name: string;
   is_system: Generated<boolean>;
+  /** Set only on a custom role: the built-in role whose screens it opens. */
+  based_on: string | null;
   created_at: Generated<string>;
   updated_at: Generated<string>;
 }
@@ -303,6 +305,21 @@ export interface MarketGapTargetsTable {
   target: number;
   on_panel: Generated<number>;
   converted: Generated<number>;
+  created_at: Generated<string>;
+  updated_at: Generated<string>;
+}
+
+/**
+ * A branch's target for one month, in one measure. `month` is the first of the
+ * month; `target` is a count for LOADS and PODS, paise for the money measures.
+ */
+export interface BranchTargetsTable {
+  id: Generated<string>;
+  branch_id: string;
+  month: string;
+  metric: 'LOADS' | 'REVENUE' | 'MARGIN' | 'COLLECTIONS' | 'PODS';
+  target: number;
+  set_by: string | null;
   created_at: Generated<string>;
   updated_at: Generated<string>;
 }
@@ -653,6 +670,35 @@ export interface TripTrackingUpdatesTable {
   created_at: Generated<string>;
 }
 
+/** The exact loading and unloading points of a client's route — captured once, reused on every later trip. */
+export interface ClientRoutePointsTable {
+  id: Generated<string>;
+  client_id: string;
+  from_city: string;
+  to_city: string;
+  loading_address: string | null;
+  /** pg `numeric` — arrives as a string. Both set or both null. */
+  loading_lat: string | null;
+  loading_lng: string | null;
+  unloading_address: string | null;
+  unloading_lat: string | null;
+  unloading_lng: string | null;
+  updated_by: string | null;
+  created_at: Generated<string>;
+  updated_at: Generated<string>;
+}
+
+/** A shareable live-tracking link for a trip — alive until unloading, or until switched off. */
+export interface TripTrackingLinksTable {
+  id: Generated<string>;
+  trip_id: string;
+  token: string;
+  created_by: string | null;
+  revoked_at: string | null;
+  created_at: Generated<string>;
+  updated_at: Generated<string>;
+}
+
 export interface TripDocumentsTable {
   id: Generated<string>;
   trip_id: string;
@@ -734,6 +780,9 @@ export interface PodReceiptsTable {
   hard_copy_attachment_ids: Generated<string[]>;
   hard_copy_verified_at: string | null;
   hard_copy_verified_by: string | null;
+  /** The details typed in when the proof (and, after an E-POD, its hard copy) was checked. */
+  details: Json | null;
+  hard_copy_details: Json | null;
   created_at: Generated<string>;
   updated_at: Generated<string>;
 }
@@ -832,6 +881,7 @@ export interface InvoicesTable {
   detention: Generated<number>;
   other: Generated<number>;
   discount: Generated<number>;
+  extra_charges: Generated<Json>;
   round_off: Generated<number>;
   total: number;
   received: Generated<number>;
@@ -975,6 +1025,7 @@ export interface Database {
   vendor_advance_history: VendorAdvanceHistoryTable;
   leads: LeadsTable;
   market_gap_targets: MarketGapTargetsTable;
+  branch_targets: BranchTargetsTable;
   clients: ClientsTable;
   rfqs: RfqsTable;
   rfq_lanes: RfqLanesTable;
@@ -1005,5 +1056,7 @@ export interface Database {
   order_events: OrderEventsTable;
   order_comments: OrderCommentsTable;
   trip_tracking_updates: TripTrackingUpdatesTable;
+  trip_tracking_links: TripTrackingLinksTable;
+  client_route_points: ClientRoutePointsTable;
   client_documents: ClientDocumentsTable;
 }

@@ -96,7 +96,9 @@ export default function OrderDetailPage() {
     <ModuleGuard module="orders">
       <PageHeader
         title={order.indentCode}
-        sub={`${order.clientName} · ${order.lane}${order.tripCode ? ` · trip ${order.tripCode}` : ''}`}
+        sub={`${order.clientName} · ${order.lane}${order.tripCode ? ` · trip ${order.tripCode}` : ''}${
+          order.vehicleNo ? ` · 🚛 ${order.vehicleNo}` : ''
+        }`}
         module="orders"
         right={
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
@@ -132,6 +134,24 @@ export default function OrderDetailPage() {
             </div>
           </div>
         )}
+        {/* The truck carrying it — the one fact people ask for most once a vehicle is allocated. */}
+        <div>
+          <div className="eyebrow">Truck</div>
+          <div className="record-status-value">
+            {order.vehicleNo ? (
+              <span className="mono" style={{ letterSpacing: '0.02em' }}>
+                {order.vehicleNo}
+              </span>
+            ) : (
+              <span className="muted">Not allocated</span>
+            )}
+          </div>
+          {order.vehicleNo && (order.driverName || order.driverPhone) && (
+            <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+              {[order.driverName, order.driverPhone].filter(Boolean).join(' · ')}
+            </div>
+          )}
+        </div>
         <div>
           <div className="eyebrow">Customer</div>
           <div className="record-status-value">{order.clientName}</div>

@@ -4,14 +4,12 @@ import { useEffect, useState } from 'react';
 import { errorMessage } from '@/apis';
 import { inrCompact, marginPct, pct } from '@/lib/format';
 import {
-  Banner,
   Column,
   DataTable,
   ErrorState,
   Loading,
   ModuleGuard,
   PageHeader,
-  PageIntro,
   Panel,
   Stack,
   StatStrip,
@@ -34,36 +32,6 @@ export default function HomePage() {
 
   if (error) return <ErrorState message={error} retry={load} />;
   if (!data) return <Loading what="Loading the month" />;
-
-  // This page carries three stacked stat groups and two tables — genuinely a
-  // lot for anyone's first look. One synthesized line up top says what, if
-  // anything, actually needs a decision this month before the detail below.
-  const attention = [
-    data.standing.unbilledTrips > 0
-      ? {
-          label: `🧾 ${data.standing.unbilledTrips} delivered load${data.standing.unbilledTrips === 1 ? '' : 's'} we have not billed yet`,
-          href: '#standing',
-        }
-      : null,
-    data.pod.breached > 0
-      ? {
-          label: `📸 ${data.pod.breached} deliver${data.pod.breached === 1 ? 'y is' : 'ies are'} past the paperwork deadline`,
-          href: '#pod-collection',
-        }
-      : null,
-    data.month.failures > 0
-      ? {
-          label: `🚨 ${data.month.failures} load${data.month.failures === 1 ? '' : 's'} we could not put a vehicle on`,
-          href: '#this-month',
-        }
-      : null,
-    data.month.onTimePct < 70
-      ? {
-          label: `⏱️ Only ${pct(data.month.onTimePct)} of vehicles reached the pickup point on time`,
-          href: '#this-month',
-        }
-      : null,
-  ].filter((x): x is { label: string; href: string } => x !== null);
 
   const branchColumns: Column<HomeResponse['branches'][number]>[] = [
     { key: 'branch', label: 'Branch', primary: true, render: (r) => r.branchName },
@@ -101,8 +69,15 @@ export default function HomePage() {
     },
   ];
 
+  /*
+   * One screen, no scrolling (owner's direction, 2026-10-03). `.snapshot` in
+   * globals.css shrinks the tiles, glyphs, panel chrome and table rows, hides
+   * the per-tile notes, and lays the panels out side by side so the whole
+   * month fits a laptop viewport.
+   */
   return (
     <ModuleGuard module="home">
+     <div className="snapshot">
       <PageHeader
         path="/home"
         title="Business snapshot"
@@ -122,82 +97,38 @@ export default function HomePage() {
           />
         }
       />
-      <PageIntro
-        what="How the business is doing this month — what we moved, what we made, and what is still owed in either direction."
-        who="Leadership and operations read this monthly. Day-to-day work lives on My desk."
-      />
+      {/* The intro, the "on track" banner and three of the four key metrics
+          were dropped (owner's direction, 2026-10-03): the page leads with
+          on-time placement alone, then the month's detail, already open. */}
+      <Stack gap={8}>
+        <StatStrip
+          stats={[
+            {
+              k: 'Vehicles placed on time', id: 'home-on-time',
+              v: pct(data.month.onTimePct),
+              emoji: '⏱️',
+              note: 'Truck at the pickup point by the promised date',
+              tone: data.month.onTimePct >= 90 ? 'mint' : data.month.onTimePct >= 70 ? 'flag' : 'red',
+            },
+          ]}
+        />
 
-      <div style={{ marginBottom: 20 }}>
-        {attention.length > 0 ? (
-          <Banner tone="flag" title="Worth a look this month">
-            {attention.map((item, i) => (
-              <span key={item.href + item.label}>
-                {i > 0 && ' · '}
-                <a href={item.href}>{item.label}</a>
-              </span>
-            ))}
-          </Banner>
-        ) : (
-          <Banner tone="mint" title="On track">
-            Nothing below is off plan right now — no loads missed, delivery paperwork is coming back
-            on time, and everything delivered has been billed.
-          </Banner>
-        )}
-      </div>
-
-      <Stack gap={20}>
-        <Panel title="📌 Key metrics">
-          <StatStrip
-            stats={[
-              {
-                k: 'Delivered but not billed', id: 'home-not-billed',
-                v: data.standing.unbilledTrips,
-                emoji: '🧾',
-                note: 'Money we have earned and not yet asked for',
-                tone: data.standing.unbilledTrips > 0 ? 'flag' : undefined,
-              },
-              {
-                k: 'Delivery proof overdue', id: 'home-proof-overdue',
-                v: data.pod.breached,
-                emoji: '📸',
-                note: 'Past the deadline the transporter agreed to',
-                tone: data.pod.breached > 0 ? 'red' : undefined,
-              },
-              {
-                k: 'Unassigned loads', id: 'home-failures',
-                v: data.month.failures,
-                emoji: '🚨',
-                note: 'No vehicle went against them at all',
-                tone: data.month.failures > 0 ? 'red' : undefined,
-              },
-              {
-                k: 'Vehicles placed on time', id: 'home-on-time',
-                v: pct(data.month.onTimePct),
-                emoji: '⏱️',
-                note: 'Truck at the pickup point by the promised date',
-                tone: data.month.onTimePct >= 90 ? 'mint' : data.month.onTimePct >= 70 ? 'flag' : 'red',
-              },
-            ]}
-          />
-        </Panel>
-
-        <details>
+        <details open>
           <summary
             style={{
               cursor: 'pointer',
               fontFamily: 'var(--font-heading)',
               fontWeight: 600,
-              fontSize: 15,
+              fontSize: 13,
               color: 'var(--color-accent-700)',
-              padding: '6px 2px',
+              padding: '0 2px',
               userSelect: 'none',
             }}
           >
             Monthly performance
           </summary>
-          <div style={{ marginTop: 16 }}>
-            <Stack gap={20}>
-              <div id="this-month">
+          <div className="snapshot-grid">
+              <div id="this-month" className="snapshot-wide">
                 <Panel title="📅 Volume & revenue">
                   <StatStrip
                     stats={[
@@ -227,46 +158,31 @@ export default function HomePage() {
                         emoji: '🧮',
                       },
                       { k: 'Transporters we used', id: 'month-transporters', v: data.month.vendorsUsed, emoji: '🤝' },
+                      {
+                        k: 'Placed on time', id: 'month-on-time',
+                        v: pct(data.month.onTimePct),
+                        emoji: '⏱️',
+                        tone: data.month.onTimePct >= 90 ? 'mint' : data.month.onTimePct >= 70 ? 'flag' : 'red',
+                      },
+                      {
+                        k: 'Trucks there by pickup day', id: 'month-placed-by-pickup',
+                        v: data.month.placedByPickup,
+                        emoji: '✅',
+                      },
+                      {
+                        k: 'Unassigned loads', id: 'month-failures',
+                        v: data.month.failures,
+                        emoji: '🚨',
+                        tone: data.month.failures > 0 ? 'red' : undefined,
+                      },
+                      { k: 'Different trucks used', id: 'month-trucks', v: data.month.distinctTrucks, emoji: '🚛' },
                     ]}
                   />
-                  <div style={{ marginTop: 12 }}>
-                    <StatStrip
-                      stats={[
-                        {
-                          k: 'Placed on time', id: 'month-on-time',
-                          v: pct(data.month.onTimePct),
-                          emoji: '⏱️',
-                          tone: data.month.onTimePct >= 90 ? 'mint' : data.month.onTimePct >= 70 ? 'flag' : 'red',
-                        },
-                        {
-                          k: 'Trucks there by pickup day', id: 'month-placed-by-pickup',
-                          v: data.month.placedByPickup,
-                          emoji: '✅',
-                        },
-                        {
-                          k: 'Unassigned loads', id: 'month-failures',
-                          v: data.month.failures,
-                          emoji: '🚨',
-                          tone: data.month.failures > 0 ? 'red' : undefined,
-                        },
-                        { k: 'Different trucks used', id: 'month-trucks', v: data.month.distinctTrucks, emoji: '🚛' },
-                      ]}
-                    />
-                  </div>
                 </Panel>
               </div>
 
-              <Panel title="🏬 Branch performance" pad={false}>
-                <DataTable columns={branchColumns} rows={data.branches} rowKey={(r) => r.branchName} />
-              </Panel>
-
-              <div id="pod-collection">
+              <div id="pod-collection" className="snapshot-major">
                 <Panel title="📸 Delivery documents">
-                  <div className="hint" style={{ marginBottom: 12 }}>
-                    A load is only finished once the signed paper comes back from the delivery
-                    point. Until it does, we cannot bill the client and the transporter&apos;s final
-                    payment stays held.
-                  </div>
                   <StatStrip
                     stats={[
                       { k: 'Loads delivered', id: 'pod-delivered', v: data.pod.delivered, emoji: '📦' },
@@ -306,7 +222,7 @@ export default function HomePage() {
                 </Panel>
               </div>
 
-              <div id="standing">
+              <div id="standing" className="snapshot-minor">
                 <Panel title="💰 Cash flow">
                   <StatStrip
                     stats={[
@@ -341,6 +257,13 @@ export default function HomePage() {
                 </Panel>
               </div>
 
+              <div className="snapshot-major">
+                <Panel title="🏬 Branch performance" pad={false}>
+                  <DataTable columns={branchColumns} rows={data.branches} rowKey={(r) => r.branchName} />
+                </Panel>
+              </div>
+
+              <div className="snapshot-minor">
               <Panel title="🏢 Top clients" pad={false}>
                 <DataTable
                   columns={[
@@ -365,10 +288,11 @@ export default function HomePage() {
                   rowKey={(r) => r.clientName}
                 />
               </Panel>
-            </Stack>
+              </div>
           </div>
         </details>
       </Stack>
+     </div>
     </ModuleGuard>
   );
 }

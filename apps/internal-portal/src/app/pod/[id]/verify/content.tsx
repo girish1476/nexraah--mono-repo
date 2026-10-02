@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { ReactNode, useEffect, useState } from 'react';
 import { useAtomValue } from 'jotai';
 import { ApiError, errorMessage } from '@/apis';
-import { CHARGE_TYPES, POD_STATUS_LABEL, POD_TONE } from '@/lib/documents';
+import { POD_STATUS_LABEL, POD_TONE } from '@/lib/documents';
 import { fmtDate, inr } from '@/lib/format';
 import { sessionAtom } from '@/store/atoms';
 import {
@@ -33,25 +33,12 @@ import {
   verifyHardCopy,
   verifyPod,
 } from '../../apis';
-import { POD_KIND_LABEL, PodDetail, PodKind, VerifyChecklist } from '../../types';
+import { POD_KIND_LABEL, PodDetail, PodFindings, PodKind } from '../../types';
 import { DocPreview } from '@/components/doc-preview';
 import { uploadAttachment } from '@/lib/attachments';
 import { listSdr } from '@/app/sdr/apis';
-import { SDR_KIND_LABEL, SdrKind, SdrRecord } from '@/app/sdr/types';
-
-const CHECKS: { key: keyof VerifyChecklist; label: string }[] = [
-  { key: 'consigneeStamp', label: 'Consignee stamp present' },
-  { key: 'signedAndDated', label: 'Signed and dated' },
-  { key: 'lrNumberMatches', label: 'LR number matches' },
-  { key: 'quantityMatchesInvoice', label: 'Quantity matches the invoice' },
-  { key: 'noShortageOrDamage', label: 'No shortage or damage noted' },
-];
-
-interface ChargeDraft {
-  chargeType: string;
-  costRupees: number;
-  billedRupees: number;
-}
+import { SDR_KIND_LABEL, SdrRecord } from '@/app/sdr/types';
+import { PodCheckDialog } from './pod-check-dialog';
 
 /**
  * The whole of `/pod/[id]/verify`, minus its own `PageHeader`/`PageIntro` —
@@ -84,21 +71,12 @@ export function PodVerifyContent({
 
   const [pod, setPod] = useState<PodDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [checklist, setChecklist] = useState<VerifyChecklist>({
-    consigneeStamp: true,
-    signedAndDated: true,
-    lrNumberMatches: true,
-    quantityMatchesInvoice: true,
-    noShortageOrDamage: true,
-  });
-  const [remarks, setRemarks] = useState('');
-  const [charges, setCharges] = useState<ChargeDraft[]>([]);
+  // Which proof is being checked in the verify dialog: the POD itself, or the hard copy behind an E-POD.
+  const [checking, setChecking] = useState<'POD' | 'HARD_COPY' | null>(null);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const [sdrKind, setSdrKind] = useState<SdrKind>('DAMAGE');
-  const [sdrClaimedRupees, setSdrClaimedRupees] = useState(0);
   const [sdrs, setSdrs] = useState<SdrRecord[]>([]);
   // E-POD (a photo or scan of the signed note) or H-POD (the scan of the signed hard copy).
   const [podMode, setPodMode] = useState<PodKind>('EPOD');
@@ -121,16 +99,8 @@ export function PodVerifyContent({
   };
   useEffect(load, [tripId]);
 
-  const anyFailed = Object.values(checklist).some((v) => !v);
-  // Same rule as the server's `sdrKindFromChecklist`.
-  const raisesSdr = !checklist.noShortageOrDamage || !checklist.quantityMatchesInvoice;
-  useEffect(() => {
-    setSdrKind(!checklist.quantityMatchesInvoice && checklist.noShortageOrDamage ? 'SHORTAGE' : 'DAMAGE');
-  }, [checklist.quantityMatchesInvoice, checklist.noShortageOrDamage]);
-
-  // The hard copy (H-POD) behind an E-POD: its scan, and optionally its docket while on the way.
+  // The hard copy (H-POD) behind an E-POD: just its scan.
   const [hcFiles, setHcFiles] = useState<File[]>([]);
-  const [hcDocket, setHcDocket] = useState({ courierDocket: '', sentOn: '' });
 
   const uploadAll = async (files: File[], kind: string) => {
     const ids: string[] = [];
@@ -138,23 +108,14 @@ export function PodVerifyContent({
     return ids;
   };
 
-  /** After an E-POD: upload the hard copy's scan, or save its courier docket while it is on the way. */
+  /** After an E-POD: upload the scan of the hard copy. */
   const submitHardCopy = async () => {
     setBusy(true);
     try {
-      const attachmentIds = hcFiles.length > 0 ? await uploadAll(hcFiles, 'HPOD') : undefined;
-      await logHardCopy(tripId, {
-        ...(attachmentIds ? { attachmentIds } : {}),
-        ...(hcDocket.courierDocket.trim() ? { courierDocket: hcDocket.courierDocket.trim() } : {}),
-        ...(hcDocket.sentOn ? { sentOn: hcDocket.sentOn } : {}),
-      });
-      toast(
-        attachmentIds
-          ? 'Hard copy uploaded · verify it to release the hold on the balance'
-          : 'Courier docket saved · upload the hard copy when it arrives',
-      );
+      const attachmentIds = await uploadAll(hcFiles, 'HPOD');
+      await logHardCopy(tripId, { attachmentIds });
+      toast('Hard copy uploaded · verify it to release the hold on the balance');
       setHcFiles([]);
-      setHcDocket({ courierDocket: '', sentOn: '' });
       load();
     } catch (e) {
       toast(errorMessage(e));
@@ -163,11 +124,15 @@ export function PodVerifyContent({
     }
   };
 
-  const submitVerifyHardCopy = async () => {
+  const raised = (codes?: string[]) =>
+    codes && codes.length > 0 ? ` · ${codes.join(', ')} raised — the balance is held until ${codes.length === 1 ? 'it is' : 'they are'} resolved` : '';
+
+  const submitVerifyHardCopy = async (findings: PodFindings) => {
     setBusy(true);
     try {
-      await verifyHardCopy(tripId);
-      toast('Hard copy verified · the balance is no longer held for it');
+      const result = await verifyHardCopy(tripId, findings);
+      toast(`Hard copy verified · the balance is no longer held for it${raised(result.sdrCodes)}`);
+      setChecking(null);
       load();
     } catch (e) {
       toast(errorMessage(e));
@@ -213,25 +178,31 @@ export function PodVerifyContent({
     }
   };
 
-  const submitVerify = async () => {
+  const submitVerify = async (findings: PodFindings) => {
     setBusy(true);
     try {
+      const kinds = (findings.findings ?? []).map((f) => f.kind);
       const result = await verifyPod(tripId, {
-        checklist,
-        remarks: remarks || undefined,
-        ...(raisesSdr ? { sdrKind, sdrClaimedAmountPaise: Math.round(sdrClaimedRupees * 100) } : {}),
-        charges: charges.map((c) => ({
-          chargeType: c.chargeType,
-          costAmountPaise: Math.round(c.costRupees * 100),
-          billedAmountPaise: Math.round(c.billedRupees * 100),
-        })),
+        ...findings,
+        // The clerical checklist the server keeps, read off what the check found.
+        checklist: {
+          consigneeStamp: true,
+          signedAndDated: true,
+          lrNumberMatches: true,
+          quantityMatchesInvoice: !kinds.includes('SHORTAGE'),
+          noShortageOrDamage: kinds.length === 0,
+        },
+        charges: findings.charges ?? [],
       });
+      const codes = result.sdrCodes ?? (result.sdrCode ? [result.sdrCode] : []);
       toast(
-        result.sdrCode
-          ? `Verified · ${result.sdrCode} raised from the remarks — the balance is held until it is resolved.`
-          : 'Verified · a second person needs to approve it before the balance is released.',
+        codes.length > 0
+          ? `Verified${raised(codes)}.`
+          : session?.role === 'ADMIN'
+            ? 'Verified · approve it to unblock the balance.'
+            : 'Verified · a second person needs to approve it before the balance is released.',
       );
-      setCharges([]);
+      setChecking(null);
       load();
     } catch (e) {
       toast(errorMessage(e));
@@ -273,8 +244,10 @@ export function PodVerifyContent({
   if (!pod) return <Loading what="Loading the proof of delivery" />;
 
   const isVerifier = !!pod.verifiedBy && pod.verifiedBy === session?.userId;
+  // BR-50: nobody approves what they verified — except an administrator.
+  const blockedAsVerifier = isVerifier && session?.role !== 'ADMIN';
   const canVerify = can('pod.verify') && pod.podStatus === 'RECEIVED';
-  const canApprove = can('pod.approve') && pod.podStatus === 'VERIFIED' && !isVerifier;
+  const canApprove = can('pod.approve') && pod.podStatus === 'VERIFIED' && !blockedAsVerifier;
 
   return (
     <>
@@ -487,8 +460,6 @@ export function PodVerifyContent({
                 <Tag tone="mint">Verified</Tag>
               ) : (pod.hardCopy?.attachmentIds ?? []).length > 0 ? (
                 <Tag tone="blue">Uploaded · verify it</Tag>
-              ) : pod.hardCopy?.courierDocket ? (
-                <Tag tone="blue">On its way</Tag>
               ) : (
                 <Tag tone="flag">Waiting for the hard copy</Tag>
               )
@@ -505,13 +476,34 @@ export function PodVerifyContent({
               </Banner>
             )}
 
-            {(pod.hardCopy?.courierDocket || pod.hardCopy?.receivedOn) && (
+            {/* The docket noted with the E-POD, while the hard copy is on its way. */}
+            {pod.hardCopy?.courierDocket && !pod.hardCopy?.receivedOn && (
               <div style={{ marginTop: 10 }}>
                 <FactList
                   facts={[
-                    ['Courier docket', pod.hardCopy?.courierDocket ?? '—'],
-                    ['Sent on', fmtDate(pod.hardCopy?.sentOn ?? null)],
+                    ['Courier docket', pod.hardCopy.courierDocket],
+                    ['Sent on', fmtDate(pod.hardCopy.sentOn ?? null)],
+                  ]}
+                />
+              </div>
+            )}
+
+            {(pod.hardCopy?.receivedOn || pod.hardCopy?.verifiedAt) && (
+              <div style={{ marginTop: 10 }}>
+                <FactList
+                  facts={[
+                    ...(pod.hardCopy?.courierDocket
+                      ? ([['Courier docket', pod.hardCopy.courierDocket]] as [string, ReactNode][])
+                      : []),
                     ['Uploaded on', fmtDate(pod.hardCopy?.receivedOn ?? null)],
+                    ...(pod.hardCopy?.verifiedAt
+                      ? ([
+                          ['Verified on', fmtDate(pod.hardCopy.verifiedAt)],
+                          ['Received by', pod.hardCopy.details?.receivedByName ?? '—'],
+                          ['Quantity received', pod.hardCopy.details?.quantityReceived ?? '—'],
+                          ['Remarks', pod.hardCopy.details?.remarks ?? '—'],
+                        ] as [string, ReactNode][])
+                      : []),
                   ]}
                 />
               </div>
@@ -528,7 +520,7 @@ export function PodVerifyContent({
             {!pod.hardCopy?.verifiedAt && (pod.hardCopy?.attachmentIds ?? []).length > 0 && (
               <div style={{ marginTop: 12 }}>
                 {can('pod.verify') ? (
-                  <button className="btn" disabled={busy} onClick={submitVerifyHardCopy}>
+                  <button className="btn" disabled={busy} onClick={() => setChecking('HARD_COPY')}>
                     Verify the hard copy — release the hold
                   </button>
                 ) : (
@@ -554,31 +546,13 @@ export function PodVerifyContent({
                       onChange={(e) => setHcFiles(Array.from(e.target.files ?? []))}
                     />
                   </Field>
-                  {!pod.hardCopy?.courierDocket && hcFiles.length === 0 && (
-                    <FormGrid>
-                      <Field label="Courier docket" hint="Optional — note it while the hard copy is on its way.">
-                        <input
-                          value={hcDocket.courierDocket}
-                          onChange={(e) => setHcDocket({ ...hcDocket, courierDocket: e.target.value })}
-                        />
-                      </Field>
-                      <Field label="Sent on" hint="Defaults to today.">
-                        <input
-                          type="date"
-                          value={hcDocket.sentOn}
-                          disabled={!hcDocket.courierDocket.trim()}
-                          onChange={(e) => setHcDocket({ ...hcDocket, sentOn: e.target.value })}
-                        />
-                      </Field>
-                    </FormGrid>
-                  )}
                   <button
                     className="btn"
                     style={{ marginTop: 12 }}
-                    disabled={busy || (hcFiles.length === 0 && hcDocket.courierDocket.trim().length < 3)}
+                    disabled={busy || hcFiles.length === 0}
                     onClick={submitHardCopy}
                   >
-                    {hcFiles.length > 0 ? 'Upload the hard copy' : 'Save the courier docket'}
+                    Upload the hard copy
                   </button>
                 </div>
               ) : (
@@ -590,136 +564,43 @@ export function PodVerifyContent({
         )}
 
         {canVerify && (
-          <Panel title="Verify">
-            {(pod.transitPenaltyPaise ?? 0) > 0 && (
-              <div style={{ marginBottom: 10 }}>
-                <Banner tone="flag" title={`Transit penalty ${inr(pod.transitPenaltyPaise ?? 0)}`}>
-                  Delivered late by the lane’s terms
-                  {pod.actualTransitDays != null && pod.transitDaysRequired != null
-                    ? ` — ${pod.actualTransitDays} days against ${pod.transitDaysRequired}`
-                    : ''}
-                  . It comes off the final payment with any shortage or damage.
-                </Banner>
-              </div>
-            )}
-            <div style={{ display: 'grid', gap: 8 }}>
-              {CHECKS.map((c) => (
-                <label key={c.key} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
-                  <input
-                    type="checkbox"
-                    checked={checklist[c.key]}
-                    onChange={(e) => setChecklist({ ...checklist, [c.key]: e.target.checked })}
-                  />
-                  {c.label}
-                </label>
-              ))}
-            </div>
-            <div style={{ marginTop: 12 }}>
-              <Field
-                label="Remarks"
-                required={anyFailed}
-                error={anyFailed && !remarks.trim() ? 'Remarks are mandatory when any check fails' : undefined}
-              >
-                <textarea rows={2} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
-              </Field>
-            </div>
-
-            {raisesSdr && (
-              <div style={{ marginTop: 12 }}>
-                <Banner tone="flag" title="These remarks will be recorded as a shortage / damage record (SDR)">
-                  The transporter’s balance is held until the SDR is resolved, and the amount decided then is taken off
-                  it — anything the balance cannot cover carries to their next orders.
-                </Banner>
-                <FormGrid>
-                  <Field label="What went wrong">
-                    <select value={sdrKind} onChange={(e) => setSdrKind(e.target.value as SdrKind)}>
-                      {(Object.keys(SDR_KIND_LABEL) as SdrKind[]).map((k) => (
-                        <option key={k} value={k}>
-                          {SDR_KIND_LABEL[k]}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                  <Field label="Believed to cost (₹)" hint="Optional — the deduction is fixed when the SDR is resolved">
-                    <input
-                      type="number"
-                      min={0}
-                      value={sdrClaimedRupees || ''}
-                      onChange={(e) => setSdrClaimedRupees(Math.max(0, Number(e.target.value) || 0))}
-                    />
-                  </Field>
-                </FormGrid>
-              </div>
-            )}
-
-            <div style={{ marginTop: 16 }}>
-              <div className="eyebrow">Charges written on this document</div>
-              {charges.map((c, i) => (
-                <FormGrid key={i}>
-                  <Field label="Charge type">
-                    <select
-                      value={c.chargeType}
-                      onChange={(e) =>
-                        setCharges(charges.map((x, j) => (i === j ? { ...x, chargeType: e.target.value } : x)))
-                      }
-                    >
-                      {CHARGE_TYPES.map((t) => (
-                        <option key={t} value={t}>
-                          {t.toLowerCase()}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                  <Field label="Cost to us (₹)">
-                    <input
-                      type="number"
-                      value={c.costRupees || ''}
-                      onChange={(e) =>
-                        setCharges(charges.map((x, j) => (i === j ? { ...x, costRupees: Number(e.target.value) } : x)))
-                      }
-                    />
-                  </Field>
-                  <Field
-                    label="Billed to client (₹)"
-                    error={c.billedRupees > 0 && c.billedRupees < c.costRupees ? 'Below cost' : undefined}
-                  >
-                    <input
-                      type="number"
-                      value={c.billedRupees || ''}
-                      onChange={(e) =>
-                        setCharges(charges.map((x, j) => (i === j ? { ...x, billedRupees: Number(e.target.value) } : x)))
-                      }
-                    />
-                  </Field>
-                </FormGrid>
-              ))}
-              <button
-                className="btn btn-secondary btn-sm"
-                style={{ marginTop: 8 }}
-                onClick={() => setCharges([...charges, { chargeType: 'LOADING', costRupees: 0, billedRupees: 0 }])}
-              >
-                Add a charge
-              </button>
-            </div>
-
-            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-              <button className="btn btn-secondary" onClick={() => setRejectOpen(true)}>
-                Reject and request a replacement
-              </button>
-              <button className="btn" onClick={submitVerify} disabled={busy || (anyFailed && !remarks.trim())}>
+          <Panel title="Verify" right={<Tag tone="flag">Waiting for check</Tag>}>
+            <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }}>
+              Check the {pod.podKind === 'HPOD' ? 'H-POD' : 'E-POD'} like any other document: open it beside its details,
+              type what is written on it, and record any shortage, damage, transit delay or charges.
+            </p>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button className="btn" disabled={busy} onClick={() => setChecking('POD')}>
                 Verify
               </button>
+              <button className="btn btn-secondary" disabled={busy} onClick={() => setRejectOpen(true)}>
+                Reject and request a replacement
+              </button>
             </div>
+          </Panel>
+        )}
+
+        {/* What was typed in when the proof was checked. */}
+        {pod.details && ['VERIFIED', 'APPROVED', 'WAIVED'].includes(pod.podStatus) && (
+          <Panel title="Details on the proof" pad={false}>
+            <FactList
+              facts={[
+                ['Delivered on', fmtDate(pod.deliveredAt)],
+                ['Received by', pod.details.receivedByName ?? '—'],
+                ['Quantity received', pod.details.quantityReceived ?? '—'],
+                ['Remarks', pod.details.remarks ?? '—'],
+              ]}
+            />
           </Panel>
         )}
 
         {pod.podStatus === 'VERIFIED' && (
           <Panel title="Approve">
             <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }}>
-              Verified by {pod.verifiedBy ?? 'another user'}. Approval is the decision to pay — only an approval
-              unblocks the balance.
+              Verified by {isVerifier ? 'you' : (pod.verifiedBy ?? 'another user')}. Approval is the decision to pay —
+              only an approval unblocks the balance.
             </p>
-            {isVerifier ? (
+            {blockedAsVerifier ? (
               <Banner tone="flag" title="You verified this proof of delivery">
                 So someone else on your team needs to approve it — the same person cannot do both steps.
               </Banner>
@@ -772,6 +653,24 @@ export function PodVerifyContent({
           </Panel>
         )}
       </Split>
+
+      {/* One check for every proof — the scan beside its details, like the other documents. */}
+      <PodCheckDialog
+        open={checking !== null}
+        title={
+          checking === 'HARD_COPY'
+            ? 'Verify · Hard copy (H-POD)'
+            : `Verify · ${pod.podKind === 'HPOD' ? 'H-POD' : 'E-POD'}`
+        }
+        attachmentIds={checking === 'HARD_COPY' ? (pod.hardCopy?.attachmentIds ?? []) : pod.attachmentIds}
+        deliveredAt={pod.deliveredAt}
+        actualTransitDays={pod.actualTransitDays}
+        transitDaysRequired={pod.transitDaysRequired}
+        transitPenaltyPaise={pod.transitPenaltyPaise}
+        busy={busy}
+        onConfirm={(findings) => (checking === 'HARD_COPY' ? submitVerifyHardCopy(findings) : submitVerify(findings))}
+        onClose={() => setChecking(null)}
+      />
 
       <Dialog
         open={rejectOpen}

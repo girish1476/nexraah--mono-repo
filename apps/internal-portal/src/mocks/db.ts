@@ -263,6 +263,8 @@ export function missingTripDocs(): Doc[] {
 export const db = {
   /** Shortage / damage records. Empty until somebody records one. */
   sdr: [] as Record<string, any>[],
+  /** Monthly targets per branch. Empty until an administrator sets one. */
+  targets: [] as { branchId: string; month: string; metric: string; target: number }[],
   config: {
     modules: {
       rfq: true,
@@ -322,6 +324,9 @@ export const db = {
 
   /** roleCode → permission code → level */
   roleMatrix: {} as Record<string, Record<string, 'NONE' | 'VIEW' | 'EDIT'>>,
+
+  /** Roles added from Access control — each opens the screens of `basedOn`. */
+  customRoles: [] as { code: string; label: string; basedOn: RoleCode }[],
 
   approvals: [
     {
@@ -1233,6 +1238,7 @@ export const db = {
       detentionPaise: 0,
       otherPaise: 0,
       discountPaise: 0,
+      extraCharges: [],
       roundOffPaise: 0,
       totalPaise: 2240000,
       receivedPaise: 1000000,
@@ -1255,6 +1261,7 @@ export const db = {
       detentionPaise: 0,
       otherPaise: 0,
       discountPaise: 0,
+      extraCharges: [],
       roundOffPaise: 0,
       totalPaise: 3655000,
       receivedPaise: 0,
@@ -1590,6 +1597,7 @@ export function resetToEmpty(): void {
   });
   Object.keys(db.rateCards).forEach((key) => delete (db.rateCards as Record<string, unknown>)[key]);
   Object.keys(db.roleMatrix).forEach((key) => delete (db.roleMatrix as Record<string, unknown>)[key]);
+  db.customRoles.length = 0;
   db.numberSeries.forEach((series) => {
     series.nextValue = 1;
   });

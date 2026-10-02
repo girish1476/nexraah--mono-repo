@@ -20,6 +20,14 @@ export const INTERNAL_ROLES = [
 
 export type InternalRoleCode = (typeof INTERNAL_ROLES)[number];
 
+/**
+ * The built-in roles a custom role may be based on. ADMIN is out because its
+ * screens are only useful with `config.manage`, which is fixed to ADMIN; and
+ * LOADING_SUPERVISOR is out because what it may do is decided per trip, by
+ * assignment, not by anything a copy of the role would carry.
+ */
+export const CUSTOM_ROLE_BASES = ['OPS', 'COMPLIANCE', 'FINANCE', 'BD', 'LEADERSHIP'] as const;
+
 export const SEED_GRANTS: Record<InternalRoleCode, string[]> = {
   // Holds no permission codes: a loading supervisor acts on the trips they are
   // assigned to, checked per trip in `TripsService`, not through a blanket grant.
@@ -30,6 +38,7 @@ export const SEED_GRANTS: Record<InternalRoleCode, string[]> = {
   OPS: [
     'indent.create',
     'indent.manage',
+    'document.upload',
     'indent.view',
     'vendor.edit',
     'rfq.edit',
@@ -43,6 +52,7 @@ export const SEED_GRANTS: Record<InternalRoleCode, string[]> = {
     'client.onboard',
     'indent.create',
     'indent.view',
+    'document.upload',
     'document.verify',
     'vendor.verify',
     'vendor.activate',
@@ -76,6 +86,7 @@ export const SEED_GRANTS: Record<InternalRoleCode, string[]> = {
     'indent.manage',
     'indent.reassign',
     'indent.view',
+    'document.upload',
     'document.verify',
     'vendor.edit',
     'vendor.verify',
@@ -124,6 +135,7 @@ export const SEED_GRANTS: Record<InternalRoleCode, string[]> = {
     'indent.manage',
     'indent.reassign',
     'indent.view',
+    'document.upload',
     'document.verify',
     'vendor.edit',
     'vendor.verify',

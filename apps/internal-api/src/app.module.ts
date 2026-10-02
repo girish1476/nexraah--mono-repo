@@ -25,10 +25,12 @@ import { IndentsModule } from './modules/indents/indents.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { TicketsModule } from './modules/tickets/tickets.module';
 import { TripsModule } from './modules/trips/trips.module';
+import { TrackingLinksModule } from './modules/tracking-links/tracking-links.module';
 import { PodModule } from './modules/pod/pod.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { SdrModule } from './modules/sdr/sdr.module';
 import { ReportsModule } from './modules/reports/reports.module';
+import { TargetsModule } from './modules/targets/targets.module';
 import { TelematicsModule } from './modules/telematics/telematics.module';
 import { PnlModule } from './modules/pnl/pnl.module';
 import { InvoicingModule } from './modules/invoicing/invoicing.module';
@@ -58,10 +60,12 @@ import { JobsModule } from './modules/jobs/jobs.module';
     OrdersModule,
     TicketsModule,
     TripsModule,
+    TrackingLinksModule,
     PodModule,
     PaymentsModule,
     SdrModule,
     ReportsModule,
+    TargetsModule,
     TelematicsModule,
     PnlModule,
     InvoicingModule,

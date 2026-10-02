@@ -327,9 +327,10 @@ export class TripsService implements OnModuleInit {
     // The trip's own loading supervisor uploads any document of the order — the
     // advance documents (invoice, e-way bill, LR, vehicle papers, loading and
     // weighment slips) and the unloading ones (POD). Compliance verifies them
-    // afterwards. Everyone else needs the document desk's or Operations' permission.
+    // afterwards. Everyone else needs the `document.upload` permission, which the Access
+    // control screen can give to any role.
     if (!this.isLoadingSupervisorOf(trip, actor)) {
-      assertAnyPermission(actor, ['document.verify', 'indent.manage']);
+      assertAnyPermission(actor, ['document.upload']);
     }
 
     const result = await this.tripsRepository.transaction().execute(async (trx) => {

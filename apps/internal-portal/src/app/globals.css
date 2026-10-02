@@ -1505,6 +1505,100 @@ table.table tbody tr:nth-child(even):hover {
   letter-spacing: -0.028em;
 }
 
+/* ---- business snapshot --------------------------------------------------
+   `/home` is read at a glance, so it has to fit one screen without
+   scrolling. Everything inside `.snapshot` is the ordinary tile, panel and
+   table, just smaller and packed side by side. The `!important`s beat the
+   inline sizes Panel and Glyph set on themselves. */
+
+.snapshot {
+  --cell-y: 4px;
+  --cell-x: 9px;
+}
+.snapshot .page-head .glyph-chip {
+  width: 34px;
+  height: 34px;
+  font-size: 18px;
+}
+.snapshot .page-head h1 {
+  font-size: 20px;
+}
+.snapshot-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+.snapshot-grid > * {
+  min-width: 0;
+}
+.snapshot-wide {
+  grid-column: span 12;
+}
+.snapshot-major {
+  grid-column: span 8;
+}
+.snapshot-minor {
+  grid-column: span 4;
+}
+.snapshot-grid .surface {
+  height: 100%;
+}
+.snapshot .surface > div:first-child:not(:only-child) {
+  padding: 5px 10px !important;
+}
+.snapshot .surface > div:last-child[style] {
+  padding: var(--space-2) !important;
+}
+.snapshot .surface h2 {
+  font-size: 13px !important;
+}
+.snapshot .stat-strip {
+  grid-template-columns: repeat(auto-fit, minmax(98px, 1fr));
+  gap: 6px;
+}
+.snapshot .stat-strip > div {
+  padding: 5px 8px;
+  border-left-width: 3px;
+  box-shadow: none;
+}
+.snapshot .stat-strip .muted {
+  display: none;
+}
+.snapshot .stat-head {
+  gap: 5px;
+}
+.snapshot .stat-head .glyph {
+  font-size: 11px !important;
+}
+.snapshot .stat-head .eyebrow {
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  line-height: 1.25;
+}
+.snapshot .stat-value {
+  font-size: 16px;
+  margin-top: 2px;
+}
+.snapshot .stat-urgent {
+  font-size: 18px;
+}
+.snapshot table.table {
+  font-size: var(--text-sm);
+}
+.snapshot table.table th {
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  padding: 4px var(--cell-x);
+  white-space: normal;
+}
+@media (max-width: 900px) {
+  .snapshot-major,
+  .snapshot-minor {
+    grid-column: span 12;
+  }
+}
+
 .bar {
   height: 6px;
   background: var(--color-neutral-200);
@@ -2710,6 +2804,235 @@ details[open] > summary::before {
   }
 }
 
+/* ---- tracking: send row, route points ------------------------------------ */
+
+.share-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+}
+.share-row .btn {
+  text-decoration: none;
+}
+.btn.share-wa {
+  background: #1faa59;
+  border-color: #1faa59;
+  color: #fff;
+}
+.btn.share-wa:hover {
+  background: #178a48;
+  border-color: #178a48;
+}
+.route-point {
+  padding: 12px 14px;
+  margin-top: 10px;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md);
+}
+.route-point-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+/* ---- the shared live-tracking page (/track/<token>) -----------------------
+   Opened on a phone from WhatsApp or SMS by someone with no login. Same navy
+   and sky blue as the sign-in screen, one column, large type. */
+
+.track-page {
+  min-height: 100vh;
+  padding: 20px 14px 32px;
+  color: #eef4ff;
+  background:
+    radial-gradient(700px 480px at 15% 0%, rgba(33, 150, 230, 0.22), transparent 60%),
+    radial-gradient(600px 460px at 100% 100%, rgba(40, 90, 220, 0.22), transparent 65%),
+    #060e32;
+}
+.track-page > * {
+  max-width: 640px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.track-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.track-logo {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  box-shadow: 0 0 0 1px rgba(79, 179, 255, 0.35), 0 0 30px rgba(33, 150, 230, 0.35);
+}
+.track-brand {
+  font-family: var(--font-heading);
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #fff;
+}
+.track-sub,
+.track-muted {
+  font-size: 12.5px;
+  color: rgba(226, 236, 255, 0.7);
+}
+.track-card {
+  margin-top: 12px;
+  padding: 18px;
+  border-radius: 20px;
+  border: 1px solid rgba(140, 180, 255, 0.18);
+  background: rgba(14, 30, 80, 0.62);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+.track-card h1 {
+  margin: 8px 0 6px;
+  font-size: 24px;
+  color: #fff;
+}
+.track-card h2 {
+  margin: 0 0 10px;
+  font-size: 15px;
+  color: #fff;
+}
+.track-ended {
+  text-align: center;
+}
+.track-ended-emoji {
+  font-size: 40px;
+}
+.track-ended p {
+  margin: 0;
+  color: rgba(226, 236, 255, 0.8);
+}
+.track-route {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--font-heading);
+  font-size: 22px;
+  font-weight: 800;
+  color: #fff;
+}
+.track-arrow {
+  color: #4fb3ff;
+}
+.track-truck {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  background: rgba(33, 150, 230, 0.16);
+  border: 1px solid rgba(79, 179, 255, 0.35);
+}
+.track-steps {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.track-steps li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14.5px;
+  color: rgba(226, 236, 255, 0.55);
+}
+.track-dot {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid rgba(160, 195, 255, 0.3);
+}
+.track-steps li.is-done {
+  color: rgba(226, 236, 255, 0.85);
+}
+.track-steps li.is-done .track-dot {
+  background: #1faa59;
+  border-color: #1faa59;
+  color: #fff;
+}
+.track-steps li.is-now {
+  color: #fff;
+  font-weight: 700;
+}
+.track-steps li.is-now .track-dot {
+  background: #2196e6;
+  border-color: #4fb3ff;
+  color: #fff;
+  box-shadow: 0 0 0 5px rgba(33, 150, 230, 0.25);
+}
+.track-last {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(140, 180, 255, 0.18);
+}
+.track-last strong {
+  display: block;
+  margin: 2px 0;
+  font-size: 18px;
+  color: #fff;
+}
+.track-map {
+  padding: 0;
+  overflow: hidden;
+}
+.track-map iframe {
+  display: block;
+  width: 100%;
+  height: 340px;
+  border: 0;
+}
+.track-maplink {
+  display: block;
+  padding: 12px 18px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #4fb3ff;
+}
+.track-point {
+  display: grid;
+  gap: 2px;
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+.track-point:last-child {
+  margin-bottom: 0;
+}
+.track-history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.track-history li {
+  display: grid;
+  gap: 1px;
+  font-size: 14px;
+}
+.track-foot {
+  margin-top: 16px;
+  text-align: center;
+  font-size: 12px;
+  color: rgba(200, 220, 255, 0.5);
+}
+
 /* ---- print -------------------------------------------------------------- */
 
 @media print {
@@ -2912,6 +3235,43 @@ details[open] > summary::before {
   .doc-check {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* The proof-of-delivery check: a shortage / damage toggle with its two fields,
+   and a small three-column grid for the charges written on the note. */
+.pod-check-block {
+  padding: 10px 12px;
+  margin-top: 8px;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md);
+}
+.pod-check-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.pod-check-toggle .muted {
+  font-size: 12px;
+}
+.pod-check-toggle + div {
+  margin-top: 10px;
+}
+.pod-check-charges {
+  display: grid;
+  grid-template-columns: minmax(120px, 1.2fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px 10px;
+  align-items: center;
+  margin-top: 6px;
+  font-size: 13px;
+}
+.pod-check-charges .muted {
+  font-size: 11.5px;
+}
+.pod-check-charges input {
+  width: 100%;
 }
 
 /* A document the client does not need: closed, quiet, still reopenable. */

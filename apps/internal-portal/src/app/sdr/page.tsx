@@ -26,17 +26,21 @@ import {
   useCan,
   useToast,
 } from '@/lib/ui';
-import { listTrips } from '../trips/apis';
-import { TripListRow } from '../trips/types';
-import { getSdrSummary, listSdr, raiseSdr, resolveSdr, waiveSdr } from './apis';
-import { SDR_KIND_LABEL, SdrKind, SdrRecord, SdrSummary } from './types';
+import { ReportProblemButton } from '../tickets/report-button';
+import { getSdrSummary, listSdr, resolveSdr, waiveSdr } from './apis';
+import { SDR_KIND_LABEL, SdrRecord, SdrSummary } from './types';
 
-type Tab = 'open' | 'resolved' | 'carried';
+type Tab = 'mismatch' | 'snd' | 'carried';
 
-const KINDS = Object.keys(SDR_KIND_LABEL) as SdrKind[];
+/** A missing unloading stamp or a document that does not match — not a shortage or a damage. */
+const isMismatch = (r: SdrRecord) => r.kind === 'UNLOADING_ACK';
 
 /**
  * SDR — `/sdr`. Shortage and damage records of delivered loads.
+ *
+ * Nothing is recorded here by hand (owner's direction, 2026-10-03): a record
+ * appears on its own when the check of an E-POD or H-POD finds a shortage or
+ * damage. This screen is where it is then resolved.
  *
  * A record puts the trip's payment on hold. Resolving it fixes the amount taken
  * from the transporter; the payment then goes out after that deduction. When the
@@ -50,11 +54,7 @@ export default function SdrPage() {
   const [rows, setRows] = useState<SdrRecord[] | null>(null);
   const [summary, setSummary] = useState<SdrSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>('open');
-
-  const [raising, setRaising] = useState(false);
-  const [trips, setTrips] = useState<TripListRow[]>([]);
-  const [raiseForm, setRaiseForm] = useState({ tripId: '', kind: 'SHORTAGE' as SdrKind, description: '', claimed: '' });
+  const [tab, setTab] = useState<Tab>('snd');
 
   const [waiving, setWaiving] = useState<SdrRecord | null>(null);
   const [resolving, setResolving] = useState<SdrRecord | null>(null);
@@ -71,33 +71,6 @@ export default function SdrPage() {
       .catch((e) => setError(errorMessage(e)));
   };
   useEffect(load, []);
-
-  const openRaise = () => {
-    setRaiseForm({ tripId: '', kind: 'SHORTAGE', description: '', claimed: '' });
-    setRaising(true);
-    Promise.all([listTrips({ stage: 'DELIVERED' }), listTrips({ stage: 'CLOSED' })])
-      .then(([a, b]) => setTrips([...a, ...b]))
-      .catch((e) => toast(errorMessage(e)));
-  };
-
-  const submitRaise = async () => {
-    setBusy(true);
-    try {
-      const claimed = Math.round(Number(raiseForm.claimed || 0) * 100);
-      const created = await raiseSdr(raiseForm.tripId, {
-        kind: raiseForm.kind,
-        description: raiseForm.description.trim(),
-        claimedAmountPaise: claimed > 0 ? claimed : undefined,
-      });
-      setRaising(false);
-      toast(`${created.code} recorded — the payment for ${created.tripCode} is on hold until it is resolved`);
-      load();
-    } catch (e) {
-      toast(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const submitWaive = async (evidence: WaiverEvidence) => {
     if (!waiving) return;
@@ -145,9 +118,11 @@ export default function SdrPage() {
   if (error) return <ErrorState message={error} retry={load} />;
   if (!rows || !summary) return <Loading what="Loading shortage and damage records" />;
 
-  const shown = rows.filter((r) =>
-    tab === 'open' ? r.status === 'OPEN' : tab === 'resolved' ? r.status === 'RESOLVED' : r.outstandingPaise > 0,
-  );
+  const mismatch = rows.filter(isMismatch);
+  const snd = rows.filter((r) => !isMismatch(r));
+  const carried = rows.filter((r) => r.outstandingPaise > 0);
+  const shown = tab === 'mismatch' ? mismatch : tab === 'snd' ? snd : carried;
+  const anyOpen = (list: SdrRecord[]) => list.some((r) => r.status === 'OPEN');
 
   const columns: Column<SdrRecord>[] = [
     { key: 'code', label: 'Record', mono: true, primary: true, render: (r) => r.code, sub: (r) => fmtDate(r.raisedAt) },
@@ -226,12 +201,11 @@ export default function SdrPage() {
               Waive balance
             </button>
           )}
+          <ReportProblemButton entityType="SDR" entityId={r.code} label="🎫 Raise a ticket" />
         </div>
       ),
     },
   ];
-
-  const carried = rows.filter((r) => r.outstandingPaise > 0).length;
 
   return (
     <ModuleGuard module="pod">
@@ -245,26 +219,28 @@ export default function SdrPage() {
             <Link href="/vendors/issues" className="btn btn-secondary">
               Complaints log
             </Link>
-            {can('pod.verify') && (
-              <button className="btn" onClick={openRaise}>
-                Record shortage or damage
-              </button>
-            )}
+            <ReportProblemButton label="🎫 Raise a ticket" className="btn btn-secondary" />
           </div>
         }
       />
       <PageIntro
-        what="The SDR — Shortage Damage Record — of every delivery: each shortage, damage or unloading problem found when it was checked. Until one is resolved, the transporter’s final payment for that trip is on hold. When it is resolved the payment goes out after the deduction, and if the deduction is more than is left to pay, the rest is carried to that transporter’s next orders and taken from them a little at a time."
-        who="Whoever checks the proof of delivery records it; the person who approves deliveries decides the amount."
+        what="The SDR — Shortage Damage Record — of every delivery. Nothing is entered here by hand: when a shortage or damage is noted while an E-POD or H-POD is being verified, the record appears here on its own. Until one is resolved, the transporter’s final payment for that trip is on hold. When it is resolved the payment goes out after the deduction, and if the deduction is more than is left to pay, the rest is carried to that transporter’s next orders and taken from them a little at a time."
+        who="It comes from whoever verifies the proof of delivery; the person who approves deliveries decides the amount."
       />
 
       <Stack>
         <StatStrip
           stats={[
-            { k: 'Payments on hold', id: 'sdr-open', emoji: '⏸️', v: summary.open, tone: summary.open ? 'red' : undefined },
-            { k: 'Resolved', id: 'sdr-resolved', emoji: '✅', v: summary.resolved },
             {
-              k: 'Still to recover',
+              k: 'Details mismatch',
+              id: 'sdr-mismatch',
+              emoji: '📄',
+              v: mismatch.length,
+              tone: anyOpen(mismatch) ? 'red' : undefined,
+            },
+            { k: 'S&D', id: 'sdr-snd', emoji: '📦', v: snd.length, tone: anyOpen(snd) ? 'red' : undefined },
+            {
+              k: 'Recovery pending',
               id: 'sdr-carried',
               emoji: '➡️',
               v: inr(summary.outstandingPaise),
@@ -275,9 +251,9 @@ export default function SdrPage() {
 
         <StageTabs
           tabs={[
-            { key: 'open', label: 'On hold', count: summary.open, tone: summary.open ? 'red' : undefined },
-            { key: 'resolved', label: 'Resolved', count: summary.resolved },
-            { key: 'carried', label: 'Still to recover', count: carried },
+            { key: 'mismatch', label: 'Details Mismatch', count: mismatch.length, tone: anyOpen(mismatch) ? 'red' : undefined },
+            { key: 'snd', label: 'S&D', count: snd.length, tone: anyOpen(snd) ? 'red' : undefined },
+            { key: 'carried', label: 'Recovery Pending', count: carried.length },
           ]}
           value={tab}
           onChange={(k) => setTab(k as Tab)}
@@ -290,12 +266,12 @@ export default function SdrPage() {
             rowKey={(r) => r.id}
             empty={
               <EmptyState
-                title={tab === 'open' ? 'No payments on hold' : tab === 'resolved' ? 'Nothing resolved yet' : 'Nothing carried forward'}
+                title={tab === 'mismatch' ? 'No details mismatch' : tab === 'snd' ? 'No shortage or damage' : 'Nothing carried forward'}
                 hint={
-                  tab === 'open'
-                    ? 'When a delivery comes back short or damaged, record it here and the transporter’s payment for that trip waits.'
-                    : tab === 'resolved'
-                      ? 'Resolved records, and how much of each has been taken so far.'
+                  tab === 'mismatch'
+                    ? 'A missing unloading stamp, or a document that does not match, is recorded here and the transporter’s payment for that trip waits.'
+                    : tab === 'snd'
+                      ? 'A record appears here when a shortage or damage is noted while a proof of delivery is verified, and the transporter’s payment for that trip waits.'
                       : 'A deduction bigger than the payment it comes off carries here until later payments have covered it.'
                 }
               />
@@ -303,54 +279,6 @@ export default function SdrPage() {
           />
         </Panel>
       </Stack>
-
-      <Dialog
-        open={raising}
-        title="Record shortage or damage"
-        body="This holds the transporter’s final payment for the trip until the record is resolved."
-        confirmLabel="Record"
-        confirmDisabled={!raiseForm.tripId || raiseForm.description.trim().length < 5}
-        busy={busy}
-        onConfirm={submitRaise}
-        onClose={() => setRaising(false)}
-      >
-        <FormGrid>
-          <Field label="Trip" required hint="Only delivered loads can have one.">
-            <select value={raiseForm.tripId} onChange={(e) => setRaiseForm({ ...raiseForm, tripId: e.target.value })}>
-              <option value="">Choose a trip…</option>
-              {trips.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.code} · {t.vendorName} · {t.lane}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="What happened" required>
-            <select value={raiseForm.kind} onChange={(e) => setRaiseForm({ ...raiseForm, kind: e.target.value as SdrKind })}>
-              {KINDS.map((k) => (
-                <option key={k} value={k}>
-                  {SDR_KIND_LABEL[k]}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Details" required hint="What was short or damaged, and how it was noticed.">
-            <textarea
-              rows={3}
-              value={raiseForm.description}
-              onChange={(e) => setRaiseForm({ ...raiseForm, description: e.target.value })}
-            />
-          </Field>
-          <Field label="Claimed amount (₹)" hint="Optional — what you believe it costs. The amount actually deducted is decided when it is resolved.">
-            <input
-              type="number"
-              min={0}
-              value={raiseForm.claimed}
-              onChange={(e) => setRaiseForm({ ...raiseForm, claimed: e.target.value })}
-            />
-          </Field>
-        </FormGrid>
-      </Dialog>
 
       <WaiverDialog
         open={!!waiving}

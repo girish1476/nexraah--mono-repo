@@ -82,6 +82,15 @@ describe('navFor', () => {
       ]),
     );
   });
+  it('offers My loading trips to the loading supervisor and nobody else', () => {
+    // The list is "trips assigned to you" — for any other role, ADMIN
+    // included, it could only ever be an empty page.
+    for (const role of ROLE_CODES) {
+      const hrefs = navFor(role).flatMap((g) => g.items.map((i) => i.href));
+      expect(hrefs.includes('/loading'), `${role} vs /loading`).toBe(role === 'LOADING_SUPERVISOR');
+      expect(levelFor('loading', role)).toBe(role === 'LOADING_SUPERVISOR' ? 'EDIT' : 'NONE');
+    }
+  });
   it('OPS sees the operational nav but not payments/invoicing/admin', () => {
     const hrefs = navFor('OPS').flatMap((g) => g.items.map((i) => i.href));
     // `/trips` was here until the 2026-09-02 nav rebuild retired the row —

@@ -351,7 +351,7 @@ function DemoAccounts({ onPick }: { onPick: (email: string) => void }) {
             </span>
             <span className="auth-demo-info">
               <span className="auth-demo-name">{account.name}</span>
-              <span className="auth-demo-role">{ROLES[account.role].label}</span>
+              <span className="auth-demo-role">{ROLES[account.role]?.label ?? 'Added role'}</span>
             </span>
             <span className="auth-demo-arrow" aria-hidden>→</span>
           </button>

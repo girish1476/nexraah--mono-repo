@@ -89,7 +89,11 @@ export interface PodDetail {
     attachmentIds?: string[];
     /** When the hard copy was checked. For an E-POD, the balance waits for this. */
     verifiedAt?: string | null;
+    /** The details typed in when the hard copy was checked. */
+    details?: PodCheckDetails | null;
   } | null;
+  /** The details typed in when the proof was checked. */
+  details?: PodCheckDetails | null;
   /** An E-POD whose hard copy is not yet uploaded and verified — the balance is held. */
   hardCopyHoldsBalance?: boolean;
   /** The POD check covers shortage, damage and the late-delivery (transit) penalty. */
@@ -139,9 +143,30 @@ export interface VerifyChecklist {
   noShortageOrDamage: boolean;
 }
 
-export interface VerifyBody {
-  checklist: VerifyChecklist;
+/** The details read off the proof and typed in against it, like any other document. */
+export interface PodCheckDetails {
+  receivedByName?: string;
+  quantityReceived?: string;
+  remarks?: string | null;
+}
+
+/**
+ * What a check of a proof of delivery records: the details on it, shortages
+ * and damages (one SDR each), charges written on it, and a corrected delivery
+ * date — which re-works the transit delay. Sent with the check of an E-POD or
+ * H-POD, and with the check of the hard copy behind an E-POD.
+ */
+export interface PodFindings {
+  details?: PodCheckDetails;
+  /** `YYYY-MM-DD`, only when the proof shows a different delivery date. */
+  deliveredOn?: string;
+  findings?: { kind: 'SHORTAGE' | 'DAMAGE'; description: string; claimedAmountPaise?: number }[];
+  charges?: { chargeType: string; costAmountPaise: number; billedAmountPaise: number }[];
   remarks?: string;
+}
+
+export interface VerifyBody extends Omit<PodFindings, 'charges'> {
+  checklist: VerifyChecklist;
   /**
    * When the shortage/damage or quantity check fails, the remarks become a
    * shortage / damage record (SDR) on the trip. Kind defaults from which check

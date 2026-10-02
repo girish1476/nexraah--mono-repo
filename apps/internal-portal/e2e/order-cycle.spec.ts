@@ -272,7 +272,8 @@ test.describe('the order cycle, from the order page', () => {
     // The E-POD closes the delivery, but the balance waits for the hard copy.
     await expect(page.getByText('Balance payment on hold')).toBeVisible();
     const hc = page.locator('.surface').filter({ has: page.getByRole('heading', { name: /Hard copy \(H-POD\)/ }) }).last();
-    await expect(hc).toContainText('DTDC-55667788');
+    // The docket noted on the E-POD shows on the receiving record.
+    await expect(page.locator('main')).toContainText('DTDC-55667788');
     await hc.getByLabel('Hard copy scan').setInputFiles(photo);
     await hc.getByRole('button', { name: 'Upload the hard copy' }).click();
     await expect(page.getByText(/Hard copy uploaded · verify it/)).toBeVisible();
@@ -285,9 +286,13 @@ test.describe('the order cycle, from the order page', () => {
     await page.goto(orderUrl);
     await tab(page, /Documents/).click();
     await page.getByRole('button', { name: 'Verify', exact: true }).click();
+    // The check opens beside the scan, like every other document; confirm it there.
+    await page.getByRole('button', { name: 'Verify', exact: true }).last().click();
     await expect(page.getByText(/Verified · a second person needs to approve/)).toBeVisible();
     // The hard copy behind the E-POD is checked too — that releases the hold on the balance.
     await page.getByRole('button', { name: /Verify the hard copy/ }).click();
+    // The check opens beside the scan, like every other document; confirm it there.
+    await page.getByRole('button', { name: 'Verify', exact: true }).last().click();
     await expect(page.getByText(/Hard copy verified · the balance is no longer held/)).toBeVisible();
     await signOut(page);
     await signInAs(page, 'LEADERSHIP');

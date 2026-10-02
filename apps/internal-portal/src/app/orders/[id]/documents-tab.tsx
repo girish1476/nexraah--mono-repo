@@ -241,7 +241,8 @@ export function OrderDocumentsTab({
   const loaded = !!trip.loadingCompletedAt;
   const unloaded = !!trip.deliveredAt;
   const isSupervisor = !!session && trip.loadingSupervisorId !== null && trip.loadingSupervisorId === session.userId;
-  const canUpload = can('document.verify') || can('indent.manage') || isSupervisor;
+  // Uploading is its own permission, attachable to any role on the Access control screen.
+  const canUpload = can('document.upload') || isSupervisor;
   const canVerify = can('document.verify');
 
   const docsFor = (item: DocItem) => docs.filter((d) => item.kinds.includes(d.kind));

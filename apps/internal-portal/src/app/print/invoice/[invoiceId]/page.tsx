@@ -55,7 +55,8 @@ function Copy({ invoice }: { invoice: InvoiceDetail }) {
     ['Unloading', invoice.unloadingPaise],
     ['Detention', invoice.detentionPaise],
     ['Other', invoice.otherPaise],
-    ['Discount', -invoice.discountPaise],
+    ...(invoice.extraCharges ?? []).map((c): [string, number] => [c.label, c.amountPaise]),
+    ...(invoice.discountPaise > 0 ? ([['Discount', -invoice.discountPaise]] as [string, number][]) : []),
   ];
 
   return (

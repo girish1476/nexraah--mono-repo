@@ -23,22 +23,16 @@ import { ROLE_CODES } from '../src/lib/permissions';
  */
 
 /**
- * Opens "Monthly performance".
+ * Waits for "Monthly performance".
  *
- * The snapshot leads with four figures and folds everything else — the month,
- * the branches, the delivery paperwork, the money and the top clients — into
- * one disclosure, so leadership gets an answer before a wall of numbers. A
- * closed `<details>` is outside the accessibility tree, which means
- * `getByRole` cannot see the panels inside it at all; the detail has to be
- * opened first, exactly as a reader would.
+ * The snapshot leads with one figure — vehicles placed on time — and then the
+ * month, the branches, the delivery paperwork, the money and the top clients
+ * in one disclosure that is open from the start. So there is nothing to
+ * click: clicking the summary would fold it shut and take every panel inside
+ * out of the accessibility tree. This only waits past the loading skeleton.
  */
 async function showFullDetail(page: Page) {
-  // No `if (count)` guard here. The page renders a loading skeleton first, so
-  // a count taken the instant after `goto` is legitimately 0 and the guard
-  // turned this into a silent no-op — the caller then failed much later,
-  // looking like a missing panel rather than a fold nobody opened. Clicking
-  // directly lets Playwright auto-wait for the summary to exist.
-  await page.getByText('Monthly performance').first().click();
+  await expect(page.locator('details[open]').getByText('Monthly performance')).toBeVisible();
 }
 
 
@@ -49,6 +43,13 @@ test.describe('home — leadership dashboard (LEADERSHIP, unscoped)', () => {
     await page.goto('/home');
     await expect(page.getByRole('heading', { name: 'Business snapshot', exact: true })).toBeVisible();
     await showFullDetail(page);
+  });
+
+  test('the page leads with on-time placement alone', async ({ page }) => {
+    await expect(statValue(page, 'home-on-time')).toHaveText('91.4%');
+    await expect(page.getByRole('heading', { name: 'Key metrics' })).toHaveCount(0);
+    await expect(page.getByText('On track')).toHaveCount(0);
+    await expect(page.getByTestId('home-not-billed')).toHaveCount(0);
   });
 
   test('the month strip shows the aggregated seeded figures', async ({ page }) => {

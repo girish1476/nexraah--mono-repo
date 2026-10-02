@@ -34,6 +34,60 @@ export class RolesRepository {
     return row?.id;
   }
 
+  /** Custom roles, oldest first — the ones an administrator added. */
+  listCustomRoles() {
+    return this.db
+      .selectFrom('roles')
+      .select(['code', 'name', 'based_on as basedOn'])
+      .where('based_on', 'is not', null)
+      .orderBy('created_at', 'asc')
+      .execute();
+  }
+
+  findRole(db: DbExecutor, roleCode: string) {
+    return db
+      .selectFrom('roles')
+      .select(['id', 'code', 'name', 'based_on as basedOn'])
+      .where('code', '=', roleCode)
+      .executeTakeFirst();
+  }
+
+  async insertRole(db: DbExecutor, row: { code: string; name: string; based_on: string }): Promise<string> {
+    const inserted = await db.insertInto('roles').values(row).returning('id').executeTakeFirstOrThrow();
+    return inserted.id;
+  }
+
+  /** Copies every grant the source role holds, except the named permission codes. */
+  async copyGrants(db: DbExecutor, fromRoleId: string, toRoleId: string, exceptCodes: string[]): Promise<void> {
+    let query = db
+      .selectFrom('role_permissions')
+      .innerJoin('permissions', 'permissions.id', 'role_permissions.permission_id')
+      .select(['role_permissions.permission_id as permissionId', 'role_permissions.level as level'])
+      .where('role_permissions.role_id', '=', fromRoleId)
+      .where('role_permissions.level', '!=', 'NONE');
+    if (exceptCodes.length > 0) query = query.where('permissions.code', 'not in', exceptCodes);
+    const rows = await query.execute();
+    if (rows.length === 0) return;
+    await db
+      .insertInto('role_permissions')
+      .values(rows.map((r) => ({ role_id: toRoleId, permission_id: r.permissionId, level: r.level })))
+      .execute();
+  }
+
+  async countUsersWithRole(db: DbExecutor, roleId: string): Promise<number> {
+    const row = await db
+      .selectFrom('users')
+      .select((eb) => eb.fn.countAll<number>().as('n'))
+      .where('role_id', '=', roleId)
+      .executeTakeFirstOrThrow();
+    return Number(row.n);
+  }
+
+  /** `role_permissions` rows go with it — the foreign key cascades. */
+  async deleteRole(db: DbExecutor, roleId: string): Promise<void> {
+    await db.deleteFrom('roles').where('id', '=', roleId).execute();
+  }
+
   async findPermissionId(db: DbExecutor, permissionCode: string): Promise<string | undefined> {
     const row = await db
       .selectFrom('permissions')
@@ -49,6 +103,11 @@ export class RolesRepository {
       .values({ role_id: roleId, permission_id: permissionId, level })
       .onConflict((oc) => oc.columns(['role_id', 'permission_id']).doUpdateSet({ level }))
       .execute();
+  }
+
+  /** The plain connection, for a read that needs no transaction. */
+  reader(): DbExecutor {
+    return this.db;
   }
 
   transaction() {

@@ -64,6 +64,8 @@ export class SupabaseJwtGuard implements CanActivate {
         'users.status as status',
         'users.role_id as roleId',
         'roles.code as roleCode',
+        'roles.name as roleName',
+        'roles.based_on as roleBasedOn',
         'branches.id as branchId',
         'branches.code as branchCode',
         'branches.name as branchName',
@@ -95,6 +97,9 @@ export class SupabaseJwtGuard implements CanActivate {
       name: principal.name,
       email: principal.email,
       role: principal.roleCode as InternalRole,
+      customRole: principal.roleBasedOn
+        ? { name: principal.roleName, basedOn: principal.roleBasedOn as InternalRole }
+        : null,
       branch: principal.branchId
         ? {
             id: principal.branchId,

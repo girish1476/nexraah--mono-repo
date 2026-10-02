@@ -95,11 +95,16 @@ const b64url = (value: string) =>
 const unb64url = (value: string) =>
   atob(value.replace(/-/g, '+').replace(/_/g, '/'));
 
+/** The custom role behind a role code, if it is one — see `POST /admin/roles`. */
+const customRoleOf = (code: string) => db.customRoles.find((r) => r.code === code);
+
 function mint(account: FixtureAccount, typ: 'access' | 'refresh'): string {
   const claims: MockClaims = {
     sub: account.userId,
     email: account.email,
-    role: account.role,
+    // Someone on a custom role signs in as the built-in role theirs is based
+    // on, as `GET /auth/session` reports it; `sub` still names the person.
+    role: customRoleOf(account.role)?.basedOn ?? account.role,
     branch: account.branch,
     typ,
     exp: Date.now() + (typ === 'access' ? ACCESS_TTL_MS : REFRESH_TTL_MS),
@@ -195,6 +200,16 @@ export async function mockVerifyCode(email: string, code: string) {
     throw new Error('That code is wrong or has expired. Check the latest email, or send a new code.');
   }
   return issue(account);
+}
+
+/** `GET /admin/roles` — the shape every roles route answers with. */
+function roleMatrixView() {
+  return {
+    roles: Object.keys(SEED_GRANTS),
+    customRoles: db.customRoles,
+    grants: SEED_GRANTS,
+    matrix: db.roleMatrix,
+  };
 }
 
 function allowedEmailView(a: FixtureAccount) {
@@ -666,7 +681,7 @@ function branchRowsFor(trips: any[]) {
   }).filter((r) => r.trips > 0);
 }
 
-/** Records a shortage / damage against a delivered trip — from the SDR screen, or from a proof's remarks. */
+/** Records a shortage / damage against a delivered trip — only ever from the check of a proof of delivery. */
 function raiseSdrRecord(trip: any, kind: string, description: string, claimedPaise: number, role: RoleCode) {
   const record = {
     id: `sdr-${db.sdr.length + 1}-${Date.now()}`,
@@ -718,6 +733,50 @@ function sdrCandidates(vendorId: string) {
       outstandingPaise: s.outstandingPaise,
       resolvedAt: s.resolvedAt,
     }));
+}
+
+/**
+ * What a check of a proof of delivery found — `PodService.applyFindings`:
+ * charges onto the trip, one SDR per shortage or damage, and a corrected
+ * delivery date with the transit days and late-delivery penalty re-worked.
+ * Returns the codes of the SDRs raised.
+ */
+function applyPodFindings(trip: any, body: any, role: RoleCode): string[] {
+  (body?.charges ?? []).forEach((c: any) => {
+    if (!(c.costAmountPaise > 0) && !(c.billedAmountPaise > 0)) return;
+    trip.charges.push({ id: `ch-${Date.now()}-${c.chargeType}`, capturedBy: USERS[role].name, capturedAt: helpers.now(), ...c });
+  });
+
+  const codes: string[] = [];
+  for (const f of body?.findings ?? []) {
+    const description = String(f?.description ?? '').trim();
+    if (description.length < 5) fail(400, 'VALIDATION_ERROR', `Describe the ${String(f?.kind ?? 'finding').toLowerCase()} in a few words.`);
+    codes.push(raiseSdrRecord(trip, f.kind, description, f.claimedAmountPaise ?? 0, role).code);
+  }
+
+  const currentDay = trip.deliveredAt ? String(trip.deliveredAt).slice(0, 10) : null;
+  const day = body?.deliveredOn ? String(body.deliveredOn).slice(0, 10) : null;
+  if (day && day !== currentDay) {
+    const startedAt = trip.loadingCompletedAt ?? trip.departedAt ?? null;
+    if (day > helpers.now().slice(0, 10)) fail(400, 'VALIDATION_ERROR', 'The delivery date cannot be in the future.');
+    if (startedAt && day < String(startedAt).slice(0, 10))
+      fail(400, 'VALIDATION_ERROR', 'The delivery date cannot be before the truck was loaded.');
+    trip.deliveredAt = `${day}T12:00:00.000Z`;
+    const laneOfTrip = (db.rateCards[trip.clientId] ?? []).find(
+      (l: any) => l.id === db.indents.find((i: any) => i.id === trip.indentId)?.rateCardLaneId,
+    );
+    const transit = computeTransitPenalty({
+      startedAt,
+      deliveredAt: trip.deliveredAt,
+      requiredDays: trip.transitDaysRequired ?? null,
+      applies: !!laneOfTrip?.transitPenaltyApplies,
+      perDayPaise: Number(laneOfTrip?.transitPenaltyPerDayPaise ?? 0),
+    });
+    trip.actualTransitDays = transit.actualDays;
+    // A penalty Leadership waived stays waived, whatever the date becomes.
+    if (!trip.transitPenaltyWaived) trip.transitPenaltyPaise = transit.penaltyPaise;
+  }
+  return codes;
 }
 
 function balanceGate(trip: any) {
@@ -824,6 +883,41 @@ function addTrackingRow(
     recordedAt: row.at,
     recordedByName: ACCOUNTS.find((a) => a.userId === row.userId)?.name ?? null,
   });
+}
+
+/** Trip id → the token of its live tracking link. Gone once sharing is stopped. */
+const TRACKING_LINKS: Record<string, string> = {};
+
+function shareStateFor(trip: any) {
+  const token = TRACKING_LINKS[trip.id] ?? null;
+  if (!token) return { token: null, active: false, endedBecause: null };
+  return trip.deliveredAt
+    ? { token, active: false, endedBecause: 'UNLOADED' }
+    : { token, active: true, endedBecause: null };
+}
+
+type MockRoutePoint = { address: string | null; lat: number | null; lng: number | null };
+const NO_POINT: MockRoutePoint = { address: null, lat: null, lng: null };
+/**
+ * The exact loading and unloading points, kept per client and route — so a
+ * second trip for the same client on the same route finds them already there.
+ */
+const ROUTE_POINTS: Record<string, { loading: MockRoutePoint; unloading: MockRoutePoint }> = {};
+
+function routeKeyFor(trip: any): string {
+  return `${trip.clientId}|${String(trip.lane ?? '').toLowerCase().replace(/\s+/g, '')}`;
+}
+
+function routePointsFor(trip: any) {
+  const [fromCity, toCity] = String(trip.lane ?? '').split('→').map((x: string) => x.trim());
+  const row = ROUTE_POINTS[routeKeyFor(trip)];
+  return {
+    fromCity: fromCity || '',
+    toCity: toCity || '',
+    loading: row?.loading ?? NO_POINT,
+    unloading: row?.unloading ?? NO_POINT,
+    onFile: !!row,
+  };
 }
 
 function trackingSheetFor(trip: any) {
@@ -937,6 +1031,49 @@ function tripSummary(t: any) {
  */
 function scopedBranch(code: string | null) {
   return code ? (BRANCHES.find((b) => b.code === code) ?? null) : null;
+}
+
+/* ---- targets — mirrors `target-rules.ts` in internal-api ------------------ */
+
+const TARGET_METRICS = ['LOADS', 'REVENUE', 'MARGIN', 'COLLECTIONS', 'PODS'];
+
+/** The measures each desk is held to on My desk. */
+const TARGET_ROLE_METRICS: Record<string, string[]> = {
+  OPS: ['LOADS', 'MARGIN'],
+  LOADING_SUPERVISOR: ['LOADS'],
+  BD: ['REVENUE'],
+  FINANCE: ['COLLECTIONS'],
+  COMPLIANCE: ['PODS'],
+  LEADERSHIP: TARGET_METRICS,
+  ADMIN: TARGET_METRICS,
+};
+
+/** The month it is in India right now, as `YYYY-MM`. */
+const targetMonthNow = () => new Date(Date.now() + 5.5 * 3_600_000).toISOString().slice(0, 7);
+
+/** Jan–Mar, Apr–Jun, Jul–Sep, Oct–Dec — the first and last month of the quarter a month falls in. */
+function targetQuarterOf(month: string) {
+  const [y, m] = month.split('-').map(Number);
+  const first = Math.floor((m - 1) / 3) * 3 + 1;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return { from: `${y}-${pad(first)}`, to: `${y}-${pad(first + 2)}` };
+}
+
+function targetsForMonth(month: string | null) {
+  const forMonth = month && /^\d{4}-(0[1-9]|1[0-2])$/.test(month) ? month : targetMonthNow();
+  return {
+    month: forMonth,
+    rows: BRANCHES.map((b) => ({
+      branchId: b.id,
+      branchName: b.name,
+      targets: Object.fromEntries(
+        TARGET_METRICS.map((metric) => [
+          metric,
+          db.targets.find((t) => t.branchId === b.id && t.month === forMonth && t.metric === metric)?.target ?? null,
+        ]),
+      ),
+    })),
+  };
 }
 
 function scopeBranch(rows: any[], code: string | null) {
@@ -1633,12 +1770,20 @@ const routes: [string, RegExp, Handler][] = [
       // that actually changes behaviour — their empty branch.
       const claims = result.ok ? result.claims : null;
       const user = ACCOUNTS.find((a) => a.userId === claims?.sub) ?? USERS[role];
+      // A custom role holds what was ticked for it and nothing else.
+      const custom = customRoleOf(user.role);
       return ok({
         userId: user.userId,
         name: user.name,
         email: user.email,
         role,
-        permissions: SEED_GRANTS[role],
+        roleLabel: custom?.label ?? null,
+        customRole: custom?.code ?? null,
+        permissions: custom
+          ? Object.entries(db.roleMatrix[custom.code] ?? {})
+              .filter(([, level]) => level !== 'NONE')
+              .map(([code]) => code)
+          : SEED_GRANTS[role],
         // From the token's claim, mirroring `auth.service.ts`, which returns
         // `branch: user.branch` unconditionally now rather than nulling it
         // for every role but one.
@@ -1717,17 +1862,64 @@ const routes: [string, RegExp, Handler][] = [
     'GET',
     /^\/admin\/roles$/,
     () =>
-      ok({
-        roles: Object.keys(SEED_GRANTS),
-        grants: SEED_GRANTS,
-        matrix: db.roleMatrix,
-      }),
+      ok(roleMatrixView()),
+  ],
+  [
+    'POST',
+    /^\/admin\/roles$/,
+    ({ role, body }) => {
+      // Mirrors `RolesService.createRole()`: the new role opens the base
+      // role's screens and starts with its grants, minus the fixed ones.
+      if (!SEED_GRANTS[role]?.includes('config.manage')) fail(403, 'FORBIDDEN', 'Only administrators manage roles.');
+      const name = String(body?.name ?? '').trim().replace(/\s+/g, ' ');
+      const basedOn = body?.basedOn as RoleCode;
+      if (name.length < 2 || !/[A-Za-z0-9]/.test(name)) fail(400, 'VALIDATION_ERROR', 'Give the role a name.');
+      if (!['OPS', 'COMPLIANCE', 'FINANCE', 'BD', 'LEADERSHIP'].includes(basedOn))
+        fail(400, 'VALIDATION_ERROR', 'Choose the role to base it on.');
+      const code = `CUSTOM_${name.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '')}`;
+      if (customRoleOf(code)) fail(409, 'ROLE_EXISTS', `A role named "${name}" already exists.`);
+      const fixed = ['payment.release', 'pod.waive', 'rfq.submit', 'config.manage'];
+      const held = new Set<string>(SEED_GRANTS[basedOn]);
+      Object.entries(db.roleMatrix[basedOn] ?? {}).forEach(([permission, level]) => {
+        if (level === 'NONE') held.delete(permission);
+        else held.add(permission);
+      });
+      db.customRoles.push({ code, label: name, basedOn });
+      db.roleMatrix[code] = Object.fromEntries(
+        [...held].filter((p) => !fixed.includes(p)).map((p) => [p, 'EDIT' as const]),
+      );
+      return status(201, roleMatrixView());
+    },
+  ],
+  [
+    'DELETE',
+    /^\/admin\/roles\/([^/]+)$/,
+    ({ role, params }) => {
+      if (!SEED_GRANTS[role]?.includes('config.manage')) fail(403, 'FORBIDDEN', 'Only administrators manage roles.');
+      const custom = customRoleOf(params[0]);
+      if (!custom) {
+        if (params[0] in SEED_GRANTS) fail(409, 'ROLE_BUILT_IN', 'A built-in role cannot be removed.');
+        fail(404, 'NOT_FOUND', `Unknown role: ${params[0]}`);
+      } else {
+        const users = ACCOUNTS.filter((a) => (a.role as string) === custom.code).length;
+        if (users > 0)
+          fail(
+            409,
+            'ROLE_IN_USE',
+            `${users} ${users === 1 ? 'person still signs' : 'people still sign'} in as ${custom.label}. Move them to another role first.`,
+          );
+        db.customRoles.splice(db.customRoles.indexOf(custom), 1);
+        delete db.roleMatrix[custom.code];
+      }
+      return ok(roleMatrixView());
+    },
   ],
   [
     'PATCH',
     /^\/admin\/roles\/([^/]+)\/permissions$/,
     ({ params, body }) => {
-      const role = params[0] as RoleCode;
+      const role = params[0];
+      if (!(role in SEED_GRANTS) && !customRoleOf(role)) fail(404, 'NOT_FOUND', `Unknown role: ${role}`);
       if (body.permission === 'payment.release' && role !== 'FINANCE')
         fail(409, 'PERMISSION_FIXED', 'payment.release is FINANCE only and is not grantable to another role (BR-40).');
       db.roleMatrix[role] = { ...(db.roleMatrix[role] ?? {}), [body.permission]: body.level };
@@ -3571,6 +3763,9 @@ const routes: [string, RegExp, Handler][] = [
     /^\/trips\/([^/]+)\/documents\/([^/]+)$/,
     ({ params, body, role, userId }) => {
       const trip = findTrip(params[0]);
+      // Uploading is its own permission; the trip's loading supervisor needs none — `TripsService.submitDocument`.
+      if (!(trip.loadingSupervisorId === userId) && !roleCan(role, 'document.upload'))
+        fail(403, 'PERMISSION_DENIED', 'Missing permission: document.upload.');
       // The proof of delivery comes after unloading, never before.
       if (params[1] === 'POD' && !trip.deliveredAt)
         fail(409, 'NOT_DELIVERED', 'The proof of delivery is uploaded once the truck is unloaded.');
@@ -3758,6 +3953,91 @@ const routes: [string, RegExp, Handler][] = [
     'GET',
     /^\/trips\/([^/]+)\/tracking$/,
     ({ params }) => ok(trackingSheetFor(findTrip(params[0]))),
+  ],
+  /* ---- shareable tracking link — `TrackingLinksService` ------------------ */
+  ['GET', /^\/trips\/([^/]+)\/tracking\/share$/, ({ params }) => ok(shareStateFor(findTrip(params[0])))],
+  [
+    'POST',
+    /^\/trips\/([^/]+)\/tracking\/share$/,
+    ({ params, role }) => {
+      if (!roleCan(role, 'indent.manage')) fail(403, 'PERMISSION_DENIED', 'Missing permission: indent.manage.');
+      const trip = findTrip(params[0]);
+      if (!trip.vehicleNo) fail(409, 'NOT_PLACED', 'Allocate the vehicle first — there is nothing to track yet.');
+      if (trip.deliveredAt) fail(409, 'TRACKING_CLOSED', 'This truck has been unloaded; tracking has ended.');
+      if (!TRACKING_LINKS[trip.id]) {
+        TRACKING_LINKS[trip.id] = `demo-${trip.id}-${Math.random().toString(36).slice(2, 12)}`;
+      }
+      return ok(shareStateFor(trip));
+    },
+  ],
+  [
+    'DELETE',
+    /^\/trips\/([^/]+)\/tracking\/share$/,
+    ({ params, role }) => {
+      if (!roleCan(role, 'indent.manage')) fail(403, 'PERMISSION_DENIED', 'Missing permission: indent.manage.');
+      const trip = findTrip(params[0]);
+      const had = !!TRACKING_LINKS[trip.id];
+      delete TRACKING_LINKS[trip.id];
+      return ok({ token: null, active: false, endedBecause: had ? 'STOPPED' : null });
+    },
+  ],
+  [
+    'GET',
+    /^\/public\/tracking\/([^/]+)$/,
+    // What the holder of a link sees — no sign-in, and nothing about the client,
+    // the transporter, the rates or the desk's notes.
+    ({ params }) => {
+      const token = decodeURIComponent(params[0]);
+      const tripId = Object.keys(TRACKING_LINKS).find((id) => TRACKING_LINKS[id] === token);
+      if (!tripId) fail(404, 'TRACKING_LINK_UNKNOWN', 'This tracking link is not valid.');
+      const trip = findTrip(tripId as string);
+      if (trip.deliveredAt)
+        fail(410, 'TRACKING_LINK_ENDED', 'The truck has been unloaded, so this tracking link has ended.');
+      const sheet = trackingSheetFor(trip);
+      const points = routePointsFor(trip);
+      return ok({
+        vehicleNo: sheet.vehicleNo,
+        fromCity: sheet.fromCity,
+        toCity: sheet.toCity,
+        stage: sheet.stage,
+        reachedLoadingAt: sheet.reachedLoadingAt,
+        loadedAt: sheet.loadedAt,
+        departedAt: sheet.departedAt,
+        reachedDestinationAt: sheet.reachedDestinationAt,
+        loading: points.loading,
+        unloading: points.unloading,
+        updates: sheet.updates.map((u: any) => ({
+          id: u.id,
+          kind: u.kind,
+          location: u.location,
+          lat: u.lat ?? null,
+          lng: u.lng ?? null,
+          status: u.status ?? null,
+          recordedAt: u.recordedAt,
+        })),
+      });
+    },
+  ],
+  /* ---- exact loading / unloading points — `RoutePointsService` ----------- */
+  ['GET', /^\/trips\/([^/]+)\/route-points$/, ({ params }) => ok(routePointsFor(findTrip(params[0])))],
+  [
+    'PUT',
+    /^\/trips\/([^/]+)\/route-points$/,
+    ({ params, body, role }) => {
+      if (!roleCan(role, 'indent.manage')) fail(403, 'PERMISSION_DENIED', 'Missing permission: indent.manage.');
+      const trip = findTrip(params[0]);
+      const key = routeKeyFor(trip);
+      const row = ROUTE_POINTS[key] ?? { loading: { ...NO_POINT }, unloading: { ...NO_POINT } };
+      for (const end of ['loading', 'unloading'] as const) {
+        const p = body?.[end];
+        if (!p) continue;
+        if ((p.lat === undefined) !== (p.lng === undefined))
+          fail(400, 'VALIDATION_ERROR', `Give both latitude and longitude for the ${end} point, or neither.`);
+        row[end] = { address: String(p.address ?? '').trim() || null, lat: p.lat ?? null, lng: p.lng ?? null };
+      }
+      ROUTE_POINTS[key] = row;
+      return ok(routePointsFor(trip));
+    },
   ],
   [
     'POST',
@@ -3988,8 +4268,11 @@ const routes: [string, RegExp, Handler][] = [
             courierSlipAttachmentId: r.courierSlipAttachmentId ?? null,
             attachmentIds: epod ? (r.hardCopyAttachmentIds ?? []) : (r.attachmentIds ?? []),
             verifiedAt: epod ? (r.hardCopyVerifiedAt ?? null) : null,
+            details: epod ? (r.hardCopyDetails ?? null) : null,
           };
         })(),
+        // The details typed in when the proof was checked.
+        details: db.podReceipts.find((x) => x.tripId === trip.id)?.details ?? null,
         hardCopyHoldsBalance: (() => {
           const r = db.podReceipts.find((x) => x.tripId === trip.id);
           return r?.podKind === 'EPOD' && !r.hardCopyVerifiedAt;
@@ -4057,7 +4340,7 @@ const routes: [string, RegExp, Handler][] = [
     'POST',
     /^\/pod\/([^/]+)\/hard-copy\/verify$/,
     // The check on the hard copy behind an E-POD — `PodService.verifyHardCopy`.
-    ({ params, role }) => {
+    ({ params, body, role }) => {
       const trip = findTrip(params[0]);
       const receipt = db.podReceipts.find((r) => r.tripId === trip.id);
       if (!receipt || receipt.podKind !== 'EPOD')
@@ -4065,8 +4348,10 @@ const routes: [string, RegExp, Handler][] = [
       if ((receipt.hardCopyAttachmentIds ?? []).length === 0)
         fail(409, 'HARD_COPY_NOT_UPLOADED', 'Upload the scan of the hard copy before verifying it.');
       if (receipt.hardCopyVerifiedAt) fail(409, 'HARD_COPY_ALREADY_VERIFIED', 'The hard copy is already verified.');
+      const sdrCodes = applyPodFindings(trip, body, role);
       receipt.hardCopyVerifiedAt = helpers.now();
-      return ok({ tripId: trip.id, verifiedAt: receipt.hardCopyVerifiedAt, verifiedBy: USERS[role].name });
+      receipt.hardCopyDetails = { ...(body?.details ?? {}), remarks: body?.remarks ?? null };
+      return ok({ tripId: trip.id, verifiedAt: receipt.hardCopyVerifiedAt, verifiedBy: USERS[role].name, sdrCodes });
     },
   ],
   [
@@ -4150,24 +4435,33 @@ const routes: [string, RegExp, Handler][] = [
       if (trip.podStatus !== 'RECEIVED')
         fail(409, 'NOT_RECEIVED', 'The physical copy must be logged in the receiving register first (BR-49).');
       const failedChecks = Object.entries(body?.checklist ?? {}).filter(([, v]) => v === false);
-      if (failedChecks.length && !body?.remarks?.trim())
+      const hasFindings = (body?.findings ?? []).length > 0;
+      // A finding carries its own description, so the remarks are only mandatory without one.
+      if (failedChecks.length && !body?.remarks?.trim() && !hasFindings)
         fail(400, 'REMARKS_REQUIRED', 'Remarks are mandatory when any check fails.');
-      (body?.charges ?? []).forEach((c: any) =>
-        trip.charges.push({ id: `ch-${Date.now()}-${c.chargeType}`, capturedBy: USERS[role].name, capturedAt: helpers.now(), ...c }),
-      );
+      // Charges, shortages and damages, a corrected delivery date — `PodService.applyFindings`.
+      const findingCodes = applyPodFindings(trip, body, role);
       trip.podStatus = 'VERIFIED';
       trip.podVerifiedBy = USERS[role].userId;
       trip.podVerifiedByName = USERS[role].name;
-      // A proof showing a shortage or damage raises the SDR from its remarks —
-      // same rule as `sdrKindFromChecklist` in pod.service.ts.
+      const receipt = db.podReceipts.find((r) => r.tripId === trip.id);
+      if (receipt) receipt.details = { ...(body?.details ?? {}), remarks: body?.remarks ?? null };
+      // Older callers: no explicit findings, so a failed shortage/damage check
+      // raises one SDR from the remarks — `sdrKindFromChecklist` in pod.service.ts.
       const shortOrDamaged = body?.checklist?.noShortageOrDamage === false;
       const quantityOff = body?.checklist?.quantityMatchesInvoice === false;
-      let sdrCode: string | null = null;
-      if (shortOrDamaged || quantityOff) {
+      let sdrCode: string | null = findingCodes[0] ?? null;
+      if (!hasFindings && (shortOrDamaged || quantityOff)) {
         const kind = body?.sdrKind ?? (quantityOff && !shortOrDamaged ? 'SHORTAGE' : 'DAMAGE');
         sdrCode = raiseSdrRecord(trip, kind, String(body.remarks), body?.sdrClaimedAmountPaise ?? 0, role).code;
       }
-      return ok({ tripId: trip.id, podStatus: trip.podStatus, verifiedBy: USERS[role].name, sdrCode });
+      return ok({
+        tripId: trip.id,
+        podStatus: trip.podStatus,
+        verifiedBy: USERS[role].name,
+        sdrCode,
+        sdrCodes: hasFindings ? findingCodes : sdrCode ? [sdrCode] : [],
+      });
     },
   ],
   [
@@ -4188,7 +4482,7 @@ const routes: [string, RegExp, Handler][] = [
     ({ params, role }) => {
       const trip = findTrip(params[0]);
       if (trip.podStatus !== 'VERIFIED') fail(409, 'NOT_VERIFIED', 'The POD must be verified before it is approved.');
-      if (trip.podVerifiedBy === USERS[role].userId)
+      if (trip.podVerifiedBy === USERS[role].userId && role !== 'ADMIN')
         fail(409, 'APPROVER_IS_VERIFIER', 'The person who verified a POD may not approve it (BR-50).');
       trip.podStatus = 'APPROVED';
       trip.podApprovedBy = USERS[role].userId;
@@ -4362,20 +4656,6 @@ const routes: [string, RegExp, Handler][] = [
     'GET',
     /^\/sdr\/([^/]+)$/,
     ({ params }) => ok(withRecoveries(db.sdr.find((s) => s.id === params[0]) ?? fail(404, 'NOT_FOUND', 'Record not found'))),
-  ],
-  [
-    'POST',
-    /^\/trips\/([^/]+)\/sdr$/,
-    ({ params, body, role }) => {
-      const trip = findTrip(params[0]);
-      if (!['DELIVERED', 'CLOSED'].includes(trip.stage))
-        fail(409, 'NOT_DELIVERED', 'A shortage or damage can only be recorded once the load has been delivered.');
-      if (!['SHORTAGE', 'DAMAGE', 'UNLOADING_ACK'].includes(body?.kind)) fail(400, 'VALIDATION_ERROR', 'Unknown kind.');
-      if (!body?.description || String(body.description).trim().length < 5)
-        fail(400, 'VALIDATION_ERROR', 'Describe what happened.');
-      const record = raiseSdrRecord(trip, body.kind, String(body.description), body.claimedAmountPaise ?? 0, role);
-      return ok(withRecoveries(record));
-    },
   ],
   [
     'POST',
@@ -4620,8 +4900,10 @@ const routes: [string, RegExp, Handler][] = [
       // printed invoice's Total row rendered blank rather than ₹0. Computed
       // here the same way the form previews it, minus the discount head.
       const freightPaise = body.freightPaise ?? 0;
+      const extraCharges: { label: string; amountPaise: number }[] = body.extraCharges ?? [];
       const extrasPaise =
-        (body.loadingPaise ?? 0) + (body.unloadingPaise ?? 0) + (body.detentionPaise ?? 0) + (body.otherPaise ?? 0) -
+        (body.loadingPaise ?? 0) + (body.unloadingPaise ?? 0) + (body.detentionPaise ?? 0) + (body.otherPaise ?? 0) +
+        extraCharges.reduce((sum, c) => sum + c.amountPaise, 0) -
         (body.discountPaise ?? 0);
       const subtotalPaise = freightPaise + extrasPaise;
       const roundOffPaise = Math.round(subtotalPaise / 100) * 100 - subtotalPaise;
@@ -4633,7 +4915,9 @@ const routes: [string, RegExp, Handler][] = [
         taxMechanism: 'REVERSE_CHARGE',
         cancelReason: null,
         clientName: db.clients.find((c) => c.id === body.clientId)?.name ?? '—',
+        discountPaise: 0,
         ...body,
+        extraCharges,
         roundOffPaise,
         totalPaise: subtotalPaise + roundOffPaise,
       };
@@ -4694,7 +4978,11 @@ const routes: [string, RegExp, Handler][] = [
       const detentionPaise = body.detentionPaise ?? invoice.detentionPaise ?? 0;
       const otherPaise = body.otherPaise ?? invoice.otherPaise ?? 0;
       const discountPaise = body.discountPaise ?? invoice.discountPaise ?? 0;
-      const subtotalPaise = freightPaise + loadingPaise + unloadingPaise + detentionPaise + otherPaise - discountPaise;
+      const extraCharges: { label: string; amountPaise: number }[] = body.extraCharges ?? invoice.extraCharges ?? [];
+      const subtotalPaise =
+        freightPaise + loadingPaise + unloadingPaise + detentionPaise + otherPaise +
+        extraCharges.reduce((sum, c) => sum + c.amountPaise, 0) -
+        discountPaise;
       const roundOffPaise = Math.round(subtotalPaise / 100) * 100 - subtotalPaise;
 
       Object.assign(invoice, {
@@ -4712,6 +5000,7 @@ const routes: [string, RegExp, Handler][] = [
         detentionPaise,
         otherPaise,
         discountPaise,
+        extraCharges,
         roundOffPaise,
         totalPaise: subtotalPaise + roundOffPaise,
         notes: body.notes ?? invoice.notes,
@@ -5087,6 +5376,72 @@ const routes: [string, RegExp, Handler][] = [
           unbilledTrips: demo ? 41 : live.unbilledTrips,
         },
       });
+    },
+  ],
+  /* ---- targets — mirrors `modules/targets` in internal-api ---------------- */
+  [
+    'GET',
+    /^\/targets\/desk$/,
+    ({ role, branch }) => {
+      const month = targetMonthNow();
+      const quarter = targetQuarterOf(month);
+      const scoped = scopedBranch(branch);
+      const figures = (from: string, to: string) => {
+        const within = (iso: unknown) => !!iso && String(iso).slice(0, 7) >= from && String(iso).slice(0, 7) <= to;
+        const trips = scopeBranch(db.trips, branch).filter((t) => within(t.deliveredAt));
+        const revenue = trips.reduce((a, t) => a + (t.sellRatePaise ?? 0), 0);
+        const achieved: Record<string, number> = {
+          LOADS: trips.length,
+          REVENUE: revenue,
+          MARGIN: revenue - trips.reduce((a, t) => a + tripCost(t), 0),
+          COLLECTIONS: db.receipts.filter((r) => within(r.receivedOn)).reduce((a, r) => a + (r.amountPaise ?? 0), 0),
+          PODS: scopeBranch(db.trips, branch).filter(
+            (t) => t.podStatus === 'APPROVED' && within(t.podApprovedAt ?? t.podReceivedAt ?? t.deliveredAt),
+          ).length,
+        };
+        const set = db.targets.filter(
+          (t) => t.month >= from && t.month <= to && (!scoped || t.branchId === scoped.id),
+        );
+        const target = (metric: string) => {
+          const rows = set.filter((t) => t.metric === metric);
+          return rows.length ? rows.reduce((a, t) => a + t.target, 0) : null;
+        };
+        return { achieved, target };
+      };
+      const m = figures(month, month);
+      const q = figures(quarter.from, quarter.to);
+      return ok({
+        month,
+        quarter,
+        branchName: scoped?.name ?? null,
+        targets: (TARGET_ROLE_METRICS[role] ?? []).map((metric) => ({
+          metric,
+          unit: metric === 'LOADS' || metric === 'PODS' ? 'COUNT' : 'PAISE',
+          month: { target: m.target(metric), achieved: m.achieved[metric] },
+          quarter: { target: q.target(metric), achieved: q.achieved[metric] },
+        })),
+      });
+    },
+  ],
+  ['GET', /^\/targets$/, ({ query }) => ok(targetsForMonth(query.get('month')))],
+  [
+    'PUT',
+    /^\/targets$/,
+    ({ role, body }) => {
+      if (!SEED_GRANTS[role]?.includes('config.manage')) fail(403, 'FORBIDDEN', 'Only administrators set targets.');
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(body?.month ?? ''))) fail(400, 'VALIDATION_ERROR', 'Choose a month.');
+      if (!BRANCHES.some((b) => b.id === body?.branchId)) fail(404, 'NOT_FOUND', 'No such branch.');
+      for (const [metric, value] of Object.entries(body?.targets ?? {}) as [string, number | null][]) {
+        if (!TARGET_METRICS.includes(metric)) fail(400, 'VALIDATION_ERROR', `"${metric}" is not something a target can be set in.`);
+        if (value !== null && (!Number.isSafeInteger(value) || value < 0)) {
+          fail(400, 'VALIDATION_ERROR', 'A target is a whole number, zero or more.');
+        }
+        db.targets = db.targets.filter(
+          (t) => !(t.branchId === body.branchId && t.month === body.month && t.metric === metric),
+        );
+        if (value !== null) db.targets.push({ branchId: body.branchId, month: body.month, metric, target: value });
+      }
+      return ok(targetsForMonth(body.month));
     },
   ],
   [

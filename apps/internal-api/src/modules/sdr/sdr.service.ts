@@ -2,23 +2,22 @@ import { Injectable } from '@nestjs/common';
 import { DomainException } from '../../common/domain-exception';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
 import { AuditService } from '../audit/audit.service';
-import { NumberingService } from '../numbering/numbering.service';
 import { SdrRepository } from './sdr.repository';
-import type { RaiseSdrDto, ResolveSdrDto } from './dto/sdr.dto';
+import type { ResolveSdrDto } from './dto/sdr.dto';
 import type { WaiveSdrDto } from './dto/waive-sdr.dto';
 
 /**
- * Shortage / damage records. Raising one puts the trip's balance on hold;
- * resolving one fixes what is deducted from the transporter, and the balance
- * release (payments.service.ts) is what actually takes it, carrying any excess
- * forward to the transporter's later payments.
+ * Shortage / damage records. One is raised by the check of a proof of
+ * delivery (pod.service.ts) and never by hand, and it puts the trip's balance
+ * on hold; resolving one fixes what is deducted from the transporter, and the
+ * balance release (payments.service.ts) is what actually takes it, carrying
+ * any excess forward to the transporter's later payments.
  */
 @Injectable()
 export class SdrService {
   constructor(
     private readonly sdrRepository: SdrRepository,
     private readonly auditService: AuditService,
-    private readonly numberingService: NumberingService,
   ) {}
 
   /** Each record carries where it was recovered from, so the trail runs both ways. */
@@ -44,43 +43,6 @@ export class SdrService {
     const row = await this.sdrRepository.get(id);
     if (!row) throw new DomainException(404, 'NOT_FOUND', `Unknown record: ${id}`);
     return (await this.withRecoveries([row]))[0];
-  }
-
-  async raise(tripId: string, dto: RaiseSdrDto, actor: AuthenticatedUser) {
-    const id = await this.sdrRepository.transaction().execute(async (trx) => {
-      const trip = await trx
-        .selectFrom('trips')
-        .select(['id', 'code', 'vendor_id', 'stage'])
-        .where('id', '=', tripId)
-        .forUpdate()
-        .executeTakeFirst();
-      if (!trip) throw new DomainException(404, 'NOT_FOUND', `Unknown trip: ${tripId}`);
-      if (trip.stage !== 'DELIVERED' && trip.stage !== 'CLOSED') {
-        throw new DomainException(
-          409,
-          'NOT_DELIVERED',
-          'A shortage or damage can only be recorded once the load has been delivered.',
-        );
-      }
-      const code = await this.numberingService.issue(trx, 'SDR');
-      const row = await this.sdrRepository.insert(trx, {
-        code,
-        tripId,
-        vendorId: trip.vendor_id,
-        kind: dto.kind,
-        description: dto.description.trim(),
-        claimedPaise: dto.claimedAmountPaise ?? 0,
-        raisedBy: actor.userId,
-      });
-      await this.auditService.record(trx, actor, {
-        action: 'SDR_RAISED',
-        entityType: 'trips',
-        entityId: tripId,
-        after: { sdr: code, kind: dto.kind, claimedAmountPaise: dto.claimedAmountPaise ?? 0 },
-      });
-      return row.id;
-    });
-    return this.get(id);
   }
 
   /**

@@ -172,7 +172,8 @@ const CASES: RoleCase[] = [
     hidden: [],
   },
   {
-    // ADMIN is EDIT on every module — the full console, every row shown —
+    // ADMIN is EDIT on every module but `loading` (the loading supervisor's
+    // own list) — the full console, every row shown —
     // and, since 2026-09-26, holds every named permission too, so nothing on
     // any of those screens is withheld from it.
     role: 'ADMIN',

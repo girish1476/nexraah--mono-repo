@@ -129,6 +129,45 @@ Trips closed with **no charges captured**. They overstate margin and nothing els
 }]
 ```
 
+## Targets
+
+A target belongs to a branch, a month and a measure (`branch_targets`). The quarter is never stored — it is the sum of its three months.
+
+| Measure | Unit | Achieved is | Shown to |
+|---|---|---|---|
+| `LOADS` | count | trips delivered in the period | Operations, Loading supervisor |
+| `MARGIN` | paise | billed − (buy rate + trip charges) on those trips | Operations |
+| `REVENUE` | paise | `indents.sell_rate` of those trips | Business development |
+| `COLLECTIONS` | paise | receipts dated in the period | Finance |
+| `PODS` | count | trips whose proof was approved in the period | Compliance |
+
+Leadership and Administration see every measure. A custom role is read as the role it is based on.
+
+### `GET /targets/desk`
+
+No permission. This month and this quarter for the caller's own measures; a caller with a branch gets that branch, anyone else every branch added together. `target` is `null` when none is set.
+
+```json
+{
+  "month": "2026-10",
+  "quarter": { "from": "2026-10", "to": "2026-12" },
+  "branchName": null,
+  "targets": [{ "metric": "LOADS", "unit": "COUNT",
+                "month": { "target": 400, "achieved": 212 },
+                "quarter": { "target": 1200, "achieved": 212 } }]
+}
+```
+
+### `GET /targets?month=YYYY-MM`
+
+Every branch and what is set for it that month.
+
+### `PUT /targets` · `config.manage`
+
+`{ month, branchId, targets: { LOADS: 400, MARGIN: null } }` — a number sets a measure, `null` clears it, a measure left out is untouched. Audited as `TARGETS_SET`.
+
+---
+
 ## `GET /pnl/export.csv`
 
 Honours the active filters. Linked with a bare `<a href>` — see conventions §9.

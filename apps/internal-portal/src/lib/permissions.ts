@@ -21,6 +21,12 @@ export const ROLE_CODES = [
 
 export type RoleCode = (typeof ROLE_CODES)[number];
 
+/**
+ * The built-in roles a custom role (added from Access control) may be based
+ * on — mirrors `CUSTOM_ROLE_BASES` in the API's `roles.constants.ts`.
+ */
+export const CUSTOM_ROLE_BASES: RoleCode[] = ['OPS', 'COMPLIANCE', 'FINANCE', 'BD', 'LEADERSHIP'];
+
 export type Level = 'NONE' | 'VIEW' | 'EDIT';
 
 export interface RoleDef {
@@ -105,6 +111,7 @@ export const PERMISSIONS = [
   'indent.manage',
   'indent.reassign',
   'indent.view',
+  'document.upload',
   'document.verify',
   'vendor.edit',
   'vendor.verify',
@@ -143,7 +150,7 @@ export const FIXED_PERMISSIONS: Permission[] = [
 ];
 
 /** Freely attachable to any internal role (D-17, BR-41). */
-export const GRANTABLE_ANYWHERE: Permission[] = ['indent.create', 'indent.manage', 'document.verify'];
+export const GRANTABLE_ANYWHERE: Permission[] = ['indent.create', 'indent.manage', 'document.upload', 'document.verify'];
 
 export const SEED_GRANTS: Record<RoleCode, Permission[]> = {
   /**
@@ -166,6 +173,7 @@ export const SEED_GRANTS: Record<RoleCode, Permission[]> = {
   OPS: [
     'indent.create',
     'indent.manage',
+    'document.upload',
     'indent.view',
     'vendor.edit',
     'rfq.edit',
@@ -179,6 +187,7 @@ export const SEED_GRANTS: Record<RoleCode, Permission[]> = {
     'client.onboard',
     'indent.create',
     'indent.view',
+    'document.upload',
     'document.verify',
     'vendor.verify',
     'vendor.activate',
@@ -232,6 +241,7 @@ export const SEED_GRANTS: Record<RoleCode, Permission[]> = {
     'indent.manage',
     'indent.reassign',
     'indent.view',
+    'document.upload',
     'document.verify',
     'vendor.edit',
     'vendor.verify',
@@ -262,8 +272,9 @@ export const SEED_GRANTS: Record<RoleCode, Permission[]> = {
    * view for admin. With them granted, one administrator can now raise and
    * decide the same request, and release money that Finance would otherwise
    * be the only desk to release. The separation that remains is per-role
-   * for every other desk, and `BR-50` (a verifier cannot approve their own
-   * POD) still keys on the acting user, so it holds for admin too.
+   * for every other desk. `BR-50` (a verifier cannot approve their own POD)
+   * still holds for those desks, but no longer for admin: since 2026-10-02 an
+   * administrator may approve a POD they verified themselves.
    */
   ADMIN: [
     'payment.release',
@@ -279,6 +290,7 @@ export const SEED_GRANTS: Record<RoleCode, Permission[]> = {
     'indent.manage',
     'indent.reassign',
     'indent.view',
+    'document.upload',
     'document.verify',
     'vendor.edit',
     'vendor.verify',
@@ -336,8 +348,8 @@ const N: Level = 'NONE';
  * manager's level rather than the other way round, so nobody lost a screen
  * they had this morning. Branch scoping moved to the user's own branch.
  *
- * ADMIN is EDIT on every module — the sidebar shows the full console and
- * every screen unlocks its controls. What ADMIN still can't do lives in
+ * ADMIN is EDIT on every module but `loading` — the sidebar shows the full
+ * console and every screen unlocks its controls. What ADMIN still can't do lives in
  * `SEED_GRANTS.ADMIN`, not here: the three permissions that never move to a
  * second role (BR-40, BR-43), plus the `approve.*` decisions, stay with
  * Finance/Compliance/Leadership so the module being unlocked never implies
@@ -437,8 +449,13 @@ export const MODULE_ACCESS: Record<ModuleKey, Record<RoleCode, Level>> = {
    */
   records: { OPS: N, COMPLIANCE: N, FINANCE: E, BD: N, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
   admin: { OPS: N, COMPLIANCE: N, FINANCE: N, BD: N, LEADERSHIP: V, ADMIN: E, LOADING_SUPERVISOR: N },
-  /** The loading supervisor's own screen: the trips assigned to them. */
-  loading: { OPS: N, COMPLIANCE: N, FINANCE: N, BD: N, LEADERSHIP: N, ADMIN: E, LOADING_SUPERVISOR: E },
+  /**
+   * The loading supervisor's own screen: the trips assigned to them. The one
+   * module ADMIN does not hold — the list is "trips assigned to *you*", and an
+   * administrator is never a trip's loading supervisor, so for them it could
+   * only ever be an empty page.
+   */
+  loading: { OPS: N, COMPLIANCE: N, FINANCE: N, BD: N, LEADERSHIP: N, ADMIN: N, LOADING_SUPERVISOR: E },
 };
 
 export const MODULE_LABEL: Record<ModuleKey, string> = {
@@ -508,6 +525,7 @@ export const PERMISSION_LABEL: Record<Permission, string> = {
   'indent.manage': 'Manage indents',
   'indent.reassign': 'Take a load off its transporter and give it to another',
   'indent.view': 'View indents',
+  'document.upload': 'Upload documents',
   'document.verify': 'Verify documents',
   'vendor.edit': 'Edit vendor records',
   'vendor.verify': 'Verify vendors',

@@ -25,6 +25,14 @@ import {
   useToast,
 } from '@/lib/ui';
 import { getInvoice, updateInvoice } from '../../apis';
+import {
+  ExtraChargeFields,
+  ExtraChargeRow,
+  extraChargesPaise,
+  hasUnnamedExtraCharge,
+  toExtraChargeRows,
+  toExtraCharges,
+} from '../../extra-charges';
 import { InvoiceDetail } from '../../types';
 
 /**
@@ -60,9 +68,9 @@ export default function EditInvoicePage() {
     unloadingRupees: 0,
     detentionRupees: 0,
     otherRupees: 0,
-    discountRupees: 0,
     notes: '',
   });
+  const [extraRows, setExtraRows] = useState<ExtraChargeRow[]>([]);
 
   useEffect(() => {
     getInvoice(id)
@@ -77,9 +85,9 @@ export default function EditInvoicePage() {
           unloadingRupees: inv.unloadingPaise / 100,
           detentionRupees: inv.detentionPaise / 100,
           otherRupees: inv.otherPaise / 100,
-          discountRupees: inv.discountPaise / 100,
           notes: inv.notes,
         });
+        setExtraRows(toExtraChargeRows(inv.extraCharges));
       })
       .catch((e) => setError(errorMessage(e)));
     listClients().then(setClients).catch(() => setClients([]));
@@ -153,8 +161,12 @@ export default function EditInvoicePage() {
   const chosen = isDraft ? billable.filter((t) => selected[t.id]) : invoice.trips;
   const freightPaise = chosen.reduce((a, t) => a + t.sellRatePaise, 0);
   const extras =
-    (form.loadingRupees + form.unloadingRupees + form.detentionRupees + form.otherRupees - form.discountRupees) * 100;
-  const subtotal = freightPaise + extras;
+    (form.loadingRupees + form.unloadingRupees + form.detentionRupees + form.otherRupees) * 100 +
+    extraChargesPaise(extraRows);
+  // The form no longer offers a discount, but an invoice raised with one
+  // keeps it — the server leaves the head alone when the body omits it.
+  const discountPaise = invoice.discountPaise ?? 0;
+  const subtotal = freightPaise + extras - discountPaise;
   const roundOffPaise = Math.round(subtotal / 100) * 100 - subtotal;
   const totalPaise = subtotal + roundOffPaise;
 
@@ -163,6 +175,10 @@ export default function EditInvoicePage() {
     (chosen.length !== invoice.tripIds.length || chosen.some((t) => !invoice.tripIds.includes(t.id)));
 
   const submit = async () => {
+    if (hasUnnamedExtraCharge(extraRows)) {
+      toast('Give every added charge a name.');
+      return;
+    }
     setBusy(true);
     try {
       await updateInvoice(id, {
@@ -174,7 +190,7 @@ export default function EditInvoicePage() {
         unloadingPaise: form.unloadingRupees * 100,
         detentionPaise: form.detentionRupees * 100,
         otherPaise: form.otherRupees * 100,
-        discountPaise: form.discountRupees * 100,
+        extraCharges: toExtraCharges(extraRows),
         notes: form.notes,
       });
       toast('Invoice updated');
@@ -284,7 +300,6 @@ export default function EditInvoicePage() {
                 ['unloadingRupees', 'Unloading'],
                 ['detentionRupees', 'Detention'],
                 ['otherRupees', 'Other'],
-                ['discountRupees', 'Discount'],
               ] as [keyof typeof form, string][]
             ).map(([key, label]) => (
               <Field key={key} label={`${label} (₹)`}>
@@ -299,12 +314,14 @@ export default function EditInvoicePage() {
               <input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
             </Field>
           </FormGrid>
+          <ExtraChargeFields rows={extraRows} onChange={setExtraRows} />
         </Panel>
 
         <Panel title="Total">
           <div style={{ display: 'grid', gap: 4, maxWidth: 380 }}>
             <Row label="Freight" value={inr(freightPaise)} />
-            <Row label="Charges and discount" value={inr(extras)} />
+            <Row label="Charges" value={inr(extras)} />
+            {discountPaise > 0 && <Row label="Discount" value={inr(-discountPaise)} />}
             <Row label="Round off" value={inr(roundOffPaise)} />
             <div
               style={{

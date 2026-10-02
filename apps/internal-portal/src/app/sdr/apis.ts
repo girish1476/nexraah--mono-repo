@@ -1,5 +1,5 @@
 import { request } from '@/apis';
-import { RaiseSdrBody, ResolveSdrBody, SdrRecord, SdrStatus, SdrSummary } from './types';
+import { ResolveSdrBody, SdrRecord, SdrStatus, SdrSummary } from './types';
 
 /** GET /sdr?status=&vendor=&trip= */
 export function listSdr(params: { status?: SdrStatus; vendor?: string; trip?: string } = {}) {
@@ -11,14 +11,8 @@ export function getSdrSummary() {
   return request<SdrSummary>({ url: '/sdr/summary', method: 'GET' });
 }
 
-/**
- * POST /trips/:id/sdr · `pod.verify` — records a shortage, damage or an
- * unacknowledged unloading. The trip's balance is on hold until it is resolved.
- * 409 NOT_DELIVERED before the load has been delivered.
- */
-export function raiseSdr(tripId: string, body: RaiseSdrBody) {
-  return request<SdrRecord>({ url: `/trips/${tripId}/sdr`, method: 'POST', data: body });
-}
+// There is no call to record one by hand: a record is raised by the check of
+// a proof of delivery (`verifyPod` / `verifyHardCopy` in `../pod/apis`).
 
 /**
  * POST /sdr/:id/waive · `pod.waive` — writes off what is still owed, on

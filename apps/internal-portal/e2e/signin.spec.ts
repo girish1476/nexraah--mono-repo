@@ -115,7 +115,7 @@ test.describe('signing in', () => {
     await page.getByRole('button', { name: /^Send me a code/ }).click();
     await page.getByLabel('Digit 1').fill(DEMO_CODE);
     await expect(page).toHaveURL(/\/today/, { timeout: NAV_TIMEOUT });
-    await expect(page.getByText('Nashik branch')).toBeVisible({ timeout: NAV_TIMEOUT });
+    await expect(page.getByText('Nashik branch').first()).toBeVisible({ timeout: NAV_TIMEOUT });
   });
 
   test('signing in stores a refresh token and an expiry, not just an access token', async ({

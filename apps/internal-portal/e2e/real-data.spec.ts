@@ -329,8 +329,12 @@ test.describe('real data, end to end', () => {
     await page.goto(orderUrl);
     await tab(page, /Documents/).click();
     await page.getByRole('button', { name: 'Verify', exact: true }).click();
+    // The check opens beside the scan, like every other document; confirm it there.
+    await page.getByRole('button', { name: 'Verify', exact: true }).last().click();
     await expect(page.getByText(/Verified · a second person/)).toBeVisible();
     await page.getByRole('button', { name: /Verify the hard copy/ }).click();
+    // The check opens beside the scan, like every other document; confirm it there.
+    await page.getByRole('button', { name: 'Verify', exact: true }).last().click();
     await expect(page.getByText(/Hard copy verified · the balance is no longer held/)).toBeVisible();
     await signInAs(page, 'LEADERSHIP');
     await page.goto(orderUrl);

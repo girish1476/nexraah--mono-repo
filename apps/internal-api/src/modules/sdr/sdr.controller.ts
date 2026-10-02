@@ -5,7 +5,7 @@ import { RequirePermission } from '../../common/decorators/require-permission.de
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
 import { SdrService } from './sdr.service';
-import { RaiseSdrDto, ResolveSdrDto } from './dto/sdr.dto';
+import { ResolveSdrDto } from './dto/sdr.dto';
 import { WaiveSdrDto } from './dto/waive-sdr.dto';
 
 @Controller()
@@ -28,12 +28,9 @@ export class SdrController {
     return this.sdrService.get(id);
   }
 
-  // Recording is done by whoever is checking the proof of delivery.
-  @Post('trips/:id/sdr')
-  @RequirePermission('pod.verify')
-  raise(@Param('id') tripId: string, @Body() dto: RaiseSdrDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.sdrService.raise(tripId, dto, user);
-  }
+  // There is no endpoint to record one by hand (owner's direction,
+  // 2026-10-03). A record is only ever raised by the check of a proof of
+  // delivery — `PodService.verify` and `verifyHardCopy`.
 
   // A transporter's unrecovered balance is only ever written off by Compliance,
   // on Leadership's mail, which is recorded with the waiver.

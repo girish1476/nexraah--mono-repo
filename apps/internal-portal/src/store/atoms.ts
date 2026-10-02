@@ -18,7 +18,16 @@ export interface Session {
   userId: string;
   name: string;
   email: string;
+  /**
+   * Always a built-in role. Someone on a custom role (added from Access
+   * control) arrives here as the built-in role theirs is based on, because
+   * that is what the screens are laid out by.
+   */
   role: RoleCode;
+  /** The custom role's own name, shown in place of the built-in label. */
+  roleLabel?: string | null;
+  /** The custom role's code; absent or `null` for a built-in role. */
+  customRole?: string | null;
   /** Server-issued list. Falls back to SEED_GRANTS before the call resolves. */
   permissions: Permission[];
   /** Set only for a branch-bound user — every list is scoped to it at the repository layer. */
@@ -40,6 +49,9 @@ export const roleAtom = atom<RoleCode>((get) => get(sessionAtom)?.role ?? 'OPS')
 export const permissionsAtom = atom<Permission[]>((get) => {
   const session = get(sessionAtom);
   if (!session) return [];
+  // A custom role holds exactly what the server says, even when that is
+  // nothing — the built-in role's seed grants are not its fallback.
+  if (session.customRole) return session.permissions ?? [];
   return session.permissions?.length ? session.permissions : SEED_GRANTS[session.role];
 });
 

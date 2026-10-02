@@ -29,7 +29,14 @@ export interface InvoiceDraft {
   detentionPaise?: number;
   otherPaise?: number;
   discountPaise?: number;
+  extraCharges?: ExtraCharge[];
   notes?: string;
+}
+
+/** A named charge line beyond the fixed heads — the form's "+ Add charge". */
+export interface ExtraCharge {
+  label: string;
+  amountPaise: number;
 }
 
 export interface Invoice {
@@ -46,7 +53,9 @@ export interface Invoice {
   unloadingPaise: number;
   detentionPaise: number;
   otherPaise: number;
+  /** No longer offered on the form — kept for invoices raised with one. */
   discountPaise: number;
+  extraCharges: ExtraCharge[];
   /** NFR-09 — rupee rounding happens here and only here. */
   roundOffPaise: number;
   totalPaise: number;

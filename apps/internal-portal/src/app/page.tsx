@@ -20,7 +20,7 @@ export default function IndexPage() {
     <div>
       <h1>Nexraah internal console</h1>
       <p className="muted">
-        Signed in as {session.name} · {ROLES[session.role].label}
+        Signed in as {session.name} · {session.roleLabel ?? ROLES[session.role].label}
       </p>
       <p>
         <Link href={ROLES[session.role].landsOn}>Go to {ROLES[session.role].landsOn}</Link>

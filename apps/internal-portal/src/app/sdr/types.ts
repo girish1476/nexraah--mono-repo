@@ -42,12 +42,6 @@ export interface SdrSummary {
   outstandingPaise: number;
 }
 
-export interface RaiseSdrBody {
-  kind: SdrKind;
-  description: string;
-  claimedAmountPaise?: number;
-}
-
 export interface ResolveSdrBody {
   deductionPaise: number;
   note?: string;

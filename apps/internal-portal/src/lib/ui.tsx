@@ -167,6 +167,7 @@ export function PageHeader({
   path: _path,
   title,
   sub,
+  badge,
   right,
   module,
 }: {
@@ -174,6 +175,8 @@ export function PageHeader({
   path?: string;
   title: string;
   sub?: string;
+  /** Sits on the title's own line, right beside it — a status pill, usually. */
+  badge?: ReactNode;
   right?: ReactNode;
   module?: ModuleKey;
 }) {
@@ -199,7 +202,14 @@ export function PageHeader({
           </Glyph>
         )}
         <div style={{ minWidth: 0 }}>
-          <h1>{title}</h1>
+          {badge ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <h1>{title}</h1>
+              {badge}
+            </div>
+          ) : (
+            <h1>{title}</h1>
+          )}
           {sub && (
             <div className="muted" style={{ fontSize: 'var(--text-md)', marginTop: 3 }}>
               {sub}
@@ -1079,6 +1089,7 @@ export function Dialog({
   onConfirm,
   onClose,
   children,
+  width = 480,
 }: {
   open: boolean;
   title: string;
@@ -1090,6 +1101,8 @@ export function Dialog({
   onConfirm: () => void;
   onClose: () => void;
   children?: ReactNode;
+  /** Wider than the default for a dialog that shows a document beside a form. */
+  width?: number;
 }) {
   if (!open) return null;
   return (
@@ -1112,7 +1125,7 @@ export function Dialog({
         onClick={(e) => e.stopPropagation()}
         className="surface"
         style={{
-          width: 480,
+          width,
           maxWidth: '100%',
           padding: '22px 24px',
           maxHeight: '90vh',

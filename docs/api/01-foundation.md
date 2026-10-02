@@ -166,6 +166,20 @@ The same two fields exist on rate card lanes and RFQ lanes — supply source is 
 
 Every accepted change writes a `PERMISSION` audit row.
 
+### Custom roles — `POST /admin/roles` · `DELETE /admin/roles/:role`
+
+**Permission** — `config.manage`.
+
+An administrator can add a role. The console's screens are laid out per built-in role, so a custom role names the built-in role whose screens it opens and carries its own named permissions.
+
+**POST body** — `{ "name": "Accounts assistant", "basedOn": "FINANCE" }`. `basedOn` ∈ `OPS · COMPLIANCE · FINANCE · BD · LEADERSHIP`. The role's code is `CUSTOM_` plus the name in upper snake case, and it starts with the base role's current permissions minus the four fixed ones. `409 ROLE_EXISTS` when the name is taken.
+
+**DELETE** — custom roles only (`409 ROLE_BUILT_IN` otherwise), and `409 ROLE_IN_USE` while any user still holds the role.
+
+Both answer with the `GET /admin/roles` shape, which lists custom roles under `customRoles: [{ "code", "label", "basedOn" }]`; everything a custom role holds is in `matrix`. `PATCH /admin/roles/:role/permissions` and `POST`/`PATCH /admin/users` accept a custom role's code.
+
+For a user on a custom role, `GET /auth/session` reports `role` as the built-in role it is based on, with `roleLabel` (the custom role's name) and `customRole` (its code) set; both are `null` for a built-in role. `permissions` are the custom role's own. Server-side checks written against a specific role code never match a custom role — it gets only what its permissions grant.
+
 ---
 
 ## `GET /approvals`

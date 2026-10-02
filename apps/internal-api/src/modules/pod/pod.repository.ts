@@ -154,6 +154,7 @@ export class PodRepository {
       hard_copy_attachment_ids?: string[];
       hard_copy_verified_at?: string | null;
       hard_copy_verified_by?: string | null;
+      hard_copy_details?: string | null;
     },
   ) {
     return db

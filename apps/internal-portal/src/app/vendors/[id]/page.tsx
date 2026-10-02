@@ -469,6 +469,21 @@ export default function VendorDetailPage() {
         title={vendor.legalName}
         sub={`${vendor.code} · ${vendor.baseCity}${vendor.constitution ? ` · ${vendor.constitution.toLowerCase()}` : ''}`}
         module="vendors"
+        badge={
+          vendor.status === 'ACTIVE' && (
+            <Tag tone="mint" emoji reason={`Cleared by ${vendor.verifiedBy ?? 'compliance'}`}>
+              Vendor active
+            </Tag>
+          )
+        }
+        right={
+          vendor.status === 'ACTIVE' &&
+          can('vendor.activate') && (
+            <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => setHoldOpen(true)}>
+              Put on hold
+            </button>
+          )
+        }
       />
 
       <Split
@@ -534,18 +549,8 @@ export default function VendorDetailPage() {
           </>
         }
       >
-        {vendor.status === 'ACTIVE' ? (
-          <Banner tone="mint" title="Vendor active">
-            Cleared by {vendor.verifiedBy ?? 'compliance'} · may be awarded indents on any branch
-            {can('vendor.activate') && (
-              <div style={{ marginTop: 8 }}>
-                <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => setHoldOpen(true)}>
-                  Put on hold
-                </button>
-              </div>
-            )}
-          </Banner>
-        ) : vendor.status === 'SUSPENDED' ? (
+        {/* An active vendor says so beside its name in the header — no banner. */}
+        {vendor.status === 'ACTIVE' ? null : vendor.status === 'SUSPENDED' ? (
           <Banner tone="red" title="On hold — no new loads">
             Compliance has put this transporter on hold. They cannot be awarded a load and their portal is
             read-only; trips already on the road carry on. The reason is on the audit trail.
@@ -612,31 +617,36 @@ export default function VendorDetailPage() {
         )}
 
         <Panel title="Trips and business" pad={false}>
-          <div className="stat-strip" style={{ border: 0 }}>
-            <div>
-              <div className="eyebrow">Trips</div>
-              <div className="stat-value">{vendor.business.trips}</div>
-            </div>
-            <div>
-              <div className="eyebrow">Revenue</div>
-              <div className="stat-value">{inrCompact(vendor.business.revenuePaise)}</div>
-            </div>
-            <div>
-              <div className="eyebrow">Our margin</div>
-              <div className="stat-value" style={{ color: 'var(--mint)' }}>
-                {inrCompact(vendor.business.marginPaise)}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 22px', padding: '12px 15px' }}>
+            {(
+              [
+                ['🚚', 'Trips', String(vendor.business.trips), undefined],
+                ['💰', 'Revenue', inrCompact(vendor.business.revenuePaise), undefined],
+                ['📈', 'Our margin', inrCompact(vendor.business.marginPaise), 'var(--mint)'],
+                [
+                  '％',
+                  'Margin %',
+                  pct(
+                    vendor.business.revenuePaise
+                      ? (vendor.business.marginPaise / vendor.business.revenuePaise) * 100
+                      : 0,
+                  ),
+                  undefined,
+                ],
+              ] as [string, string, string, string | undefined][]
+            ).map(([icon, label, value, color]) => (
+              <div key={label} style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                <span aria-hidden style={{ fontSize: 15 }}>
+                  {icon}
+                </span>
+                <span className="muted" style={{ fontSize: 12 }}>
+                  {label}
+                </span>
+                <span className="mono" style={{ fontSize: 14, fontWeight: 600, color }}>
+                  {value}
+                </span>
               </div>
-            </div>
-            <div>
-              <div className="eyebrow">Margin %</div>
-              <div className="stat-value">
-                {pct(
-                  vendor.business.revenuePaise
-                    ? (vendor.business.marginPaise / vendor.business.revenuePaise) * 100
-                    : 0,
-                )}
-              </div>
-            </div>
+            ))}
           </div>
           <div style={{ padding: '0 15px 14px' }}>
             <div className="eyebrow" style={{ marginBottom: 6 }}>

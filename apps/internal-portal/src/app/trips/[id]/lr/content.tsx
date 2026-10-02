@@ -270,7 +270,7 @@ export function LorryReceiptContent({
           <button
             className="btn btn-secondary btn-lg"
             onClick={() => setChoosing('MANUAL')}
-            disabled={!can('indent.manage') && !can('document.verify') && !isSupervisor}
+            disabled={!can('document.upload') && !isSupervisor}
             style={{ flex: '1 1 220px' }}
           >
             📎 Upload one manually

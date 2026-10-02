@@ -1,4 +1,6 @@
-import { IsArray, IsDateString, IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+import { ArrayMaxSize, IsArray, IsDateString, IsInt, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
+import { ExtraChargeDto } from './create-invoice.dto';
 
 /**
  * Every field optional — a partial update, not a resubmission of the whole
@@ -24,5 +26,12 @@ export class UpdateInvoiceDto {
   @IsOptional() @IsInt() @Min(0) detentionPaise?: number;
   @IsOptional() @IsInt() @Min(0) otherPaise?: number;
   @IsOptional() @IsInt() @Min(0) discountPaise?: number;
+  /** Replaces the whole list when present — an empty array clears it. */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => ExtraChargeDto)
+  extraCharges?: ExtraChargeDto[];
   @IsOptional() @IsString() notes?: string;
 }

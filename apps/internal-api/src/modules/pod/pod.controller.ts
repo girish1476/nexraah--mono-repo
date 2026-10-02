@@ -9,7 +9,7 @@ import { AddDocketDto } from './dto/add-docket.dto';
 import { ReceivePodDto } from './dto/receive-pod.dto';
 import { UploadEpodDto } from './dto/upload-epod.dto';
 import { HardCopyDto } from './dto/hard-copy.dto';
-import { VerifyPodDto } from './dto/verify-pod.dto';
+import { PodFindingsDto, VerifyPodDto } from './dto/verify-pod.dto';
 import { RejectPodDto } from './dto/reject-pod.dto';
 import { WaivePenaltyDto } from './dto/waive-pod.dto';
 
@@ -45,8 +45,8 @@ export class PodController {
   /** The check on the hard copy behind an E-POD — what releases the hold on the balance. */
   @Post(':tripId/hard-copy/verify')
   @RequirePermission('pod.verify')
-  verifyHardCopy(@Param('tripId') tripId: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.podService.verifyHardCopy(tripId, user);
+  verifyHardCopy(@Param('tripId') tripId: string, @Body() dto: PodFindingsDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.podService.verifyHardCopy(tripId, dto, user);
   }
 
   /** The hard copy behind an E-POD: its scan, or its courier docket while it is on the way. */

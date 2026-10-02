@@ -31,6 +31,7 @@ The `invoices` table nonetheless keeps nil tax-component columns and `tax_mechan
   "tripIds": ["t-120874"],
   "freightPaise": 2240000, "loadingPaise": 0, "unloadingPaise": 0,
   "detentionPaise": 0, "otherPaise": 0, "discountPaise": 0,
+  "extraCharges": [{ "label": "Toll", "amountPaise": 45000 }],
   "roundOffPaise": 0, "totalPaise": 2240000, "receivedPaise": 1000000,
   "taxMechanism": "REVERSE_CHARGE",
   "status": "PART_PAID", "cancelReason": null, "notes": ""
@@ -71,6 +72,10 @@ The list shape plus everything the detail page and the print sheet need in one c
 **Rounding to the rupee happens here and only here** — `roundOffPaise` (`NFR-09`). Every upstream figure stayed exact in paise.
 
 Freight is always billed. Loading, unloading, detention and other appear **only where that client's arrangement provides for them** (`D-04`), and the figures are the marked-up **billed** values from charge capture, not the cost paid to the transporter (`BR-45`, `D-25`).
+
+`extraCharges` is a list of named charge lines beyond the fixed heads — `{ "label": "…", "amountPaise": n }`, at most 20, label required and ≤ 60 characters. Each adds to the total. On `PATCH /invoices/:id` the list replaces the stored one when present (`[]` clears it) and is left alone when omitted.
+
+`discountPaise` is still accepted and still printed where an invoice carries one, but the invoice form no longer offers it.
 
 ---
 

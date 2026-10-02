@@ -35,6 +35,7 @@ export class InvoicingRepository {
         'invoices.detention as detentionPaise',
         'invoices.other as otherPaise',
         'invoices.discount as discountPaise',
+        'invoices.extra_charges as extraCharges',
         'invoices.round_off as roundOffPaise',
         'invoices.total as totalPaise',
         'invoices.received as receivedPaise',
@@ -81,6 +82,8 @@ export class InvoicingRepository {
       detention: number;
       other: number;
       discount: number;
+      /** JSON-encoded `{ label, amountPaise }[]`. */
+      extra_charges: string;
       round_off: number;
       total: number;
       notes: string | null;

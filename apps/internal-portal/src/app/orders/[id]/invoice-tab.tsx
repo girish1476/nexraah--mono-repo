@@ -99,7 +99,8 @@ export function OrderInvoiceTab({ order }: { order: OrderDetail }) {
             ...(invoice.unloadingPaise ? ([['Unloading', inr(invoice.unloadingPaise)]] as [string, string][]) : []),
             ...(invoice.detentionPaise ? ([['Detention', inr(invoice.detentionPaise)]] as [string, string][]) : []),
             ...(invoice.otherPaise ? ([['Other', inr(invoice.otherPaise)]] as [string, string][]) : []),
-            ...(invoice.discountPaise ? ([['Discount', `− ${inr(invoice.discountPaise)}`]] as [string, string][]) : []),
+            ...(invoice.extraCharges ?? []).map((c): [string, string] => [c.label, inr(c.amountPaise)]),
+            ...(invoice.discountPaise ?([['Discount', `− ${inr(invoice.discountPaise)}`]] as [string, string][]) : []),
             ['Invoice total', <strong key="t">{inr(invoice.totalPaise)}</strong>],
             ['Received so far', inr(invoice.receivedPaise)],
             [

@@ -14,7 +14,11 @@ import { Shell } from './shell';
 const PUBLIC_PATHS = ['/signin'];
 
 function isPublic(pathname: string | null): boolean {
-  return Boolean(pathname && (pathname.startsWith('/print') || PUBLIC_PATHS.includes(pathname)));
+  // `/track/<token>` is the shared live-tracking page a client or a truck owner
+  // opens from WhatsApp or SMS — they have no login; the token is the key.
+  return Boolean(
+    pathname && (pathname.startsWith('/print') || pathname.startsWith('/track/') || PUBLIC_PATHS.includes(pathname)),
+  );
 }
 
 /**

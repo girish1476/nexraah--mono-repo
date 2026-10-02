@@ -1,22 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import { errorMessage } from '@/apis';
 import { downloadCsv, todayStamp } from '@/lib/export-csv';
-import { fmtDate, inr } from '@/lib/format';
-import {
-  Column,
-  DataTable,
-  EmptyState,
-  ErrorState,
-  Loading,
-  Panel,
-  Tag,
-  Tone,
-  useCan,
-  useToast,
-} from '@/lib/ui';
+import { ErrorState, Loading, Panel, Tone, useToast } from '@/lib/ui';
 import { ORDER_STATUS_LABEL, ORDER_STATUS_TONE, OrderStatus } from '../../orders/types';
 import { getVendorPlacements } from '../apis';
 import { VendorPlacement } from '../types';
@@ -39,24 +26,20 @@ function stateOf(p: VendorPlacement): { label: string; tone: Tone } {
   return { label: p.stage.replace(/_/g, ' ').toLowerCase(), tone: 'grey' };
 }
 
-/** Same rule the orders list uses to squash a truck number, so "MH 12 AB 1234" finds "MH12AB1234". */
-const squash = (v: string | null | undefined) => (v ?? '').toLowerCase().replace(/[\s-]+/g, '');
-
 /**
  * Loads placed with one transporter — the panel on `/vendors/[id]`.
  *
- * The vendor file used to say "41 trips" and stop there: nobody could open the
- * number and see which loads it was made of. This is that list, with the
- * vehicle and driver each load was placed on, where the order stands now, and
- * a spreadsheet export of whatever the search is currently showing.
+ * This used to list every load in a searchable table. All orders already does
+ * that search, so the list was dropped (owner's direction, 2026-10-03): what
+ * is left is the spreadsheet of this transporter's loads, narrowed by pickup
+ * date when a from/to is given.
  */
 export function VendorPlacements({ vendorId, vendorCode }: { vendorId: string; vendorCode: string }) {
-  const can = useCan();
   const toast = useToast();
   const [rows, setRows] = useState<VendorPlacement[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [q, setQ] = useState('');
-  const [state, setState] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
 
   const load = () => {
     setError(null);
@@ -66,25 +49,23 @@ export function VendorPlacements({ vendorId, vendorCode }: { vendorId: string; v
   };
   useEffect(load, [vendorId]);
 
-  const stateOptions = useMemo(
-    () => Array.from(new Set((rows ?? []).map((r) => stateOf(r).label))).sort(),
-    [rows],
+  // Both ends inclusive, on the pickup date. A load with no pickup date only
+  // shows when no range is set.
+  const shown = useMemo(
+    () =>
+      (rows ?? []).filter((r) => {
+        if (!from && !to) return true;
+        const day = r.pickupDate?.slice(0, 10);
+        if (!day) return false;
+        return (!from || day >= from) && (!to || day <= to);
+      }),
+    [rows, from, to],
   );
 
-  const shown = useMemo(() => {
-    const needle = squash(q);
-    return (rows ?? []).filter((r) => {
-      if (state && stateOf(r).label !== state) return false;
-      if (!needle) return true;
-      return [r.indentCode, r.tripCode, r.clientName, r.lane, r.vehicleNo, r.driverName, r.material].some(
-        (v) => squash(v).includes(needle),
-      );
-    });
-  }, [rows, q, state]);
-
   const exportRows = () => {
+    const range = from || to ? `-${from || 'start'}-to-${to || todayStamp()}` : `-${todayStamp()}`;
     downloadCsv(
-      `${vendorCode}-placements-${todayStamp()}.csv`,
+      `${vendorCode}-placements${range}.csv`,
       [
         'Load request',
         'Trip',
@@ -129,118 +110,34 @@ export function VendorPlacements({ vendorId, vendorCode }: { vendorId: string; v
     toast(`Exported ${shown.length} placement${shown.length === 1 ? '' : 's'}`);
   };
 
-  const columns: Column<VendorPlacement>[] = [
-    {
-      key: 'order',
-      label: 'Order',
-      primary: true,
-      render: (r) =>
-        can('indent.view') ? (
-          <Link href={`/orders/${r.indentId}`} className="mono" style={{ fontSize: 12 }}>
-            {r.indentCode}
-          </Link>
-        ) : (
-          <span className="mono" style={{ fontSize: 12 }}>
-            {r.indentCode}
-          </span>
-        ),
-    },
-    { key: 'client', label: 'Client', render: (r) => r.clientName },
-    {
-      key: 'lane',
-      label: 'Route',
-      render: (r) => r.lane,
-      sub: (r) => `${r.material} · ${r.weightTn} MT · ${r.truckType}`,
-    },
-    { key: 'pickup', label: 'Pickup', render: (r) => fmtDate(r.pickupDate) },
-    {
-      key: 'vehicle',
-      label: 'Vehicle placed',
-      render: (r) =>
-        r.vehicleNo ? (
-          <span className="mono" style={{ fontSize: 12 }}>
-            {r.vehicleNo}
-          </span>
-        ) : (
-          <span className="muted">Not yet</span>
-        ),
-      sub: (r) => (r.driverName ? `${r.driverName}${r.placedAt ? ` · reported ${fmtDate(r.placedAt)}` : ''}` : ''),
-    },
-    {
-      key: 'state',
-      label: 'Where it stands',
-      render: (r) => {
-        const s = stateOf(r);
-        return <Tag tone={s.tone}>{s.label}</Tag>;
-      },
-      sub: (r) => (r.tripCode ? `Trip ${r.tripCode}` : ''),
-    },
-    {
-      key: 'rate',
-      label: 'Rate we pay',
-      align: 'right',
-      render: (r) => (r.buyRatePaise === null ? '—' : inr(r.buyRatePaise)),
-    },
-  ];
-
   return (
-    <Panel
-      title="Loads placed with this transporter"
-      pad={false}
-      right={
-        <button className="btn btn-secondary btn-sm" disabled={shown.length === 0} onClick={exportRows}>
-          ⬇️ Export {shown.length === (rows?.length ?? 0) ? 'all' : 'these'} ({shown.length})
-        </button>
-      }
-    >
+    <Panel title="Loads placed with this transporter">
       {error ? (
         <ErrorState message={error} retry={load} />
       ) : !rows ? (
         <Loading what="Loading their loads" />
       ) : (
         <>
-          <div
-            style={{ display: 'flex', gap: 10, flexWrap: 'wrap', padding: '12px 14px' }}
-            role="search"
-            aria-label="Search this transporter’s loads"
-          >
-            <input
-              style={{ flex: '1 1 240px' }}
-              type="search"
-              placeholder="Order, client, city, truck number or driver"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-            />
-            <select
-              style={{ flex: '0 1 240px' }}
-              value={state}
-              onChange={(e) => setState(e.target.value)}
-              aria-label="Where it stands"
-            >
-              <option value="">Any stage</option>
-              {stateOptions.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <label style={{ display: 'grid', gap: 4, fontSize: 12.5 }}>
+              <span className="muted">Pickup from</span>
+              <input type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} />
+            </label>
+            <label style={{ display: 'grid', gap: 4, fontSize: 12.5 }}>
+              <span className="muted">Pickup to</span>
+              <input type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} />
+            </label>
+            <button className="btn btn-secondary" disabled={shown.length === 0} onClick={exportRows}>
+              ⬇️ Download ({shown.length})
+            </button>
           </div>
-          <DataTable
-            columns={columns}
-            rows={shown}
-            rowKey={(r) => r.indentId}
-            empty={
-              rows.length === 0 ? (
-                <EmptyState
-                  emoji="🚛"
-                  title="No loads have been given to this transporter yet"
-                  hint="A load appears here the moment it is awarded to them, before any vehicle is named."
-                />
-              ) : (
-                <EmptyState emoji="🔎" title="Nothing matches that search" hint="Clear the search or pick another stage." />
-              )
-            }
-          />
+          <p className="muted" style={{ fontSize: 12.5, marginBottom: 0 }}>
+            {rows.length === 0
+              ? 'No loads have been given to this transporter yet.'
+              : shown.length === 0
+                ? 'No loads were picked up in that range.'
+                : 'Leave the dates empty to download every load. To look up a single load, search All orders.'}
+          </p>
         </>
       )}
     </Panel>

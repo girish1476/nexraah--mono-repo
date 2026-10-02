@@ -75,7 +75,8 @@ export class InvoicingService {
     const client = await this.invoicingRepository.findClientById(dto.clientId);
     if (!client) throw new DomainException(404, 'NOT_FOUND', `Unknown client: ${dto.clientId}`);
 
-    const heads = this.normaliseHeads(dto);
+    const extraCharges = this.cleanExtraCharges(dto.extraCharges ?? []);
+    const heads = { ...this.normaliseHeads(dto), extra: this.sumExtraCharges(extraCharges) };
     const { totalPaise, roundOffPaise } = this.computeTotals(heads);
     const tripIds = dto.tripIds ?? [];
 
@@ -117,6 +118,7 @@ export class InvoicingService {
         detention: heads.detention,
         other: heads.other,
         discount: heads.discount,
+        extra_charges: JSON.stringify(extraCharges),
         round_off: roundOffPaise,
         total: totalPaise,
         notes: dto.notes ?? null,
@@ -214,6 +216,9 @@ export class InvoicingService {
         }
       }
 
+      const extraCharges = dto.extraCharges
+        ? this.cleanExtraCharges(dto.extraCharges)
+        : this.storedExtraCharges(row.extra_charges);
       const heads = {
         freight,
         loading: dto.loadingPaise ?? row.loading,
@@ -221,6 +226,7 @@ export class InvoicingService {
         detention: dto.detentionPaise ?? row.detention,
         other: dto.otherPaise ?? row.other,
         discount: dto.discountPaise ?? row.discount,
+        extra: this.sumExtraCharges(extraCharges),
       };
       const { totalPaise, roundOffPaise } = this.computeTotals(heads);
 
@@ -236,6 +242,7 @@ export class InvoicingService {
         detention: heads.detention,
         other: heads.other,
         discount: heads.discount,
+        extra_charges: JSON.stringify(extraCharges),
         round_off: roundOffPaise,
         total: totalPaise,
         notes: dto.notes ?? row.notes,
@@ -270,6 +277,7 @@ export class InvoicingService {
         detention: row.detention,
         other: row.other,
         discount: row.discount,
+        extra: this.sumExtraCharges(this.storedExtraCharges(row.extra_charges)),
       });
 
       // BR-14: consumed inside the issuing transaction.
@@ -454,10 +462,31 @@ export class InvoicingService {
     detention: number;
     other: number;
     discount: number;
+    /** Sum of the named extra charge lines. */
+    extra: number;
   }) {
-    const sum = heads.freight + heads.loading + heads.unloading + heads.detention + heads.other - heads.discount;
+    const sum =
+      heads.freight + heads.loading + heads.unloading + heads.detention + heads.other + heads.extra - heads.discount;
     const totalPaise = Math.round(sum / 100) * 100;
     return { totalPaise, roundOffPaise: totalPaise - sum };
+  }
+
+  private cleanExtraCharges(lines: { label: string; amountPaise: number }[]) {
+    return lines.map((l) => ({ label: l.label.trim(), amountPaise: l.amountPaise }));
+  }
+
+  /** `invoices.extra_charges` is jsonb — read back defensively, never trusted as typed. */
+  private storedExtraCharges(value: unknown): { label: string; amountPaise: number }[] {
+    if (!Array.isArray(value)) return [];
+    return value.flatMap((l) =>
+      l && typeof l === 'object' && typeof l.label === 'string' && Number.isInteger(l.amountPaise)
+        ? [{ label: l.label as string, amountPaise: l.amountPaise as number }]
+        : [],
+    );
+  }
+
+  private sumExtraCharges(lines: { amountPaise: number }[]) {
+    return lines.reduce((sum, l) => sum + l.amountPaise, 0);
   }
 
   private bucketOf(dueDate: string, todayMs: number): AgeingBucket {
@@ -588,6 +617,7 @@ export class InvoicingService {
       detention: number;
       other: number;
       discount: number;
+      extra_charges: unknown;
       round_off: number;
       total: number;
       received: number;
@@ -611,6 +641,7 @@ export class InvoicingService {
       detentionPaise: row.detention,
       otherPaise: row.other,
       discountPaise: row.discount,
+      extraCharges: row.extra_charges,
       roundOffPaise: row.round_off,
       totalPaise: row.total,
       receivedPaise: row.received,
@@ -635,6 +666,7 @@ export class InvoicingService {
       detentionPaise: number;
       otherPaise: number;
       discountPaise: number;
+      extraCharges: unknown;
       roundOffPaise: number;
       totalPaise: number;
       receivedPaise: number;
@@ -659,6 +691,7 @@ export class InvoicingService {
       detentionPaise: row.detentionPaise,
       otherPaise: row.otherPaise,
       discountPaise: row.discountPaise,
+      extraCharges: this.storedExtraCharges(row.extraCharges),
       roundOffPaise: row.roundOffPaise,
       totalPaise: row.totalPaise,
       receivedPaise: row.receivedPaise,

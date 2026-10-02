@@ -13,7 +13,9 @@ import { PodRepository } from './pod.repository';
 import type { AddDocketDto } from './dto/add-docket.dto';
 import type { WaivePenaltyDto } from './dto/waive-pod.dto';
 import type { ReceivePodDto } from './dto/receive-pod.dto';
-import type { VerifyPodDto } from './dto/verify-pod.dto';
+import type { PodFindingsDto, VerifyPodDto } from './dto/verify-pod.dto';
+import { computeTransitPenalty } from '../../common/transit-penalty';
+import type { DbExecutor } from '../../db/kysely';
 import type { UploadEpodDto } from './dto/upload-epod.dto';
 import type { HardCopyDto } from './dto/hard-copy.dto';
 import { SdrRepository } from '../sdr/sdr.repository';
@@ -359,8 +361,10 @@ export class PodService implements OnModuleInit {
    * The check on the hard copy behind an E-POD — the last thing the balance
    * waits for. Only an uploaded scan can be verified.
    */
-  async verifyHardCopy(tripId: string, actor: AuthenticatedUser) {
+  async verifyHardCopy(tripId: string, dto: PodFindingsDto, actor: AuthenticatedUser) {
     return this.podRepository.transaction().execute(async (trx) => {
+      const trip = await this.podRepository.findTripForUpdate(trx, tripId);
+      if (!trip) throw new DomainException(404, 'NOT_FOUND', `Unknown trip: ${tripId}`);
       const receipt = await this.podRepository.findReceiptForUpdate(trx, tripId);
       if (!receipt || receipt.pod_kind !== 'EPOD') {
         throw new DomainException(409, 'NO_EPOD', 'There is no E-POD on this trip, so no separate hard copy to verify.');
@@ -375,15 +379,124 @@ export class PodService implements OnModuleInit {
       await this.podRepository.updateHardCopy(trx, receipt.id, {
         hard_copy_verified_at: now,
         hard_copy_verified_by: actor.userId,
+        hard_copy_details: JSON.stringify({ ...(dto.details ?? {}), remarks: dto.remarks ?? null }),
       });
+      // Whatever the hard copy shows that the soft copy did not: charges,
+      // shortages and damages, a corrected delivery date.
+      const sdrCodes = await this.applyFindings(trx, trip, dto, actor, 'HARD_COPY_CHECK');
       await this.auditService.record(trx, actor, {
         action: 'POD_HARD_COPY_VERIFIED',
         entityType: 'trips',
         entityId: tripId,
-        after: { verifiedAt: now },
+        after: { verifiedAt: now, remarks: dto.remarks ?? null, sdrs: sdrCodes },
       });
-      return { tripId, verifiedAt: now, verifiedBy: actor.name };
+      return { tripId, verifiedAt: now, verifiedBy: actor.name, sdrCodes };
     });
+  }
+
+  /**
+   * What a check of the proof found, written where each thing lives:
+   *
+   * - charges → `trip_charges` (BR-56), exactly as `POST /trips/:id/charges` would;
+   * - a shortage or a damage → its own SDR, which holds the balance until resolved;
+   * - a corrected delivery date → the trip's `delivered_at`, with the transit
+   *   days and the late-delivery penalty worked out again from it.
+   *
+   * Returns the codes of the SDRs raised.
+   */
+  private async applyFindings(
+    trx: DbExecutor,
+    trip: {
+      id: string;
+      indent_id: string;
+      vendor_id: string;
+      delivered_at: string | Date | null;
+      loading_completed_at: string | Date | null;
+      departed_at: string | Date | null;
+      transit_days_required: number | null;
+      transit_penalty_waived: boolean | null;
+    },
+    dto: PodFindingsDto,
+    actor: AuthenticatedUser,
+    from: 'POD_CHECK' | 'HARD_COPY_CHECK',
+  ): Promise<string[]> {
+    for (const charge of dto.charges ?? []) {
+      if (charge.costAmountPaise === 0 && charge.billedAmountPaise === 0) continue;
+      await this.podRepository.insertCharge(trx, {
+        tripId: trip.id,
+        chargeType: charge.chargeType,
+        costAmountPaise: charge.costAmountPaise,
+        billedAmountPaise: charge.billedAmountPaise,
+        capturedBy: actor.userId,
+      });
+    }
+
+    const codes: string[] = [];
+    for (const finding of dto.findings ?? []) {
+      const description = finding.description.trim();
+      if (description.length < 5) {
+        throw new DomainException(400, 'VALIDATION_ERROR', `Describe the ${finding.kind.toLowerCase()} in a few words.`);
+      }
+      const code = await this.numberingService.issue(trx, 'SDR');
+      await this.sdrRepository.insert(trx, {
+        code,
+        tripId: trip.id,
+        vendorId: trip.vendor_id,
+        kind: finding.kind,
+        description,
+        claimedPaise: finding.claimedAmountPaise ?? 0,
+        raisedBy: actor.userId,
+      });
+      await this.auditService.record(trx, actor, {
+        action: 'SDR_RAISED',
+        entityType: 'trips',
+        entityId: trip.id,
+        after: { sdr: code, kind: finding.kind, claimedAmountPaise: finding.claimedAmountPaise ?? 0, from },
+      });
+      codes.push(code);
+    }
+
+    const currentDay = trip.delivered_at ? new Date(trip.delivered_at).toISOString().slice(0, 10) : null;
+    if (dto.deliveredOn && dto.deliveredOn.slice(0, 10) !== currentDay) {
+      const day = dto.deliveredOn.slice(0, 10);
+      const startedAt = trip.loading_completed_at ?? trip.departed_at;
+      const startDay = startedAt ? new Date(startedAt).toISOString().slice(0, 10) : null;
+      if (day > new Date().toISOString().slice(0, 10)) {
+        throw new DomainException(400, 'VALIDATION_ERROR', 'The delivery date cannot be in the future.');
+      }
+      if (startDay && day < startDay) {
+        throw new DomainException(400, 'VALIDATION_ERROR', 'The delivery date cannot be before the truck was loaded.');
+      }
+      // Noon, so the day does not slip across a timezone when it is shown.
+      const deliveredAt = `${day}T12:00:00.000Z`;
+      const lane = await trx
+        .selectFrom('indents')
+        .innerJoin('rate_card_lanes', 'rate_card_lanes.id', 'indents.rate_card_lane_id')
+        .select(['rate_card_lanes.transit_penalty_applies as applies', 'rate_card_lanes.transit_penalty_per_day as perDay'])
+        .where('indents.id', '=', trip.indent_id)
+        .executeTakeFirst();
+      const transit = computeTransitPenalty({
+        startedAt: startedAt ? new Date(startedAt).toISOString() : null,
+        deliveredAt,
+        requiredDays: trip.transit_days_required,
+        applies: lane?.applies ?? false,
+        perDayPaise: Number(lane?.perDay ?? 0),
+      });
+      await this.podRepository.updateTrip(trx, trip.id, {
+        delivered_at: deliveredAt,
+        actual_transit_days: transit.actualDays,
+        // A penalty Leadership waived stays waived, whatever the date becomes.
+        ...(trip.transit_penalty_waived ? {} : { transit_penalty: transit.penaltyPaise }),
+      });
+      await this.auditService.record(trx, actor, {
+        action: 'DELIVERY_DATE_CORRECTED',
+        entityType: 'trips',
+        entityId: trip.id,
+        before: { deliveredOn: currentDay },
+        after: { deliveredOn: day, actualTransitDays: transit.actualDays, transitPenaltyPaise: transit.penaltyPaise, from },
+      });
+    }
+    return codes;
   }
 
   async getById(tripId: string) {
@@ -439,8 +552,11 @@ export class PodService implements OnModuleInit {
             // E-POD only: the scanned hard copy and its check, which the balance waits for.
             attachmentIds: receipt.pod_kind === 'EPOD' ? (receipt.hard_copy_attachment_ids ?? []) : receipt.attachment_ids ?? [],
             verifiedAt: receipt.pod_kind === 'EPOD' ? receipt.hard_copy_verified_at : receipt.verified_at,
+            details: receipt.pod_kind === 'EPOD' ? (receipt.hard_copy_details ?? null) : null,
           }
         : null,
+      // The details typed in when the proof was checked (received by, quantity, remarks).
+      details: receipt?.details ?? null,
       // True while an E-POD's hard copy has not been uploaded and verified — the balance is held.
       hardCopyHoldsBalance:
         receipt?.pod_kind === 'EPOD' && !receipt.hard_copy_verified_at,
@@ -451,7 +567,7 @@ export class PodService implements OnModuleInit {
       pages: receipt?.pages ?? null,
       attachmentIds: receipt?.attachment_ids ?? [],
       // BR-50 presentation half: the frontend withholds Approve when this
-      // equals the signed-in user's id.
+      // equals the signed-in user's id, unless they are an administrator.
       verifiedBy: receipt?.verified_by ?? null,
       approvedBy: receipt?.approved_by ?? null,
       charges: charges.map((c) => ({
@@ -465,7 +581,8 @@ export class PodService implements OnModuleInit {
 
   async verify(tripId: string, dto: VerifyPodDto, actor: AuthenticatedUser) {
     const checklistFailed = Object.values(dto.checklist).some((v) => v === false);
-    if (checklistFailed && !dto.remarks) {
+    // A finding carries its own description, so the remarks are only mandatory without one.
+    if (checklistFailed && !dto.remarks && (dto.findings ?? []).length === 0) {
       throw new DomainException(400, 'REMARKS_REQUIRED', 'Remarks are required when any checklist item fails.');
     }
 
@@ -482,20 +599,12 @@ export class PodService implements OnModuleInit {
         verified_by: actor.userId,
         verified_at: new Date().toISOString(),
         checklist: JSON.stringify(dto.checklist),
+        details: JSON.stringify({ ...(dto.details ?? {}), remarks: dto.remarks ?? null }),
       });
       await this.podRepository.updateTrip(trx, tripId, { pod_status: 'VERIFIED' });
 
-      // BR-56: charges captured here, landing in trip_charges exactly as
-      // POST /trips/:id/charges would.
-      for (const charge of dto.charges ?? []) {
-        await this.podRepository.insertCharge(trx, {
-          tripId,
-          chargeType: charge.chargeType,
-          costAmountPaise: charge.costAmountPaise,
-          billedAmountPaise: charge.billedAmountPaise,
-          capturedBy: actor.userId,
-        });
-      }
+      // Charges, shortages and damages, and a corrected delivery date.
+      const findingCodes = await this.applyFindings(trx, trip, dto, actor, 'POD_CHECK');
 
       await this.auditService.record(trx, actor, {
         action: 'STATUS_CHANGE',
@@ -514,8 +623,10 @@ export class PodService implements OnModuleInit {
        * damaged load. The remarks are now the SDR, raised in the same
        * transaction, which also holds the balance until it is resolved.
        */
-      const sdrKind = sdrKindFromChecklist(dto);
-      let sdrCode: string | null = null;
+      // Findings sent explicitly were raised above, one SDR each; this is the
+      // older path, where the remarks alone stand for the shortage or damage.
+      const sdrKind = (dto.findings ?? []).length > 0 ? null : sdrKindFromChecklist(dto);
+      let sdrCode: string | null = findingCodes[0] ?? null;
       if (sdrKind) {
         sdrCode = await this.numberingService.issue(trx, 'SDR');
         await this.sdrRepository.insert(trx, {
@@ -535,7 +646,7 @@ export class PodService implements OnModuleInit {
         });
       }
 
-      return { tripId, podStatus: 'VERIFIED', sdrCode };
+      return { tripId, podStatus: 'VERIFIED', sdrCode, sdrCodes: sdrCode && findingCodes.length === 0 ? [sdrCode] : findingCodes };
     });
     // Step 9, "POD verified". Note the ladder stops here until the balance is
     // released — approval is a separate gate the ten steps don't name.
@@ -608,9 +719,10 @@ export class PodService implements OnModuleInit {
       }
 
       const receipt = await this.podRepository.findReceiptForUpdate(trx, tripId);
-      // BR-50, layer 2 (the service check). Layer 1 is the DB CHECK
-      // constraint on pod_receipts; layer 3 is the button not rendering.
-      if (receipt?.verified_by === actor.userId) {
+      // BR-50, layer 2 (the service check). Layer 1 is the DB trigger on
+      // pod_receipts; layer 3 is the button not rendering. An administrator
+      // is exempt in all three (owner's direction, 2026-10-02).
+      if (receipt?.verified_by === actor.userId && actor.role !== 'ADMIN') {
         throw new DomainException(409, 'APPROVER_IS_VERIFIER', 'The verifier cannot approve their own POD.');
       }
 

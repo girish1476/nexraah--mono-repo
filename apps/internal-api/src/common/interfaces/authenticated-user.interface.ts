@@ -21,7 +21,15 @@ export interface AuthenticatedUser {
   authUserId: string;
   name: string;
   email: string;
+  /**
+   * `roles.code` as stored. For a custom role this is its own `CUSTOM_…` code,
+   * which matches none of the `InternalRole` literals — so every check written
+   * as `role === 'FINANCE'` correctly says no, and a custom role gets only
+   * what its permissions grant.
+   */
   role: InternalRole;
+  /** Set when the role is one an administrator added: its name, and the built-in role whose screens it opens. */
+  customRole?: { name: string; basedOn: InternalRole } | null;
   branch: { id: string; code: string; name: string } | null;
   permissions: Map<string, PermissionLevel>;
 }

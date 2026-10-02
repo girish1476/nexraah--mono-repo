@@ -177,7 +177,7 @@ test.describe('today — branch scoping (a scoped Operations user)', () => {
     // unless something checks the claim actually arrived.
     await setRole(page, scopedOperations());
     await page.goto('/today');
-    await expect(page.getByText('Nashik branch')).toBeVisible();
+    await expect(page.getByText('Nashik branch').first()).toBeVisible();
 
     await setRole(page, 'OPS');
     await page.goto('/today');

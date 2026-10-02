@@ -6,8 +6,7 @@ import { useEffect, useState } from 'react';
 import { useAtomValue } from 'jotai';
 import { errorMessage } from '@/apis';
 import { fmtDate, inr, inrCompact } from '@/lib/format';
-import { navFor } from '@/lib/permissions';
-import { permissionsAtom, sessionAtom } from '@/store/atoms';
+import { sessionAtom } from '@/store/atoms';
 import {
   ActionCard,
   AllClear,
@@ -18,17 +17,19 @@ import {
   Loading,
   ModuleGuard,
   Panel,
-  QuickLinks,
   SectionHead,
   Stack,
   StatStrip,
   Tag,
   Tone,
-  useRole,
+  useCan,
 } from '@/lib/ui';
+import { getDeskTargets } from '@/app/admin/targets/apis';
+import { DeskTargets, TARGET_EMOJI, TARGET_LABEL, TargetProgress, TargetUnit } from '@/app/admin/targets/types';
 import { Issue } from '@/app/vendors/types';
 import { getToday } from './apis';
 import { FailureCause, TodayResponse } from './types';
+import { loadDeskWork, WorkItem } from './work';
 
 const CAUSE_LABEL: Record<FailureCause, string> = {
   NO_QUOTE_AT_ALL: 'No transporter quoted at all',
@@ -46,11 +47,53 @@ const SEVERITY_LABEL: Record<Issue['severity'], string> = {
 };
 const SEVERITY_EMOJI: Record<Issue['severity'], string> = { LOW: '🔵', MEDIUM: '⚠️', HIGH: '⛔' };
 
-/** Before noon this reads as a greeting; after it, as a fact. Both are fine. */
+/** By the clock on the reader's own machine. Late at night nobody is wished a good anything. */
 function greeting(hour: number): string {
+  if (hour < 5) return 'Welcome';
   if (hour < 12) return 'Good morning';
   if (hour < 17) return 'Good afternoon';
-  return 'Good evening';
+  if (hour < 21) return 'Good evening';
+  return 'Welcome';
+}
+
+/** The name to greet by: the first word that is a name, not an initial — "S. Krishnan" is Krishnan. */
+function greetingName(full: string): string {
+  const words = full.trim().split(/\s+/).filter(Boolean);
+  return words.find((w) => w.replace(/\./g, '').length > 1) ?? words[0] ?? '';
+}
+
+const monthName = (month: string, opts: Intl.DateTimeFormatOptions) =>
+  new Date(`${month}-01T00:00:00`).toLocaleDateString('en-IN', opts);
+
+/** One period of one measure: what is done, what was aimed for, and how far along that is. */
+function TargetLine({ label, unit, progress }: { label: string; unit: TargetUnit; progress: TargetProgress }) {
+  const show = (v: number) => (unit === 'PAISE' ? inrCompact(v) : String(v));
+  const { target, achieved } = progress;
+  const done = target ? Math.round((achieved / target) * 100) : null;
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12.5 }}>
+        <span className="muted">{label}</span>
+        <span>
+          <strong>{show(achieved)}</strong>
+          {target === null ? (
+            <span className="muted"> · no target set</span>
+          ) : (
+            <span className="muted">
+              {' '}
+              of {show(target)}
+              {done !== null && ` · ${done}%`}
+            </span>
+          )}
+        </span>
+      </div>
+      {target !== null && (
+        <div className="bar" style={{ marginTop: 6 }}>
+          <span style={{ width: `${Math.max(0, Math.min(100, done ?? 100))}%` }} />
+        </div>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -63,66 +106,74 @@ function greeting(hour: number): string {
  * that answer and keeps the tables underneath, where they belong, for the
  * working-through part.
  *
- * The shape is: one sentence at the top saying how today looks · one card per
- * pile of work, each naming the job and carrying the button that starts it ·
- * then the full lists.
+ * The shape is: one sentence at the top saying how today looks · the desk's
+ * targets for the month and the quarter against what is achieved · one card
+ * per pile of work, each naming the job and carrying the button that starts
+ * it · then the full lists.
+ *
+ * Both the targets and the piles of work follow the role: a desk sees the
+ * measures it is held to, and only the work it is allowed to do.
  */
 export default function TodayPage() {
   const session = useAtomValue(sessionAtom);
-  const role = useRole();
-  const permissions = useAtomValue(permissionsAtom);
+  const can = useCan();
+  const [targets, setTargets] = useState<DeskTargets | null>(null);
+  const [work, setWork] = useState<WorkItem[]>([]);
   const [data, setData] = useState<TodayResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Rendered on the client only. Reading the clock during a server render and
   // again on hydration gives two different greetings and a React mismatch.
   const [hour, setHour] = useState<number | null>(null);
-  useEffect(() => setHour(new Date().getHours()), []);
+  // Re-read every minute: a desk left open since the morning must not still
+  // say "Good morning" in the afternoon.
+  useEffect(() => {
+    const tick = () => setHour(new Date().getHours());
+    tick();
+    const timer = setInterval(tick, 60_000);
+    return () => clearInterval(timer);
+  }, []);
 
   const load = () => {
     setError(null);
     getToday().then(setData).catch((e) => setError(errorMessage(e)));
+    // Neither of these may take the desk down with it: without them the page
+    // still shows the queues below, which is what it showed before they existed.
+    getDeskTargets().then(setTargets).catch(() => setTargets(null));
+    loadDeskWork(can).then(setWork).catch(() => setWork([]));
   };
-  useEffect(load, []);
+  useEffect(load, [can]);
 
   if (error) return <ErrorState message={error} retry={load} />;
   if (!data) return <Loading what="Loading your work" />;
 
-  const firstName = (session?.name ?? '').split(' ')[0];
+  const firstName = greetingName(session?.name ?? '');
   const overduePods = data.podOverdue.rows.filter((r) => r.ageDays > 20).length;
   const urgentIssues = data.vendorIssues.rows.filter((r) => r.severity === 'HIGH').length;
 
-  const waiting = data.pendingAllocation.rows.length;
-  const failed = data.placementFailures.rows.length;
-  const podsOut = data.podOverdue.rows.length;
-  const issues = data.vendorIssues.rows.length;
-  const total = waiting + failed + podsOut + issues;
+  // A pile is only on the desk of somebody who can work it: placing loads is
+  // for whoever manages them, chasing paper for whoever receives it, and so on.
+  const placesLoads = can('indent.manage');
+  const waiting = placesLoads ? data.pendingAllocation.rows.length : 0;
+  const failed = placesLoads ? data.placementFailures.rows.length : 0;
+  const podsOut = can('pod.receive') ? data.podOverdue.rows.length : 0;
+  const issues = can('vendor.edit') || can('vendor.verify') ? data.vendorIssues.rows.length : 0;
+  const queued = waiting + failed + podsOut + issues;
+  const total = queued + work.reduce((a, w) => a + w.count, 0);
 
   // The one line at the top. Naming the biggest pile beats a count of piles:
   // "7 things need you" is a number; "3 loads have no transporter" is a job.
   const headline =
     total === 0
-      ? 'Nothing is waiting on you right now. Every load is placed, every delivery proof is in and no transporter has an open problem.'
+      ? 'Nothing is waiting on you right now.'
       : failed > 0
         ? `Start with the ${failed} load${failed === 1 ? '' : 's'} we failed to place — that freight is already lost unless somebody re-opens it.`
         : waiting > 0
           ? `Start with the ${waiting} load${waiting === 1 ? '' : 's'} still waiting for a transporter.`
           : podsOut > 0
             ? `Start with the ${podsOut} delivery${podsOut === 1 ? '' : ' proofs'} we are still chasing — final payments are held until they are in.`
-            : `Start with the ${issues} open transporter problem${issues === 1 ? '' : 's'}.`;
-
-  // The same NAV the sidebar is built from, filtered the same way, so these
-  // shortcuts can never offer a role a screen it is not allowed to open.
-  const shortcuts = navFor(role, permissions)
-    .flatMap((group) => group.items.map((item) => ({ ...item, area: group.area ?? 'desk' })))
-    .filter((item) => item.note && item.href !== '/today')
-    .slice(0, 6)
-    .map((item) => ({
-      href: item.href,
-      emoji: item.emoji ?? '•',
-      label: item.label,
-      note: item.note,
-      area: item.area,
-    }));
+            : issues > 0
+              ? `Start with the ${issues} open transporter problem${issues === 1 ? '' : 's'}.`
+              : `Start with the ${work[0].count} ${work[0].title}.`;
 
   const allocationColumns: Column<TodayResponse['pendingAllocation']['rows'][number]>[] = [
     {
@@ -214,12 +265,51 @@ export default function TodayPage() {
         </div>
       </div>
 
+      {targets && targets.targets.length > 0 && (
+        <>
+          <SectionHead
+            emoji="🎯"
+            title="Targets"
+            note={`${targets.branchName ? `${targets.branchName} branch` : 'All branches'} · target against achieved`}
+            right={
+              can('config.manage') ? (
+                <Link href="/admin/targets" className="btn btn-secondary btn-sm">
+                  Set targets
+                </Link>
+              ) : undefined
+            }
+          />
+          <div
+            style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}
+          >
+            {targets.targets.map((t) => (
+              <div key={t.metric} className="surface" style={{ padding: '14px 16px' }} data-testid={`target-${t.metric}`}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600 }}>
+                  <Glyph size={18}>{TARGET_EMOJI[t.metric]}</Glyph>
+                  {TARGET_LABEL[t.metric]}
+                </div>
+                <TargetLine
+                  label={monthName(targets.month, { month: 'long', year: 'numeric' })}
+                  unit={t.unit}
+                  progress={t.month}
+                />
+                <TargetLine
+                  label={`Quarter · ${monthName(targets.quarter.from, { month: 'short' })} – ${monthName(targets.quarter.to, { month: 'short', year: 'numeric' })}`}
+                  unit={t.unit}
+                  progress={t.quarter}
+                />
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
       <StaleIndentsPanel />
 
       <SectionHead
         emoji="📌"
-        title="Today's action"
-        note="In the order they cost us money"
+        title="Pending work for today"
+        note="What is waiting on your desk"
       />
 
       <Stack gap={12}>
@@ -323,19 +413,31 @@ export default function TodayPage() {
           />
         )}
 
+        {work.map((w) => (
+          <ActionCard
+            key={w.key}
+            emoji={w.emoji}
+            tone={w.tone}
+            count={w.count}
+            title={w.title}
+            why={w.why}
+            action={
+              <Link href={w.href} className="btn">
+                {w.action}
+              </Link>
+            }
+          />
+        ))}
+
         {total === 0 && (
           <AllClear emoji="🎉">
-            <strong>Your desk is clear.</strong> Every load has a vehicle, every delivery proof is
-            in, and no transporter has an open problem. Anything new will appear here on its own —
-            you do not need to go looking.
+            <strong>Your desk is clear.</strong> Nothing is waiting on you. Anything new will
+            appear here on its own — you do not need to go looking.
           </AllClear>
         )}
       </Stack>
 
-      <SectionHead emoji="⚡" title="Quick links" note="The screens this desk uses most" />
-      <QuickLinks items={shortcuts} />
-
-      {total > 0 && (
+      {queued > 0 && (
         <>
           <SectionHead
             emoji="📋"

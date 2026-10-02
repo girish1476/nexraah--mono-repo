@@ -252,8 +252,15 @@ test.describe('one load, first indent to last rupee', () => {
     await page.getByRole('button', { name: /Upload H-POD/ }).click();
     await expect(page.getByText(/H-POD uploaded · the clock has stopped/)).toBeVisible();
 
-    await page.getByRole('button', { name: 'Verify' }).click();
-    await expect(page.getByText(/Verified/).first()).toBeVisible();
+    await page.getByRole('button', { name: 'Verify', exact: true }).click();
+    // The check opens beside the scan, like every other document. The shortage
+    // written on the proof is ticked here — that is what raises the SDR; there
+    // is no entering one by hand on the SDR screen.
+    await page.getByText('Fewer goods arrived than were sent').click();
+    await page.getByPlaceholder(/bags short/).fill('Six drums short at the consignee gate');
+    await fieldControl(page, 'Believed to cost').fill('2000');
+    await page.getByRole('button', { name: 'Verify', exact: true }).last().click();
+    await expect(page.getByText(/Verified · SDR-\d+ raised/)).toBeVisible();
 
     await signOut(page);
     await signInAs(page, 'LEADERSHIP');
@@ -262,15 +269,10 @@ test.describe('one load, first indent to last rupee', () => {
     await expect(page.getByText(/Approved/).first()).toBeVisible();
   });
 
-  test('10 · a shortage is recorded and resolved: the payment goes out after the deduction', async () => {
+  test('10 · the shortage noted at verification is on the SDR list and is resolved: the payment goes out after the deduction', async () => {
     await page.goto('/sdr');
-    await page.getByRole('button', { name: 'Record shortage or damage' }).click();
-    const rec = dialog(page, 'Record shortage or damage');
-    await fieldControl(rec, 'Trip').selectOption(tripId);
-    await fieldControl(rec, 'Details').fill('Six drums short at the consignee gate');
-    await fieldControl(rec, 'Claimed amount').fill('2000');
-    await rec.getByRole('button', { name: 'Record' }).click();
-    await expect(page.getByText(/SDR-\d+ recorded/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Record shortage or damage' })).toHaveCount(0);
+    await expect(row(page, tripCode)).toContainText('Six drums short at the consignee gate');
     await row(page, tripCode).getByRole('button', { name: 'Resolve' }).click();
     const resolve = dialog(page, /^Resolve SDR-/);
     await fieldControl(resolve, 'Amount to deduct').fill('2000');

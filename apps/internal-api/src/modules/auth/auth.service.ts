@@ -6,6 +6,10 @@ export interface SessionResponse {
   name: string;
   email: string;
   role: string;
+  /** The custom role's own name; `null` for a built-in role. */
+  roleLabel: string | null;
+  /** The custom role's code; `null` for a built-in role. */
+  customRole: string | null;
   permissions: string[];
   branch: { id: string; code: string; name: string } | null;
 }
@@ -33,7 +37,12 @@ export class AuthService {
       userId: user.userId,
       name: user.name,
       email: user.email,
-      role: user.role,
+      // A custom role reports the built-in role it is based on, because that
+      // is what the portal lays its screens out by; its own name travels in
+      // `roleLabel`. What it may do is `permissions`, which are its own.
+      role: user.customRole?.basedOn ?? user.role,
+      roleLabel: user.customRole?.name ?? null,
+      customRole: user.customRole ? user.role : null,
       permissions: [...user.permissions.entries()]
         .filter(([, level]) => level !== 'NONE')
         .map(([code]) => code),

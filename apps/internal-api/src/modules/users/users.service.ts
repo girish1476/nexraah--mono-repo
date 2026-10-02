@@ -4,6 +4,7 @@ import type { DbExecutor, InternalDb } from '../../db/kysely';
 import { DomainException } from '../../common/domain-exception';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
 import { AuditService } from '../audit/audit.service';
+import { INTERNAL_ROLES } from '../roles/roles.constants';
 import type { AllowEmailDto, UpdateAllowedEmailDto } from './dto/allow-email.dto';
 
 export interface AllowedEmail {
@@ -149,8 +150,11 @@ export class UsersService {
   }
 
   private async roleId(db: DbExecutor, code: string): Promise<string> {
-    const row = await db.selectFrom('roles').select('id').where('code', '=', code).executeTakeFirst();
-    if (!row) throw new DomainException(404, 'NOT_FOUND', `Unknown role: ${code}`);
+    const row = await db.selectFrom('roles').select(['id', 'based_on']).where('code', '=', code).executeTakeFirst();
+    // A built-in role or a custom one — not a retired code still in the table.
+    if (!row || !(row.based_on || (INTERNAL_ROLES as readonly string[]).includes(code))) {
+      throw new DomainException(404, 'NOT_FOUND', `Unknown role: ${code}`);
+    }
     return row.id;
   }
 
