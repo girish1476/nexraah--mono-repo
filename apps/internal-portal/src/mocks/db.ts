@@ -98,17 +98,15 @@ export const USERS: Record<RoleCode, FixtureAccount> = ACCOUNTS.reduce(
 );
 
 /**
- * The password every fixture account signs in with, when — and only when —
- * `NEXT_PUBLIC_USE_MOCKS` is on.
+ * The one-time code every fixture account accepts, when — and only when —
+ * `NEXT_PUBLIC_USE_MOCKS` is on. No email is sent in mock mode, so the code
+ * has to be knowable; it is shown on the sign-in screen.
  *
- * It is in plain text on purpose. Hashing it would be theatre: this file is
- * compiled into the browser bundle, so whatever it held would ship next to
- * the code that checks it, and a reader could be forgiven for thinking a
- * real credential store had been built. Nothing here is reachable with mocks
- * off — `lib/auth.ts` sends the password to Supabase Auth on that path and
- * never consults this list. These six accounts do not exist in any database.
+ * Plain text on purpose: this file ships in the browser bundle. Nothing here
+ * is reachable with mocks off — `lib/auth.ts` asks Supabase Auth to email a
+ * real code on that path and never consults this list.
  */
-export const DEMO_PASSWORD = 'nexraah';
+export const DEMO_CODE = '123456';
 
 /**
  * Fixture email → the whole account, matched case-insensitively at sign-in.

@@ -3,6 +3,7 @@ import {
   CrossCheckResult,
   LorryReceipt,
   TrackingPostKind,
+  TrackingStatus,
   TrackingSheet,
   TripCharge,
   TripDetail,
@@ -214,7 +215,20 @@ export function getTracking(id: string) {
  */
 export function addTracking(
   id: string,
-  body: { kind: TrackingPostKind; location?: string; lat?: number; lng?: number; note?: string; at?: string },
+  body: {
+    kind: TrackingPostKind;
+    location?: string;
+    lat?: number;
+    lng?: number;
+    note?: string;
+    at?: string;
+    status?: TrackingStatus;
+  },
 ) {
   return request<TrackingSheet>({ url: `/trips/${id}/tracking`, method: 'POST', data: body });
+}
+
+/** POST /trips/:id/eway-extension — the e-way bill extended while the truck is still on the road. */
+export function extendEway(id: string, body: { validTill: string; ewayNo?: string; reason?: string }) {
+  return request<TrackingSheet>({ url: `/trips/${id}/eway-extension`, method: 'POST', data: body });
 }
