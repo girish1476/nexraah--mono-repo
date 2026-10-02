@@ -3497,12 +3497,12 @@ const routes: [string, RegExp, Handler][] = [
   [
     'POST',
     /^\/trips\/([^/]+)\/documents\/([^/]+)\/verify$/,
-    ({ params, role }) => {
+    ({ params, role, userId }) => {
       const trip = findTrip(params[0]);
       const doc = trip.documents.find((d: any) => d.kind === params[1]) ?? fail(404, 'NOT_FOUND', 'Document not found');
       if (doc.status === 'MISSING') fail(409, 'NOT_UPLOADED', 'Nothing has been uploaded to verify.');
       doc.status = 'VERIFIED';
-      doc.verifiedBy = USERS[role].name;
+      doc.verifiedBy = personName(userId, role);
       doc.verifiedAt = helpers.now();
       doc.rejectReason = null;
       return ok(doc);
@@ -3523,7 +3523,7 @@ const routes: [string, RegExp, Handler][] = [
   [
     'POST',
     /^\/trips\/([^/]+)\/documents\/([^/]+)$/,
-    ({ params, body }) => {
+    ({ params, body, role, userId }) => {
       const trip = findTrip(params[0]);
       // The proof of delivery comes after unloading, never before.
       if (params[1] === 'POD' && !trip.deliveredAt)
@@ -3553,6 +3553,7 @@ const routes: [string, RegExp, Handler][] = [
         status: 'PENDING',
         attachmentId: body?.attachmentId ?? `att-${params[1].toLowerCase()}`,
         uploadedAt: helpers.now(),
+        uploadedBy: personName(userId, role),
         // A new file is checked again — the old verification was of the old file.
         verifiedBy: null,
         verifiedAt: null,
@@ -5191,6 +5192,11 @@ function currentRole(): RoleCode {
  * reads as unscoped, which is the safe direction: it shows too much rather
  * than silently hiding rows.
  */
+/** The signed-in person's name — the branched account's own, not just the role's default person. */
+function personName(userId: string, role: RoleCode): string {
+  return ACCOUNTS.find((a) => a.userId === userId)?.name ?? USERS[role].name;
+}
+
 function currentUserId(): string {
   if (typeof window === 'undefined') return USERS.OPS.userId;
   const result = readToken(localStorage.getItem('token'), 'access');

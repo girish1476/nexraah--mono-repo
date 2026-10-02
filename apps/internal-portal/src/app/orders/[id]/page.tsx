@@ -33,7 +33,7 @@ import { OrderDocumentsTab } from './documents-tab';
 import { OrderInvoiceTab } from './invoice-tab';
 import { OrderMoney } from './order-money';
 import { OrderNextStep, type OrderTabTarget } from './next-step';
-import { OrderTrackingTab } from './tracking-tab';
+import { KIND_LABEL as TRACKING_KIND_LABEL, OrderTrackingTab } from './tracking-tab';
 
 type OrderTab = 'details' | 'documents' | 'tracking';
 
@@ -321,6 +321,8 @@ function TrackingSummary({ tripId, status, openTracking }: { tripId: string; sta
     getTracking(tripId).then(setSheet).catch(() => setSheet(null));
   }, [tripId, status]);
   const latest = sheet ? [...sheet.updates].reverse()[0] : undefined;
+  // The last few lines of the sheet, newest first, with who made each.
+  const recent = sheet ? [...sheet.updates].reverse().slice(0, 5) : [];
   return (
     <Panel
       title="📍 Vehicle tracking"
@@ -342,8 +344,25 @@ function TrackingSummary({ tripId, status, openTracking }: { tripId: string; sta
             'Last update',
             latest ? `${latest.location} · ${fmtDateTime(latest.recordedAt)}${latest.note ? ` · ${latest.note}` : ''}` : 'Nothing yet',
           ],
+          ['Last updated by', latest?.recordedByName ?? '—'],
         ]}
       />
+      {recent.length > 0 && (
+        <div style={{ padding: '0 var(--space-4) var(--space-3)' }}>
+          <div className="muted" style={{ fontSize: 'var(--text-sm)', fontWeight: 600, margin: 'var(--space-2) 0' }}>
+            Tracking updated by
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 'var(--text-sm)', display: 'grid', gap: 4 }}>
+            {recent.map((u) => (
+              <li key={u.id}>
+                {TRACKING_KIND_LABEL[u.kind] ?? u.kind}
+                {u.location ? ` · ${u.location}` : ''} — <strong>{u.recordedByName ?? 'automatic'}</strong>
+                <span className="muted"> · {fmtDateTime(u.recordedAt)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </Panel>
   );
 }
@@ -357,7 +376,12 @@ function DocumentStatus({ tripId, openDocuments }: { tripId: string; openDocumen
   const rows = (docs ?? []).filter((d) => d.kind !== 'POD');
   const columns: Column<TripDocument>[] = [
     { key: 'doc', label: 'Document', render: (r) => r.label || docLabel(r.kind) },
-    { key: 'up', label: 'Uploaded', render: (r) => (r.uploadedAt ? fmtDateTime(r.uploadedAt) : <span className="muted">—</span>) },
+    {
+      key: 'up',
+      label: 'Uploaded by',
+      render: (r) =>
+        r.uploadedAt ? `${r.uploadedBy ?? '—'} · ${fmtDateTime(r.uploadedAt)}` : <span className="muted">Not uploaded</span>,
+    },
     {
       key: 'ver',
       label: 'Verified by',

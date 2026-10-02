@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { FieldErrors, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -8,7 +9,7 @@ import { z } from 'zod';
 import { errorMessage, request } from '@/apis';
 import { getRateCard, listClients } from '@/app/clients/apis';
 import { liveLanes } from '@/app/clients/lanes';
-import { Client, RateCardLane, laneFreightPaise, rateWithBasis } from '@/app/clients/types';
+import { CLIENT_STATUS_LABEL, Client, RateCardLane, laneFreightPaise, rateWithBasis } from '@/app/clients/types';
 import { capitalizeWords, fmtDate, inr, pct } from '@/lib/format';
 import {
   Banner,
@@ -101,6 +102,8 @@ export default function NewIndentPage() {
   const can = useCan();
 
   const [clients, setClients] = useState<Client[]>([]);
+  /** Clients still being set up or with compliance: shown, not bookable yet. */
+  const [notCleared, setNotCleared] = useState<Client[]>([]);
   const [lanes, setLanes] = useState<RateCardLane[] | null>(null);
   const [offRateCard, setOffRateCard] = useState(false);
   const [confirmationId, setConfirmationId] = useState<string | null>(null);
@@ -143,11 +146,14 @@ export default function NewIndentPage() {
   }, [locked, lane?.id, lane?.rateBasis, weightTn]);
 
   useEffect(() => {
-    // Only clients Compliance has cleared can be booked against, so the others
-    // are not offered — they used to be, and the refusal came only after the whole
-    // form had been filled in.
+    // Only clients Compliance has cleared can be booked against. The ones still
+    // being set up are listed too, greyed out, so a client just created does not
+    // seem to have vanished — the refusal used to come only after the whole form.
     listClients()
-      .then((all) => setClients(all.filter((c) => c.status === 'ACTIVE')))
+      .then((all) => {
+        setClients(all.filter((c) => c.status === 'ACTIVE'));
+        setNotCleared(all.filter((c) => c.status === 'DRAFT' || c.status === 'PENDING_VERIFICATION'));
+      })
       .catch(() => setClients([]));
   }, []);
 
@@ -308,6 +314,15 @@ export default function NewIndentPage() {
                     {c.name} · {c.engagement}
                   </option>
                 ))}
+                {notCleared.length > 0 && (
+                  <optgroup label="Not cleared for bookings yet">
+                    {notCleared.map((c) => (
+                      <option key={c.id} value={c.id} disabled>
+                        {c.name} · {CLIENT_STATUS_LABEL[c.status]}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
             </Field>
             {client && (
@@ -320,6 +335,19 @@ export default function NewIndentPage() {
               </Field>
             )}
           </FormGrid>
+
+          {notCleared.length > 0 && !clientId && (
+            <p className="muted" style={{ fontSize: 12.5, margin: '10px 0 0' }}>
+              A client can be booked once Compliance clears its KYC. Waiting:{' '}
+              {notCleared.map((c, i) => (
+                <span key={c.id}>
+                  {i > 0 && ', '}
+                  <Link href={`/clients/${c.id}`}>{c.name}</Link> ({CLIENT_STATUS_LABEL[c.status].toLowerCase()})
+                </span>
+              ))}
+              . Open the client to submit it to Compliance or to verify it.
+            </p>
+          )}
 
           {isContractClient && (
             <div style={{ marginTop: 12 }}>

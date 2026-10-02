@@ -193,6 +193,10 @@ test.describe('the order cycle, from the order page', () => {
     // In transit, the order offers the client invoice straight from its Next step.
     await tab(page, /Details/).click();
     await expect(page.getByRole('link', { name: /Raise the client invoice/ })).toBeVisible();
+    // Details names who uploaded each document, who verified it, and who updated tracking.
+    await expect(page.getByRole('columnheader', { name: 'Uploaded by' })).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'Verified by' })).toBeVisible();
+    await expect(page.getByText('Tracking updated by')).toBeVisible();
     await shot('07-on-the-road');
   });
 

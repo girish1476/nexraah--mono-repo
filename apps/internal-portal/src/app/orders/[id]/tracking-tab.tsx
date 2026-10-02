@@ -30,7 +30,7 @@ const STEPS: { key: string; label: string; emoji: string }[] = [
   { key: 'UNLOADED', label: 'Unloaded', emoji: '📤' },
 ];
 
-const KIND_LABEL: Record<TrackingKind, string> = {
+export const KIND_LABEL: Record<TrackingKind, string> = {
   UPDATE: 'Position update',
   REACHED_LOADING: 'Reached the loading point',
   LOADED: 'Loaded',

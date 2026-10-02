@@ -661,6 +661,8 @@ export interface TripDocumentsTable {
   verified_at: string | null;
   reject_reason: string | null;
   keyed_values: Json | null;
+  uploaded_by: string | null;
+  uploaded_at: string | null;
   created_at: Generated<string>;
   updated_at: Generated<string>;
 }
