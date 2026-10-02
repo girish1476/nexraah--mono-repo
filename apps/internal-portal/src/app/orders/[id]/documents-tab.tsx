@@ -16,6 +16,8 @@ import {
   verifyTripDocument,
 } from '@/app/trips/apis';
 import type { CrossCheckResult, TripDetail, TripDocument } from '@/app/trips/types';
+import { getClient } from '@/app/clients/apis';
+import type { Client } from '@/app/clients/types';
 import { uploadAttachment } from '@/lib/attachments';
 import { fmtDate, inr } from '@/lib/format';
 import { Banner, Dialog, ErrorState, Field, FormGrid, Loading, Panel, Stack, Tag, useCan, useToast } from '@/lib/ui';
@@ -110,7 +112,7 @@ const SECTIONS: { title: string; note: string; items: DocItem[] }[] = [
   },
   {
     title: '📦 Loading',
-    note: 'Slips from the loading point.',
+    note: 'Slips from the loading point. With the loading slip in, no lorry receipt is needed — generate an E-LR from it only if the client asks for one.',
     items: [
       {
         id: 'loading-slip',
@@ -213,6 +215,12 @@ export function OrderDocumentsTab({
   const [rejecting, setRejecting] = useState<DocItem | null>(null);
   const [reason, setReason] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
+  // The client's own rules: whether they want a weighment slip with each load.
+  const [client, setClient] = useState<Client | null>(null);
+  // The E-LR is opened from the loading slip, only when someone wants one.
+  const [lrOpen, setLrOpen] = useState(false);
+  // A weighment slip for a client that does not need one — uploaded anyway.
+  const [weighAnyway, setWeighAnyway] = useState(false);
 
   const load = () => {
     setError(null);
@@ -221,6 +229,7 @@ export function OrderDocumentsTab({
         setTrip(t);
         setDocs(d);
         setCrossCheck(c);
+        if (t.clientId) getClient(t.clientId).then(setClient).catch(() => setClient(null));
       })
       .catch((e) => setError(errorMessage(e)));
   };
@@ -236,6 +245,14 @@ export function OrderDocumentsTab({
   const canVerify = can('document.verify');
 
   const docsFor = (item: DocItem) => docs.filter((d) => item.kinds.includes(d.kind));
+  const lrStarted = !!trip.lr;
+  const slipIn = docs.some((d) => d.kind === 'LOADING_SLIP' && (d.status === 'PENDING' || d.status === 'VERIFIED'));
+  const needsWeighment = !!client?.needsWeighmentSlip;
+  const openLr = () => {
+    setLrOpen(true);
+    // Let the panel render, then bring it into view.
+    setTimeout(() => document.getElementById('order-elr')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+  };
 
   // Uploading is the file only. The details on it (numbers, dates, validity)
   // are typed by the verification team when they check it.
@@ -340,6 +357,29 @@ export function OrderDocumentsTab({
     const attachmentId = current.find((d) => d.attachmentId)?.attachmentId ?? null;
     const rejectedWhy = current.find((d) => d.rejectReason)?.rejectReason;
     const uploaded = state !== 'MISSING';
+    // Not every client wants a weighment slip. For one that does not, the card
+    // is closed as not needed — it can still be uploaded if one turns up.
+    if (item.id === 'weighment' && !needsWeighment && !uploaded && !weighAnyway) {
+      return (
+        <div key={item.id} data-doc={item.id} className="doc-card doc-card-closed">
+          <div className="doc-card-head">
+            <strong>{item.title}</strong>
+            <Tag tone="grey">Not needed</Tag>
+          </div>
+          <p className="muted" style={{ margin: '4px 0 0', fontSize: 12.5 }}>
+            {client ? `${client.name} does not need a weighment slip.` : 'This client does not need a weighment slip.'} The
+            client’s page sets this.
+          </p>
+          {canUpload && loaded && (
+            <div className="doc-actions">
+              <button className="btn btn-secondary btn-sm" onClick={() => setWeighAnyway(true)}>
+                Upload one anyway
+              </button>
+            </div>
+          )}
+        </div>
+      );
+    }
     return (
       <div key={item.id} data-doc={item.id} className="doc-card">
         <DocPreview attachmentId={attachmentId} label={item.title} width={item.pdf ? 130 : 150} height={item.pdf ? 160 : 190} />
@@ -347,6 +387,7 @@ export function OrderDocumentsTab({
           <div className="doc-card-head">
             <strong>{item.title}</strong>
             <Tag tone={STATE[state].tone}>{STATE[state].label}</Tag>
+            {item.id === 'weighment' && needsWeighment && <Tag tone="blue">Needed by this client</Tag>}
           </div>
           <dl className="doc-facts">
             {item.fields.map((f) => (
@@ -374,6 +415,12 @@ export function OrderDocumentsTab({
                   Reject
                 </button>
               </>
+            )}
+            {/* The loading slip stands in for the lorry receipt; an E-LR is generated from here if the client wants one. */}
+            {item.id === 'loading-slip' && showLr && can('indent.manage') && (
+              <button className="btn btn-secondary btn-sm" onClick={openLr}>
+                {lrStarted ? `📄 Open the E-LR${trip.lr?.code ? ` · ${trip.lr.code}` : ''}` : '＋ Generate E-LR'}
+              </button>
             )}
             {!loaded && !uploaded && (
               <span className="muted" style={{ fontSize: 12 }}>
@@ -434,12 +481,35 @@ export function OrderDocumentsTab({
         );
       })}
 
-      {showLr && (
-        <Panel title="📄 Lorry receipt (if needed)" pad={false}>
-          <div style={{ padding: 15 }}>
-            <LorryReceiptContent tripId={tripId} onLoaded={(d) => onLrLoaded?.(d.lr.code)} />
-          </div>
-        </Panel>
+      {/* The E-LR — only when someone asked for one from the loading slip, or one was already started. */}
+      {showLr && (lrOpen || lrStarted) && (
+        <div id="order-elr">
+          <Panel
+            title="📄 E-LR (lorry receipt)"
+            right={
+              !lrStarted ? (
+                <button className="btn btn-secondary btn-sm" onClick={() => setLrOpen(false)}>
+                  Close
+                </button>
+              ) : undefined
+            }
+            pad={false}
+          >
+            <div style={{ padding: 15 }}>
+              {slipIn && (
+                <p className="muted" style={{ marginTop: 0, fontSize: 12.5 }}>
+                  The loading slip is in, so a lorry receipt is optional — issue this only if the client wants one.
+                </p>
+              )}
+              <LorryReceiptContent
+                tripId={tripId}
+                onLoaded={(d) => {
+                  onLrLoaded?.(d.lr.code);
+                }}
+              />
+            </div>
+          </Panel>
+        </div>
       )}
 
       {showPod && (

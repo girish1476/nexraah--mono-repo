@@ -323,6 +323,8 @@ export interface ClientsTable {
   agreement_attachment_id: string | null;
   credit_days: Generated<number>;
   service_level: string | null;
+  /** Whether this client wants a weighment slip with each load. */
+  needs_weighment_slip: Generated<boolean>;
   status: Generated<ClientStatus>;
   /** Why Compliance declined. Non-null exactly when status is REJECTED. */
   rejection_reason: string | null;

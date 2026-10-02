@@ -194,6 +194,8 @@ export function OrderNextStep({
     const gating = trip.documents.filter((d) => d.gatesAdvance);
     const docsIn = gating.filter((d) => d.status === 'PENDING' || d.status === 'VERIFIED').length;
     const lrStarted = !!trip.lr && trip.lr.status !== 'RELEASED';
+    // The loading slip stands in for the lorry receipt.
+    const slipIn = trip.documents.some((d) => d.kind === 'LOADING_SLIP' && (d.status === 'PENDING' || d.status === 'VERIFIED'));
     const canMark = canRun || (!!trip.loadingSupervisorId && trip.loadingSupervisorId === session?.userId);
     // The order cycle, in the order Operations works it: vehicle → reached the
     // loading point → loaded → advance documents → (LR if needed) → on the road.
@@ -273,12 +275,17 @@ export function OrderNextStep({
         ),
       },
       {
-        label: trip.lr?.status === 'RELEASED' ? `Lorry receipt issued · ${trip.lr.code}` : 'Lorry receipt issued (if needed)',
-        done: trip.lr?.status === 'RELEASED',
+        label:
+          trip.lr?.status === 'RELEASED'
+            ? `E-LR issued · ${trip.lr.code}`
+            : slipIn && !lrStarted
+              ? 'Lorry receipt — not needed, the loading slip is in'
+              : 'E-LR issued (if the client wants one)',
+        done: trip.lr?.status === 'RELEASED' || (slipIn && !lrStarted),
         optional: !lrStarted,
         todo: (
           <button className="btn btn-secondary btn-sm" onClick={() => openTab('documents')}>
-            {lrStarted ? 'Finish and issue the LR' : 'Fill in the LR'}
+            {lrStarted ? 'Finish and issue the E-LR' : '＋ Generate E-LR'}
           </button>
         ),
       },

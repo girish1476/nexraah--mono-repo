@@ -56,6 +56,7 @@ export class ClientsRepository {
       agreement_attachment_id: string | null;
       credit_days: number;
       service_level: string | null;
+      needs_weighment_slip?: boolean;
     },
   ) {
     const values = { code, ...row };

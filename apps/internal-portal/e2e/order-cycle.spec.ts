@@ -172,6 +172,13 @@ test.describe('the order cycle, from the order page', () => {
     });
     await upload('dl', photo, { 'Licence number': 'MH1520190012345', 'Valid till': nextYear });
     await upload('loading-slip', photo, { 'Packages loaded': '420', 'Weight loaded (MT)': '18' });
+    // This client does not need a weighment slip: the card is closed, not left open.
+    await expect(page.locator('[data-doc="weighment"]')).toContainText('Not needed');
+    // The loading slip stands in for the LR; an E-LR is generated from it only if wanted.
+    await page.locator('[data-doc="loading-slip"]').getByRole('button', { name: /Generate E-LR/ }).click();
+    await expect(page.getByText('E-LR (lorry receipt)')).toBeVisible();
+    await page.locator('#order-elr').getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(page.getByText('E-LR (lorry receipt)')).toHaveCount(0);
     await shot('05-documents');
   });
 

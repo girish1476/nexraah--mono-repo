@@ -87,6 +87,7 @@ export default function ClientDetailPage() {
       email: client.email,
       creditDays: client.creditDays,
       serviceLevel: client.serviceLevel,
+      needsWeighmentSlip: !!client.needsWeighmentSlip,
     });
     setEditing(true);
   };
@@ -357,6 +358,7 @@ export default function ClientDetailPage() {
                 ],
                 ['Payment terms', `${client.creditDays} days from invoice`],
                 ['Service promise', client.serviceLevel],
+                ['Weighment slip', client.needsWeighmentSlip ? 'Needed with every load' : 'Not needed'],
                 ['Unpaid with client', inrCompact(client.outstandingPaise)],
               ]}
             />
@@ -528,6 +530,15 @@ export default function ClientDetailPage() {
             value={draft.serviceLevel ?? ''}
             onChange={(e) => setDraft({ ...draft, serviceLevel: e.target.value })}
           />
+        </Field>
+        <Field label="Weighment slip" hint="Not every client wants one. When not needed, orders do not wait for it.">
+          <select
+            value={draft.needsWeighmentSlip ? 'yes' : 'no'}
+            onChange={(e) => setDraft({ ...draft, needsWeighmentSlip: e.target.value === 'yes' })}
+          >
+            <option value="no">Not needed</option>
+            <option value="yes">Needed with every load</option>
+          </select>
         </Field>
       </Dialog>
     </ModuleGuard>

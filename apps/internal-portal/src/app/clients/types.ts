@@ -60,6 +60,8 @@ export interface Client {
   agreementAttachmentId?: string | null;
   creditDays: number;
   serviceLevel: string | null;
+  /** Whether this client wants a weighment slip with each load. Off unless asked for. */
+  needsWeighmentSlip?: boolean;
   status: ClientStatus;
   outstandingPaise: number;
 }

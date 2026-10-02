@@ -1,4 +1,4 @@
-import { IsDateString, IsEmail, IsIn, IsInt, IsOptional, IsString, Matches, Min } from 'class-validator';
+import { IsBoolean, IsDateString, IsEmail, IsIn, IsInt, IsOptional, IsString, Matches, Min } from 'class-validator';
 import { FORMAT_MESSAGE, GSTIN_SHAPE_RE, PHONE_RE } from '../../../common/validation/formats';
 
 export class UpdateClientDto {
@@ -18,5 +18,7 @@ export class UpdateClientDto {
   @IsOptional() @IsString() agreementAttachmentId?: string;
   @IsOptional() @IsInt() @Min(0) creditDays?: number;
   @IsOptional() @IsString() serviceLevel?: string;
+  /** Whether this client wants a weighment slip with each load. */
+  @IsOptional() @IsBoolean() needsWeighmentSlip?: boolean;
   @IsOptional() @IsIn(['ACTIVE', 'INACTIVE']) status?: string;
 }

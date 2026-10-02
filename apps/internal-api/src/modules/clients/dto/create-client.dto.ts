@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsDateString,
   IsEmail,
   IsIn,
@@ -48,4 +49,6 @@ export class CreateClientDto {
 
   @IsOptional() @IsInt() @Min(0) creditDays?: number;
   @IsOptional() @IsString() @MaxLength(120) serviceLevel?: string;
+  /** Whether this client wants a weighment slip with each load. Off unless asked for. */
+  @IsOptional() @IsBoolean() needsWeighmentSlip?: boolean;
 }

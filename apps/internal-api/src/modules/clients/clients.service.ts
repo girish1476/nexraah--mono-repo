@@ -48,6 +48,7 @@ export class ClientsService {
         agreement_attachment_id: dto.agreementAttachmentId ?? null,
         credit_days: dto.creditDays ?? 0,
         service_level: dto.serviceLevel ?? null,
+        needs_weighment_slip: dto.needsWeighmentSlip ?? false,
       });
       await this.auditService.record(trx, actor, {
         action: 'CLIENT_CREATED',
@@ -76,6 +77,7 @@ export class ClientsService {
       if (dto.agreementAttachmentId !== undefined) patch.agreement_attachment_id = dto.agreementAttachmentId;
       if (dto.creditDays !== undefined) patch.credit_days = dto.creditDays;
       if (dto.serviceLevel !== undefined) patch.service_level = dto.serviceLevel;
+      if (dto.needsWeighmentSlip !== undefined) patch.needs_weighment_slip = dto.needsWeighmentSlip;
       if (dto.status !== undefined) patch.status = dto.status;
 
       const updated = await this.clientsRepository.update(trx, id, patch);
@@ -142,6 +144,7 @@ export class ClientsService {
     agreement_attachment_id: string | null;
     credit_days: number;
     service_level: string | null;
+    needs_weighment_slip?: boolean;
     status: string;
     outstandingPaise: number;
   }) {
@@ -161,6 +164,7 @@ export class ClientsService {
       agreementAttachmentId: row.agreement_attachment_id,
       creditDays: row.credit_days,
       serviceLevel: row.service_level,
+      needsWeighmentSlip: row.needs_weighment_slip ?? false,
       status: row.status,
       outstandingPaise: row.outstandingPaise,
     };
