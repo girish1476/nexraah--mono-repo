@@ -26,7 +26,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         {/* Falls back to system fonts offline — the console must still be usable. */}
         <link
           rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Public+Sans:wght@400;500;600&family=Quicksand:wght@500;600&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Public+Sans:wght@400;500;600&display=swap"
         />
       </head>
       <body>
