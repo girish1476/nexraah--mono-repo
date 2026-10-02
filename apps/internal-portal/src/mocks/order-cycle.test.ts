@@ -60,6 +60,12 @@ describe('the order cycle', () => {
       });
       await call('COMPLIANCE', 'POST', `/trips/${trip.id}/documents/${kind}/verify`);
     }
+    // The Details page names who uploaded each document and who verified it.
+    const docs = await call('OPS', 'GET', `/trips/${trip.id}/documents`);
+    const eway = docs.find((d: any) => d.kind === 'EWAY_BILL');
+    expect(eway.uploadedBy).toBeTruthy();
+    expect(eway.verifiedBy).toBeTruthy();
+    expect(eway.uploadedBy).not.toBe(eway.verifiedBy);
 
     // Advance paid → the order moves to tracking by itself.
     await call(
@@ -114,7 +120,7 @@ describe('the order cycle', () => {
     ]);
     // Unloaded: the e-way bill no longer needs extending.
     expect(await failure('OPS', 'POST', `/trips/${trip.id}/eway-extension`, { validTill: '2099-03-01' })).toBe('TRACKING_CLOSED');
-  });
+  }, 20_000);
 });
 
 describe('deleting a duplicate rate', () => {

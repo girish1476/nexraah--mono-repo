@@ -293,8 +293,9 @@ export class TripsService implements OnModuleInit {
         gatesAdvance: advanceDocumentSet.has(meta.kind),
         status: row?.status ?? 'MISSING',
         attachmentId: row?.attachment_id ?? null,
-        uploadedAt: row?.created_at ?? null,
-        verifiedBy: row?.verified_by ?? null,
+        uploadedAt: row?.uploaded_at ?? row?.created_at ?? null,
+        uploadedBy: row?.uploaded_by_name ?? null,
+        verifiedBy: row?.verified_by_name ?? null,
         verifiedAt: row?.verified_at ?? null,
         rejectReason: row?.reject_reason ?? null,
         keyedValues: row?.keyed_values ?? null,
@@ -337,6 +338,7 @@ export class TripsService implements OnModuleInit {
         kind,
         attachmentId: dto.attachmentId ?? null,
         keyedValues: dto.keyedValues,
+        uploadedBy: actor.userId,
       });
       await this.auditService.record(trx, actor, {
         action: 'TRIP_DOCUMENT_SUBMITTED',

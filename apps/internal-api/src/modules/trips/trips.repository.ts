@@ -177,8 +177,16 @@ export class TripsRepository {
 
   // ---- Documents --------------------------------------------------------
 
+  /** Every document on the trip, with who uploaded and who verified it by name. */
   findDocuments(tripId: string) {
-    return this.db.selectFrom('trip_documents').selectAll().where('trip_id', '=', tripId).execute();
+    return this.db
+      .selectFrom('trip_documents')
+      .leftJoin('users as uploader', 'uploader.id', 'trip_documents.uploaded_by')
+      .leftJoin('users as verifier', 'verifier.id', 'trip_documents.verified_by')
+      .selectAll('trip_documents')
+      .select(['uploader.name as uploaded_by_name', 'verifier.name as verified_by_name'])
+      .where('trip_documents.trip_id', '=', tripId)
+      .execute();
   }
 
   findDocumentByKind(tripId: string, kind: string) {
@@ -196,8 +204,9 @@ export class TripsRepository {
 
   upsertDocument(
     db: DbExecutor,
-    row: { tripId: string; kind: string; attachmentId: string | null; keyedValues: unknown },
+    row: { tripId: string; kind: string; attachmentId: string | null; keyedValues: unknown; uploadedBy: string },
   ) {
+    const uploadedAt = new Date().toISOString();
     return db
       .insertInto('trip_documents')
       .values({
@@ -209,6 +218,8 @@ export class TripsRepository {
         verified_by: null,
         verified_at: null,
         reject_reason: null,
+        uploaded_by: row.uploadedBy,
+        uploaded_at: uploadedAt,
       })
       .onConflict((oc) =>
         oc.columns(['trip_id', 'kind']).doUpdateSet({
@@ -218,6 +229,8 @@ export class TripsRepository {
           verified_by: null,
           verified_at: null,
           reject_reason: null,
+          uploaded_by: row.uploadedBy,
+          uploaded_at: uploadedAt,
         }),
       )
       .returningAll()

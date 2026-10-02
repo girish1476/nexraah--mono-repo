@@ -37,6 +37,9 @@ export interface TripDocument {
   status: DocStatus;
   attachmentId: string | null;
   uploadedAt: string | null;
+  /** Who uploaded it, by name. */
+  uploadedBy?: string | null;
+  /** Who verified it, by name. */
   verifiedBy: string | null;
   verifiedAt: string | null;
   rejectReason: string | null;
