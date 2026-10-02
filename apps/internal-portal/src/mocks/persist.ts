@@ -11,7 +11,11 @@
  * the same rows.
  */
 
-const STORE_KEY = 'nexraah.mockdb.v3';
+// v4 (2 Oct 2026): records saved by earlier versions predate the order cycle
+// (tracking sheet, loading marks, E-POD/H-POD, rate basis) and behaved oddly on
+// the new screens, so every browser starts again from clean data.
+const STORE_KEY = 'nexraah.mockdb.v4';
+const RETIRED_KEYS = ['nexraah.mockdb.v3', 'nexraah.mockdb.v2', 'nexraah.mockdb.v1'];
 const DEMO_KEY = 'nexraah.demo';
 
 const hasStorage = () => {
@@ -36,6 +40,8 @@ export function isDemoData(): boolean {
 export function hydrate(db: Record<string, any>, branches: any[]): void {
   if (!hasStorage() || isDemoData()) return;
   try {
+    // Clear what older versions left behind, so it never fills the storage quota.
+    for (const old of RETIRED_KEYS) window.localStorage.removeItem(old);
     const raw = window.localStorage.getItem(STORE_KEY);
     if (!raw) return;
     const saved = JSON.parse(raw) as Record<string, any>;
