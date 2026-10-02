@@ -181,10 +181,6 @@ export class TripsRepository {
     return this.db.selectFrom('trip_documents').selectAll().where('trip_id', '=', tripId).execute();
   }
 
-  findDocumentByKind(tripId: string, kind: string) {
-    return this.findDocumentOne(this.db, tripId, kind);
-  }
-
   findDocumentOne(db: DbExecutor, tripId: string, kind: string) {
     return db
       .selectFrom('trip_documents')
@@ -222,20 +218,6 @@ export class TripsRepository {
       )
       .returningAll()
       .executeTakeFirstOrThrow();
-  }
-
-  /**
-   * Changes the details typed against a document without re-opening its check
-   * — an e-way bill extended on the road is the same paper, valid for longer.
-   */
-  updateDocumentKeyed(db: DbExecutor, tripId: string, kind: string, keyedValues: Record<string, unknown>) {
-    return db
-      .updateTable('trip_documents')
-      .set({ keyed_values: keyedValues as never, updated_at: new Date().toISOString() })
-      .where('trip_id', '=', tripId)
-      .where('kind', '=', kind)
-      .returningAll()
-      .executeTakeFirst();
   }
 
   decideDocument(
@@ -392,7 +374,6 @@ export class TripsRepository {
       lat: number | null;
       lng: number | null;
       note: string | null;
-      status?: string | null;
       recorded_by: string | null;
       recorded_at?: string;
     },
@@ -415,7 +396,6 @@ export class TripsRepository {
         'trip_tracking_updates.lat as lat',
         'trip_tracking_updates.lng as lng',
         'trip_tracking_updates.note as note',
-        'trip_tracking_updates.status as status',
         'trip_tracking_updates.recorded_at as recordedAt',
         'users.name as recordedByName',
       ])

@@ -5,16 +5,15 @@ import {
   getToken,
   isSignedIn,
   refreshSession,
-  sendSignInCode,
+  signIn,
   signOut,
-  verifySignInCode,
 } from './auth';
 import { mintAccessToken } from '@/mocks';
-import { DEMO_CODE, USERS } from '@/mocks/db';
+import { DEMO_PASSWORD, USERS } from '@/mocks/db';
 
 /**
  * These run in mock mode (`NEXT_PUBLIC_USE_MOCKS` unset, which defaults on),
- * so sign-in exercises the fixture path rather than calling Supabase. The
+ * so `signIn` exercises the fixture path rather than calling Supabase. The
  * two transports converge on one `AuthTokens` shape, and everything below the
  * transport — storage, expiry accounting, refresh, sign-out — is shared, so
  * that is what these cover.
@@ -22,20 +21,14 @@ import { DEMO_CODE, USERS } from '@/mocks/db';
 
 const OPS_EMAIL = USERS.OPS.email;
 
-/** Both steps of email + one-time-code sign-in. */
-async function signIn(email: string, code = DEMO_CODE) {
-  await sendSignInCode(email);
-  await verifySignInCode(email, code);
-}
-
 beforeEach(() => {
   localStorage.clear();
   vi.useRealTimers();
 });
 
-describe('email one-time code sign-in', () => {
+describe('signIn', () => {
   it('stores an access token, a refresh token and an expiry', async () => {
-    await signIn(OPS_EMAIL);
+    await signIn(OPS_EMAIL, DEMO_PASSWORD);
 
     expect(getToken()).toBeTruthy();
     expect(localStorage.getItem('refreshToken')).toBeTruthy();
@@ -44,26 +37,27 @@ describe('email one-time code sign-in', () => {
   });
 
   it('accepts the email in any case, with surrounding space', async () => {
-    await signIn(`  ${OPS_EMAIL.toUpperCase()}  `);
+    await signIn(`  ${OPS_EMAIL.toUpperCase()}  `, DEMO_PASSWORD);
     expect(isSignedIn()).toBe(true);
   });
 
-  it('refuses to send a code to an email nobody allowed', async () => {
-    await expect(sendSignInCode('nobody@nexraah.in')).rejects.toThrow(/not allowed to sign in/i);
-  });
-
-  it('rejects a wrong code and stores nothing', async () => {
-    await sendSignInCode(OPS_EMAIL);
-    await expect(verifySignInCode(OPS_EMAIL, '000000')).rejects.toThrow(/wrong or has expired/i);
+  it('rejects a wrong password and stores nothing', async () => {
+    await expect(signIn(OPS_EMAIL, 'not-the-password')).rejects.toThrow(
+      /do not match an account/i,
+    );
     expect(isSignedIn()).toBe(false);
   });
 
-  it('asks for the email before sending anything', async () => {
-    await expect(sendSignInCode('   ')).rejects.toThrow(/enter your work email/i);
+  it('rejects an unknown email with the same message as a wrong password', async () => {
+    // Identical wording on purpose — a distinguishable failure would let
+    // someone enumerate who has an account here.
+    const unknown = await signIn('nobody@nexraah.in', DEMO_PASSWORD).catch((e) => e.message);
+    const wrongPassword = await signIn(OPS_EMAIL, 'wrong').catch((e) => e.message);
+    expect(unknown).toBe(wrongPassword);
   });
 
-  it('asks for the code before checking anything', async () => {
-    await expect(verifySignInCode(OPS_EMAIL, '')).rejects.toThrow(/enter the code/i);
+  it('rejects an empty password without consulting the account list', async () => {
+    await expect(signIn(OPS_EMAIL, '')).rejects.toThrow(/enter your email and password/i);
   });
 });
 
@@ -71,7 +65,7 @@ describe('the role travels in the token', () => {
   it('signs each fixture account in as its own role', async () => {
     for (const role of ['OPS', 'FINANCE', 'ADMIN'] as const) {
       localStorage.clear();
-      await signIn(USERS[role].email);
+      await signIn(USERS[role].email, DEMO_PASSWORD);
       const claims = JSON.parse(atob(getToken()!.split('.')[1]));
       expect(claims.role).toBe(role);
       expect(claims.email).toBe(USERS[role].email);
@@ -85,7 +79,7 @@ describe('refreshSession', () => {
   });
 
   it('rotates both tokens and pushes the expiry out', async () => {
-    await signIn(OPS_EMAIL);
+    await signIn(OPS_EMAIL, DEMO_PASSWORD);
     const before = getToken();
     const beforeRefresh = localStorage.getItem('refreshToken');
 
@@ -96,7 +90,7 @@ describe('refreshSession', () => {
   });
 
   it('reports failure and leaves the session alone when the refresh token is junk', async () => {
-    await signIn(OPS_EMAIL);
+    await signIn(OPS_EMAIL, DEMO_PASSWORD);
     const accessToken = getToken();
     localStorage.setItem('refreshToken', 'not.a.token');
 
@@ -109,7 +103,7 @@ describe('refreshSession', () => {
 
 describe('ensureFreshToken', () => {
   it('leaves a token with time left on it alone', async () => {
-    await signIn(OPS_EMAIL);
+    await signIn(OPS_EMAIL, DEMO_PASSWORD);
     const before = getToken();
 
     await ensureFreshToken();
@@ -117,7 +111,7 @@ describe('ensureFreshToken', () => {
   });
 
   it('renews a token inside the expiry margin', async () => {
-    await signIn(OPS_EMAIL);
+    await signIn(OPS_EMAIL, DEMO_PASSWORD);
     const before = getToken();
     // 30s left — inside the 60s margin, and not yet expired, so this is the
     // case the margin exists for: still valid, but not for the whole request.
@@ -145,7 +139,7 @@ describe('ensureFreshToken', () => {
 
 describe('signOut', () => {
   it('clears every trace of the session', async () => {
-    await signIn(OPS_EMAIL);
+    await signIn(OPS_EMAIL, DEMO_PASSWORD);
     signOut();
 
     expect(getToken()).toBeNull();
@@ -156,7 +150,7 @@ describe('signOut', () => {
 
   it('clears the retired role-switcher key left by an older build', async () => {
     localStorage.setItem('role', 'ADMIN');
-    await signIn(OPS_EMAIL);
+    await signIn(OPS_EMAIL, DEMO_PASSWORD);
     clearSession();
 
     expect(localStorage.getItem('role')).toBeNull();

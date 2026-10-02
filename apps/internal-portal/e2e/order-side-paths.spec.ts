@@ -1,5 +1,5 @@
 import { Locator, Page, test, expect } from '@playwright/test';
-import { DEMO_CODE } from '../src/mocks/db';
+import { DEMO_PASSWORD } from '../src/mocks/db';
 
 /**
  * The paths beside the main order cycle, from a clean console, signing in as
@@ -24,10 +24,8 @@ const PEOPLE = {
 async function signInAs(page: Page, who: keyof typeof PEOPLE) {
   await page.goto('/signin');
   await page.getByRole('textbox', { name: 'Email' }).fill(PEOPLE[who]);
-  await page.getByRole('button', { name: /^Send me a code/ }).click();
-  // Filling the first box with the whole code is what a paste or a phone's
-  // one-time-code autofill does; the form signs in on the last digit.
-  await page.getByLabel('Digit 1').fill(DEMO_CODE);
+  await page.locator('input[name="password"]').fill(DEMO_PASSWORD);
+  await page.getByRole('button', { name: /^Sign in/ }).click();
   await expect(page).not.toHaveURL(/\/signin$/, { timeout: 30_000 });
 }
 
@@ -169,8 +167,8 @@ test.describe('beside the main cycle', () => {
     await field(a, 'Vehicle number').fill('MH 15 GT 4482');
     await field(a, 'Driver mobile number').fill('9876543210');
     await a.getByRole('button', { name: 'Allocate vehicle' }).last().click();
-    await expect(page.getByText('Where the truck is · MH 15 GT 4482')).toBeVisible();
-    // Allocated: the order opens on Tracking, where both marks are made.
+    await expect(page.getByText('Vehicle allocated').first()).toBeVisible();
+    // Both marks straight from the Details tab's Next step.
     await page.getByRole('button', { name: /Reached the loading point/ }).click();
     await expect(page.getByText('Marked · reached the loading point')).toBeVisible();
     await page.getByRole('button', { name: /📦 Loaded/ }).click();

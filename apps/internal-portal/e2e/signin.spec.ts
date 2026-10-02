@@ -9,13 +9,13 @@ import { test, expect, type Page } from '@playwright/test';
  * test going red: the suite injected them and never once asked whether a
  * person could actually get in.
  *
- * These run against mocks (see playwright.config.ts), so `/signin` checks
- * the one-time code against `DEMO_CODE` and the fixture accounts in
- * `src/mocks/db.ts`. With `NEXT_PUBLIC_USE_MOCKS=0` Supabase Auth emails a
- * real code instead; only the transport differs.
+ * These run against mocks (see playwright.config.ts), so `/signin` is
+ * checking passwords against the fixture accounts in `src/mocks/db.ts`. With
+ * `NEXT_PUBLIC_USE_MOCKS=0` the same form posts to Supabase Auth instead;
+ * only the transport differs, and what is asserted below sits above it.
  */
 
-const DEMO_CODE = '123456';
+const DEMO_PASSWORD = 'nexraah';
 const OPS_EMAIL = 'anil@nexraah.in';
 
 /**
@@ -42,13 +42,11 @@ test.beforeEach(() => test.slow());
  * *every* navigation — so a test that signs out and then navigates gets the
  * token put straight back, and would pass whether the sign-out worked or not.
  */
-async function signIn(page: Page, email = OPS_EMAIL, code = DEMO_CODE) {
+async function signIn(page: Page, email = OPS_EMAIL, password = DEMO_PASSWORD) {
   await page.goto('/signin');
-  await page.getByLabel('Work email').fill(email);
-  await page.getByRole('button', { name: /^Send me a code/ }).click();
-  // The whole code into the first box — what a paste or autofill does. The
-  // form signs in the moment the last digit lands.
-  await page.getByLabel('Digit 1').fill(code);
+  await page.getByLabel('Email').fill(email);
+  await page.getByLabel('Password', { exact: true }).fill(password);
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
 }
 
 /**
@@ -77,7 +75,7 @@ test.describe('signing in', () => {
     await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible({ timeout: NAV_TIMEOUT });
   });
 
-  test('a correct code lands on the role’s own screen', async ({ page }) => {
+  test('a correct password lands on the role’s own screen', async ({ page }) => {
     await signIn(page);
 
     // OPS lands on /today — the redirect is SessionBootstrap's, driven by the
@@ -86,34 +84,32 @@ test.describe('signing in', () => {
     await expect(page.getByText('Anil Deshmukh')).toBeVisible({ timeout: NAV_TIMEOUT });
   });
 
-  test('a wrong code says so and does not sign anyone in', async ({ page }) => {
-    await signIn(page, OPS_EMAIL, '000000');
+  test('a wrong password says so and does not sign anyone in', async ({ page }) => {
+    await signIn(page, OPS_EMAIL, 'wrong-password');
 
-    await expect(formAlert(page)).toContainText(/wrong or has expired/i, { timeout: NAV_TIMEOUT });
+    await expect(formAlert(page)).toContainText(/do not match an account/i, { timeout: NAV_TIMEOUT });
     await expect(page).toHaveURL(/\/signin$/, { timeout: NAV_TIMEOUT });
     expect(await page.evaluate(() => window.localStorage.getItem('token'))).toBeNull();
   });
 
-  test('an email nobody allowed gets no code', async ({ page }) => {
-    await page.goto('/signin');
-    await page.getByLabel('Work email').fill('nobody@nexraah.in');
-    await page.getByRole('button', { name: /^Send me a code/ }).click();
+  test('an unknown email fails the same way a wrong password does', async ({ page }) => {
+    // Identical wording is the point: a distinguishable failure would let
+    // someone enumerate who has an account here.
+    await signIn(page, 'nobody@nexraah.in');
 
-    await expect(formAlert(page)).toContainText(/not allowed to sign in/i, { timeout: NAV_TIMEOUT });
-    await expect(page.getByLabel('Digit 1')).toHaveCount(0);
+    await expect(formAlert(page)).toContainText(/do not match an account/i, { timeout: NAV_TIMEOUT });
   });
 
-  test('a demo account fills the email but still needs the code', async ({ page }) => {
+  test('a demo account fills the form but still has to sign in', async ({ page }) => {
     await page.goto('/signin');
     await page.getByRole('button', { name: /Sunita Rao/ }).click();
 
-    await expect(page.getByLabel('Work email')).toHaveValue('sunita@nexraah.in', { timeout: NAV_TIMEOUT });
+    await expect(page.getByLabel('Email')).toHaveValue('sunita@nexraah.in', { timeout: NAV_TIMEOUT });
     // Still on the sign-in screen — picking a seat is not signing in, which
     // is exactly what the one-click role buttons this replaces got wrong.
     await expect(page).toHaveURL(/\/signin$/, { timeout: NAV_TIMEOUT });
 
-    await page.getByRole('button', { name: /^Send me a code/ }).click();
-    await page.getByLabel('Digit 1').fill(DEMO_CODE);
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
     await expect(page).toHaveURL(/\/today/, { timeout: NAV_TIMEOUT });
     await expect(page.getByText('Nashik branch')).toBeVisible({ timeout: NAV_TIMEOUT });
   });

@@ -11,7 +11,7 @@ import { CreateChargeDto } from './dto/create-charge.dto';
 import { PatchLrDto } from './dto/patch-lr.dto';
 import { CrossCheckOverrideDto } from './dto/cross-check-override.dto';
 import { DeliverTripDto } from './dto/deliver-trip.dto';
-import { AddTrackingDto, ExtendEwayDto } from './dto/add-tracking.dto';
+import { AddTrackingDto } from './dto/add-tracking.dto';
 import { AssignLoadingSupervisorDto } from './dto/assign-loading-supervisor.dto';
 
 @Controller('trips')
@@ -190,11 +190,5 @@ export class TripsController {
   @Post(':id/tracking')
   addTracking(@Param('id') id: string, @Body() dto: AddTrackingDto, @CurrentUser() user: AuthenticatedUser) {
     return this.tripsService.addTracking(id, dto, user);
-  }
-
-  /** Extends the e-way bill while the truck is still on the road — recorded on the tracking sheet. */
-  @Post(':id/eway-extension')
-  extendEway(@Param('id') id: string, @Body() dto: ExtendEwayDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.tripsService.extendEway(id, dto, user);
   }
 }

@@ -73,19 +73,6 @@ describe('the order cycle', () => {
     const order = await call('OPS', 'GET', `/orders/${INDENT}`);
     expect(order.status).toBe('TRACKING');
 
-    // In transit: a position update carries how the truck is doing.
-    await call('OPS', 'POST', `/trips/${trip.id}/tracking`, { kind: 'UPDATE', location: 'Nagpur', status: 'BREAKDOWN', note: 'Clutch' });
-    // The e-way bill runs out before unloading: it is extended, and only forward.
-    expect(await failure('OPS', 'POST', `/trips/${trip.id}/eway-extension`, { validTill: '2098-01-01' })).toBe('VALIDATION_ERROR');
-    const extended = await call('OPS', 'POST', `/trips/${trip.id}/eway-extension`, {
-      validTill: '2099-02-01',
-      ewayNo: '1812-EXT-01',
-      reason: 'Breakdown near Nagpur',
-    });
-    expect(extended.eway).toEqual({ ewayNo: '1812-EXT-01', validTill: '2099-02-01', uploaded: true });
-    expect(extended.updates.find((u: any) => u.kind === 'UPDATE' && u.location === 'Nagpur').status).toBe('BREAKDOWN');
-    expect(extended.updates.at(-1).note).toMatch(/E-way bill extended to 2099-02-01 \(was 2099-01-01\) — Breakdown near Nagpur/);
-
     // Billing can start while the truck is on the road.
     const invoiceable = await call('FINANCE', 'GET', '/trips?invoiceable=1');
     expect(invoiceable.some((t: any) => t.id === trip.id)).toBe(true);
@@ -102,18 +89,7 @@ describe('the order cycle', () => {
     expect(trip.podStatus).toBe('RECEIVED');
 
     const sheet = await call('OPS', 'GET', `/trips/${trip.id}/tracking`);
-    expect(sheet.updates.map((u: any) => u.kind)).toEqual([
-      'UPDATE',
-      'REACHED_LOADING',
-      'LOADED',
-      'DEPARTED',
-      'UPDATE',
-      'EWAY_EXTENDED',
-      'REACHED',
-      'UNLOADED',
-    ]);
-    // Unloaded: the e-way bill no longer needs extending.
-    expect(await failure('OPS', 'POST', `/trips/${trip.id}/eway-extension`, { validTill: '2099-03-01' })).toBe('TRACKING_CLOSED');
+    expect(sheet.updates.map((u: any) => u.kind)).toEqual(['UPDATE', 'REACHED_LOADING', 'LOADED', 'DEPARTED', 'REACHED', 'UNLOADED']);
   });
 });
 

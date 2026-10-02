@@ -1,4 +1,4 @@
-import { MOCKS_ENABLED, mockRefresh, mockSendCode, mockVerifyCode } from '@/mocks';
+import { MOCKS_ENABLED, mockRefresh, mockSignIn } from '@/mocks';
 
 /**
  * Sign-in, sign-out and the access-token lifecycle — the one place in this
@@ -14,11 +14,8 @@ import { MOCKS_ENABLED, mockRefresh, mockSendCode, mockVerifyCode } from '@/mock
  * downstream — `apis.ts`, the guard's `Authorization: Bearer …` contract,
  * `GET /auth/session` — is identical either way.
  *
- * Sign-in is passwordless: an emailed one-time code (`sendSignInCode`, then
- * `verifySignInCode`), offered only to emails an administrator allowed.
- *
  * Talking to Supabase over `fetch` rather than `@supabase/supabase-js`: the
- * code request, the code check and the refresh grant are one POST each, and the SDK
+ * password grant is one POST and the refresh grant is one more, and the SDK
  * would pull in its own storage, auto-refresh timer and session broadcast
  * channel to sit alongside the ones here and disagree with them. internal-api
  * makes the same call on its side — `lib/jwks.ts` verifies with `jose`
@@ -163,84 +160,20 @@ function signInMessage(
 
 /* ---- the operations this app actually performs -------------------------- */
 
-const NOT_ALLOWED = 'This email is not allowed to sign in. Ask an administrator to add it.';
-
-async function callAuth(path: string, body: Record<string, unknown>) {
-  const { url, anonKey } = supabaseConfig();
-  let response: Response;
-  try {
-    response = await fetch(`${url}/auth/v1/${path}`, {
-      method: 'POST',
-      headers: { apikey: anonKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-  } catch {
-    throw new AuthError('Could not reach the sign-in service. Check your connection and try again.');
-  }
-  const payload = (await response.json().catch(() => null)) as
-    | (Partial<GoTrueTokens> & { error_code?: string; code?: string | number; msg?: string; error_description?: string })
-    | null;
-  return { response, payload, code: payload?.error_code ?? (typeof payload?.code === 'string' ? payload.code : undefined) };
-}
-
 /**
- * Step 1 of sign-in: email a one-time code to `email`.
- *
- * There are no passwords. Who may get a code is the administrator's allowed
- * list (Settings → Allowed emails): adding an email there creates its login,
- * and `create_user: false` stops Supabase inventing a login for anyone else —
- * so an address nobody allowed is refused here and no email goes out.
+ * Exchanges an email and password for a token pair and stores it. Throws
+ * `AuthError` with a line that can be shown as-is; the caller never has to
+ * translate a status code.
  */
-export async function sendSignInCode(email: string): Promise<void> {
+export async function signIn(email: string, password: string): Promise<void> {
   const trimmed = email.trim().toLowerCase();
-  if (!trimmed) throw new AuthError('Enter your work email.');
-  if (MOCKS_ENABLED) {
-    await mockSendCode(trimmed).catch((e: Error) => {
-      throw new AuthError(e.message);
-    });
-    return;
-  }
-  const { response, payload, code } = await callAuth('otp', { email: trimmed, create_user: false });
-  if (response.ok) return;
-  if (response.status === 429 || code === 'over_email_send_rate_limit' || code === 'over_request_rate_limit') {
-    throw new AuthError('A code was sent very recently. Wait a minute, then ask for another.');
-  }
-  if (code === 'otp_disabled' || code === 'signup_disabled' || code === 'user_not_found' || code === 'user_banned') {
-    throw new AuthError(NOT_ALLOWED);
-  }
-  if (response.status === 400 || response.status === 422) throw new AuthError(NOT_ALLOWED);
-  throw new AuthError(payload?.msg ?? payload?.error_description ?? 'The code could not be sent. Try again.');
-}
+  if (!trimmed || !password) throw new AuthError('Enter your email and password.');
 
-/** Step 2: trade the emailed code for a session and store it. */
-export async function verifySignInCode(email: string, code: string): Promise<void> {
-  const trimmed = email.trim().toLowerCase();
-  const token = code.replace(/\s+/g, '');
-  if (!trimmed) throw new AuthError('Enter your work email.');
-  if (!token) throw new AuthError('Enter the code from the email.');
+  const tokens = MOCKS_ENABLED
+    ? await mockSignIn(trimmed, password)
+    : await grant({ email: trimmed, password }, 'password');
 
-  if (MOCKS_ENABLED) {
-    const tokens = await mockVerifyCode(trimmed, token).catch((e: Error) => {
-      throw new AuthError(e.message);
-    });
-    store(tokens);
-    return;
-  }
-
-  const { response, payload, code: errorCode } = await callAuth('verify', { type: 'email', email: trimmed, token });
-  if (!response.ok) {
-    if (response.status === 429) throw new AuthError('Too many attempts. Wait a minute and try again.');
-    if (errorCode === 'user_banned') throw new AuthError(NOT_ALLOWED);
-    throw new AuthError('That code is wrong or has expired. Check the latest email, or send a new code.');
-  }
-  if (!payload?.access_token || !payload.refresh_token) {
-    throw new AuthError('The sign-in service returned an unexpected response.');
-  }
-  store({
-    accessToken: payload.access_token,
-    refreshToken: payload.refresh_token,
-    expiresAt: Date.now() + (payload.expires_in ?? 3600) * 1000,
-  });
+  store(tokens);
 }
 
 /**

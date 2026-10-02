@@ -1,5 +1,5 @@
 import { Locator, Page, test, expect } from '@playwright/test';
-import { DEMO_CODE } from '../src/mocks/db';
+import { DEMO_PASSWORD } from '../src/mocks/db';
 
 /**
  * Real data, entered the way a person enters it, from a clean console:
@@ -25,10 +25,8 @@ async function signInAs(page: Page, who: keyof typeof PEOPLE) {
   }
   await page.goto('/signin');
   await page.getByRole('textbox', { name: 'Email' }).fill(PEOPLE[who]);
-  await page.getByRole('button', { name: /^Send me a code/ }).click();
-  // Filling the first box with the whole code is what a paste or a phone's
-  // one-time-code autofill does; the form signs in on the last digit.
-  await page.getByLabel('Digit 1').fill(DEMO_CODE);
+  await page.locator('input[name="password"]').fill(DEMO_PASSWORD);
+  await page.getByRole('button', { name: /^Sign in/ }).click();
   await expect(page).not.toHaveURL(/\/signin$/, { timeout: 30_000 });
 }
 
@@ -230,8 +228,7 @@ test.describe('real data, end to end', () => {
     await field(a, 'Vehicle number').fill('MH 15 AB 9911');
     await field(a, 'Driver mobile number').fill('9765432109');
     await a.getByRole('button', { name: 'Allocate vehicle' }).last().click();
-    // Vehicle assigned: the order goes for tracking, with the truck on it.
-    await expect(page.getByText('Where the truck is · MH 15 AB 9911')).toBeVisible();
+    await expect(page.getByText('Vehicle allocated').first()).toBeVisible();
     await shot('04-allocated');
   });
 

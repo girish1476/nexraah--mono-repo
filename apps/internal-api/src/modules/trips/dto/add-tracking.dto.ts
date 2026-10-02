@@ -20,23 +20,6 @@ export class AddTrackingDto {
 
   @IsOptional() @IsString() @MaxLength(500) note?: string;
 
-  /** How the truck is doing — moving, halted, at a checkpost, broken down… */
-  @IsOptional() @IsIn(['MOVING', 'HALTED', 'CHECKPOST', 'TRAFFIC', 'BREAKDOWN', 'ACCIDENT', 'WAITING_TO_UNLOAD', 'OTHER']) status?: string;
-
   /** When it happened; now when left out. */
   @IsOptional() @IsDateString() at?: string;
-}
-
-/** How the truck is doing at a position update. */
-export const TRACKING_STATUSES = ['MOVING', 'HALTED', 'CHECKPOST', 'TRAFFIC', 'BREAKDOWN', 'ACCIDENT', 'WAITING_TO_UNLOAD', 'OTHER'] as const;
-
-/**
- * `POST /trips/:id/eway-extension` — the e-way bill extended while the truck
- * is still on the road. The same paper, valid for longer; optionally the
- * extension's own number.
- */
-export class ExtendEwayDto {
-  @IsDateString() validTill!: string;
-  @IsOptional() @IsString() @MaxLength(40) ewayNo?: string;
-  @IsOptional() @IsString() @MaxLength(300) reason?: string;
 }

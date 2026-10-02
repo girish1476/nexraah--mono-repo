@@ -135,21 +135,7 @@ export interface TripDetail extends TripListRow {
  * are the order cycle's milestones, in order: reached the loading point,
  * loaded, started (`DEPARTED`), reached the unloading point, unloaded.
  */
-export type TrackingKind = 'UPDATE' | 'REACHED_LOADING' | 'LOADED' | 'DEPARTED' | 'REACHED' | 'UNLOADED' | 'EWAY_EXTENDED';
-
-/** How the truck is doing at a position update. */
-export type TrackingStatus = 'MOVING' | 'HALTED' | 'CHECKPOST' | 'TRAFFIC' | 'BREAKDOWN' | 'ACCIDENT' | 'WAITING_TO_UNLOAD' | 'OTHER';
-
-export const TRACKING_STATUS_LABEL: Record<TrackingStatus, string> = {
-  MOVING: 'Moving',
-  HALTED: 'Halted / resting',
-  CHECKPOST: 'At a checkpost',
-  TRAFFIC: 'Stuck in traffic / road blocked',
-  BREAKDOWN: 'Breakdown',
-  ACCIDENT: 'Accident',
-  WAITING_TO_UNLOAD: 'Waiting to unload',
-  OTHER: 'Other',
-};
+export type TrackingKind = 'UPDATE' | 'REACHED_LOADING' | 'LOADED' | 'DEPARTED' | 'REACHED' | 'UNLOADED';
 
 /** What can be posted — starting the trip and unloading have their own actions. */
 export type TrackingPostKind = 'UPDATE' | 'REACHED_LOADING' | 'LOADED' | 'REACHED';
@@ -161,14 +147,11 @@ export interface TrackingUpdate {
   lat: number | null;
   lng: number | null;
   note: string | null;
-  status?: TrackingStatus | null;
   recordedAt: string;
   recordedByName: string | null;
 }
 
 export interface TrackingSheet {
-  /** The e-way bill riding with the truck — extended on the road when it runs out before unloading. */
-  eway?: { ewayNo: string | null; validTill: string | null; uploaded: boolean };
   tripId: string;
   stage: TripStage;
   vehicleNo: string | null;

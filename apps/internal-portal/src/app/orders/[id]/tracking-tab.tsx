@@ -2,10 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { ApiError, errorMessage } from '@/apis';
-import { addTracking, deliverTrip, departTrip, extendEway, getTracking } from '@/app/trips/apis';
-import { TRACKING_STATUS_LABEL } from '@/app/trips/types';
-import type { TrackingKind, TrackingSheet, TrackingStatus, TrackingUpdate } from '@/app/trips/types';
-import { fmtDate, fmtDateTime } from '@/lib/format';
+import { addTracking, deliverTrip, departTrip, getTracking } from '@/app/trips/apis';
+import type { TrackingKind, TrackingSheet, TrackingUpdate } from '@/app/trips/types';
+import { fmtDateTime } from '@/lib/format';
 import { Banner, Column, DataTable, ErrorState, Field, FormGrid, Loading, Panel, Stack, Tag, useCan, useToast } from '@/lib/ui';
 
 /**
@@ -37,7 +36,6 @@ const KIND_LABEL: Record<TrackingKind, string> = {
   DEPARTED: 'Left for delivery',
   REACHED: 'Reached the unloading point',
   UNLOADED: 'Unloaded',
-  EWAY_EXTENDED: 'E-way bill extended',
 };
 
 /** Where the order stands in the cycle — the index of the step it is on. */
@@ -82,14 +80,7 @@ export function OrderTrackingTab({
   const [sheet, setSheet] = useState<TrackingSheet | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [update, setUpdate] = useState<{ location: string; lat: string; lng: string; note: string; status: TrackingStatus }>({
-    location: '',
-    lat: '',
-    lng: '',
-    note: '',
-    status: 'MOVING',
-  });
-  const [eway, setEway] = useState({ validTill: '', ewayNo: '', reason: '' });
+  const [update, setUpdate] = useState({ location: '', lat: '', lng: '', note: '' });
   const [unloadedAt, setUnloadedAt] = useState(nowLocal);
 
   const load = () => {
@@ -132,23 +123,13 @@ export function OrderTrackingTab({
           location: update.location.trim(),
           ...(lat !== undefined && lng !== undefined ? { lat, lng } : {}),
           note: update.note.trim() || undefined,
-          status: update.status,
         }).then((r) => {
-          setUpdate({ location: '', lat: '', lng: '', note: '', status: 'MOVING' });
+          setUpdate({ location: '', lat: '', lng: '', note: '' });
           return r;
         }),
       'Tracking updated',
     );
   };
-
-  // Valid, running out within a day, or expired — judged against the end of the validity day.
-  const ewayState: 'none' | 'valid' | 'expiring' | 'expired' = (() => {
-    const till = sheet.eway?.uploaded ? sheet.eway.validTill : null;
-    if (!till) return 'none';
-    const end = new Date(`${till.slice(0, 10)}T23:59:59`).getTime();
-    const left = end - Date.now();
-    return left < 0 ? 'expired' : left < 86_400_000 ? 'expiring' : 'valid';
-  })();
 
   const step = currentStep(sheet);
   const open = sheet.stage === 'OPEN';
@@ -168,16 +149,7 @@ export function OrderTrackingTab({
     {
       key: 'what',
       label: 'What',
-      render: (r) =>
-        r.kind === 'UPDATE' ? (
-          r.status && r.status !== 'MOVING' ? (
-            <Tag tone={['BREAKDOWN', 'ACCIDENT'].includes(r.status) ? 'red' : 'flag'}>{TRACKING_STATUS_LABEL[r.status]}</Tag>
-          ) : (
-            KIND_LABEL.UPDATE + (r.status ? ` · ${TRACKING_STATUS_LABEL[r.status]}` : '')
-          )
-        ) : (
-          <Tag tone={r.kind === 'UNLOADED' ? 'mint' : r.kind === 'EWAY_EXTENDED' ? 'flag' : 'blue'}>{KIND_LABEL[r.kind]}</Tag>
-        ),
+      render: (r) => (r.kind === 'UPDATE' ? KIND_LABEL.UPDATE : <Tag tone={r.kind === 'UNLOADED' ? 'mint' : 'blue'}>{KIND_LABEL[r.kind]}</Tag>),
     },
     {
       key: 'where',
@@ -300,80 +272,6 @@ export function OrderTrackingTab({
         )}
       </Panel>
 
-      {/* The e-way bill rides with the truck. Tracking is mandatory partly for
-          this: one that runs out before unloading has to be extended. */}
-      {(open || onRoad) && (
-        <Panel
-          title="🧾 E-way bill"
-          right={
-            ewayState === 'expired' ? (
-              <Tag tone="red">Expired</Tag>
-            ) : ewayState === 'expiring' ? (
-              <Tag tone="flag">Runs out within a day</Tag>
-            ) : ewayState === 'valid' ? (
-              <Tag tone="mint">Valid</Tag>
-            ) : (
-              <Tag tone="grey">Not uploaded</Tag>
-            )
-          }
-        >
-          {!sheet.eway?.uploaded ? (
-            <p className="muted" style={{ margin: 0, fontSize: 'var(--text-sm)' }}>
-              The e-way bill is uploaded with the advance documents once the truck is loaded. Its validity shows here,
-              and it can be extended while the truck is on the road.
-            </p>
-          ) : (
-            <>
-              <p style={{ marginTop: 0, fontSize: 'var(--text-sm)' }}>
-                {sheet.eway.ewayNo ? `No. ${sheet.eway.ewayNo} · ` : ''}
-                valid till <strong>{sheet.eway.validTill ? fmtDate(sheet.eway.validTill) : '—'}</strong>
-                {ewayState === 'expired'
-                  ? ' — expired while the truck is not yet unloaded. Extend it now.'
-                  : ewayState === 'expiring'
-                    ? ' — runs out within a day and the truck is not yet unloaded. Extend it.'
-                    : ''}
-              </p>
-              {canRun && (
-                <>
-                  <FormGrid>
-                    <Field label="Extend validity till" required>
-                      <input type="date" value={eway.validTill} onChange={(e) => setEway({ ...eway, validTill: e.target.value })} />
-                    </Field>
-                    <Field label="Extension / new e-way bill number" hint="Optional — if the extension has its own number.">
-                      <input value={eway.ewayNo} onChange={(e) => setEway({ ...eway, ewayNo: e.target.value })} />
-                    </Field>
-                    <Field label="Why it was extended" hint="Optional — e.g. breakdown near Nagpur.">
-                      <input value={eway.reason} onChange={(e) => setEway({ ...eway, reason: e.target.value })} />
-                    </Field>
-                  </FormGrid>
-                  <button
-                    className={ewayState === 'expired' || ewayState === 'expiring' ? 'btn' : 'btn btn-secondary'}
-                    style={{ marginTop: 'var(--space-3)' }}
-                    disabled={busy || !eway.validTill}
-                    onClick={() =>
-                      run(
-                        () =>
-                          extendEway(tripId, {
-                            validTill: eway.validTill,
-                            ...(eway.ewayNo.trim() ? { ewayNo: eway.ewayNo.trim() } : {}),
-                            ...(eway.reason.trim() ? { reason: eway.reason.trim() } : {}),
-                          }).then((r) => {
-                            setEway({ validTill: '', ewayNo: '', reason: '' });
-                            return r;
-                          }),
-                        'E-way bill extended',
-                      )
-                    }
-                  >
-                    🧾 Extend e-way bill
-                  </button>
-                </>
-              )}
-            </>
-          )}
-        </Panel>
-      )}
-
       <Panel title="🗺️ Map" pad={false}>
         <iframe
           title={`Map — ${mapQuery}`}
@@ -397,15 +295,6 @@ export function OrderTrackingTab({
             shows the exact spot.
           </p>
           <FormGrid>
-            <Field label="Status" hint="How the truck is doing right now.">
-              <select value={update.status} onChange={(e) => setUpdate({ ...update, status: e.target.value as TrackingStatus })}>
-                {(Object.keys(TRACKING_STATUS_LABEL) as TrackingStatus[]).map((s) => (
-                  <option key={s} value={s}>
-                    {TRACKING_STATUS_LABEL[s]}
-                  </option>
-                ))}
-              </select>
-            </Field>
             <Field label="Location" required hint="A city, toll plaza or landmark.">
               <input value={update.location} onChange={(e) => setUpdate({ ...update, location: e.target.value })} placeholder="e.g. Nagpur bypass" />
             </Field>

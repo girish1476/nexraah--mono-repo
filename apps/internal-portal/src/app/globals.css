@@ -2091,146 +2091,124 @@ details[open] > summary::before {
   }
 }
 
-/* ---- sign-in ----------------------------------------------------------------
-   The whole screen sits on the logo's own navy (#060e32) so the mark is not a
-   square pasted onto a page — it is the page. The logo's sky blue (#2196e6)
-   is the only accent: the glow behind the mark, the focus ring, the button.
-   No white anywhere but the type. */
+/* ---- auth shell -----------------------------------------------------------
+   The sign-in screen used to be a bare white card floating on flat grey —
+   nothing on it said this was Nexraah before you read the fine print, and
+   it's the first thing every stakeholder and new hire sees. On a wide screen
+   a brand panel now carries the mark, the name and one sentence of what this
+   place is, on the same gradient `.hero` already uses inside the console —
+   so signed-out and signed-in read as the same product. Below the console's
+   own breakpoint the panel folds to a slim strip above the form: nobody
+   should have to scroll past a hero to reach a password field on a phone. */
 
 .auth-shell {
-  --auth-navy: #060e32;
-  --auth-navy-2: #0b1a4a;
-  --auth-sky: #2196e6;
-  --auth-sky-2: #4fb3ff;
-  --auth-ink: #eef4ff;
-  --auth-ink-soft: rgba(226, 236, 255, 0.72);
-  --auth-line: rgba(140, 180, 255, 0.18);
-  --auth-glass: rgba(14, 30, 80, 0.62);
-
   min-height: 100vh;
   display: flex;
-  align-items: stretch;
-  position: relative;
-  overflow: hidden;
-  color: var(--auth-ink);
-  background:
-    radial-gradient(900px 600px at 18% 30%, rgba(33, 150, 230, 0.22), transparent 60%),
-    radial-gradient(700px 520px at 88% 85%, rgba(40, 90, 220, 0.25), transparent 65%),
-    radial-gradient(500px 400px at 75% 8%, rgba(79, 179, 255, 0.1), transparent 70%),
-    var(--auth-navy);
 }
-/* Faint meridians and parallels — the globe from the logo, scaled up to fill
-   the room, faded out toward the edges so it never competes with the form. */
-.auth-shell::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background:
-    repeating-radial-gradient(circle at 18% 30%, transparent 0 78px, rgba(120, 170, 255, 0.07) 78px 79px),
-    repeating-linear-gradient(90deg, transparent 0 119px, rgba(120, 170, 255, 0.04) 119px 120px);
-  -webkit-mask-image: radial-gradient(1100px 800px at 25% 35%, #000 20%, transparent 75%);
-  mask-image: radial-gradient(1100px 800px at 25% 35%, #000 20%, transparent 75%);
-}
-/* A slow drifting light, like a plane crossing the globe. */
-.auth-shell::after {
-  content: '';
-  position: absolute;
-  width: 420px;
-  height: 420px;
-  border-radius: 50%;
-  top: 55%;
-  left: 40%;
-  pointer-events: none;
-  background: radial-gradient(circle, rgba(79, 179, 255, 0.12), transparent 65%);
-  animation: auth-drift 18s ease-in-out infinite alternate;
-}
-@keyframes auth-drift {
-  from { transform: translate(-120px, -60px); }
-  to { transform: translate(160px, -220px); }
-}
-
 .auth-brand {
-  flex: 1 1 520px;
+  flex: 1 1 420px;
+  max-width: 460px;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  align-items: center;
   padding: var(--space-8) var(--space-7);
+  color: #fff;
   position: relative;
-  z-index: 1;
+  overflow: hidden;
+  background: linear-gradient(150deg, var(--color-accent-800), var(--color-accent-600) 55%, #3f77d8);
+}
+/* A few faint radial highlights behind the mark so the panel reads as a
+   designed scene rather than a flat fill — kept subtle enough not to fight
+   the logo plate for attention. */
+.auth-brand::before,
+.auth-brand::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+.auth-brand::before {
+  width: 520px;
+  height: 520px;
+  top: -220px;
+  right: -220px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.14), transparent 70%);
+}
+.auth-brand::after {
+  width: 360px;
+  height: 360px;
+  bottom: -160px;
+  left: -140px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.09), transparent 70%);
 }
 .auth-brand-head {
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-}
-/* The logo's background is the page's background, so it needs no plate —
-   only light. A soft sky-blue halo pulses behind it and a thin ring frames
-   it, so the mark is unmistakably the centre of the screen. */
-.auth-brand-logo-plate {
-  width: 280px;
-  height: 280px;
-  border-radius: 36px;
   position: relative;
+  z-index: 1;
+}
+/*
+ * `logo.png` is a solid navy square — the same family of dark blue as this
+ * panel's own gradient. Sitting directly on it, the logo's own edges nearly
+ * vanished into the background it was supposed to stand in front of; only
+ * the lighter glyph inside was visible at all, and faintly. A white plate
+ * behind it is what actually fixes that — the logo now sits on the one
+ * colour guaranteed to contrast with the gradient behind it, rather than on
+ * a close cousin of its own background. `object-fit: contain` on the image
+ * so nothing painted right at the logo's own edges gets cropped by the
+ * plate's padding.
+ *
+ * This is the first thing anyone signing in sees, so it gets the largest,
+ * most deliberate treatment on the page: a big plate, a bright multi-layer
+ * glow, and a soft float animation so it reads as "alive" rather than a
+ * static app icon pasted onto a gradient.
+ */
+.auth-brand-logo-plate {
+  width: 240px;
+  height: 240px;
+  padding: 20px;
+  border-radius: 42px;
+  background: #fff;
   display: grid;
   place-items: center;
   flex: none;
-  background: var(--auth-navy);
   box-shadow:
-    0 0 0 1px rgba(79, 179, 255, 0.35),
-    0 0 0 10px rgba(33, 150, 230, 0.08),
-    0 0 120px 10px rgba(33, 150, 230, 0.35),
-    0 40px 80px -20px rgba(0, 0, 0, 0.6);
-  animation: auth-logo-float 6s ease-in-out infinite;
-}
-.auth-brand-logo-plate::before {
-  content: '';
-  position: absolute;
-  inset: -40px;
-  border-radius: 50%;
-  z-index: -1;
-  background: radial-gradient(circle, rgba(33, 150, 230, 0.45), transparent 65%);
-  animation: auth-halo 4s ease-in-out infinite;
+    0 0 0 8px rgba(255, 255, 255, 0.16),
+    0 0 90px 20px rgba(255, 255, 255, 0.35),
+    0 24px 60px rgba(10, 20, 50, 0.45);
+  animation: auth-logo-float 5s ease-in-out infinite;
 }
 .auth-brand-logo {
   width: 100%;
   height: 100%;
-  border-radius: 36px;
+  border-radius: 24px;
   object-fit: contain;
 }
 @keyframes auth-logo-float {
   0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-10px); }
+  50% { transform: translateY(-8px); }
 }
-@keyframes auth-halo {
-  0%, 100% { opacity: 0.65; transform: scale(0.96); }
-  50% { opacity: 1; transform: scale(1.04); }
+@media (prefers-reduced-motion: reduce) {
+  .auth-brand-logo-plate {
+    animation: none;
+  }
 }
 .auth-brand-name {
   font-family: var(--font-heading);
-  font-size: 44px;
+  font-size: 38px;
   font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  margin-top: var(--space-6);
-  background: linear-gradient(180deg, #ffffff 30%, #a9d4ff);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  letter-spacing: -0.02em;
+  margin-top: var(--space-5);
+  text-shadow: 0 2px 24px rgba(0, 0, 0, 0.25);
 }
 .auth-brand-tag {
-  margin-top: 6px;
-  display: inline-block;
-  padding: 5px 14px;
-  border-radius: 999px;
-  font-size: var(--text-sm);
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: #fff;
-  background: linear-gradient(90deg, #1565c0, var(--auth-sky));
-  box-shadow: 0 8px 24px -8px rgba(33, 150, 230, 0.8);
+  font-size: var(--text-md);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: rgba(255, 255, 255, 0.82);
+  margin-top: 4px;
 }
 .auth-brand-points {
   list-style: none;
@@ -2238,56 +2216,94 @@ details[open] > summary::before {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  max-width: 420px;
+  gap: var(--space-4);
+  position: relative;
+  z-index: 1;
 }
 .auth-brand-points li {
   display: flex;
   gap: var(--space-3);
   align-items: flex-start;
-  padding: 10px 14px;
-  border-radius: 14px;
-  border: 1px solid var(--auth-line);
-  background: rgba(255, 255, 255, 0.03);
   font-size: var(--text-base);
   line-height: 1.5;
-  color: var(--auth-ink-soft);
+  color: rgba(255, 255, 255, 0.92);
 }
 .auth-brand-points li span:first-child {
-  font-size: 18px;
+  font-size: 19px;
   flex: none;
   font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
 }
-
 .auth-form-col {
-  flex: 1 1 480px;
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: var(--space-7) var(--space-5);
-  position: relative;
-  z-index: 1;
+  padding: var(--space-6) var(--space-4);
+}
+@media (max-width: 900px) {
+  .auth-shell {
+    flex-direction: column;
+  }
+  .auth-brand {
+    max-width: none;
+    flex: none;
+    padding: var(--space-6) var(--space-5);
+  }
+  .auth-brand-head {
+    flex-direction: column;
+    text-align: center;
+    gap: 0;
+  }
+  /* Still big and lit up on a phone — a 64px badge in a row layout was the
+     part that read as an afterthought instead of the front door of the app. */
+  .auth-brand-logo-plate {
+    width: 128px;
+    height: 128px;
+    padding: 12px;
+    border-radius: 28px;
+    box-shadow:
+      0 0 0 6px rgba(255, 255, 255, 0.16),
+      0 0 56px 14px rgba(255, 255, 255, 0.32),
+      0 14px 32px rgba(10, 20, 50, 0.4);
+  }
+  .auth-brand-logo {
+    border-radius: 16px;
+  }
+  .auth-brand-name {
+    margin-top: var(--space-4);
+    font-size: 26px;
+  }
+  .auth-brand-tag {
+    display: block;
+  }
+  .auth-brand-points {
+    display: flex;
+    margin-top: var(--space-5);
+  }
+}
+@media (max-width: 480px) {
+  .auth-brand-logo-plate {
+    width: 104px;
+    height: 104px;
+  }
+  .auth-brand-name {
+    font-size: 22px;
+  }
 }
 
-/* ---- the card: dark glass on navy --------------------------------------- */
+/* ---- sign-in card ---------------------------------------------------------
+   The card itself used to be a generic `.surface` with inline padding — the
+   same box a data table sits in. This is the one screen every single person
+   who has ever used the console has looked at; it earns its own treatment:
+   a coloured top edge, more air, bigger touch targets, and icons riding
+   inside the inputs rather than a bare label above a plain box. */
 
-.auth-shell .surface.auth-card,
-.auth-shell .surface.auth-demo-panel,
-.auth-shell .surface.auth-reset-panel {
-  background: var(--auth-glass);
-  border: 1px solid var(--auth-line);
-  color: var(--auth-ink);
-  -webkit-backdrop-filter: blur(18px) saturate(140%);
-  backdrop-filter: blur(18px) saturate(140%);
-}
 .auth-card {
   padding: var(--space-7) var(--space-6) var(--space-6);
-  border-radius: 24px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
   position: relative;
   overflow: hidden;
-  box-shadow:
-    0 30px 80px -20px rgba(0, 0, 0, 0.7),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 .auth-card::before {
   content: '';
@@ -2295,62 +2311,40 @@ details[open] > summary::before {
   top: 0;
   left: 0;
   right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, transparent, var(--auth-sky) 30%, var(--auth-sky-2) 70%, transparent);
+  height: 4px;
+  background: linear-gradient(90deg, var(--color-accent-600), var(--color-accent-400) 55%, #3f77d8);
 }
 .auth-card-eyebrow {
-  margin: 0 0 10px;
+  margin: 0 0 8px;
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
-  color: var(--auth-sky-2);
+  color: var(--color-accent);
 }
 .auth-card h1 {
-  margin: 0 0 6px;
+  margin: 0 0 4px;
   font-family: var(--font-heading);
-  font-size: 30px;
+  font-size: 27px;
   font-weight: 800;
   letter-spacing: -0.01em;
-  color: #fff;
+  color: var(--color-text);
 }
 .auth-card-sub {
   margin: 0 0 var(--space-6);
   font-size: var(--text-base);
-  line-height: 1.55;
-  color: var(--auth-ink-soft);
-}
-.auth-card-sub strong {
-  color: #fff;
+  color: var(--color-text-soft);
 }
 .auth-card .field {
   margin-bottom: var(--space-4);
 }
-.auth-card .field label {
-  color: var(--auth-ink-soft);
-  font-weight: 600;
-}
 .auth-card .field input {
-  min-height: 50px;
-  font-size: var(--text-md);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(160, 195, 255, 0.22);
-  color: #fff;
-  caret-color: var(--auth-sky-2);
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast);
-}
-.auth-card .field input::placeholder {
-  color: rgba(200, 220, 255, 0.4);
+  min-height: 46px;
+  font-size: var(--text-base);
+  border-radius: var(--radius-md);
 }
 .auth-card .field input:focus {
-  outline: none;
-  background: rgba(255, 255, 255, 0.09);
-  border-color: var(--auth-sky);
-  box-shadow: 0 0 0 4px rgba(33, 150, 230, 0.25);
-}
-.auth-card .field input:disabled {
-  opacity: 0.6;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 16%, transparent);
 }
 .auth-input-wrap {
   position: relative;
@@ -2359,159 +2353,78 @@ details[open] > summary::before {
 }
 .auth-input-wrap input {
   width: 100%;
-  padding-left: 44px !important;
+  padding-left: 40px !important;
 }
 .auth-input-icon {
   position: absolute;
-  left: 15px;
-  font-size: 16px;
-  opacity: 0.75;
+  left: 13px;
+  font-size: 15px;
+  opacity: 0.6;
   pointer-events: none;
   font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
 }
-
-/* Six separate boxes for the one-time code. Paste fills all six. */
-.auth-otp {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 10px;
-  margin-bottom: var(--space-4);
+.auth-input-has-toggle {
+  padding-right: 44px !important;
 }
-.auth-otp input {
-  width: 100%;
-  min-width: 0;
-  height: 58px;
-  padding: 0;
-  text-align: center;
-  font-size: 24px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(160, 195, 255, 0.22);
-  color: #fff;
-  caret-color: var(--auth-sky-2);
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
+.auth-input-toggle {
+  position: absolute;
+  right: 5px;
+  min-height: 36px;
+  padding: 0 10px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--color-text-soft);
+  transition: background var(--transition-fast);
 }
-.auth-otp input:focus {
-  outline: none;
-  border-color: var(--auth-sky);
-  box-shadow: 0 0 0 4px rgba(33, 150, 230, 0.25);
-  transform: translateY(-1px);
+.auth-input-toggle:hover {
+  background: var(--color-neutral-200);
 }
-.auth-otp input.filled {
-  border-color: rgba(79, 179, 255, 0.6);
-  background: rgba(33, 150, 230, 0.12);
-}
-.auth-otp.shake {
-  animation: auth-shake 0.4s;
-}
-@keyframes auth-shake {
-  20%, 60% { transform: translateX(-6px); }
-  40%, 80% { transform: translateX(6px); }
-}
-.auth-sent-to {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0 0 var(--space-5);
-  padding: 10px 14px;
-  border-radius: 14px;
-  background: rgba(33, 150, 230, 0.12);
-  border: 1px solid rgba(79, 179, 255, 0.3);
-  font-size: var(--text-sm);
-  color: var(--auth-ink-soft);
-}
-.auth-sent-to strong {
-  color: #fff;
-  word-break: break-all;
-}
-
 .auth-error {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: 6px;
   margin: 2px 0 var(--space-3);
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: rgba(239, 68, 68, 0.14);
-  border: 1px solid rgba(248, 113, 113, 0.4);
-  color: #fecaca;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--red-tint);
+  border: 1px solid var(--red-edge);
+  color: var(--red);
   font-size: var(--text-sm);
   font-weight: 600;
 }
 .auth-submit {
   width: 100%;
-  min-height: 52px;
   margin-top: var(--space-2);
-  border: none;
-  border-radius: 14px;
-  font-size: var(--text-md);
-  font-weight: 700;
-  color: #fff;
-  background: linear-gradient(135deg, var(--auth-sky-2), var(--auth-sky) 45%, #1565c0);
-  box-shadow: 0 16px 34px -12px rgba(33, 150, 230, 0.9);
-  transition: transform var(--transition-fast), box-shadow var(--transition-fast), filter var(--transition-fast);
+  box-shadow: 0 12px 26px -10px color-mix(in srgb, var(--color-accent) 65%, transparent);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast);
 }
 .auth-submit:hover:not(:disabled) {
   transform: translateY(-1px);
-  filter: brightness(1.08);
-  box-shadow: 0 20px 40px -12px rgba(33, 150, 230, 1);
+  box-shadow: 0 16px 32px -10px color-mix(in srgb, var(--color-accent) 70%, transparent);
 }
 .auth-submit:active:not(:disabled) {
   transform: translateY(0);
 }
-.auth-submit:disabled {
-  opacity: 0.45;
-  box-shadow: none;
-}
-.auth-links {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: var(--space-4);
-}
-.auth-link {
-  background: none;
-  border: none;
-  padding: 6px 2px;
-  font: inherit;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--auth-sky-2);
-  cursor: pointer;
-}
-.auth-link:hover:not(:disabled) {
-  color: #fff;
-  text-decoration: underline;
-}
-.auth-link:disabled {
-  color: rgba(200, 220, 255, 0.45);
-  cursor: default;
-}
-.auth-foot {
-  margin: var(--space-5) 0 0;
-  text-align: center;
-  font-size: 12px;
-  color: rgba(200, 220, 255, 0.5);
-}
 
-/* ---- demo accounts + reset panel (mock mode only) ----------------------- */
+/* ---- demo accounts + reset panel ------------------------------------------
+   Below the card, mock-mode-only. Given the same card chrome as the sign-in
+   form (rather than a plain grey box) they read as part of the same product
+   moment instead of leftover dev scaffolding. */
 
 .auth-demo-panel,
 .auth-reset-panel {
   padding: var(--space-5);
   margin-top: var(--space-4);
-  border-radius: 20px;
+  border-radius: var(--radius-lg);
 }
 .auth-demo-copy {
   margin: 0 0 var(--space-3);
   font-size: var(--text-sm);
-  color: var(--auth-ink-soft);
-}
-.auth-demo-copy strong {
-  color: #fff;
-  letter-spacing: 0.12em;
+  color: var(--color-text-soft);
 }
 .auth-demo-list {
   display: flex;
@@ -2524,18 +2437,21 @@ details[open] > summary::before {
   gap: 11px;
   width: 100%;
   padding: 9px 11px;
-  border: 1px solid var(--auth-line);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
   cursor: pointer;
   text-align: left;
   font-family: inherit;
   transition: border-color var(--transition-fast), background var(--transition-fast), transform var(--transition-fast);
 }
 .auth-demo-card:hover {
-  border-color: var(--auth-sky);
-  background: rgba(33, 150, 230, 0.14);
+  border-color: var(--color-accent-400);
+  background: var(--color-accent-tint);
   transform: translateY(-1px);
+}
+.auth-demo-card:active {
+  transform: translateY(0);
 }
 .auth-demo-avatar {
   flex: none;
@@ -2558,22 +2474,28 @@ details[open] > summary::before {
 .auth-demo-name {
   font-size: var(--text-base);
   font-weight: 600;
-  color: #fff;
+  color: var(--color-text);
 }
 .auth-demo-role {
   font-size: var(--text-sm);
-  color: var(--auth-ink-soft);
+  color: var(--color-text-soft);
 }
 .auth-demo-arrow {
   flex: none;
+  color: var(--color-neutral-400);
   opacity: 0;
-  color: var(--auth-sky-2);
   transform: translateX(-4px);
   transition: opacity var(--transition-fast), transform var(--transition-fast);
 }
 .auth-demo-card:hover .auth-demo-arrow {
   opacity: 1;
   transform: translateX(0);
+  color: var(--color-accent);
+}
+.auth-reset-panel {
+  background: var(--flag-tint);
+  border: 1px solid var(--flag-edge);
+  box-shadow: none;
 }
 .auth-reset-copy {
   display: flex;
@@ -2581,67 +2503,10 @@ details[open] > summary::before {
   gap: 8px;
   margin: 0 0 var(--space-3);
   font-size: var(--text-sm);
-  color: var(--auth-ink-soft);
+  color: var(--color-text-soft);
 }
 .auth-reset-panel .btn-secondary {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: var(--auth-line);
-  color: #fff;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .auth-brand-logo-plate,
-  .auth-brand-logo-plate::before,
-  .auth-shell::after,
-  .auth-otp.shake {
-    animation: none;
-  }
-}
-
-@media (max-width: 900px) {
-  .auth-shell {
-    flex-direction: column;
-  }
-  .auth-brand {
-    flex: none;
-    padding: var(--space-6) var(--space-4) 0;
-  }
-  .auth-brand-logo-plate,
-  .auth-brand-logo {
-    width: 150px;
-    height: 150px;
-    border-radius: 26px;
-  }
-  .auth-brand-name {
-    font-size: 30px;
-    margin-top: var(--space-4);
-  }
-  .auth-brand-points {
-    display: none;
-  }
-  .auth-form-col {
-    padding: var(--space-5) var(--space-4) var(--space-6);
-  }
-}
-@media (max-width: 480px) {
-  .auth-brand-logo-plate,
-  .auth-brand-logo {
-    width: 116px;
-    height: 116px;
-  }
-  .auth-brand-name {
-    font-size: 24px;
-  }
-  .auth-card {
-    padding: var(--space-6) var(--space-4) var(--space-5);
-  }
-  .auth-otp {
-    gap: 6px;
-  }
-  .auth-otp input {
-    height: 50px;
-    font-size: 20px;
-  }
+  border-color: var(--flag-edge);
 }
 
 /* ---- print -------------------------------------------------------------- */

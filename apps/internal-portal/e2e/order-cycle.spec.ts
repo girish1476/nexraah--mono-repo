@@ -1,5 +1,5 @@
 import { Locator, Page, test, expect } from '@playwright/test';
-import { DEMO_CODE } from '../src/mocks/db';
+import { DEMO_PASSWORD } from '../src/mocks/db';
 
 /**
  * The order cycle the operations team works to, driven only from the order
@@ -29,10 +29,8 @@ const PEOPLE = {
 async function signInAs(page: Page, who: keyof typeof PEOPLE) {
   await page.goto('/signin');
   await page.getByRole('textbox', { name: 'Email' }).fill(PEOPLE[who]);
-  await page.getByRole('button', { name: /^Send me a code/ }).click();
-  // Filling the first box with the whole code is what a paste or a phone's
-  // one-time-code autofill does; the form signs in on the last digit.
-  await page.getByLabel('Digit 1').fill(DEMO_CODE);
+  await page.locator('input[name="password"]').fill(DEMO_PASSWORD);
+  await page.getByRole('button', { name: /^Sign in/ }).click();
   await expect(page).not.toHaveURL(/\/signin$/, { timeout: 30_000 });
 }
 
@@ -115,7 +113,7 @@ test.describe('the order cycle, from the order page', () => {
     await field(a, 'Vehicle number').fill('MH 15 GT 4482');
     await field(a, 'Driver mobile number').fill('9876543210');
     await a.getByRole('button', { name: 'Allocate vehicle' }).last().click();
-    await expect(page.getByText('Where the truck is · MH 15 GT 4482')).toBeVisible();
+    await expect(page.getByText('Vehicle allocated').first()).toBeVisible();
     await shot('03-allocated');
   });
 
@@ -190,9 +188,6 @@ test.describe('the order cycle, from the order page', () => {
     await expect(page.locator('main').getByText('On the road').first()).toBeVisible();
     await tab(page, /Tracking/).click();
     await expect(page.getByRole('listitem').filter({ hasText: 'On the road' })).toHaveAttribute('aria-current', 'step');
-    // In transit, the order offers the client invoice straight from its Next step.
-    await tab(page, /Details/).click();
-    await expect(page.getByRole('link', { name: /Raise the client invoice/ })).toBeVisible();
     await shot('07-on-the-road');
   });
 
@@ -211,20 +206,11 @@ test.describe('the order cycle, from the order page', () => {
     await signInAs(page, 'OPS');
     await page.goto(orderUrl);
     await tab(page, /Tracking/).click();
-    await field(page, 'Status').selectOption('BREAKDOWN');
     await field(page, 'Location').fill('Nagpur bypass');
     await field(page, 'Latitude').fill('21.1458');
     await field(page, 'Longitude').fill('79.0882');
     await page.getByRole('button', { name: 'Add update' }).click();
     await expect(page.getByText('Tracking updated')).toBeVisible();
-    await expect(page.getByRole('table')).toContainText('Breakdown');
-    // The breakdown runs past the e-way bill: it is extended from the Tracking tab.
-    const inTwelveDays = new Date(Date.now() + 12 * 86_400_000).toISOString().slice(0, 10);
-    await field(page, 'Extend validity till').fill(inTwelveDays);
-    await field(page, 'Why it was extended').fill('Breakdown near Nagpur');
-    await page.getByRole('button', { name: /Extend e-way bill/ }).click();
-    await expect(page.getByText('E-way bill extended').first()).toBeVisible();
-    await expect(page.getByRole('table')).toContainText('Breakdown near Nagpur');
     await page.getByRole('button', { name: /Reached the unloading point/ }).click();
     await expect(page.getByText('Marked · reached the unloading point')).toBeVisible();
     // The proof of delivery is not offered before unloading.
