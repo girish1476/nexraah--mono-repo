@@ -320,6 +320,9 @@ export default function VendorDetailPage() {
       render: (r) => (
         <>
           {r.valueMasked}
+          {r.status === 'REJECTED' && r.rejectReason && (
+            <div style={{ color: 'var(--red)', fontSize: 11.5 }}>Rejected: {r.rejectReason}</div>
+          )}
           {r.geo && (
             <div>
               <a
@@ -335,18 +338,6 @@ export default function VendorDetailPage() {
           )}
         </>
       ),
-    },
-    { key: 'route', label: 'Route', render: (r) => <Tag tone="grey">{r.route}</Tag> },
-    {
-      key: 'status',
-      label: 'State',
-      render: (r) => <Tag tone={CHECK_TONE[r.status]}>{r.status}</Tag>,
-      sub: (r) => (r.status === 'REJECTED' ? r.rejectReason : undefined),
-    },
-    {
-      key: 'by',
-      label: 'Verified by',
-      render: (r) => (r.verifiedBy ? `${r.verifiedBy} · ${fmtDate(r.verifiedAt)}` : <span className="muted">—</span>),
     },
     {
       key: 'act',
@@ -383,7 +374,13 @@ export default function VendorDetailPage() {
         }
         return (
           <span className="muted" style={{ fontSize: 11.5 }}>
-            {r.status === 'VERIFIED' ? '' : 'COMPLIANCE verifies'}
+            {r.status === 'VERIFIED'
+              ? '✓ Verified'
+              : r.status === 'PENDING'
+                ? 'Waiting for Compliance'
+                : r.status === 'REJECTED'
+                  ? 'Rejected — upload again'
+                  : 'Not uploaded'}
           </span>
         );
       },
@@ -392,14 +389,20 @@ export default function VendorDetailPage() {
 
   const docColumns: Column<VendorDocument>[] = [
     { key: 'kind', label: 'Document', render: (r) => r.kind.replace(/_/g, ' ') },
-    { key: 'ref', label: 'Reference', mono: true, render: (r) => r.reference ?? '—' },
-    { key: 'valid', label: 'Valid to', render: (r) => fmtDate(r.validTo) },
     {
-      key: 'status',
-      label: 'State',
-      render: (r) => <Tag tone={CHECK_TONE[r.status]}>{r.status}</Tag>,
-      sub: (r) => (r.status === 'REJECTED' ? r.rejectReason : undefined),
+      key: 'ref',
+      label: 'Reference',
+      mono: true,
+      render: (r) => (
+        <>
+          {r.reference ?? '—'}
+          {r.status === 'REJECTED' && r.rejectReason && (
+            <div style={{ color: 'var(--red)', fontSize: 11.5 }}>Rejected: {r.rejectReason}</div>
+          )}
+        </>
+      ),
     },
+    { key: 'valid', label: 'Valid to', render: (r) => fmtDate(r.validTo) },
     {
       key: 'act',
       label: '',
@@ -430,7 +433,13 @@ export default function VendorDetailPage() {
         }
         return (
           <span className="muted" style={{ fontSize: 11.5 }}>
-            {r.status === 'VERIFIED' ? '' : 'COMPLIANCE verifies'}
+            {r.status === 'VERIFIED'
+              ? '✓ Verified'
+              : r.status === 'PENDING'
+                ? 'Waiting for Compliance'
+                : r.status === 'REJECTED'
+                  ? 'Rejected — upload again'
+                  : 'Not uploaded'}
           </span>
         );
       },
