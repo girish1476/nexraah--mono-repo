@@ -13,6 +13,7 @@ import { CrossCheckOverrideDto } from './dto/cross-check-override.dto';
 import { DeliverTripDto } from './dto/deliver-trip.dto';
 import { AddTrackingDto, ExtendEwayDto } from './dto/add-tracking.dto';
 import { AssignLoadingSupervisorDto } from './dto/assign-loading-supervisor.dto';
+import { VerifyTripDocumentDto } from './dto/verify-document.dto';
 
 @Controller('trips')
 @UseGuards(SupabaseJwtGuard, PermissionsGuard)
@@ -96,8 +97,13 @@ export class TripsController {
 
   @Post(':id/documents/:kind/verify')
   @RequirePermission('document.verify')
-  verifyDocument(@Param('id') id: string, @Param('kind') kind: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.tripsService.verifyDocument(id, kind, user);
+  verifyDocument(
+    @Param('id') id: string,
+    @Param('kind') kind: string,
+    @Body() dto: VerifyTripDocumentDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.tripsService.verifyDocument(id, kind, user, dto?.keyedValues);
   }
 
   @Post(':id/documents/:kind/reject')

@@ -728,6 +728,10 @@ export interface PodReceiptsTable {
   hard_copy_received_on: string | null;
   /** A photo of the courier slip of the hard copy. */
   courier_slip_attachment_id: string | null;
+  /** The scanned hard copy behind an E-POD. The balance waits for it to be uploaded and verified. */
+  hard_copy_attachment_ids: Generated<string[]>;
+  hard_copy_verified_at: string | null;
+  hard_copy_verified_by: string | null;
   created_at: Generated<string>;
   updated_at: Generated<string>;
 }

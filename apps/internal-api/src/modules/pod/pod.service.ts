@@ -195,9 +195,16 @@ export class PodService implements OnModuleInit {
       if (!['PENDING', 'ATTACHED', 'REJECTED'].includes(trip.pod_status)) {
         throw new DomainException(409, 'POD_NOT_AWAITED', `This delivery proof is ${trip.pod_status.toLowerCase()}; there is nothing left to receive.`);
       }
-      if (!dto.courierDocket) {
-        throw new DomainException(400, 'VALIDATION_ERROR', 'courierDocket is required.');
+      // The H-POD is the scan of the signed hard copy. A bare docket with no
+      // scan is still accepted from older callers, but the scan is the norm.
+      const attachmentIds = dto.attachmentIds ?? [];
+      const docket = dto.courierDocket?.trim() || null;
+      if (attachmentIds.length === 0 && !docket) {
+        throw new DomainException(400, 'VALIDATION_ERROR', 'Upload the scan of the signed hard copy.');
       }
+      const today = new Date().toISOString().slice(0, 10);
+      // BR-51 (`pod_attach_needs_docket`): docket and sent-on together, or neither.
+      const sentOn = docket ? (dto.sentOn || today) : null;
 
       await this.podRepository.ensureSeriesForBranch(trx, trip.branch_id);
       const code = await this.numberingService.issue(trx, 'POD_RECEIPT', trip.branch_id);
@@ -205,13 +212,14 @@ export class PodService implements OnModuleInit {
       const receipt = await this.podRepository.insertReceipt(trx, {
         code,
         tripId,
-        courierDocket: dto.courierDocket,
-        sentOn: dto.sentOn,
-        receivedOn: dto.receivedOn,
-        pages: dto.pages ?? null,
+        courierDocket: docket,
+        sentOn,
+        receivedOn: dto.receivedOn || today,
+        pages: dto.pages ?? (attachmentIds.length || null),
         receivedBy: dto.receivedBy ?? actor.name,
         condition: dto.condition ?? null,
         courierSlipAttachmentId: dto.courierSlipAttachmentId ?? null,
+        attachmentIds,
       });
 
       await this.podRepository.updateTrip(trx, tripId, {
@@ -265,6 +273,7 @@ export class PodService implements OnModuleInit {
       await this.podRepository.ensureSeriesForBranch(trx, trip.branch_id);
       const code = await this.numberingService.issue(trx, 'POD_RECEIPT', trip.branch_id);
       const today = new Date().toISOString().slice(0, 10);
+      const hardCopyDocket = dto.hardCopyDocket?.trim() || null;
       const row = await this.podRepository.insertEpod(trx, {
         code,
         tripId,
@@ -272,6 +281,8 @@ export class PodService implements OnModuleInit {
         receivedOn: today,
         pages: dto.attachmentIds.length,
         receivedBy: actor.name,
+        hardCopyDocket,
+        hardCopySentOn: hardCopyDocket ? (dto.hardCopySentOn ?? today) : null,
       });
       await this.podRepository.updateTrip(trx, tripId, {
         pod_status: 'RECEIVED',
@@ -292,10 +303,10 @@ export class PodService implements OnModuleInit {
   }
 
   /**
-   * The hard copy behind an E-POD. Operations take the soft copy first and
-   * follow up until the signed hard copy reaches head office; its courier
-   * docket and a photo of the courier slip are recorded here. The proof's
-   * status does not move — the soft copy already stopped the clock.
+   * The hard copy (H-POD) behind an E-POD. The E-POD already stopped the clock
+   * and lets the proof be verified and approved — but the balance is held
+   * until the hard copy is uploaded here and then checked (`verifyHardCopy`).
+   * Its courier docket can be recorded first, while it is still on the way.
    */
   async logHardCopy(tripId: string, dto: HardCopyDto, actor: AuthenticatedUser) {
     return this.podRepository.transaction().execute(async (trx) => {
@@ -303,22 +314,34 @@ export class PodService implements OnModuleInit {
       if (!trip) throw new DomainException(404, 'NOT_FOUND', `Unknown trip: ${tripId}`);
       const receipt = await this.podRepository.findReceiptForUpdate(trx, tripId);
       if (!receipt || receipt.pod_kind !== 'EPOD') {
-        throw new DomainException(409, 'NO_EPOD', 'The hard copy is followed up after an E-POD. Upload the E-POD first, or log the H-POD directly.');
+        throw new DomainException(409, 'NO_EPOD', 'The hard copy is followed up after an E-POD. Upload the E-POD first, or upload the H-POD directly.');
       }
-      if (dto.receivedOn && dto.receivedOn < dto.sentOn) {
+      const attachmentIds = dto.attachmentIds ?? [];
+      const docket = dto.courierDocket?.trim() || null;
+      if (attachmentIds.length === 0 && !docket) {
+        throw new DomainException(400, 'VALIDATION_ERROR', 'Upload the scan of the hard copy, or enter its courier docket.');
+      }
+      const today = new Date().toISOString().slice(0, 10);
+      const sentOn = dto.sentOn ?? (docket ? (receipt.hard_copy_sent_on ?? today) : undefined);
+      const receivedOn = attachmentIds.length > 0 ? (dto.receivedOn ?? today) : dto.receivedOn;
+      if (receivedOn && sentOn && receivedOn < sentOn) {
         throw new DomainException(400, 'VALIDATION_ERROR', 'The hard copy cannot reach head office before it was sent.');
       }
       const row = await this.podRepository.updateHardCopy(trx, receipt.id, {
-        hard_copy_docket: dto.courierDocket.trim(),
-        hard_copy_sent_on: dto.sentOn,
-        hard_copy_received_on: dto.receivedOn ?? null,
+        ...(docket ? { hard_copy_docket: docket } : {}),
+        ...(sentOn ? { hard_copy_sent_on: sentOn } : {}),
+        ...(receivedOn ? { hard_copy_received_on: receivedOn } : {}),
         ...(dto.courierSlipAttachmentId ? { courier_slip_attachment_id: dto.courierSlipAttachmentId } : {}),
+        // A new scan replaces the old one and needs checking again.
+        ...(attachmentIds.length > 0
+          ? { hard_copy_attachment_ids: attachmentIds, hard_copy_verified_at: null, hard_copy_verified_by: null }
+          : {}),
       });
       await this.auditService.record(trx, actor, {
-        action: dto.receivedOn ? 'POD_HARD_COPY_RECEIVED' : 'POD_HARD_COPY_SENT',
+        action: attachmentIds.length > 0 ? 'POD_HARD_COPY_UPLOADED' : 'POD_HARD_COPY_SENT',
         entityType: 'trips',
         entityId: tripId,
-        after: { docket: dto.courierDocket.trim(), sentOn: dto.sentOn, receivedOn: dto.receivedOn ?? null },
+        after: { docket, sentOn: sentOn ?? null, receivedOn: receivedOn ?? null, pages: attachmentIds.length },
       });
       return {
         tripId,
@@ -326,7 +349,40 @@ export class PodService implements OnModuleInit {
         sentOn: row.hard_copy_sent_on,
         receivedOn: row.hard_copy_received_on,
         courierSlipAttachmentId: row.courier_slip_attachment_id,
+        attachmentIds: row.hard_copy_attachment_ids,
+        verifiedAt: row.hard_copy_verified_at,
       };
+    });
+  }
+
+  /**
+   * The check on the hard copy behind an E-POD — the last thing the balance
+   * waits for. Only an uploaded scan can be verified.
+   */
+  async verifyHardCopy(tripId: string, actor: AuthenticatedUser) {
+    return this.podRepository.transaction().execute(async (trx) => {
+      const receipt = await this.podRepository.findReceiptForUpdate(trx, tripId);
+      if (!receipt || receipt.pod_kind !== 'EPOD') {
+        throw new DomainException(409, 'NO_EPOD', 'There is no E-POD on this trip, so no separate hard copy to verify.');
+      }
+      if ((receipt.hard_copy_attachment_ids ?? []).length === 0) {
+        throw new DomainException(409, 'HARD_COPY_NOT_UPLOADED', 'Upload the scan of the hard copy before verifying it.');
+      }
+      if (receipt.hard_copy_verified_at) {
+        throw new DomainException(409, 'HARD_COPY_ALREADY_VERIFIED', 'The hard copy is already verified.');
+      }
+      const now = new Date().toISOString();
+      await this.podRepository.updateHardCopy(trx, receipt.id, {
+        hard_copy_verified_at: now,
+        hard_copy_verified_by: actor.userId,
+      });
+      await this.auditService.record(trx, actor, {
+        action: 'POD_HARD_COPY_VERIFIED',
+        entityType: 'trips',
+        entityId: tripId,
+        after: { verifiedAt: now },
+      });
+      return { tripId, verifiedAt: now, verifiedBy: actor.name };
     });
   }
 
@@ -380,8 +436,14 @@ export class PodService implements OnModuleInit {
             sentOn: receipt.pod_kind === 'EPOD' ? receipt.hard_copy_sent_on : receipt.sent_on,
             receivedOn: receipt.pod_kind === 'EPOD' ? receipt.hard_copy_received_on : receipt.received_on,
             courierSlipAttachmentId: receipt.courier_slip_attachment_id,
+            // E-POD only: the scanned hard copy and its check, which the balance waits for.
+            attachmentIds: receipt.pod_kind === 'EPOD' ? (receipt.hard_copy_attachment_ids ?? []) : receipt.attachment_ids ?? [],
+            verifiedAt: receipt.pod_kind === 'EPOD' ? receipt.hard_copy_verified_at : receipt.verified_at,
           }
         : null,
+      // True while an E-POD's hard copy has not been uploaded and verified — the balance is held.
+      hardCopyHoldsBalance:
+        receipt?.pod_kind === 'EPOD' && !receipt.hard_copy_verified_at,
       // The POD check covers shortage, damage and the transit penalty.
       transitPenaltyPaise: trip.transitPenaltyWaived ? 0 : Number(trip.transitPenalty ?? 0),
       actualTransitDays: trip.actualTransitDays ?? null,

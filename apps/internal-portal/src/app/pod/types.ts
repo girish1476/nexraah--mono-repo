@@ -85,7 +85,13 @@ export interface PodDetail {
     sentOn: string | null;
     receivedOn: string | null;
     courierSlipAttachmentId: string | null;
+    /** The scanned pages of the hard copy. */
+    attachmentIds?: string[];
+    /** When the hard copy was checked. For an E-POD, the balance waits for this. */
+    verifiedAt?: string | null;
   } | null;
+  /** An E-POD whose hard copy is not yet uploaded and verified — the balance is held. */
+  hardCopyHoldsBalance?: boolean;
   /** The POD check covers shortage, damage and the late-delivery (transit) penalty. */
   transitPenaltyPaise?: number;
   actualTransitDays?: number | null;

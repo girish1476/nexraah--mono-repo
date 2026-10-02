@@ -47,6 +47,17 @@ const field = (scope: Page | Locator, label: string) =>
 const dialog = (page: Page, title: string | RegExp) =>
   page.locator('.surface').filter({ has: page.getByRole('heading', { name: title }) });
 
+/** Details typed off each document — by Compliance, as they verify it. */
+const details: Record<string, Record<string, string>> = {};
+
+async function verifyCard(page: Page, card: string) {
+  await page.locator(`[data-doc="${card}"]`).getByRole('button', { name: 'Verify' }).click();
+  const d = page.locator('.surface').filter({ has: page.getByRole('heading', { name: /^Verify · / }) }).last();
+  for (const [label, value] of Object.entries(details[card] ?? {})) await field(d, label).fill(value);
+  await d.getByRole('button', { name: 'Verify', exact: true }).click();
+  await expect(page.locator(`[data-doc="${card}"]`)).toContainText('Verified');
+}
+
 const tab = (page: Page, name: RegExp) => page.getByRole('tab', { name });
 
 const photo = { name: 'photo.png', mimeType: 'image/png', buffer: Buffer.from(
@@ -139,12 +150,14 @@ test.describe('the order cycle, from the order page', () => {
 
   test('5 · Documents: the advance documents, each with its details', async () => {
     await tab(page, /Documents/).click();
+    // The uploader attaches the file only; the details on it are typed by the
+    // verification team when they verify it (see `verifyCard`).
     const upload = async (card: string, file: typeof photo, fill: Record<string, string>) => {
+      details[card] = fill;
       await page.locator(`[data-doc="${card}"]`).getByRole('button', { name: /^Upload/ }).click();
       const d = page.locator('.surface').filter({ has: page.locator('input[type="file"]') }).last();
       await d.locator('input[type="file"]').setInputFiles(file);
-      for (const [label, value] of Object.entries(fill)) await field(d, label).fill(value);
-      await d.getByRole('button', { name: 'Save' }).click();
+      await d.getByRole('button', { name: 'Upload', exact: true }).click();
       await expect(page.locator(`[data-doc="${card}"]`)).toContainText('Waiting for check');
     };
     const inTenDays = new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10);
@@ -159,7 +172,6 @@ test.describe('the order cycle, from the order page', () => {
     });
     await upload('dl', photo, { 'Licence number': 'MH1520190012345', 'Valid till': nextYear });
     await upload('loading-slip', photo, { 'Packages loaded': '420', 'Weight loaded (MT)': '18' });
-    await expect(page.locator('[data-doc="vehicle"]')).toContainText('MH15GT4482');
     await shot('05-documents');
   });
 
@@ -169,9 +181,10 @@ test.describe('the order cycle, from the order page', () => {
     await page.goto(orderUrl);
     await tab(page, /Documents/).click();
     for (const card of ['invoice', 'eway', 'vehicle', 'dl', 'loading-slip']) {
-      await page.locator(`[data-doc="${card}"]`).getByRole('button', { name: 'Verify' }).click();
-      await expect(page.locator(`[data-doc="${card}"]`)).toContainText('Verified');
+      await verifyCard(page, card);
     }
+    // The details Compliance typed show on the card.
+    await expect(page.locator('[data-doc="vehicle"]')).toContainText('MH15GT4482');
     await tab(page, /Details/).click();
     await expect(page.getByText('📎 Documents — uploaded and verified')).toBeVisible();
     await shot('06-verified');
@@ -244,24 +257,18 @@ test.describe('the order cycle, from the order page', () => {
   test('10 · OPS uploads the E-POD on the Documents tab', async () => {
     await tab(page, /Documents/).click();
     await page.getByLabel('E-POD photo or scan').setInputFiles(photo);
+    // The hard copy's courier docket is optional on the E-POD.
+    await field(page, 'H-POD courier docket').fill('DTDC-55667788');
     await page.getByRole('button', { name: /Upload E-POD/ }).click();
-    await expect(page.getByText(/E-POD uploaded · the clock has stopped/)).toBeVisible();
+    await expect(page.getByText(/E-POD uploaded · it can be verified now/)).toBeVisible();
     await expect(page.getByRole('img', { name: 'Proof of delivery, page 1' })).toBeVisible();
-    // The soft copy is in; follow up until the hard copy reaches HO, with its courier slip.
-    const follow = page.locator('.surface').filter({ has: page.getByRole('heading', { name: /Hard copy follow-up/ }) }).last();
-    await expect(follow).toContainText('Waiting for the hard copy');
-    const today = new Date().toISOString().slice(0, 10);
-    await field(follow, 'Hard copy courier docket').fill('DTDC-55667788');
-    await field(follow, 'Hard copy sent on').fill(today);
-    await follow.getByLabel('Hard copy courier slip photo').setInputFiles(photo);
-    await follow.getByRole('button', { name: /Save the hard copy/ }).click();
-    await expect(page.getByText(/Hard copy on its way/)).toBeVisible();
-    await expect(follow).toContainText('On its way');
-    await field(follow, 'Received at HO on').fill(today);
-    await follow.getByRole('button', { name: /Mark the hard copy received at HO/ }).click();
-    await expect(page.getByText(/Hard copy received at HO/).first()).toBeVisible();
-    await expect(follow).toContainText('Received at HO');
-    await expect(page.getByRole('img', { name: 'Courier slip of the hard copy' })).toBeVisible();
+    // The E-POD closes the delivery, but the balance waits for the hard copy.
+    await expect(page.getByText('Balance payment on hold')).toBeVisible();
+    const hc = page.locator('.surface').filter({ has: page.getByRole('heading', { name: /Hard copy \(H-POD\)/ }) }).last();
+    await expect(hc).toContainText('DTDC-55667788');
+    await hc.getByLabel('Hard copy scan').setInputFiles(photo);
+    await hc.getByRole('button', { name: 'Upload the hard copy' }).click();
+    await expect(page.getByText(/Hard copy uploaded · verify it/)).toBeVisible();
     await shot('10-epod');
   });
 
@@ -272,6 +279,9 @@ test.describe('the order cycle, from the order page', () => {
     await tab(page, /Documents/).click();
     await page.getByRole('button', { name: 'Verify', exact: true }).click();
     await expect(page.getByText(/Verified · a second person needs to approve/)).toBeVisible();
+    // The hard copy behind the E-POD is checked too — that releases the hold on the balance.
+    await page.getByRole('button', { name: /Verify the hard copy/ }).click();
+    await expect(page.getByText(/Hard copy verified · the balance is no longer held/)).toBeVisible();
     await signOut(page);
     await signInAs(page, 'LEADERSHIP');
     await page.goto(orderUrl);

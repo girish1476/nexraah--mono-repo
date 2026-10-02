@@ -87,9 +87,16 @@ export function uploadTripDocument(
   return request<TripDocument>({ url: `/trips/${id}/documents/${kind}`, method: 'POST', data: body });
 }
 
-/** POST /trips/:id/documents/:kind/verify · `document.verify` → DOC_VERIFY audit row. */
-export function verifyTripDocument(id: string, kind: string) {
-  return request<TripDocument>({ url: `/trips/${id}/documents/${kind}/verify`, method: 'POST' });
+/**
+ * POST /trips/:id/documents/:kind/verify · `document.verify` → DOC_VERIFY audit row.
+ * `keyedValues` are the details the verification team typed off the document.
+ */
+export function verifyTripDocument(id: string, kind: string, keyedValues?: Record<string, string>) {
+  return request<TripDocument>({
+    url: `/trips/${id}/documents/${kind}/verify`,
+    method: 'POST',
+    data: keyedValues && Object.keys(keyedValues).length > 0 ? { keyedValues } : {},
+  });
 }
 
 /** POST /trips/:id/documents/:kind/reject  { reason } */

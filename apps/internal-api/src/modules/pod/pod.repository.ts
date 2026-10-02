@@ -142,11 +142,19 @@ export class PodRepository {
     return query.orderBy('trips.delivered_at').execute();
   }
 
-  /** The hard copy followed up after an E-POD — its courier and when it reached head office. */
+  /** The hard copy followed up after an E-POD — its courier, its scan, and its check. */
   updateHardCopy(
     db: DbExecutor,
     receiptId: string,
-    patch: { hard_copy_docket: string; hard_copy_sent_on: string; hard_copy_received_on: string | null; courier_slip_attachment_id?: string | null },
+    patch: {
+      hard_copy_docket?: string | null;
+      hard_copy_sent_on?: string | null;
+      hard_copy_received_on?: string | null;
+      courier_slip_attachment_id?: string | null;
+      hard_copy_attachment_ids?: string[];
+      hard_copy_verified_at?: string | null;
+      hard_copy_verified_by?: string | null;
+    },
   ) {
     return db
       .updateTable('pod_receipts')
@@ -167,7 +175,13 @@ export class PodRepository {
   }
 
   findReceiptForUpdate(db: DbExecutor, tripId: string) {
-    return db.selectFrom('pod_receipts').selectAll().where('trip_id', '=', tripId).forUpdate().executeTakeFirst();
+    return db
+      .selectFrom('pod_receipts')
+      .selectAll()
+      .where('trip_id', '=', tripId)
+      .orderBy('created_at', 'desc')
+      .forUpdate()
+      .executeTakeFirst();
   }
 
   /** POD_RECEIPT is per-branch (part 01 §4.1); nothing provisions it yet, so ensure it exists on first use. */
@@ -184,13 +198,14 @@ export class PodRepository {
     row: {
       code: string;
       tripId: string;
-      courierDocket: string;
-      sentOn: string;
+      courierDocket: string | null;
+      sentOn: string | null;
       receivedOn: string;
       pages: number | null;
       receivedBy: string;
       condition: string | null;
       courierSlipAttachmentId?: string | null;
+      attachmentIds?: string[];
     },
   ) {
     return db
@@ -205,6 +220,7 @@ export class PodRepository {
         pages: row.pages,
         received_by: row.receivedBy,
         condition: row.condition,
+        attachment_ids: row.attachmentIds ?? [],
         pod_kind: 'HPOD',
       })
       .returningAll()
@@ -214,7 +230,16 @@ export class PodRepository {
   /** An electronic proof — the file, no courier docket. BR-51 allows no docket when there is no sent-on date. */
   insertEpod(
     db: DbExecutor,
-    row: { code: string; tripId: string; attachmentIds: string[]; receivedOn: string; pages: number | null; receivedBy: string },
+    row: {
+      code: string;
+      tripId: string;
+      attachmentIds: string[];
+      receivedOn: string;
+      pages: number | null;
+      receivedBy: string;
+      hardCopyDocket?: string | null;
+      hardCopySentOn?: string | null;
+    },
   ) {
     return db
       .insertInto('pod_receipts')
@@ -229,6 +254,8 @@ export class PodRepository {
         condition: null,
         attachment_ids: row.attachmentIds,
         pod_kind: 'EPOD',
+        hard_copy_docket: row.hardCopyDocket ?? null,
+        hard_copy_sent_on: row.hardCopySentOn ?? null,
       })
       .returningAll()
       .executeTakeFirstOrThrow();

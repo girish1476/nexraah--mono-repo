@@ -7,10 +7,18 @@ import { AllocateVehicleDialog } from '@/components/allocate-vehicle-dialog';
 import { awardQuote, getIndent } from '@/app/indents/apis';
 import type { IndentDetail, Quote } from '@/app/indents/types';
 import { useAtomValue } from 'jotai';
-import { addTracking, deliverTrip, departTrip, getTrip } from '@/app/trips/apis';
+import {
+  addTracking,
+  assignLoadingSupervisor,
+  deliverTrip,
+  departTrip,
+  getLoadingSupervisorOptions,
+  getTrip,
+  type LoadingSupervisorOption,
+} from '@/app/trips/apis';
 import type { TripDetail } from '@/app/trips/types';
 import { fmtDateTime, inr } from '@/lib/format';
-import { Banner, Panel, Tag, useCan, useToast } from '@/lib/ui';
+import { Banner, Dialog, Field, Panel, Tag, useCan, useToast } from '@/lib/ui';
 import { sessionAtom } from '@/store/atoms';
 import type { OrderDetail } from '../types';
 
@@ -55,6 +63,11 @@ export function OrderNextStep({
   const [trip, setTrip] = useState<TripDetail | null>(null);
   const [busy, setBusy] = useState(false);
   const [allocateOpen, setAllocateOpen] = useState(false);
+  // The loading supervisor runs the loading and uploads the loading documents;
+  // they see only the trips assigned to them, so the order offers the assignment.
+  const [supervisorOpen, setSupervisorOpen] = useState(false);
+  const [supervisorOptions, setSupervisorOptions] = useState<LoadingSupervisorOption[]>([]);
+  const [supervisorId, setSupervisorId] = useState('');
   const [deliveredAt, setDeliveredAt] = useState(() => new Date().toISOString().slice(0, 16));
 
   const load = () => {
@@ -197,6 +210,28 @@ export function OrderNextStep({
         ),
       },
       {
+        label: trip.loadingSupervisorName ? `Loading supervisor · ${trip.loadingSupervisorName}` : 'Loading supervisor assigned',
+        done: !!trip.loadingSupervisorId,
+        optional: true,
+        todo: canRun ? (
+          <button
+            className="btn btn-secondary btn-sm"
+            disabled={busy}
+            onClick={() => {
+              setSupervisorId('');
+              setSupervisorOpen(true);
+              getLoadingSupervisorOptions(trip.id)
+                .then(setSupervisorOptions)
+                .catch(() => setSupervisorOptions([]));
+            }}
+          >
+            👷 Assign loading supervisor
+          </button>
+        ) : (
+          opsOnly
+        ),
+      },
+      {
         label: trip.reachedLoadingAt ? `Reached the loading point · ${fmtDateTime(trip.reachedLoadingAt)}` : 'Reached the loading point',
         done: !!trip.reachedLoadingAt || !!trip.loadingCompletedAt,
         todo: !canMark ? (
@@ -293,6 +328,30 @@ export function OrderNextStep({
             }}
           />
         )}
+        <Dialog
+          open={supervisorOpen}
+          title="Assign loading supervisor"
+          body="They run the loading for this order and upload its loading and vehicle documents. The order shows on their own screen."
+          confirmLabel="Assign"
+          confirmDisabled={!supervisorId}
+          busy={busy}
+          onConfirm={async () => {
+            await run(() => assignLoadingSupervisor(trip.id, supervisorId), 'Loading supervisor assigned');
+            setSupervisorOpen(false);
+          }}
+          onClose={() => setSupervisorOpen(false)}
+        >
+          <Field label="Supervisor" required>
+            <select value={supervisorId} onChange={(e) => setSupervisorId(e.target.value)}>
+              <option value="">Choose a person…</option>
+              {supervisorOptions.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </Dialog>
       </Panel>
     );
   }

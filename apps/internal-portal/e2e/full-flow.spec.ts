@@ -54,6 +54,9 @@ const dialog = (page: Page, title: string | RegExp) =>
 const row = (page: Page, text: string) => page.locator('table.table tbody tr').filter({ hasText: text });
 
 test.describe.configure({ mode: 'serial' });
+
+/** Details typed off each document — by Compliance, as they verify it. */
+const docDetails: Record<string, Record<string, string>> = {};
 // A control that never becomes usable should fail the step, not wait out the whole test.
 test.use({ actionTimeout: 20_000 });
 
@@ -156,12 +159,13 @@ test.describe('one load, first indent to last rupee', () => {
     const scan = { name: 'scan.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 scanned document') };
     const inTen = new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10);
     const nextYear = new Date(Date.now() + 365 * 86_400_000).toISOString().slice(0, 10);
+    // The file only — Compliance types the details when verifying (step 5).
     const upload = async (card: string, fill: Record<string, string> = {}) => {
+      docDetails[card] = fill;
       await page.locator(`[data-doc="${card}"]`).getByRole('button', { name: /^Upload/ }).click();
       const form = page.locator('.surface').filter({ has: page.locator('input[type="file"]') }).last();
       await form.locator('input[type="file"]').setInputFiles(scan);
-      for (const [label, value] of Object.entries(fill)) await fieldControl(form, label).first().fill(value);
-      await form.getByRole('button', { name: 'Save' }).click();
+      await form.getByRole('button', { name: 'Upload', exact: true }).click();
       await expect(page.locator(`[data-doc="${card}"]`)).toContainText('Waiting for check');
     };
     await upload('invoice', { 'Invoice number': 'BRG/26/0412', 'Invoice value (₹)': '64200' });
@@ -181,14 +185,14 @@ test.describe('one load, first indent to last rupee', () => {
     await signOut(page);
     await signInAs(page, 'COMPLIANCE');
     await page.goto(`/trips/${tripId}/documents`);
-    const verifyButtons = page.getByRole('button', { name: /^Verify$/ });
-    await expect(verifyButtons.first()).toBeVisible();
-    // Each verification re-renders the list, so verify one at a time until none are left.
-    let left = await verifyButtons.count();
-    while (left > 0) {
-      await verifyButtons.first().click();
-      left -= 1;
-      await expect(verifyButtons).toHaveCount(left);
+    await expect(page.getByRole('button', { name: /^Verify$/ }).first()).toBeVisible();
+    // Each card: open Verify, type the details off the document, confirm.
+    for (const card of Object.keys(docDetails)) {
+      await page.locator(`[data-doc="${card}"]`).getByRole('button', { name: 'Verify' }).click();
+      const d = page.locator('.surface').filter({ has: page.getByRole('heading', { name: /^Verify · / }) }).last();
+      for (const [label, value] of Object.entries(docDetails[card])) await fieldControl(d, label).first().fill(value);
+      await d.getByRole('button', { name: 'Verify', exact: true }).click();
+      await expect(page.locator(`[data-doc="${card}"]`)).toContainText('Verified');
     }
   });
 
@@ -232,23 +236,21 @@ test.describe('one load, first indent to last rupee', () => {
   });
 
   test('9 · the proof of delivery is received, verified, and approved by a second person', async () => {
-    const today = new Date().toISOString().slice(0, 10);
     await signOut(page);
     await signInAs(page, 'COMPLIANCE');
     // The paper copy is logged right on the proof page — the same panel the
     // order page's Documents tab shows — rather than only on the register.
     await page.goto(`/pod/${tripId}/verify`);
     await expect(page.getByRole('heading', { name: 'Receive the proof of delivery' })).toBeVisible();
-    // The signed hard copy (H-POD) by courier; E-POD is the other way in.
+    // The signed hard copy (H-POD) — just its scan; E-POD is the other way in.
     await page.getByRole('tab', { name: /H-POD/ }).click();
-    // Its field labels appear nowhere else on the page.
-    const receive = page;
-    await fieldControl(receive, 'Courier docket').fill('DKT-556677');
-    await fieldControl(receive, 'Sent on').fill(today);
-    await fieldControl(receive, 'Received on').fill(today);
-    await fieldControl(receive, 'Pages').fill('3');
-    await receive.getByRole('button', { name: /Log the paper copy/ }).click();
-    await expect(page.getByText(/logged · the clock has stopped/)).toBeVisible();
+    await page.getByLabel('H-POD scan').setInputFiles({
+      name: 'hpod.pdf',
+      mimeType: 'application/pdf',
+      buffer: Buffer.from('%PDF-1.4 signed hard copy'),
+    });
+    await page.getByRole('button', { name: /Upload H-POD/ }).click();
+    await expect(page.getByText(/H-POD uploaded · the clock has stopped/)).toBeVisible();
 
     await page.getByRole('button', { name: 'Verify' }).click();
     await expect(page.getByText(/Verified/).first()).toBeVisible();

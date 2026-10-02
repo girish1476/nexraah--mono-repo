@@ -30,18 +30,18 @@ export function addDocket(tripId: string, body: { docketNo: string; sentOn?: str
  * Consumes the PDR- series, which is scoped per branch. **This is what stops
  * the clock** — attachment in the transporter portal does not (BR-49, D-35).
  *
- * `sentOn` is required, not optional: `pod_attach_needs_docket` (BR-51) is a
- * DB CHECK tying it to `courierDocket` — both null or both set — and
- * `courierDocket` is always sent, so a receipt logged without a sent-on date
- * fails the constraint. `ReceivePodDto` enforces the same on the server.
+ * The H-POD is the scan of the signed hard copy (`attachmentIds`). The courier
+ * docket is optional; when it is sent, the server fills `sentOn` with today if
+ * missing, because `pod_attach_needs_docket` (BR-51) needs both or neither.
  */
 export function receivePod(
   tripId: string,
   body: {
-    courierDocket: string;
-    sentOn: string;
-    receivedOn: string;
-    pages: number;
+    attachmentIds?: string[];
+    courierDocket?: string;
+    sentOn?: string;
+    receivedOn?: string;
+    pages?: number;
     receivedBy?: string;
     condition?: string;
     courierSlipAttachmentId?: string;
@@ -100,28 +100,49 @@ export function waivePenalty(
 /**
  * POST /pod/:tripId/epod · `pod.receive` — E-POD: the proof of delivery as a
  * photo or scan, uploaded through `/attachments` first. It stops the clock and
- * can be verified at once; H-POD (`receivePod`) is the courier hard copy.
+ * can be verified at once — but the balance is held until the hard copy
+ * (H-POD) behind it is uploaded and verified. The hard copy's courier docket
+ * can be given now, optionally.
  */
-export function uploadEpod(tripId: string, attachmentIds: string[]) {
+export function uploadEpod(
+  tripId: string,
+  attachmentIds: string[],
+  hardCopy?: { hardCopyDocket?: string; hardCopySentOn?: string },
+) {
   return request<{ id: string; code: string; tripId: string; podKind: 'EPOD'; attachmentIds: string[]; receivedOn: string }>({
     url: `/pod/${tripId}/epod`,
     method: 'POST',
-    data: { attachmentIds },
+    data: { attachmentIds, ...(hardCopy ?? {}) },
   });
 }
 
 /**
- * POST /pod/:tripId/hard-copy · `pod.receive` — the hard copy followed up
- * after an E-POD: courier docket, sent on, received at head office (once it
- * has), and a photo of the courier slip.
+ * POST /pod/:tripId/hard-copy · `pod.receive` — the hard copy (H-POD) behind
+ * an E-POD: its scan once it arrives, and/or its courier docket on the way.
  */
 export function logHardCopy(
   tripId: string,
-  body: { courierDocket: string; sentOn: string; receivedOn?: string; courierSlipAttachmentId?: string },
+  body: { attachmentIds?: string[]; courierDocket?: string; sentOn?: string; receivedOn?: string; courierSlipAttachmentId?: string },
 ) {
-  return request<{ tripId: string; courierDocket: string; sentOn: string; receivedOn: string | null; courierSlipAttachmentId: string | null }>({
+  return request<{
+    tripId: string;
+    courierDocket: string | null;
+    sentOn: string | null;
+    receivedOn: string | null;
+    courierSlipAttachmentId: string | null;
+    attachmentIds: string[];
+    verifiedAt: string | null;
+  }>({
     url: `/pod/${tripId}/hard-copy`,
     method: 'POST',
     data: body,
+  });
+}
+
+/** POST /pod/:tripId/hard-copy/verify · `pod.verify` — the check that lifts the hold on the balance. */
+export function verifyHardCopy(tripId: string) {
+  return request<{ tripId: string; verifiedAt: string; verifiedBy: string }>({
+    url: `/pod/${tripId}/hard-copy/verify`,
+    method: 'POST',
   });
 }

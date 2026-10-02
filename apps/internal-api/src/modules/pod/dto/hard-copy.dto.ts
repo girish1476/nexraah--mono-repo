@@ -1,14 +1,17 @@
-import { IsDateString, IsOptional, IsString, IsUUID, MinLength } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsDateString, IsOptional, IsString, IsUUID, MinLength } from 'class-validator';
 
 /**
- * `POST /pod/:tripId/hard-copy` — the follow-up after an E-POD: the signed
- * hard copy's courier docket and the date it was sent, the date it reached
- * head office once it has, and a photo of the courier slip.
+ * `POST /pod/:tripId/hard-copy` — the hard copy (H-POD) behind an E-POD.
+ * Either its courier details while it is on the way, or the scan of the hard
+ * copy itself once it has arrived — or both. The scan is what the balance
+ * waits for, together with a check (`POST /pod/:tripId/hard-copy/verify`).
  */
 export class HardCopyDto {
-  @IsString() @MinLength(3) courierDocket!: string;
-  @IsDateString() sentOn!: string;
-  /** Left out while the hard copy is still on its way to head office. */
+  /** The scanned pages of the signed hard copy, uploaded through `/attachments`. */
+  @IsOptional() @IsArray() @ArrayMaxSize(10) @IsUUID('all', { each: true }) attachmentIds?: string[];
+  @IsOptional() @IsString() @MinLength(3) courierDocket?: string;
+  @IsOptional() @IsDateString() sentOn?: string;
+  /** Defaults to today when the scan is uploaded. */
   @IsOptional() @IsDateString() receivedOn?: string;
   @IsOptional() @IsUUID() courierSlipAttachmentId?: string;
 }

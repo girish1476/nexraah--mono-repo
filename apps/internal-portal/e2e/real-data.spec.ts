@@ -16,6 +16,7 @@ const PEOPLE = {
   BD: 'neha@nexraah.in',
   LEADERSHIP: 'vikram@nexraah.in',
   SUPERVISOR: 'ravi@nexraah.in',
+  ADMIN: 'krishnan@nexraah.in',
 } as const;
 
 async function signInAs(page: Page, who: keyof typeof PEOPLE) {
@@ -37,6 +38,17 @@ const field = (scope: Page | Locator, label: string) =>
 const dialog = (page: Page, title: string | RegExp) =>
   page.locator('.surface').filter({ has: page.getByRole('heading', { name: title }) }).last();
 const tab = (page: Page, name: RegExp) => page.getByRole('tab', { name });
+
+/** Details typed off each document — by Compliance, as they verify it. */
+const details: Record<string, Record<string, string>> = {};
+
+async function verifyCard(page: Page, card: string) {
+  await page.locator(`[data-doc="${card}"]`).getByRole('button', { name: 'Verify' }).click();
+  const d = page.locator('.surface').filter({ has: page.getByRole('heading', { name: /^Verify · / }) }).last();
+  for (const [label, value] of Object.entries(details[card] ?? {})) await field(d, label).fill(value);
+  await d.getByRole('button', { name: 'Verify', exact: true }).click();
+  await expect(page.locator(`[data-doc="${card}"]`)).toContainText('Verified');
+}
 const rowOf = (page: Page, text: string) => page.locator('table.table tbody tr').filter({ hasText: text });
 
 const img = { name: 'scan.png', mimeType: 'image/png', buffer: Buffer.from(
@@ -238,25 +250,33 @@ test.describe('real data, end to end', () => {
   test('6 · loading: supervisor assigned, loading run, documents uploaded after it', async () => {
     const tripLink = page.locator('.record-status').getByRole('link').nth(1);
     const tripUrl = (await tripLink.getAttribute('href'))!;
-    await page.goto(tripUrl);
-    await page.getByRole('button', { name: 'Assign loading supervisor' }).click();
+    const tripCode = (await tripLink.innerText()).trim();
+    // The supervisor is assigned from the order's own Next step.
+    await tab(page, /Details/).click();
+    await page.getByRole('button', { name: /Assign loading supervisor/ }).click();
     const assign = dialog(page, 'Assign loading supervisor');
     await field(assign, 'Supervisor').selectOption({ label: 'Ravi Kumar' });
     await assign.getByRole('button', { name: 'Assign' }).click();
     await expect(page.getByText('Loading supervisor assigned')).toBeVisible();
+    await expect(page.getByText('Loading supervisor · Ravi Kumar')).toBeVisible();
 
+    // The order is on the supervisor's own screen.
     await signInAs(page, 'SUPERVISOR');
+    await page.goto('/loading');
+    await expect(page.locator('main')).toContainText(tripCode);
     await page.goto(tripUrl);
     await page.getByRole('button', { name: 'Start loading' }).click();
     await page.getByRole('button', { name: 'Loading complete' }).click();
     await expect(page.getByText('Loading marked complete')).toBeVisible();
     await page.goto(`${tripUrl}/documents`);
+    // The uploader attaches the file only; the details on it are typed by the
+    // verification team when they verify it (see `verifyCard`).
     const upload = async (card: string, file: typeof img, fill: Record<string, string>) => {
+      details[card] = fill;
       await page.locator(`[data-doc="${card}"]`).getByRole('button', { name: /^Upload/ }).click();
       const d = page.locator('.surface').filter({ has: page.locator('input[type="file"]') }).last();
       await d.locator('input[type="file"]').setInputFiles(file);
-      for (const [label, value] of Object.entries(fill)) await field(d, label).fill(value);
-      await d.getByRole('button', { name: 'Save' }).click();
+      await d.getByRole('button', { name: 'Upload', exact: true }).click();
       await expect(page.locator(`[data-doc="${card}"]`)).toContainText('Waiting for check');
     };
     await upload('invoice', img, { 'Invoice number': 'KAF/26/1001', 'Invoice value (₹)': '1250000' });
@@ -272,8 +292,7 @@ test.describe('real data, end to end', () => {
     await page.goto(orderUrl);
     await tab(page, /Documents/).click();
     for (const card of ['invoice', 'eway', 'vehicle', 'dl', 'loading-slip']) {
-      await page.locator(`[data-doc="${card}"]`).getByRole('button', { name: 'Verify' }).click();
-      await expect(page.locator(`[data-doc="${card}"]`)).toContainText('Verified');
+      await verifyCard(page, card);
     }
     await signInAs(page, 'FINANCE');
     await page.goto(orderUrl);
@@ -301,12 +320,18 @@ test.describe('real data, end to end', () => {
     await page.getByLabel('E-POD photo or scan').setInputFiles(img);
     await page.getByRole('button', { name: /Upload E-POD/ }).click();
     await expect(page.getByText(/E-POD uploaded/)).toBeVisible();
+    // The signed hard copy arrives later: its scan is uploaded against the E-POD.
+    await page.getByLabel('Hard copy scan').setInputFiles(img);
+    await page.getByRole('button', { name: 'Upload the hard copy' }).click();
+    await expect(page.getByText(/Hard copy uploaded · verify it/)).toBeVisible();
 
     await signInAs(page, 'COMPLIANCE');
     await page.goto(orderUrl);
     await tab(page, /Documents/).click();
     await page.getByRole('button', { name: 'Verify', exact: true }).click();
     await expect(page.getByText(/Verified · a second person/)).toBeVisible();
+    await page.getByRole('button', { name: /Verify the hard copy/ }).click();
+    await expect(page.getByText(/Hard copy verified · the balance is no longer held/)).toBeVisible();
     await signInAs(page, 'LEADERSHIP');
     await page.goto(orderUrl);
     await tab(page, /Documents/).click();
@@ -339,5 +364,30 @@ test.describe('real data, end to end', () => {
     await page.goto(orderUrl);
     await expect(page.locator('main').getByText('Final payment out').first()).toBeVisible();
     await shot('08-done');
+  });
+
+  test('10 · ADMIN adds a person; they can sign in, even after a reload', async () => {
+    await signInAs(page, 'ADMIN');
+    await page.goto('/admin/users');
+    await page.getByRole('button', { name: /Allow an email|Add/ }).first().click();
+    const add = dialog(page, 'Allow an email to sign in');
+    await field(add, 'Email').fill('priya@nexraah.in');
+    await field(add, 'Role').selectOption('OPS');
+    await field(add, 'Name').fill('Priya Menon');
+    await add.getByRole('button', { name: 'Allow' }).click();
+    await expect(page.getByText(/priya@nexraah.in can now sign in/)).toBeVisible();
+    await page.reload();
+    await expect(page.locator('main')).toContainText('priya@nexraah.in');
+    await page.getByRole('button', { name: 'Sign out' }).click();
+    await page.goto('/signin');
+    await page.getByRole('textbox', { name: 'Email' }).fill('priya@nexraah.in');
+    await page.getByRole('button', { name: /^Send me a code/ }).click();
+    await page.getByLabel('Digit 1').fill(DEMO_CODE);
+    await expect(page).not.toHaveURL(/\/signin$/, { timeout: 30_000 });
+    await expect(page.getByText('Priya Menon').first()).toBeVisible();
+    // And she sees the same orders the rest of the business entered.
+    await page.goto('/orders');
+    await page.getByText(/All shipments/).first().click();
+    await expect(page.locator('main')).toContainText(CLIENT);
   });
 });

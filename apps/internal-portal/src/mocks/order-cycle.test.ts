@@ -54,11 +54,14 @@ describe('the order cycle', () => {
 
     // The advance documents, uploaded and verified.
     for (const kind of db.config.advance_document_set as string[]) {
-      await call('OPS', 'POST', `/trips/${trip.id}/documents/${kind}`, {
-        attachmentId: `att-${kind}`,
-        keyedValues: kind === 'EWAY_BILL' ? { vehicleNo: 'MH15AB1234', validTill: '2099-01-01' } : {},
-      });
-      await call('COMPLIANCE', 'POST', `/trips/${trip.id}/documents/${kind}/verify`);
+      // The uploader attaches the file only; Compliance types the details as they verify.
+      await call('OPS', 'POST', `/trips/${trip.id}/documents/${kind}`, { attachmentId: `att-${kind}` });
+      await call(
+        'COMPLIANCE',
+        'POST',
+        `/trips/${trip.id}/documents/${kind}/verify`,
+        kind === 'EWAY_BILL' ? { keyedValues: { vehicleNo: 'MH15AB1234', validTill: '2099-01-01' } } : {},
+      );
     }
     // The Details page names who uploaded each document and who verified it.
     const docs = await call('OPS', 'GET', `/trips/${trip.id}/documents`);

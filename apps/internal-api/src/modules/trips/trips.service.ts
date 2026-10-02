@@ -354,13 +354,19 @@ export class TripsService implements OnModuleInit {
     return result;
   }
 
-  async verifyDocument(tripId: string, kind: string, actor: AuthenticatedUser) {
+  async verifyDocument(tripId: string, kind: string, actor: AuthenticatedUser, keyedValues?: Record<string, unknown>) {
     this.assertKnownKind(kind);
     const result = await this.tripsRepository.transaction().execute(async (trx) => {
       const existing = await this.tripsRepository.findDocumentOne(trx, tripId, kind);
       if (!existing) throw new DomainException(404, 'NOT_FOUND', `${kind} has not been uploaded for trip ${tripId}.`);
       if (!existing.attachment_id) {
         throw new DomainException(409, 'NO_FILE', `${kind} has no file to verify.`);
+      }
+      // The checker types the details off the document as they verify it;
+      // what the uploader may have entered is kept unless the checker changes it.
+      if (keyedValues && Object.keys(keyedValues).length > 0) {
+        const merged = { ...((existing.keyed_values as Record<string, unknown> | null) ?? {}), ...keyedValues };
+        await this.tripsRepository.updateDocumentKeyed(trx, tripId, kind, merged);
       }
 
       const row = await this.tripsRepository.decideDocument(trx, tripId, kind, 'VERIFIED', actor.userId, null);

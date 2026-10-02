@@ -45,6 +45,17 @@ const dialog = (page: Page, title: string | RegExp) =>
   page.locator('.surface').filter({ has: page.getByRole('heading', { name: title }) });
 const tab = (page: Page, name: RegExp) => page.getByRole('tab', { name });
 
+/** Details typed off each document — by Compliance, as they verify it. */
+const details: Record<string, Record<string, string>> = {};
+
+async function verifyCard(page: Page, card: string) {
+  await page.locator(`[data-doc="${card}"]`).getByRole('button', { name: 'Verify' }).click();
+  const d = page.locator('.surface').filter({ has: page.getByRole('heading', { name: /^Verify · / }) }).last();
+  for (const [label, value] of Object.entries(details[card] ?? {})) await field(d, label).fill(value);
+  await d.getByRole('button', { name: 'Verify', exact: true }).click();
+  await expect(page.locator(`[data-doc="${card}"]`)).toContainText('Verified');
+}
+
 const photo = { name: 'photo.png', mimeType: 'image/png', buffer: Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
   'base64',
@@ -177,12 +188,14 @@ test.describe('beside the main cycle', () => {
     await expect(page.getByText(/Marked loaded/)).toBeVisible();
 
     await tab(page, /Documents/).click();
+    // The uploader attaches the file only; the details on it are typed by the
+    // verification team when they verify it (see `verifyCard`).
     const upload = async (card: string, file: typeof photo, fill: Record<string, string>) => {
+      details[card] = fill;
       await page.locator(`[data-doc="${card}"]`).getByRole('button', { name: /^(Upload|Replace|Upload again)/ }).click();
       const d = page.locator('.surface').filter({ has: page.locator('input[type="file"]') }).last();
       await d.locator('input[type="file"]').setInputFiles(file);
-      for (const [label, value] of Object.entries(fill)) await field(d, label).fill(value);
-      await d.getByRole('button', { name: 'Save' }).click();
+      await d.getByRole('button', { name: 'Upload', exact: true }).click();
       await expect(page.locator(`[data-doc="${card}"]`)).toContainText('Waiting for check');
     };
     await upload('invoice', photo, { 'Invoice number': 'WRONG-NO', 'Invoice value (₹)': '49000' });
@@ -210,8 +223,7 @@ test.describe('beside the main cycle', () => {
     await page.goto(orderUrl);
     await tab(page, /Documents/).click();
     for (const card of ['invoice', 'eway', 'vehicle', 'dl', 'loading-slip']) {
-      await page.locator(`[data-doc="${card}"]`).getByRole('button', { name: 'Verify' }).click();
-      await expect(page.locator(`[data-doc="${card}"]`)).toContainText('Verified');
+      await verifyCard(page, card);
     }
 
     await switchTo(page, 'FINANCE');
@@ -232,11 +244,9 @@ test.describe('beside the main cycle', () => {
 
     await tab(page, /Documents/).click();
     await page.getByRole('tab', { name: /H-POD/ }).click();
-    await field(page, 'Courier docket').fill('DKT-778899');
-    await field(page, 'Sent on').fill(day(0));
-    await field(page, 'Received on').fill(day(0));
-    await page.getByRole('button', { name: /Log the paper copy/ }).click();
-    await expect(page.getByText(/logged · the clock has stopped/)).toBeVisible();
+    await page.getByLabel('H-POD scan').setInputFiles(photo);
+    await page.getByRole('button', { name: /Upload H-POD/ }).click();
+    await expect(page.getByText(/H-POD uploaded · the clock has stopped/)).toBeVisible();
     await expect(page.getByText('H-POD — signed hard copy').first()).toBeVisible();
   });
 });

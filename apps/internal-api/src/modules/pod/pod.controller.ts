@@ -42,7 +42,14 @@ export class PodController {
     return this.podService.uploadEpod(tripId, dto, user);
   }
 
-  /** The hard copy followed up after an E-POD: courier docket, slip photo, and when it reached head office. */
+  /** The check on the hard copy behind an E-POD — what releases the hold on the balance. */
+  @Post(':tripId/hard-copy/verify')
+  @RequirePermission('pod.verify')
+  verifyHardCopy(@Param('tripId') tripId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.podService.verifyHardCopy(tripId, user);
+  }
+
+  /** The hard copy behind an E-POD: its scan, or its courier docket while it is on the way. */
   @Post(':tripId/hard-copy')
   @RequirePermission('pod.receive')
   logHardCopy(@Param('tripId') tripId: string, @Body() dto: HardCopyDto, @CurrentUser() user: AuthenticatedUser) {

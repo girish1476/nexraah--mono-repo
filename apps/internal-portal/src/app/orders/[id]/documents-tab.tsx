@@ -206,6 +206,8 @@ export function OrderDocumentsTab({
 
   // The upload dialog: a file chosen, the details typed from it.
   const [editing, setEditing] = useState<DocItem | null>(null);
+  /** The document the verification team is checking, with its details being typed. */
+  const [checking, setChecking] = useState<DocItem | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
   const [rejecting, setRejecting] = useState<DocItem | null>(null);
@@ -235,7 +237,16 @@ export function OrderDocumentsTab({
 
   const docsFor = (item: DocItem) => docs.filter((d) => item.kinds.includes(d.kind));
 
-  const openUpload = (item: DocItem, keepFile = false) => {
+  // Uploading is the file only. The details on it (numbers, dates, validity)
+  // are typed by the verification team when they check it.
+  const openUpload = (item: DocItem) => {
+    setFile(null);
+    setEditing(item);
+  };
+
+  const problem = editing && !file ? 'Choose the file to upload.' : null;
+
+  const openCheck = (item: DocItem) => {
     const current = docsFor(item);
     const v: Record<string, string> = {};
     for (const f of item.fields) {
@@ -243,40 +254,24 @@ export function OrderDocumentsTab({
       v[f.key] = f.type === 'rupees' && raw ? String(Number(raw) / 100) : raw;
     }
     setValues(v);
-    if (!keepFile) setFile(null);
-    setEditing(item);
+    setChecking(item);
   };
 
-  const problem = (() => {
-    if (!editing) return null;
-    const hasFile = !!file || docsFor(editing).some((d) => d.attachmentId);
-    if (!hasFile) return 'Choose the file to upload.';
-    const missing = editing.fields.find((f) => f.required && !String(values[f.key] ?? '').trim());
-    return missing ? `Enter the ${missing.label.toLowerCase()}.` : null;
+  const checkProblem = (() => {
+    if (!checking) return null;
+    const missing = checking.fields.find((f) => f.required && !String(values[f.key] ?? '').trim());
+    return missing ? `Enter the ${missing.label.toLowerCase()} from the document.` : null;
   })();
 
   const save = async () => {
     if (!editing) return;
     setBusy(true);
     try {
-      const current = docsFor(editing);
-      const attachmentId = file
-        ? await uploadAttachment(file, editing.kinds[0], 'trips', tripId)
-        : (current.find((d) => d.attachmentId)?.attachmentId ?? undefined);
-      if (!attachmentId) throw new Error('Choose the file to upload.');
-      // One file, stored against every kind it stands for, each with its own details.
-      for (const kind of editing.kinds) {
-        const keyed: Record<string, string> = {};
-        for (const f of editing.fields) {
-          if ((f.kind ?? editing.kinds[0]) !== kind) continue;
-          const raw = String(values[f.key] ?? '').trim();
-          if (!raw) continue;
-          keyed[f.storeAs ?? f.key] =
-            f.type === 'rupees' ? String(Math.round(Number(raw) * 100)) : f.key === 'vehicleNo' ? raw.toUpperCase() : raw;
-        }
-        await uploadTripDocument(tripId, kind, { attachmentId, keyedValues: keyed });
-      }
-      toast(`${editing.title} saved · sent for verification`);
+      if (!file) throw new Error('Choose the file to upload.');
+      const attachmentId = await uploadAttachment(file, editing.kinds[0], 'trips', tripId);
+      // One file, stored against every kind it stands for.
+      for (const kind of editing.kinds) await uploadTripDocument(tripId, kind, { attachmentId });
+      toast(`${editing.title} uploaded · the verification team checks it and enters its details`);
       setEditing(null);
       setFile(null);
       load();
@@ -288,10 +283,24 @@ export function OrderDocumentsTab({
     }
   };
 
-  const verify = async (item: DocItem) => {
+  const verify = async () => {
+    const item = checking;
+    if (!item) return;
     setBusy(true);
     try {
-      for (const d of docsFor(item).filter((x) => x.status === 'PENDING')) await verifyTripDocument(tripId, d.kind);
+      for (const d of docsFor(item).filter((x) => x.status === 'PENDING')) {
+        // Each kind gets its own details — the vehicle papers PDF carries five.
+        const keyed: Record<string, string> = {};
+        for (const f of item.fields) {
+          if ((f.kind ?? item.kinds[0]) !== d.kind) continue;
+          const raw = String(values[f.key] ?? '').trim();
+          if (!raw) continue;
+          keyed[f.storeAs ?? f.key] =
+            f.type === 'rupees' ? String(Math.round(Number(raw) * 100)) : f.key === 'vehicleNo' ? raw.toUpperCase() : raw;
+        }
+        await verifyTripDocument(tripId, d.kind, keyed);
+      }
+      setChecking(null);
       toast(`Verified · ${item.title}`);
       load();
       onChanged();
@@ -353,12 +362,12 @@ export function OrderDocumentsTab({
           <div className="doc-actions">
             {canUpload && loaded && (
               <button className={uploaded ? 'btn btn-secondary btn-sm' : 'btn btn-sm'} disabled={busy} onClick={() => openUpload(item)}>
-                {uploaded ? (state === 'REJECTED' ? 'Upload again' : 'Replace or edit details') : `Upload ${item.pdf ? 'PDF' : 'photo'}`}
+                {uploaded ? (state === 'REJECTED' ? 'Upload again' : 'Replace file') : `Upload ${item.pdf ? 'PDF' : 'photo'}`}
               </button>
             )}
             {canVerify && current.some((d) => d.status === 'PENDING') && (
               <>
-                <button className="btn btn-sm" disabled={busy} onClick={() => verify(item)}>
+                <button className="btn btn-sm" disabled={busy} onClick={() => openCheck(item)}>
                   Verify
                 </button>
                 <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => setRejecting(item)}>
@@ -482,10 +491,10 @@ export function OrderDocumentsTab({
         title={editing ? editing.title : ''}
         body={
           editing?.pdf
-            ? 'Upload the PDF with the vehicle papers, and type the numbers and dates from it.'
-            : 'Upload the photo, and type the details written on it.'
+            ? 'Upload the PDF with the vehicle papers. The verification team checks it and enters the numbers and dates.'
+            : 'Upload the photo or scan. The verification team checks it and enters the details written on it.'
         }
-        confirmLabel="Save"
+        confirmLabel="Upload"
         confirmDisabled={!!problem}
         busy={busy}
         onConfirm={save}
@@ -498,25 +507,47 @@ export function OrderDocumentsTab({
           aria-label={editing?.pdf ? 'Vehicle papers PDF' : 'Document photo'}
           onChange={onFile}
         />
-        {editing && docsFor(editing).some((d) => d.attachmentId) && !file && (
-          <p className="muted" style={{ fontSize: 12 }}>
-            Leave the file empty to keep the one already uploaded and only correct the details.
-          </p>
-        )}
-        <FormGrid>
-          {editing?.fields.map((f) => (
-            <Field key={f.key} label={f.label} required={f.required}>
-              <input
-                type={f.type === 'date' ? 'date' : f.type === 'rupees' || f.type === 'number' ? 'number' : 'text'}
-                value={values[f.key] ?? ''}
-                onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}
-              />
-            </Field>
-          ))}
-        </FormGrid>
         {problem && (
           <div className="hint" role="status">
             {problem}
+          </div>
+        )}
+      </Dialog>
+
+      <Dialog
+        open={!!checking}
+        title={checking ? `Verify · ${checking.title}` : ''}
+        body="Check the document, then type its details from it. They are saved with the verification."
+        confirmLabel="Verify"
+        confirmDisabled={!!checkProblem}
+        busy={busy}
+        onConfirm={verify}
+        onClose={() => setChecking(null)}
+      >
+        {checking && (
+          <div className="doc-check">
+            <DocPreview
+              attachmentId={docsFor(checking).find((d) => d.attachmentId)?.attachmentId ?? null}
+              label={checking.title}
+              width={checking.pdf ? 150 : 170}
+              height={checking.pdf ? 190 : 210}
+            />
+            <FormGrid>
+              {checking.fields.map((f) => (
+                <Field key={f.key} label={f.label} required={f.required}>
+                  <input
+                    type={f.type === 'date' ? 'date' : f.type === 'rupees' || f.type === 'number' ? 'number' : 'text'}
+                    value={values[f.key] ?? ''}
+                    onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}
+                  />
+                </Field>
+              ))}
+            </FormGrid>
+          </div>
+        )}
+        {checkProblem && (
+          <div className="hint" role="status">
+            {checkProblem}
           </div>
         )}
       </Dialog>

@@ -1,7 +1,7 @@
 import { planRecovery } from './sdr-recovery';
 import { computeTransitPenalty } from './transit-penalty';
 import { bandPositionFor } from './band-position';
-import { isDemoData, persist } from './persist';
+import { isDemoData, loadPeople, persist, savePeople } from './persist';
 import { fileFor, keepFile } from './files';
 import { AxiosAdapter, AxiosError, AxiosRequestConfig, AxiosResponse } from 'axios';
 import { RoleCode, SEED_GRANTS } from '@/lib/permissions';
@@ -149,6 +149,35 @@ function issue(account: FixtureAccount) {
 /** Emails an administrator switched off on the Allowed emails screen (mock mode). */
 const DISABLED_EMAILS = new Set<string>();
 const ALLOWED_AT: Record<string, string> = {};
+
+/**
+ * Admin → Users changes are kept in the browser like the rest of the working
+ * data. Without this, a person an administrator added (or renamed, moved, or
+ * switched off) vanished on the next reload, and the other desks never saw it.
+ * The fixture accounts stay the base; saved changes are laid over them by id.
+ */
+(function restorePeople() {
+  const saved = loadPeople();
+  if (!saved) return;
+  for (const a of saved.accounts) {
+    const existing = ACCOUNTS.find((x) => x.userId === a.userId);
+    const account = existing ?? ({} as FixtureAccount);
+    Object.assign(account, { ...a, role: a.role as RoleCode });
+    if (!existing) ACCOUNTS.push(account);
+  }
+  for (const key of Object.keys(CREDENTIALS)) delete CREDENTIALS[key];
+  for (const a of ACCOUNTS) CREDENTIALS[a.email.toLowerCase()] = a;
+  for (const e of saved.disabled ?? []) DISABLED_EMAILS.add(e);
+  Object.assign(ALLOWED_AT, saved.allowedAt ?? {});
+})();
+
+function rememberPeople() {
+  savePeople({
+    accounts: ACCOUNTS.map(({ userId, name, email, role, branch }) => ({ userId, name, email, role, branch })),
+    disabled: [...DISABLED_EMAILS],
+    allowedAt: { ...ALLOWED_AT },
+  });
+}
 
 /** Mirrors Supabase refusing a code for an email with no login (`create_user: false`). */
 export async function mockSendCode(email: string) {
@@ -705,6 +734,18 @@ function balanceGate(trip: any) {
       label: `Proof of delivery is ${trip.podStatus.toLowerCase()}, not approved`,
       state: 'BLOCKED',
     });
+  // An E-POD closes the delivery; the balance waits for the hard copy to be uploaded and verified.
+  const podReceipt = db.podReceipts.find((r) => r.tripId === trip.id);
+  if (podReceipt?.podKind === 'EPOD' && !podReceipt.hardCopyVerifiedAt) {
+    const uploaded = (podReceipt.hardCopyAttachmentIds ?? []).length > 0;
+    unmet.push({
+      key: 'HPOD_PENDING',
+      label: uploaded
+        ? 'Hard copy (H-POD) uploaded but not yet verified'
+        : 'Only the E-POD is in — upload and verify the hard copy (H-POD)',
+      state: uploaded ? 'UNVERIFIED' : 'MISSING',
+    });
+  }
   if (podAgeDays > db.config.pod_forfeit_days)
     unmet.push({ key: 'FORFEIT', label: `POD past ${db.config.pod_forfeit_days} days — balance forfeited`, state: 'BLOCKED' });
   const openSdr = db.sdr.filter((s) => s.tripId === trip.id && s.status === 'OPEN').length;
@@ -1537,6 +1578,7 @@ const routes: [string, RegExp, Handler][] = [
       ACCOUNTS.push(account);
       CREDENTIALS[email] = account;
       ALLOWED_AT[account.userId] = new Date().toISOString();
+      rememberPeople();
       return status(201, allowedEmailView(account));
     },
   ],
@@ -1558,6 +1600,7 @@ const routes: [string, RegExp, Handler][] = [
       }
       if (body?.status === 'DISABLED') DISABLED_EMAILS.add(account.email.toLowerCase());
       if (body?.status === 'ACTIVE') DISABLED_EMAILS.delete(account.email.toLowerCase());
+      rememberPeople();
       return ok(allowedEmailView(account));
     },
   ],
@@ -3497,10 +3540,13 @@ const routes: [string, RegExp, Handler][] = [
   [
     'POST',
     /^\/trips\/([^/]+)\/documents\/([^/]+)\/verify$/,
-    ({ params, role, userId }) => {
+    ({ params, body, role, userId }) => {
       const trip = findTrip(params[0]);
       const doc = trip.documents.find((d: any) => d.kind === params[1]) ?? fail(404, 'NOT_FOUND', 'Document not found');
       if (doc.status === 'MISSING') fail(409, 'NOT_UPLOADED', 'Nothing has been uploaded to verify.');
+      // The verification team types the details off the document as they check it.
+      if (body?.keyedValues && typeof body.keyedValues === 'object')
+        doc.keyedValues = { ...(doc.keyedValues ?? {}), ...body.keyedValues };
       doc.status = 'VERIFIED';
       doc.verifiedBy = personName(userId, role);
       doc.verifiedAt = helpers.now();
@@ -3940,7 +3986,13 @@ const routes: [string, RegExp, Handler][] = [
             sentOn: epod ? (r.hardCopySentOn ?? null) : (r.sentOn ?? null),
             receivedOn: epod ? (r.hardCopyReceivedOn ?? null) : (r.receivedOn ?? null),
             courierSlipAttachmentId: r.courierSlipAttachmentId ?? null,
+            attachmentIds: epod ? (r.hardCopyAttachmentIds ?? []) : (r.attachmentIds ?? []),
+            verifiedAt: epod ? (r.hardCopyVerifiedAt ?? null) : null,
           };
+        })(),
+        hardCopyHoldsBalance: (() => {
+          const r = db.podReceipts.find((x) => x.tripId === trip.id);
+          return r?.podKind === 'EPOD' && !r.hardCopyVerifiedAt;
         })(),
         transitPenaltyPaise: trip.transitPenaltyWaived ? 0 : Number(trip.transitPenaltyPaise ?? 0),
         actualTransitDays: trip.actualTransitDays ?? null,
@@ -3972,57 +4024,85 @@ const routes: [string, RegExp, Handler][] = [
     'POST',
     /^\/pod\/([^/]+)\/receive$/,
     ({ params, body, role }) => {
+      // H-POD — `PodService.receive`: the scan of the signed hard copy; the docket is optional.
       const trip = findTrip(params[0]);
-      if (!body?.courierDocket) fail(400, 'DOCKET_REQUIRED', 'The courier docket is required.');
+      const ids: string[] = Array.isArray(body?.attachmentIds) ? body.attachmentIds : [];
+      const docket = String(body?.courierDocket ?? '').trim() || null;
+      if (ids.length === 0 && !docket) fail(400, 'VALIDATION_ERROR', 'Upload the scan of the signed hard copy.');
+      const today = helpers.now().slice(0, 10);
       const receipt = {
         id: `pdr-${Date.now()}`,
         code: nextNumber('POD_RECEIPT'),
         tripId: trip.id,
-        courierDocket: body.courierDocket,
-        sentOn: body.sentOn ?? null,
-        receivedOn: body.receivedOn,
-        pages: body.pages,
-        receivedBy: body.receivedBy ?? USERS[role].name,
-        condition: body.condition ?? null,
+        courierDocket: docket,
+        sentOn: docket ? (body.sentOn || today) : null,
+        receivedOn: body?.receivedOn || today,
+        pages: body?.pages ?? (ids.length || null),
+        receivedBy: body?.receivedBy ?? USERS[role].name,
+        condition: body?.condition ?? null,
       };
       db.podReceipts.unshift({
         ...receipt,
         podKind: 'HPOD',
-        attachmentIds: [],
-        courierSlipAttachmentId: body.courierSlipAttachmentId ?? null,
+        attachmentIds: ids,
+        courierSlipAttachmentId: body?.courierSlipAttachmentId ?? null,
       });
       trip.podStatus = 'RECEIVED';
-      trip.podReceivedAt = body.receivedOn;
-      trip.podCourierDocket = body.courierDocket;
+      trip.podReceivedAt = receipt.receivedOn;
+      if (docket) trip.podCourierDocket = docket;
       return ok(receipt);
     },
   ],
   [
     'POST',
+    /^\/pod\/([^/]+)\/hard-copy\/verify$/,
+    // The check on the hard copy behind an E-POD — `PodService.verifyHardCopy`.
+    ({ params, role }) => {
+      const trip = findTrip(params[0]);
+      const receipt = db.podReceipts.find((r) => r.tripId === trip.id);
+      if (!receipt || receipt.podKind !== 'EPOD')
+        fail(409, 'NO_EPOD', 'There is no E-POD on this trip, so no separate hard copy to verify.');
+      if ((receipt.hardCopyAttachmentIds ?? []).length === 0)
+        fail(409, 'HARD_COPY_NOT_UPLOADED', 'Upload the scan of the hard copy before verifying it.');
+      if (receipt.hardCopyVerifiedAt) fail(409, 'HARD_COPY_ALREADY_VERIFIED', 'The hard copy is already verified.');
+      receipt.hardCopyVerifiedAt = helpers.now();
+      return ok({ tripId: trip.id, verifiedAt: receipt.hardCopyVerifiedAt, verifiedBy: USERS[role].name });
+    },
+  ],
+  [
+    'POST',
     /^\/pod\/([^/]+)\/hard-copy$/,
-    // The hard copy followed up after an E-POD — `PodService.logHardCopy`.
+    // The hard copy (H-POD) behind an E-POD — `PodService.logHardCopy`: its scan and/or its docket.
     ({ params, body }) => {
       const trip = findTrip(params[0]);
       const receipt = db.podReceipts.find((r) => r.tripId === trip.id);
       if (!receipt || receipt.podKind !== 'EPOD')
-        fail(409, 'NO_EPOD', 'The hard copy is followed up after an E-POD. Upload the E-POD first, or log the H-POD directly.');
-      const docket = String(body?.courierDocket ?? '').trim();
-      if (docket.length < 3) fail(400, 'VALIDATION_ERROR', 'Enter the courier docket number.');
-      if (!body?.sentOn) fail(400, 'VALIDATION_ERROR', 'Say when the hard copy was sent.');
-      if (body.receivedOn && body.receivedOn < body.sentOn)
+        fail(409, 'NO_EPOD', 'The hard copy is followed up after an E-POD. Upload the E-POD first, or upload the H-POD directly.');
+      const ids: string[] = Array.isArray(body?.attachmentIds) ? body.attachmentIds : [];
+      const docket = String(body?.courierDocket ?? '').trim() || null;
+      if (ids.length === 0 && !docket)
+        fail(400, 'VALIDATION_ERROR', 'Upload the scan of the hard copy, or enter its courier docket.');
+      const today = helpers.now().slice(0, 10);
+      const sentOn = body?.sentOn ?? (docket ? (receipt.hardCopySentOn ?? today) : undefined);
+      const receivedOn = ids.length > 0 ? (body?.receivedOn ?? today) : body?.receivedOn;
+      if (receivedOn && sentOn && receivedOn < sentOn)
         fail(400, 'VALIDATION_ERROR', 'The hard copy cannot reach head office before it was sent.');
       Object.assign(receipt, {
-        hardCopyDocket: docket,
-        hardCopySentOn: body.sentOn,
-        hardCopyReceivedOn: body.receivedOn ?? null,
-        ...(body.courierSlipAttachmentId ? { courierSlipAttachmentId: body.courierSlipAttachmentId } : {}),
+        ...(docket ? { hardCopyDocket: docket } : {}),
+        ...(sentOn ? { hardCopySentOn: sentOn } : {}),
+        ...(receivedOn ? { hardCopyReceivedOn: receivedOn } : {}),
+        ...(body?.courierSlipAttachmentId ? { courierSlipAttachmentId: body.courierSlipAttachmentId } : {}),
+        // A new scan replaces the old one and needs checking again.
+        ...(ids.length > 0 ? { hardCopyAttachmentIds: ids, hardCopyVerifiedAt: null } : {}),
       });
       return ok({
         tripId: trip.id,
-        courierDocket: docket,
-        sentOn: body.sentOn,
-        receivedOn: body.receivedOn ?? null,
+        courierDocket: receipt.hardCopyDocket ?? null,
+        sentOn: receipt.hardCopySentOn ?? null,
+        receivedOn: receipt.hardCopyReceivedOn ?? null,
         courierSlipAttachmentId: receipt.courierSlipAttachmentId ?? null,
+        attachmentIds: receipt.hardCopyAttachmentIds ?? [],
+        verifiedAt: receipt.hardCopyVerifiedAt ?? null,
       });
     },
   ],
@@ -4050,6 +4130,11 @@ const routes: [string, RegExp, Handler][] = [
         condition: null,
         podKind: 'EPOD',
         attachmentIds: ids,
+        // Optional: the hard copy's courier docket, if it has been sent already.
+        hardCopyDocket: String(body?.hardCopyDocket ?? '').trim() || null,
+        hardCopySentOn: String(body?.hardCopyDocket ?? '').trim() ? (body?.hardCopySentOn ?? today) : null,
+        hardCopyAttachmentIds: [] as string[],
+        hardCopyVerifiedAt: null as string | null,
       };
       db.podReceipts.unshift(receipt);
       trip.podStatus = 'RECEIVED';

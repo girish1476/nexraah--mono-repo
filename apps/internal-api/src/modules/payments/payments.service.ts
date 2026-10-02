@@ -659,6 +659,24 @@ export class PaymentsService {
     db: DbExecutor = this.paymentsRepository.executor(),
   ): Promise<UnmetItem[]> {
     const unmet = this.balanceUnmetFor(podStatus, podClosureBasis);
+    // An E-POD closes the delivery, but the balance waits for the hard copy
+    // (H-POD) behind it to be uploaded and verified.
+    const receipt = await db
+      .selectFrom('pod_receipts')
+      .select(['pod_kind', 'hard_copy_attachment_ids', 'hard_copy_verified_at'])
+      .where('trip_id', '=', tripId)
+      .orderBy('created_at', 'desc')
+      .executeTakeFirst();
+    if (receipt?.pod_kind === 'EPOD' && !receipt.hard_copy_verified_at) {
+      unmet.push({
+        key: 'HPOD_PENDING',
+        label:
+          (receipt.hard_copy_attachment_ids ?? []).length > 0
+            ? 'Hard copy (H-POD) uploaded but not yet verified'
+            : 'Only the E-POD is in — upload and verify the hard copy (H-POD)',
+        state: (receipt.hard_copy_attachment_ids ?? []).length > 0 ? 'UNVERIFIED' : 'MISSING',
+      });
+    }
     const open = await this.sdrRepository.countOpenForTrip(db, tripId);
     if (open > 0) {
       unmet.push({

@@ -79,3 +79,34 @@ export function forgetSaved(): void {
     // nothing to do
   }
 }
+
+/* ---- the people allowed to sign in -------------------------------------- */
+
+// Who an administrator added, renamed, moved or switched off on Admin → Users.
+// Kept apart from the working data so "start fresh" never locks anyone out.
+const PEOPLE_KEY = 'nexraah.people.v1';
+
+export interface SavedPeople {
+  accounts: { userId: string; name: string; email: string; role: string; branch: string | null }[];
+  disabled: string[];
+  allowedAt: Record<string, string>;
+}
+
+export function savePeople(people: SavedPeople): void {
+  if (!hasStorage() || isDemoData()) return;
+  try {
+    window.localStorage.setItem(PEOPLE_KEY, JSON.stringify(people));
+  } catch {
+    // Storage full or blocked: the change holds until the page is reloaded.
+  }
+}
+
+export function loadPeople(): SavedPeople | null {
+  if (!hasStorage() || isDemoData()) return null;
+  try {
+    const raw = window.localStorage.getItem(PEOPLE_KEY);
+    return raw ? (JSON.parse(raw) as SavedPeople) : null;
+  } catch {
+    return null;
+  }
+}
