@@ -1,5 +1,5 @@
 import { Locator, Page, test, expect } from '@playwright/test';
-import { DEMO_PASSWORD } from '../src/mocks/db';
+import { DEMO_CODE } from '../src/mocks/db';
 import { navFor, RoleCode } from '../src/lib/permissions';
 
 /**
@@ -32,8 +32,10 @@ const PEOPLE = {
 async function signInAs(page: Page, who: keyof typeof PEOPLE) {
   await page.goto('/signin');
   await page.getByRole('textbox', { name: 'Email' }).fill(PEOPLE[who]);
-  await page.locator('input[name="password"]').fill(DEMO_PASSWORD);
-  await page.getByRole('button', { name: /^Sign in/ }).click();
+  await page.getByRole('button', { name: /^Send me a code/ }).click();
+  // Filling the first box with the whole code is what a paste or a phone's
+  // one-time-code autofill does; the form signs in on the last digit.
+  await page.getByLabel('Digit 1').fill(DEMO_CODE);
   await expect(page).not.toHaveURL(/\/signin$/, { timeout: 30_000 });
 }
 

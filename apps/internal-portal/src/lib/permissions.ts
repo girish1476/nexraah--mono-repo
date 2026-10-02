@@ -921,6 +921,14 @@ export const NAV: NavGroup[] = [
         note: 'Report wrong data on any screen, and see what has been done about it',
       },
       { label: 'Settings', href: '/admin', module: 'admin', emoji: '🎛️' },
+      {
+        label: 'Allowed emails',
+        href: '/admin/users',
+        module: 'admin',
+        emoji: '✉️',
+        note: 'Who can sign in, and as which role',
+        permission: 'config.manage',
+      },
       { label: 'Access control', href: '/admin/roles', module: 'admin', emoji: '👥' },
       { label: 'Branches', href: '/admin/branches', module: 'admin', emoji: '🏬' },
       {

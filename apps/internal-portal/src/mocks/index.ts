@@ -12,7 +12,7 @@ import {
   BRANCHES,
   CREDENTIALS,
   type FixtureAccount,
-  DEMO_PASSWORD,
+  DEMO_CODE,
   DOC_LABEL,
   SUPPLY_SOURCE_LABEL,
   USERS,
@@ -146,19 +146,40 @@ function issue(account: FixtureAccount) {
   };
 }
 
-/**
- * A deliberate pause, and a deliberately vague failure. "No such account" and
- * "wrong password" are the same sentence here for the same reason they are on
- * any sign-in form — telling them apart hands an attacker a way to enumerate
- * who works here.
- */
-export async function mockSignIn(email: string, password: string) {
+/** Emails an administrator switched off on the Allowed emails screen (mock mode). */
+const DISABLED_EMAILS = new Set<string>();
+const ALLOWED_AT: Record<string, string> = {};
+
+/** Mirrors Supabase refusing a code for an email with no login (`create_user: false`). */
+export async function mockSendCode(email: string) {
+  await new Promise((r) => setTimeout(r, 260));
+  const key = email.trim().toLowerCase();
+  if (!CREDENTIALS[key] || DISABLED_EMAILS.has(key)) {
+    throw new Error('This email is not allowed to sign in. Ask an administrator to add it.');
+  }
+}
+
+export async function mockVerifyCode(email: string, code: string) {
   await new Promise((r) => setTimeout(r, 260));
   const account = CREDENTIALS[email.trim().toLowerCase()];
-  if (!account || password !== DEMO_PASSWORD) {
-    throw new Error('That email and password do not match an account.');
+  if (!account || DISABLED_EMAILS.has(account.email.toLowerCase()) || code.trim() !== DEMO_CODE) {
+    throw new Error('That code is wrong or has expired. Check the latest email, or send a new code.');
   }
   return issue(account);
+}
+
+function allowedEmailView(a: FixtureAccount) {
+  const branch = a.branch ? BRANCHES.find((b) => b.code === a.branch) : null;
+  return {
+    id: a.userId,
+    email: a.email,
+    name: a.name,
+    role: a.role,
+    branch: branch ? { id: branch.id, code: branch.code, name: branch.name } : null,
+    status: DISABLED_EMAILS.has(a.email.toLowerCase()) ? 'DISABLED' : 'ACTIVE',
+    canSignIn: true,
+    createdAt: ALLOWED_AT[a.userId] ?? '2026-08-14T09:00:00.000Z',
+  };
 }
 
 export async function mockRefresh(refreshToken: string) {
@@ -748,9 +769,10 @@ function roleCan(role: string, permission: string): boolean {
 /** One line on a trip's tracking sheet — same shape as `TripsService.trackingSheet`'s updates. */
 function addTrackingRow(
   trip: any,
-  row: { kind: string; location: string; lat: number | null; lng: number | null; note: string | null; at: string; userId: string | null },
+  row: { kind: string; location: string; lat: number | null; lng: number | null; note: string | null; at: string; userId: string | null; status?: string | null },
 ) {
   db.tripTracking.push({
+    status: row.status ?? null,
     id: `trk-${Date.now()}-${db.tripTracking.length + 1}`,
     tripId: trip.id,
     kind: row.kind,
@@ -766,6 +788,14 @@ function addTrackingRow(
 function trackingSheetFor(trip: any) {
   const [fromCity, toCity] = String(trip.lane ?? '').split('→').map((x: string) => x.trim());
   return {
+    eway: (() => {
+      const doc = (trip.documents ?? []).find((d: any) => d.kind === 'EWAY_BILL');
+      return {
+        ewayNo: doc?.keyedValues?.ewayNo ?? trip.ewayNo ?? null,
+        validTill: doc?.keyedValues?.validTill ?? trip.ewayValidTill ?? null,
+        uploaded: !!doc?.attachmentId && doc?.status !== 'MISSING',
+      };
+    })(),
     tripId: trip.id,
     stage: trip.stage,
     vehicleNo: trip.vehicleNo || null,
@@ -1471,6 +1501,66 @@ function clientOnboardingDetail(client: any) {
 /* ---- routes ------------------------------------------------------------- */
 
 const routes: [string, RegExp, Handler][] = [
+  /* --------------------------------------------------- allowed emails --- */
+  [
+    'GET',
+    /^\/admin\/users$/,
+    ({ role }) => {
+      if (!SEED_GRANTS[role]?.includes('config.manage')) fail(403, 'FORBIDDEN', 'Only administrators manage sign-in access.');
+      return ok(ACCOUNTS.map(allowedEmailView).reverse());
+    },
+  ],
+  [
+    'POST',
+    /^\/admin\/users$/,
+    ({ role, body }) => {
+      if (!SEED_GRANTS[role]?.includes('config.manage')) fail(403, 'FORBIDDEN', 'Only administrators manage sign-in access.');
+      const email = String(body?.email ?? '').trim().toLowerCase();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) fail(400, 'VALIDATION_FAILED', 'Enter a valid email address.');
+      if (CREDENTIALS[email]) {
+        fail(
+          409,
+          'EMAIL_ALREADY_ALLOWED',
+          DISABLED_EMAILS.has(email)
+            ? 'This email is already on the list but switched off. Switch it back on instead.'
+            : 'This email is already allowed to sign in.',
+        );
+      }
+      const branch = body?.branchId ? BRANCHES.find((b) => b.id === body.branchId) : null;
+      const account: FixtureAccount = {
+        userId: `u-${Date.now().toString(36)}`,
+        name: String(body?.name ?? '').trim() || email.split('@')[0],
+        email,
+        role: body.role as RoleCode,
+        branch: branch?.code ?? null,
+      };
+      ACCOUNTS.push(account);
+      CREDENTIALS[email] = account;
+      ALLOWED_AT[account.userId] = new Date().toISOString();
+      return status(201, allowedEmailView(account));
+    },
+  ],
+  [
+    'PATCH',
+    /^\/admin\/users\/([^/]+)$/,
+    ({ role, params, body, headers }) => {
+      if (!SEED_GRANTS[role]?.includes('config.manage')) fail(403, 'FORBIDDEN', 'Only administrators manage sign-in access.');
+      const account = ACCOUNTS.find((a) => a.userId === params[0]) ?? fail(404, 'NOT_FOUND', 'No such person on the list.');
+      const authHeader = String(headers['authorization'] ?? '');
+      const me = readToken(authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null, 'access');
+      if (me.ok && me.claims.sub === account.userId && (body?.status === 'DISABLED' || (body?.role && body.role !== 'ADMIN'))) {
+        fail(409, 'SELF_LOCKOUT', 'You cannot switch off or change your own access. Ask another administrator.');
+      }
+      if (body?.role) account.role = body.role;
+      if (typeof body?.name === 'string' && body.name.trim()) account.name = body.name.trim();
+      if (body?.branchId !== undefined) {
+        account.branch = body.branchId ? (BRANCHES.find((b) => b.id === body.branchId)?.code ?? null) : null;
+      }
+      if (body?.status === 'DISABLED') DISABLED_EMAILS.add(account.email.toLowerCase());
+      if (body?.status === 'ACTIVE') DISABLED_EMAILS.delete(account.email.toLowerCase());
+      return ok(allowedEmailView(account));
+    },
+  ],
   /* ---------------------------------------------------------- session --- */
   [
     'GET',
@@ -3577,6 +3667,47 @@ const routes: [string, RegExp, Handler][] = [
     ({ params, userId }) => ok(departMockTrip(findTrip(params[0]), userId)),
   ],
   [
+    'POST',
+    /^\/trips\/([^/]+)\/eway-extension$/,
+    // `TripsService.extendEway` — the e-way bill extended while the truck is on the road.
+    ({ params, body, userId, role }) => {
+      const trip = findTrip(params[0]);
+      if (!(trip.loadingSupervisorId === userId) && !roleCan(role, 'indent.manage'))
+        fail(403, 'PERMISSION_DENIED', 'Missing permission: indent.manage.');
+      if (trip.stage !== 'OPEN' && trip.stage !== 'IN_TRANSIT')
+        fail(409, 'TRACKING_CLOSED', 'The truck is unloaded; the e-way bill no longer needs extending.');
+      const doc = (trip.documents ?? []).find((d: any) => d.kind === 'EWAY_BILL');
+      if (!doc || !doc.attachmentId || doc.status === 'MISSING')
+        fail(409, 'NO_EWAY_BILL', 'Upload the e-way bill on the Documents tab first.');
+      const validTill = String(body?.validTill ?? '');
+      if (!/^\d{4}-\d{2}-\d{2}/.test(validTill)) fail(400, 'VALIDATION_ERROR', 'Give the new validity date.');
+      const current: string | null = doc.keyedValues?.validTill ?? trip.ewayValidTill ?? null;
+      if (current && validTill.slice(0, 10) <= String(current).slice(0, 10))
+        fail(400, 'VALIDATION_ERROR', `The new validity must be after the current one (${String(current).slice(0, 10)}).`);
+      const ewayNo = String(body?.ewayNo ?? '').trim() || doc.keyedValues?.ewayNo || null;
+      doc.keyedValues = { ...(doc.keyedValues ?? {}), validTill: validTill.slice(0, 10), ...(ewayNo ? { ewayNo } : {}) };
+      trip.ewayValidTill = validTill.slice(0, 10);
+      // The fleet board's e-way alert follows the new date.
+      const tele = db.telematics.find((v: any) => v.vehicleNo === trip.vehicleNo);
+      if (tele) {
+        tele.ewayValidTill = `${validTill.slice(0, 10)}T23:59:00+05:30`;
+        tele.alerts = (tele.alerts ?? []).filter((a: string) => !a.startsWith('EWAY_'));
+      }
+      const last = db.tripTracking.filter((u: any) => u.tripId === trip.id && u.kind !== 'UNLOADED').pop();
+      const reason = String(body?.reason ?? '').trim();
+      addTrackingRow(trip, {
+        kind: 'EWAY_EXTENDED',
+        location: last?.location ?? (String(trip.lane ?? '').split('→')[0]?.trim() || 'On the road'),
+        lat: null,
+        lng: null,
+        note: `E-way bill extended to ${validTill.slice(0, 10)}${current ? ` (was ${String(current).slice(0, 10)})` : ''}${reason ? ` — ${reason}` : ''}`,
+        at: helpers.now(),
+        userId,
+      });
+      return ok(trackingSheetFor(trip));
+    },
+  ],
+  [
     'GET',
     /^\/trips\/([^/]+)\/tracking$/,
     ({ params }) => ok(trackingSheetFor(findTrip(params[0]))),
@@ -3631,6 +3762,7 @@ const routes: [string, RegExp, Handler][] = [
         note: String(body?.note ?? '').trim() || null,
         at,
         userId,
+        status: kind === 'UPDATE' ? (body?.status ?? null) : null,
       });
       // A typed position with coordinates also moves the truck on the fleet board.
       if (hasLat && trip.stage === 'IN_TRANSIT') {

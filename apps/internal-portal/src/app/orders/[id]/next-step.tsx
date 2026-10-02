@@ -288,6 +288,8 @@ export function OrderNextStep({
             onAllocated={() => {
               load();
               onChanged();
+              // Vehicle assigned: it goes for tracking — on the way to the loading point.
+              openTab('tracking');
             }}
           />
         )}
@@ -301,9 +303,16 @@ export function OrderNextStep({
       <Panel
         title="👉 Next step · deliver"
         right={
-          <button className="btn btn-secondary btn-sm" onClick={() => openTab('tracking')}>
-            🧭 Open Tracking
-          </button>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {can('invoice.create') && !order.invoiceId && (
+              <Link className="btn btn-secondary btn-sm" href={`/invoices/new?client=${order.clientId}&trip=${trip.id}`}>
+                🧾 Raise the client invoice
+              </Link>
+            )}
+            <button className="btn btn-secondary btn-sm" onClick={() => openTab('tracking')}>
+              🧭 Open Tracking
+            </button>
+          </div>
         }
       >
         <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }}>

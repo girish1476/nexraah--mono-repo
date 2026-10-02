@@ -17,7 +17,7 @@ import type { SubmitTripDocumentDto } from './dto/submit-document.dto';
 import type { CreateChargeDto } from './dto/create-charge.dto';
 import type { PatchLrDto } from './dto/patch-lr.dto';
 import type { DeliverTripDto } from './dto/deliver-trip.dto';
-import type { AddTrackingDto } from './dto/add-tracking.dto';
+import type { AddTrackingDto, ExtendEwayDto } from './dto/add-tracking.dto';
 
 interface CrossCheckOverrideAction {
   tripId: string;
@@ -773,7 +773,16 @@ export class TripsService implements OnModuleInit {
   async trackingSheet(tripId: string) {
     const trip = await this.assertTripExists(tripId);
     const rows = await this.tripsRepository.listTracking(tripId);
+    // The e-way bill rides with the truck: its number and validity, as typed
+    // against the uploaded bill (or extended on the road since).
+    const eway = await this.tripsRepository.findDocumentByKind(tripId, 'EWAY_BILL');
+    const ewayKeyed = (eway?.keyed_values ?? {}) as Record<string, unknown>;
     return {
+      eway: {
+        ewayNo: (ewayKeyed.ewayNo as string | undefined) ?? trip.eway_no ?? null,
+        validTill: (ewayKeyed.validTill as string | undefined) ?? trip.eway_valid_till ?? null,
+        uploaded: !!eway?.attachment_id,
+      },
       tripId,
       stage: trip.stage,
       vehicleNo: trip.vehicle_no || null,
@@ -791,6 +800,7 @@ export class TripsService implements OnModuleInit {
         lat: r.lat === null ? null : Number(r.lat),
         lng: r.lng === null ? null : Number(r.lng),
         note: r.note,
+        status: r.status ?? null,
         recordedAt: r.recordedAt,
         recordedByName: r.recordedByName ?? null,
       })),
@@ -858,6 +868,7 @@ export class TripsService implements OnModuleInit {
         lat: dto.lat ?? null,
         lng: dto.lng ?? null,
         note: dto.note?.trim() || null,
+        status: dto.kind === 'UPDATE' ? (dto.status ?? null) : null,
         recorded_by: actor.userId,
         recorded_at: at,
       });
@@ -878,6 +889,56 @@ export class TripsService implements OnModuleInit {
    * uploaded and verified, so a truck that is loaded moves to the road without
    * someone having to remember a second button.
    */
+  /**
+   * Extends the e-way bill while the truck is still on the road. Tracking is
+   * mandatory partly for this: an e-way bill that runs out before the truck
+   * is unloaded has to be extended, and the sheet records when and to what.
+   */
+  async extendEway(tripId: string, dto: ExtendEwayDto, actor: AuthenticatedUser) {
+    await this.tripsRepository.transaction().execute(async (trx) => {
+      const trip = await this.tripsRepository.findByIdForUpdate(trx, tripId);
+      if (!trip) throw new DomainException(404, 'NOT_FOUND', `Unknown trip: ${tripId}`);
+      this.assertCanRunLoading(trip, actor);
+      if (trip.stage !== 'OPEN' && trip.stage !== 'IN_TRANSIT') {
+        throw new DomainException(409, 'TRACKING_CLOSED', 'The truck is unloaded; the e-way bill no longer needs extending.');
+      }
+      const doc = await this.tripsRepository.findDocumentOne(trx, tripId, 'EWAY_BILL');
+      if (!doc?.attachment_id) {
+        throw new DomainException(409, 'NO_EWAY_BILL', 'Upload the e-way bill on the Documents tab first.');
+      }
+      const keyed = (doc.keyed_values ?? {}) as Record<string, unknown>;
+      const current = (keyed.validTill as string | undefined) ?? trip.eway_valid_till ?? null;
+      if (current && dto.validTill <= current.slice(0, 10)) {
+        throw new DomainException(400, 'VALIDATION_ERROR', `The new validity must be after the current one (${current.slice(0, 10)}).`);
+      }
+      const ewayNo = dto.ewayNo?.trim() || (keyed.ewayNo as string | undefined) || trip.eway_no || null;
+      await this.tripsRepository.updateDocumentKeyed(trx, tripId, 'EWAY_BILL', {
+        ...keyed,
+        validTill: dto.validTill,
+        ...(ewayNo ? { ewayNo } : {}),
+      });
+      await this.tripsRepository.update(trx, tripId, { eway_valid_till: dto.validTill, ...(ewayNo ? { eway_no: ewayNo } : {}) });
+      const last = (await this.tripsRepository.listTracking(tripId)).filter((u) => u.kind !== 'UNLOADED').pop();
+      await this.tripsRepository.insertTracking(trx, {
+        trip_id: tripId,
+        kind: 'EWAY_EXTENDED',
+        location: last?.location ?? ((trip.lane ?? '').split('→')[0]?.trim() || 'On the road'),
+        lat: null,
+        lng: null,
+        note: `E-way bill extended to ${dto.validTill}${current ? ` (was ${current.slice(0, 10)})` : ''}${dto.reason?.trim() ? ` — ${dto.reason.trim()}` : ''}`,
+        recorded_by: actor.userId,
+      });
+      await this.auditService.record(trx, actor, {
+        action: 'EWAY_EXTENDED',
+        entityType: 'trips',
+        entityId: tripId,
+        before: { validTill: current },
+        after: { validTill: dto.validTill, ewayNo },
+      });
+    });
+    return this.trackingSheet(tripId);
+  }
+
   async departIfReady(tripId: string, actor: AuthenticatedUser): Promise<boolean> {
     try {
       const trip = await this.tripsRepository.findById(tripId);

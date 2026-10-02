@@ -16,6 +16,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { BranchesModule } from './modules/branches/branches.module';
 import { ConfigModule as ControlPanelModule } from './modules/config/config.module';
 import { RolesModule } from './modules/roles/roles.module';
+import { UsersModule } from './modules/users/users.module';
 import { AttachmentsModule } from './modules/attachments/attachments.module';
 import { VendorsModule } from './modules/vendors/vendors.module';
 import { ComplianceModule } from './modules/compliance/compliance.module';
@@ -48,6 +49,7 @@ import { JobsModule } from './modules/jobs/jobs.module';
     BranchesModule,
     ControlPanelModule,
     RolesModule,
+    UsersModule,
     AttachmentsModule,
     VendorsModule,
     ComplianceModule,

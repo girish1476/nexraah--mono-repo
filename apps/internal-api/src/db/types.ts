@@ -644,6 +644,8 @@ export interface TripTrackingUpdatesTable {
   lat: string | null;
   lng: string | null;
   note: string | null;
+  /** How the truck is doing at this update — moving, halted, breakdown… */
+  status: string | null;
   recorded_by: string | null;
   recorded_at: Generated<string>;
   created_at: Generated<string>;
