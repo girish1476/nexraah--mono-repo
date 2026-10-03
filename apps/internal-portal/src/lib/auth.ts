@@ -1,4 +1,4 @@
-import { MOCKS_ENABLED, mockRefresh, mockSendCode, mockVerifyCode } from '@/mocks';
+import { MOCKS_ENABLED, mockRefresh, mockSendCode, mockSessionFor, mockVerifyCode } from '@/mocks';
 
 /**
  * Sign-in, sign-out and the access-token lifecycle — the one place in this
@@ -66,6 +66,37 @@ function browser(): boolean {
  * Email OTP expiration is set to the same 240 seconds; the email says so too.
  */
 export const CODE_TTL_S = 240;
+
+let realEmailCheck: Promise<boolean> | null = null;
+
+/**
+ * Whether this deployment emails real sign-in codes (app/api/sign-in). When it
+ * does, the demo code is switched off: the only way in is the emailed code.
+ */
+export function realEmailEnabled(): Promise<boolean> {
+  if (!realEmailCheck) {
+    realEmailCheck =
+      typeof window === 'undefined' || typeof fetch === 'undefined'
+        ? Promise.resolve(false)
+        : fetch('/api/sign-in/status', { cache: 'no-store' })
+            .then((r) => (r.ok ? r.json() : { realEmail: false }))
+            .then((j: { realEmail?: boolean }) => !!j.realEmail)
+            .catch(() => false);
+  }
+  return realEmailCheck;
+}
+
+async function postSignIn(path: 'send' | 'verify', body: Record<string, string>) {
+  const response = await fetch(`/api/sign-in/${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify(body),
+  });
+  const payload = (await response.json().catch(() => ({}))) as { error?: string; person?: { email: string; role: string; name: string } };
+  if (!response.ok) throw new AuthError(payload.error ?? 'Sign-in failed. Try again.');
+  return payload;
+}
 
 export function getToken(): string | null {
   return browser() ? localStorage.getItem(TOKEN_KEY) : null;
@@ -201,6 +232,10 @@ export async function sendSignInCode(email: string): Promise<void> {
   const trimmed = email.trim().toLowerCase();
   if (!trimmed) throw new AuthError('Enter your work email.');
   if (MOCKS_ENABLED) {
+    if (await realEmailEnabled()) {
+      await postSignIn('send', { email: trimmed });
+      return;
+    }
     await mockSendCode(trimmed).catch((e: Error) => {
       throw new AuthError(e.message);
     });
@@ -226,6 +261,12 @@ export async function verifySignInCode(email: string, code: string): Promise<voi
   if (!token) throw new AuthError('Enter the code from the email.');
 
   if (MOCKS_ENABLED) {
+    if (await realEmailEnabled()) {
+      const { person } = await postSignIn('verify', { email: trimmed, code: token });
+      if (!person) throw new AuthError('Sign-in failed. Try again.');
+      store(mockSessionFor(person));
+      return;
+    }
     const tokens = await mockVerifyCode(trimmed, token).catch((e: Error) => {
       throw new AuthError(e.message);
     });

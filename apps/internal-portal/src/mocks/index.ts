@@ -198,6 +198,30 @@ export async function mockSendCode(email: string) {
   CODE_SENT_AT[key] = Date.now();
 }
 
+/**
+ * A session for someone whose emailed code the server checked
+ * (app/api/sign-in/verify). The server's list (SIGNIN_PEOPLE) says who they
+ * are; if this browser has not met them yet they are added to the people
+ * list, so their name shows on what they do.
+ */
+export function mockSessionFor(person: { email: string; role: string; name: string }) {
+  const key = person.email.trim().toLowerCase();
+  let account = CREDENTIALS[key];
+  if (!account) {
+    account = { userId: `u-${Date.now().toString(36)}`, name: person.name, email: key, role: person.role as RoleCode, branch: null };
+    ACCOUNTS.push(account);
+    CREDENTIALS[key] = account;
+    ALLOWED_AT[account.userId] = new Date().toISOString();
+  } else {
+    // The server's list decides the role.
+    account.role = person.role as RoleCode;
+    if (person.name) account.name = person.name;
+  }
+  DISABLED_EMAILS.delete(key);
+  rememberPeople();
+  return issue(account);
+}
+
 export async function mockVerifyCode(email: string, code: string) {
   await new Promise((r) => setTimeout(r, 260));
   const key = email.trim().toLowerCase();

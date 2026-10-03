@@ -15,7 +15,7 @@
  */
 import { ClipboardEvent, FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { AuthError, CODE_TTL_S, isSignedIn, sendSignInCode, verifySignInCode } from '@/lib/auth';
+import { AuthError, CODE_TTL_S, isSignedIn, realEmailEnabled, sendSignInCode, verifySignInCode } from '@/lib/auth';
 import { MOCKS_ENABLED, mockAccounts } from '@/mocks';
 import { DEMO_CODE } from '@/mocks/db';
 import { forgetSaved } from '@/mocks/persist';
@@ -39,6 +39,11 @@ export default function SignInPage() {
   // When the code on screen stops working, and the clock that counts down to it.
   const [expiresAt, setExpiresAt] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  // Codes emailed for real: the demo panel and its fixed code go away.
+  const [realEmail, setRealEmail] = useState(false);
+  useEffect(() => {
+    void realEmailEnabled().then(setRealEmail);
+  }, []);
 
   // Someone who still holds a session has no business on this screen; send
   // them on rather than letting them sign in a second time over the top.
@@ -212,7 +217,7 @@ export default function SignInPage() {
             )}
           </div>
 
-          {MOCKS_ENABLED && (
+          {MOCKS_ENABLED && !realEmail && (
             <DemoAccounts
               onPick={(pickedEmail) => {
                 setEmail(pickedEmail);
