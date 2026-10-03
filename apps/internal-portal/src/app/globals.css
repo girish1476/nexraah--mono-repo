@@ -3280,3 +3280,18 @@ details[open] > summary::before {
   opacity: 0.85;
   border-style: dashed;
 }
+
+/* The sign-in code's four-minute clock, under "Code sent to …". */
+.auth-code-clock {
+  margin: 6px 0 14px;
+  font-size: 13px;
+  color: var(--auth-ink-soft, rgba(226, 236, 255, 0.72));
+  font-variant-numeric: tabular-nums;
+}
+.auth-code-clock strong {
+  color: var(--auth-sky-2, #4fb3ff);
+}
+.auth-code-clock.is-expired {
+  color: #ff8a8a;
+  font-weight: 600;
+}

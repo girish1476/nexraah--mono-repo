@@ -61,6 +61,12 @@ function browser(): boolean {
   return typeof window !== 'undefined';
 }
 
+/**
+ * How long an emailed sign-in code works: four minutes. Supabase → Auth →
+ * Email OTP expiration is set to the same 240 seconds; the email says so too.
+ */
+export const CODE_TTL_S = 240;
+
 export function getToken(): string | null {
   return browser() ? localStorage.getItem(TOKEN_KEY) : null;
 }

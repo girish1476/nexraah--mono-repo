@@ -184,6 +184,10 @@ function rememberPeople() {
   });
 }
 
+/** When the last code went to each address — a code works for four minutes, as in Supabase. */
+const CODE_SENT_AT: Record<string, number> = {};
+const MOCK_CODE_TTL_MS = 240_000;
+
 /** Mirrors Supabase refusing a code for an email with no login (`create_user: false`). */
 export async function mockSendCode(email: string) {
   await new Promise((r) => setTimeout(r, 260));
@@ -191,11 +195,17 @@ export async function mockSendCode(email: string) {
   if (!CREDENTIALS[key] || DISABLED_EMAILS.has(key)) {
     throw new Error('This email is not allowed to sign in. Ask an administrator to add it.');
   }
+  CODE_SENT_AT[key] = Date.now();
 }
 
 export async function mockVerifyCode(email: string, code: string) {
   await new Promise((r) => setTimeout(r, 260));
-  const account = CREDENTIALS[email.trim().toLowerCase()];
+  const key = email.trim().toLowerCase();
+  const account = CREDENTIALS[key];
+  const sentAt = CODE_SENT_AT[key];
+  if (sentAt !== undefined && Date.now() - sentAt > MOCK_CODE_TTL_MS) {
+    throw new Error('That code has expired. Send a new code.');
+  }
   if (!account || DISABLED_EMAILS.has(account.email.toLowerCase()) || code.trim() !== DEMO_CODE) {
     throw new Error('That code is wrong or has expired. Check the latest email, or send a new code.');
   }

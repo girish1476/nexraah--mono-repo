@@ -103,6 +103,27 @@ test.describe('signing in', () => {
     await expect(page.getByLabel('Digit 1')).toHaveCount(0);
   });
 
+  test('a code lasts four minutes; after that it is refused and a new one is offered', async ({ page }) => {
+    await page.clock.install();
+    await page.goto('/signin');
+    await page.getByRole('textbox', { name: 'Email' }).fill('anil@nexraah.in');
+    await page.getByRole('button', { name: /^Send me a code/ }).click();
+    await expect(page.getByText(/Code expires in (4:00|3:5\d)/)).toBeVisible({ timeout: NAV_TIMEOUT });
+    // Resending waits a minute while the code is fresh.
+    await expect(page.getByRole('button', { name: /Resend in \d+s/ })).toBeDisabled();
+    await page.clock.runFor(241_000);
+    await expect(page.getByText('This code has expired — send a new one.')).toBeVisible();
+    // The right code, too late, still does not sign in.
+    await page.getByLabel('Digit 1').fill(DEMO_CODE);
+    await expect(page.getByText('That code has expired. Send a new code.')).toBeVisible();
+    await expect(page).toHaveURL(/\/signin$/);
+    // A new code starts a fresh four minutes and works.
+    await page.getByRole('button', { name: 'Resend code' }).click();
+    await expect(page.getByText(/Code expires in (4:00|3:5\d)/)).toBeVisible({ timeout: NAV_TIMEOUT });
+    await page.getByLabel('Digit 1').fill(DEMO_CODE);
+    await expect(page).not.toHaveURL(/\/signin$/, { timeout: NAV_TIMEOUT });
+  });
+
   test('a demo account fills the email but still needs the code', async ({ page }) => {
     await page.goto('/signin');
     await page.getByRole('button', { name: /Sunita Rao/ }).click();

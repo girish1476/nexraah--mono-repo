@@ -15,7 +15,7 @@
  */
 import { ClipboardEvent, FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { AuthError, isSignedIn, sendSignInCode, verifySignInCode } from '@/lib/auth';
+import { AuthError, CODE_TTL_S, isSignedIn, sendSignInCode, verifySignInCode } from '@/lib/auth';
 import { MOCKS_ENABLED, mockAccounts } from '@/mocks';
 import { DEMO_CODE } from '@/mocks/db';
 import { forgetSaved } from '@/mocks/persist';
@@ -24,7 +24,7 @@ import { Field } from '@/lib/ui';
 import { AuthBrand } from './auth-brand';
 
 const CODE_LENGTH = 6;
-/** Seconds before "Send a new code" is offered again — Supabase rate-limits resends anyway. */
+/** Seconds before "Resend code" is offered again (at once if the code expired) — Supabase rate-limits resends anyway. */
 const RESEND_AFTER_S = 60;
 
 export default function SignInPage() {
@@ -36,6 +36,9 @@ export default function SignInPage() {
   const [error, setError] = useState<string | null>(null);
   const [shake, setShake] = useState(false);
   const [resendIn, setResendIn] = useState(0);
+  // When the code on screen stops working, and the clock that counts down to it.
+  const [expiresAt, setExpiresAt] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
 
   // Someone who still holds a session has no business on this screen; send
   // them on rather than letting them sign in a second time over the top.
@@ -48,6 +51,16 @@ export default function SignInPage() {
     const t = setTimeout(() => setResendIn((s) => s - 1), 1000);
     return () => clearTimeout(t);
   }, [resendIn]);
+
+  useEffect(() => {
+    if (step !== 'code' || expiresAt === null) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [step, expiresAt]);
+
+  const secondsLeft = expiresAt === null ? CODE_TTL_S : Math.max(0, Math.ceil((expiresAt - now) / 1000));
+  const expired = step === 'code' && expiresAt !== null && secondsLeft === 0;
+  const clock = `${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, '0')}`;
 
   const message = (e: unknown) =>
     e instanceof AuthError || e instanceof Error ? e.message : 'Sign-in failed. Try again.';
@@ -62,6 +75,8 @@ export default function SignInPage() {
       setStep('code');
       setDigits(Array(CODE_LENGTH).fill(''));
       setResendIn(RESEND_AFTER_S);
+      setExpiresAt(Date.now() + CODE_TTL_S * 1000);
+      setNow(Date.now());
     } catch (e) {
       setError(message(e));
     } finally {
@@ -71,6 +86,10 @@ export default function SignInPage() {
 
   const verify = async (code: string) => {
     if (busy || code.length < CODE_LENGTH) return;
+    if (expired) {
+      setError('That code has expired. Send a new code.');
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -147,9 +166,17 @@ export default function SignInPage() {
                 <p className="auth-sent-to">
                   <span aria-hidden>📨</span>
                   <span>
-                    Code sent to <strong>{email.trim().toLowerCase()}</strong>. Check your inbox (and spam). It works once
-                    and expires soon.
+                    Code sent to <strong>{email.trim().toLowerCase()}</strong>. Check your inbox (and spam). It works once.
                   </span>
+                </p>
+                <p className={expired ? 'auth-code-clock is-expired' : 'auth-code-clock'} role="status" aria-live="polite">
+                  {expired ? (
+                    <>This code has expired — send a new one.</>
+                  ) : (
+                    <>
+                      Code expires in <strong>{clock}</strong>
+                    </>
+                  )}
                 </p>
 
                 <OtpBoxes digits={digits} onChange={onDigits} disabled={busy} shake={shake} />
@@ -172,8 +199,13 @@ export default function SignInPage() {
                   >
                     ← Change email
                   </button>
-                  <button type="button" className="auth-link" onClick={() => sendCode()} disabled={busy || resendIn > 0}>
-                    {resendIn > 0 ? `Resend in ${resendIn}s` : 'Send a new code'}
+                  <button
+                    type="button"
+                    className="auth-link"
+                    onClick={() => sendCode()}
+                    disabled={busy || (resendIn > 0 && !expired)}
+                  >
+                    {resendIn > 0 && !expired ? `Resend in ${resendIn}s` : 'Resend code'}
                   </button>
                 </div>
               </form>
