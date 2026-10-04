@@ -4,12 +4,12 @@ import {
   CODE_TTL_S,
   COOKIE_NAME,
   RESEND_AFTER_S,
-  findPerson,
   issueChallenge,
   newCode,
   openChallenge,
   realEmailConfigured,
 } from '@/lib/server/sign-in-code';
+import { allowedPerson } from '@/lib/server/people-store';
 import { renderSignInEmail } from '@/lib/server/sign-in-email';
 import { sendEmail } from '@/lib/server/mailer';
 
@@ -19,8 +19,9 @@ const NOT_ALLOWED = 'This email is not allowed to sign in. Ask an administrator 
 
 /**
  * POST /api/sign-in/send { email } — emails a fresh 4-minute code to someone
- * on the server's list (SIGNIN_PEOPLE). Anyone else gets the same refusal,
- * and no email goes out: this is not an open mailer.
+ * allowed to sign in: on the server's own list (SIGNIN_PEOPLE), or added by an
+ * administrator on the Users screen. Anyone else gets the same refusal, and no
+ * email goes out: this is not an open mailer.
  */
 export async function POST(request: NextRequest) {
   if (!realEmailConfigured()) {
@@ -28,7 +29,13 @@ export async function POST(request: NextRequest) {
   }
   const body = (await request.json().catch(() => ({}))) as { email?: string };
   const email = String(body.email ?? '').trim().toLowerCase();
-  const person = email ? findPerson(email) : undefined;
+  let person;
+  try {
+    person = email ? await allowedPerson(email) : undefined;
+  } catch (e) {
+    console.error('[sign-in] people list failed:', (e as Error).message);
+    return NextResponse.json({ error: 'Sign-in is not available right now. Try again in a minute.' }, { status: 502 });
+  }
   if (!person) return NextResponse.json({ error: NOT_ALLOWED }, { status: 403 });
 
   const secret = process.env.SIGNIN_SECRET as string;

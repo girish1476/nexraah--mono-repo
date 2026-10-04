@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { errorMessage } from '@/apis';
+import { peopleStoreEnabled, realEmailEnabled } from '@/lib/auth';
 import { ROLE_CODES, ROLES } from '@/lib/permissions';
 import {
   Column,
@@ -60,6 +61,13 @@ export default function AllowedEmailsPage() {
     setError(null);
     listAllowedEmails().then(setRows).catch((e) => setError(errorMessage(e)));
   };
+  // Real codes are emailed, but this list is not shared with the server that
+  // sends them: adding someone here would not let them in, so the screen says so.
+  const [browserOnly, setBrowserOnly] = useState(false);
+  useEffect(() => {
+    void Promise.all([realEmailEnabled(), peopleStoreEnabled()]).then(([real, store]) => setBrowserOnly(real && !store));
+  }, []);
+
   useEffect(() => {
     load();
     listBranches().then(setBranches).catch(() => setBranches([]));
@@ -214,6 +222,18 @@ export default function AllowedEmailsPage() {
           )
         }
       />
+
+      {browserOnly && (
+        <div
+          className="surface"
+          role="note"
+          style={{ borderLeft: '2px solid var(--color-accent)', padding: '11px 13px', fontSize: 12.5, marginBottom: 12 }}
+        >
+          Sign-in codes are emailed only to the people on the deployment’s own list. Someone added here is kept in this
+          browser and will not get a code until the shared list of people is set up — ask whoever looks after the
+          hosting.
+        </div>
+      )}
 
       {error && <ErrorState message={error} retry={load} />}
       {!rows && !error && <Loading what="Loading allowed emails" />}

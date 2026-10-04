@@ -126,6 +126,43 @@ export function checkCode(
   return { ok: false, reason: 'WRONG_CODE', next: { ...challenge, a: challenge.a + 1 } };
 }
 
+/* ---- who is signed in, as the server knows it ----------------------------- */
+
+/**
+ * Set when a code is accepted. It is the server's own proof of who is signed
+ * in — the token the page keeps is made in the browser and proves nothing to a
+ * server route. It carries only the email; the role is looked up again each
+ * time, so a role taken away stops counting at once.
+ */
+export const SESSION_COOKIE = 'nx_session';
+export const SESSION_TTL_S = 7 * 24 * 3600;
+
+// A different prefix from the challenge's, so one can never be passed off as the other.
+function signSession(secret: string, payload: string): string {
+  return createHmac('sha256', secret).update(`session|${payload}`).digest('base64url');
+}
+
+export function issueSession(secret: string, email: string, now = Math.floor(Date.now() / 1000)): string {
+  const payload = b64url(JSON.stringify({ e: email.trim().toLowerCase(), x: now + SESSION_TTL_S }));
+  return `${payload}.${signSession(secret, payload)}`;
+}
+
+/** The signed-in email in a session cookie, or null when it is missing, edited, forged or expired. */
+export function openSession(secret: string, cookie: string | undefined, now = Math.floor(Date.now() / 1000)): string | null {
+  if (!cookie) return null;
+  const [payload, mac] = cookie.split('.');
+  if (!payload || !mac) return null;
+  const expected = Buffer.from(signSession(secret, payload));
+  const offered = Buffer.from(mac);
+  if (expected.length !== offered.length || !timingSafeEqual(expected, offered)) return null;
+  try {
+    const s = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { e?: unknown; x?: unknown };
+    return typeof s.e === 'string' && typeof s.x === 'number' && now <= s.x ? s.e : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Real email is on when the secret, the people list and a mail service are all set. */
 export function realEmailConfigured(): boolean {
   return (

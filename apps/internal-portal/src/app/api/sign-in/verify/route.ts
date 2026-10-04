@@ -1,5 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { COOKIE_NAME, checkCode, findPerson, openChallenge, realEmailConfigured, seal } from '@/lib/server/sign-in-code';
+import {
+  COOKIE_NAME,
+  SESSION_COOKIE,
+  SESSION_TTL_S,
+  checkCode,
+  issueSession,
+  openChallenge,
+  realEmailConfigured,
+  seal,
+} from '@/lib/server/sign-in-code';
+import { allowedPerson } from '@/lib/server/people-store';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,8 +23,9 @@ const MESSAGES = {
 
 /**
  * POST /api/sign-in/verify { email, code } — checks the emailed code. On
- * success it answers with who signed in (email, role, name from SIGNIN_PEOPLE)
- * and the challenge cookie is cleared, so a code works once.
+ * success it answers with who signed in (email, role, name, branch), the
+ * challenge cookie is cleared so a code works once, and the server's own
+ * session cookie is set — what /api/people trusts to know an administrator.
  */
 export async function POST(request: NextRequest) {
   if (!realEmailConfigured()) {
@@ -26,7 +37,8 @@ export async function POST(request: NextRequest) {
   const secret = process.env.SIGNIN_SECRET as string;
   const challenge = openChallenge(secret, request.cookies.get(COOKIE_NAME)?.value);
   const result = checkCode(secret, challenge, email, code);
-  const cookieOptions = { httpOnly: true, secure: request.nextUrl.protocol === 'https:', sameSite: 'strict' as const, path: '/api/sign-in' };
+  const secure = request.nextUrl.protocol === 'https:';
+  const cookieOptions = { httpOnly: true, secure, sameSite: 'strict' as const, path: '/api/sign-in' };
 
   if (!result.ok) {
     const response = NextResponse.json({ error: MESSAGES[result.reason] }, { status: 400 });
@@ -40,9 +52,22 @@ export async function POST(request: NextRequest) {
     return response;
   }
 
-  const person = findPerson(email);
+  let person;
+  try {
+    person = await allowedPerson(email);
+  } catch (e) {
+    console.error('[sign-in] people list failed:', (e as Error).message);
+    return NextResponse.json({ error: 'Sign-in is not available right now. Try again in a minute.' }, { status: 502 });
+  }
   if (!person) return NextResponse.json({ error: 'This email is no longer allowed to sign in.' }, { status: 403 });
   const response = NextResponse.json({ ok: true, person }, { headers: { 'Cache-Control': 'no-store' } });
   response.cookies.set(COOKIE_NAME, '', { ...cookieOptions, maxAge: 0 });
+  response.cookies.set(SESSION_COOKIE, issueSession(secret, email), {
+    httpOnly: true,
+    secure,
+    sameSite: 'strict',
+    path: '/api',
+    maxAge: SESSION_TTL_S,
+  });
   return response;
 }

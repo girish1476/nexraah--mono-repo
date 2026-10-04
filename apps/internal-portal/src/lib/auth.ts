@@ -67,21 +67,36 @@ function browser(): boolean {
  */
 export const CODE_TTL_S = 240;
 
-let realEmailCheck: Promise<boolean> | null = null;
+let realEmailCheck: Promise<{ realEmail: boolean; peopleStore: boolean }> | null = null;
 
 /**
  * Whether this deployment emails real sign-in codes (app/api/sign-in). When it
  * does, the demo code is switched off: the only way in is the emailed code.
  */
 export function realEmailEnabled(): Promise<boolean> {
+  return signInStatus().then((s) => s.realEmail);
+}
+
+/**
+ * Whether the Users screen's list is also kept on the server, so a person an
+ * administrator adds there is emailed a code on any device (app/api/people).
+ */
+export function peopleStoreEnabled(): Promise<boolean> {
+  return signInStatus().then((s) => s.peopleStore);
+}
+
+function signInStatus(): Promise<{ realEmail: boolean; peopleStore: boolean }> {
   if (!realEmailCheck) {
     realEmailCheck =
       typeof window === 'undefined' || typeof fetch === 'undefined'
-        ? Promise.resolve(false)
+        ? Promise.resolve({ realEmail: false, peopleStore: false })
         : fetch('/api/sign-in/status', { cache: 'no-store' })
-            .then((r) => (r.ok ? r.json() : { realEmail: false }))
-            .then((j: { realEmail?: boolean }) => !!j.realEmail)
-            .catch(() => false);
+            .then((r) => (r.ok ? r.json() : {}))
+            .then((j: { realEmail?: boolean; peopleStore?: boolean }) => ({
+              realEmail: !!j.realEmail,
+              peopleStore: !!j.realEmail && !!j.peopleStore,
+            }))
+            .catch(() => ({ realEmail: false, peopleStore: false }));
   }
   return realEmailCheck;
 }
@@ -93,7 +108,10 @@ async function postSignIn(path: 'send' | 'verify', body: Record<string, string>)
     credentials: 'same-origin',
     body: JSON.stringify(body),
   });
-  const payload = (await response.json().catch(() => ({}))) as { error?: string; person?: { email: string; role: string; name: string } };
+  const payload = (await response.json().catch(() => ({}))) as {
+    error?: string;
+    person?: { email: string; role: string; name: string; branch?: string | null };
+  };
   if (!response.ok) throw new AuthError(payload.error ?? 'Sign-in failed. Try again.');
   return payload;
 }
@@ -334,7 +352,17 @@ export function signOut(): void {
   const refreshToken = browser() ? localStorage.getItem(REFRESH_KEY) : null;
   clearSession();
 
-  if (MOCKS_ENABLED || !refreshToken) return;
+  if (MOCKS_ENABLED) {
+    // Ends the server's own session too (set when an emailed code was
+    // accepted), so the next person on this browser does not inherit it.
+    if (browser() && typeof fetch !== 'undefined') {
+      void fetch('/api/sign-in/out', { method: 'POST', credentials: 'same-origin', keepalive: true }).catch(
+        () => undefined,
+      );
+    }
+    return;
+  }
+  if (!refreshToken) return;
   try {
     const { url, anonKey } = supabaseConfig();
     void fetch(`${url}/auth/v1/logout`, {

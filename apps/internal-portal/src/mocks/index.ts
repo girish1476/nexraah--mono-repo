@@ -204,22 +204,44 @@ export async function mockSendCode(email: string) {
  * are; if this browser has not met them yet they are added to the people
  * list, so their name shows on what they do.
  */
-export function mockSessionFor(person: { email: string; role: string; name: string }) {
+export function mockSessionFor(person: { email: string; role: string; name: string; branch?: string | null }) {
+  const account = adoptPerson(person);
+  DISABLED_EMAILS.delete(account.email);
+  rememberPeople();
+  return issue(account);
+}
+
+/** Lays one person from the server's list over this browser's copy; the server decides role, name and branch. */
+function adoptPerson(person: { email: string; role: string; name: string; branch?: string | null }) {
   const key = person.email.trim().toLowerCase();
   let account = CREDENTIALS[key];
   if (!account) {
-    account = { userId: `u-${Date.now().toString(36)}`, name: person.name, email: key, role: person.role as RoleCode, branch: null };
+    account = { userId: `u-${Date.now().toString(36)}-${ACCOUNTS.length}`, name: person.name, email: key, role: person.role as RoleCode, branch: null };
     ACCOUNTS.push(account);
     CREDENTIALS[key] = account;
     ALLOWED_AT[account.userId] = new Date().toISOString();
   } else {
-    // The server's list decides the role.
     account.role = person.role as RoleCode;
     if (person.name) account.name = person.name;
   }
-  DISABLED_EMAILS.delete(key);
+  // `undefined` is a server that does not say (an older answer): keep what is here.
+  if (person.branch !== undefined) account.branch = person.branch;
+  return account;
+}
+
+/**
+ * Brings this browser's Users list in step with the server's (app/api/people),
+ * so every administrator sees the people any of them added.
+ */
+export function mockAdoptPeople(
+  people: { email: string; role: string; name: string; branch?: string | null; disabled?: boolean }[],
+) {
+  for (const person of people) {
+    const account = adoptPerson(person);
+    if (person.disabled) DISABLED_EMAILS.add(account.email);
+    else DISABLED_EMAILS.delete(account.email);
+  }
   rememberPeople();
-  return issue(account);
 }
 
 export async function mockVerifyCode(email: string, code: string) {
