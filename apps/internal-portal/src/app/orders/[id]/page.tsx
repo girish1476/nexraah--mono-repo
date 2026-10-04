@@ -4,11 +4,9 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { errorMessage } from '@/apis';
-import { AdvancePanel } from '@/components/advance-panel';
-import { BalancePanel } from '@/components/balance-panel';
 import { getTrip, getTripDocuments } from '@/app/trips/apis';
 import type { TripDocument } from '@/app/trips/types';
-import { fmtDate, fmtDateTime, inr } from '@/lib/format';
+import { fmtDate, fmtDateTime } from '@/lib/format';
 import {
   EmptyState,
   ErrorState,
@@ -245,6 +243,49 @@ export default function OrderDetailPage() {
   );
 }
 
+/** What has happened so far — each step the order has passed, newest last, in the side column. */
+function OrderTimeline({ order }: { order: OrderDetail }) {
+  return (
+    <Panel title="🕘 What has happened so far">
+      <Stack gap={0}>
+        {order.events.length === 0 && <div className="hint">Nothing recorded yet. Steps appear here as the order moves.</div>}
+        {order.events.map((m, i) => (
+          <div key={m.id} style={{ display: 'flex', gap: 10, paddingBottom: i === order.events.length - 1 ? 0 : 12 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 'none' }}>
+              <div
+                style={{
+                  width: 12,
+                  height: 12,
+                  borderRadius: '50%',
+                  flex: 'none',
+                  marginTop: 3,
+                  background: m.status === 'FAILED' ? 'var(--red)' : 'var(--mint)',
+                  border: `2px solid ${m.status === 'FAILED' ? 'var(--red)' : 'var(--mint)'}`,
+                }}
+              />
+              {i < order.events.length - 1 && (
+                <div style={{ width: 2, flex: 1, minHeight: 16, background: 'var(--color-divider)', marginTop: 2 }} />
+              )}
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 'var(--text-base)', fontWeight: 600 }}>{ORDER_STATUS_LABEL[m.status]}</div>
+              <div className="muted" style={{ fontSize: 'var(--text-sm)', marginTop: 1 }}>
+                {fmtDate(m.at)}
+                {` · ${m.actorName ?? 'automatic'}`}
+              </div>
+              {m.note && (
+                <div className="muted" style={{ fontSize: 'var(--text-sm)', marginTop: 1, overflowWrap: 'anywhere' }}>
+                  {m.note}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </Stack>
+    </Panel>
+  );
+}
+
 function DetailsTab({
   order,
   reload,
@@ -268,12 +309,11 @@ function DetailsTab({
 
       <Split
         aside={
-          order.tripId && (
-            <>
-              <AdvancePanel indentId={order.indentId} onReleased={reload} hideOrderLink />
-              <BalancePanel tripId={order.tripId} onReleased={reload} hideOrderLink />
-            </>
-          )
+          <>
+            {/* The order's history runs down the right-hand side, like a side bar. */}
+            {/* Releasing the advance and the balance is done on the Payments screens, not here. */}
+            <OrderTimeline order={order} />
+          </>
         }
       >
         {/* Side by side; one under the other when the page is too narrow for both. */}
@@ -294,8 +334,7 @@ function DetailsTab({
                 ['Truck type', order.truckType],
                 ['Pickup date', fmtDate(order.pickupDate)],
                 ['Branch', order.branchName],
-                ['Freight (sell)', inr(order.sellRatePaise)],
-                ['Freight (buy)', order.buyRatePaise !== null ? inr(order.buyRatePaise) : 'not awarded yet'],
+                // The rates are not repeated here — "Rates and profit" carries them.
               ]}
             />
           </Panel>
@@ -331,43 +370,6 @@ function DetailsTab({
         <OrderMoney order={order} />
 
         <OrderInvoiceTab order={order} />
-
-        <Panel title="🕘 What has happened so far">
-          <Stack gap={0}>
-            {order.events.length === 0 && <div className="hint">Nothing recorded yet. Steps appear here as the order moves.</div>}
-            {order.events.map((m, i) => (
-              <div key={m.id} style={{ display: 'flex', gap: 12, paddingBottom: i === order.events.length - 1 ? 0 : 14 }}>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 'none' }}>
-                  <div
-                    style={{
-                      width: 13,
-                      height: 13,
-                      borderRadius: '50%',
-                      flex: 'none',
-                      background: m.status === 'FAILED' ? 'var(--red)' : 'var(--mint)',
-                      border: `2px solid ${m.status === 'FAILED' ? 'var(--red)' : 'var(--mint)'}`,
-                    }}
-                  />
-                  {i < order.events.length - 1 && (
-                    <div style={{ width: 2, flex: 1, minHeight: 18, background: 'var(--color-divider)', marginTop: 2 }} />
-                  )}
-                </div>
-                <div>
-                  <div style={{ fontSize: 'var(--text-md)', fontWeight: 600 }}>{ORDER_STATUS_LABEL[m.status]}</div>
-                  <div className="muted" style={{ fontSize: 'var(--text-sm)', marginTop: 1 }}>
-                    {fmtDate(m.at)}
-                    {` · ${m.actorName ?? 'automatic'}`}
-                  </div>
-                  {m.note && (
-                    <div className="muted" style={{ fontSize: 'var(--text-sm)', marginTop: 1 }}>
-                      {m.note}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </Stack>
-        </Panel>
 
         <OrderActivityList order={order} />
       </Split>

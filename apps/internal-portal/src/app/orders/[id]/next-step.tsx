@@ -299,7 +299,8 @@ export function OrderNextStep({
         optional: true,
         todo: (
           <span className="muted">
-            Finance releases it once Compliance verifies the documents — then the truck moves to the road by itself
+            Finance releases it from <Link href="/payments/advance">Payments → Advance</Link> once Compliance verifies the
+            documents — then the truck moves to the road by itself
           </span>
         ),
       },
@@ -452,7 +453,11 @@ export function OrderNextStep({
     {
       label: trip.balancePaidPaise > 0 ? `Balance paid · ${inr(trip.balancePaidPaise)}` : 'Balance paid to the transporter',
       done: trip.balancePaidPaise > 0,
-      todo: <span className="muted">Finance releases it in the balance panel beside this one</span>,
+      todo: (
+        <span className="muted">
+          Finance releases it from <Link href="/payments/balance">Payments → Balance</Link>
+        </span>
+      ),
     },
     {
       label: order.invoiceCode ? `Client invoiced · ${order.invoiceCode}` : 'Client invoiced',

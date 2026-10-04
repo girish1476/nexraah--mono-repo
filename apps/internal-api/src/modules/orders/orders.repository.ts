@@ -334,6 +334,27 @@ export class OrdersRepository {
   }
 
   /**
+   * The signed hard copy (H-POD) that follows an E-POD: when its scan reached
+   * us, and who checked it and when. Null when the trip has no proof yet.
+   */
+  async hardCopy(tripId: string) {
+    return this.db
+      .selectFrom('pod_receipts')
+      .leftJoin('users', 'users.id', 'pod_receipts.hard_copy_verified_by')
+      .select([
+        'pod_receipts.hard_copy_attachment_ids as attachmentIds',
+        'pod_receipts.hard_copy_received_on as receivedOn',
+        'pod_receipts.hard_copy_verified_at as verifiedAt',
+        'users.name as verifiedByName',
+        'users.phone as verifiedByPhone',
+      ])
+      .where('pod_receipts.trip_id', '=', tripId)
+      .orderBy('pod_receipts.created_at', 'desc')
+      .limit(1)
+      .executeTakeFirst();
+  }
+
+  /**
    * The facts the ladder is computed from, for one indent.
    *
    * Deliberately returns raw state rather than a status: deciding *which step*

@@ -327,6 +327,9 @@ export interface OrderDetail extends OrderListRow {
     podUploaded: OrderStepActor | null;
     podVerified: OrderStepActor | null;
     podKind: 'EPOD' | 'HPOD' | null;
+    /** The signed hard copy (H-POD) that follows an E-POD: its scan uploaded, then checked. */
+    hardCopyUploaded?: OrderStepActor | null;
+    hardCopyVerified?: OrderStepActor | null;
   };
   /** The client invoice this order is billed on, once one exists. */
   invoice?: {

@@ -1,118 +1,62 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { getTracking, getTripDocuments } from '@/app/trips/apis';
-import type { TrackingKind, TrackingSheet, TripDocument } from '@/app/trips/types';
+import type { ReactNode } from 'react';
 import { fmtDateTime } from '@/lib/format';
-import { Panel } from '@/lib/ui';
+import { FactList, Panel } from '@/lib/ui';
 import type { OrderDetail, OrderStepActor } from '../types';
-
-interface Line {
-  label: string;
-  /** Null until the step has happened. */
-  at: string | null;
-  /** "Name · phone" for each person who did it. */
-  by: string | null;
-}
 
 const person = (name?: string | null, phone?: string | null) => [name, phone].filter(Boolean).join(' · ') || null;
 
+/** Who did a step and when — or that it has not happened yet. */
+const done = (a?: OrderStepActor | null): ReactNode => {
+  if (!a?.at) return <span className="muted">Not yet</span>;
+  const by = person(a.byName, a.byPhone);
+  return (
+    <>
+      {by && <strong>{by}</strong>}
+      <span className="muted">
+        {by ? ' · ' : ''}
+        {fmtDateTime(a.at)}
+      </span>
+    </>
+  );
+};
+
 /**
- * The order from booking to verified proof of delivery, one plain line a step:
- * what happened, who did it (name and phone), and when. Sits at the bottom of
- * Details — the panels above carry the detail, this is only the list.
+ * The order's own steps, each with who did it and when: booked, vehicle
+ * allocated, and the proof of delivery — the E-POD, then the signed hard copy
+ * (H-POD) that follows it.
+ *
+ * Kept to the steps no other panel shows (owner's direction, 2026-10-04). The
+ * advance documents have their own panel above, and where the truck is — the
+ * loading point, loaded, on the road, unloaded — is the Tracking tab; listing
+ * them again here said the same thing twice.
  */
 export function OrderActivityList({ order }: { order: OrderDetail }) {
-  const { tripId, status } = order;
-  const [sheet, setSheet] = useState<TrackingSheet | null>(null);
-  const [docs, setDocs] = useState<TripDocument[]>([]);
-  useEffect(() => {
-    if (!tripId) return;
-    getTracking(tripId).then(setSheet).catch(() => setSheet(null));
-    getTripDocuments(tripId).then(setDocs).catch(() => setDocs([]));
-  }, [tripId, status]);
+  const a = order.activity;
+  // An H-POD that came straight in is the proof itself; an E-POD (or nothing
+  // yet) is followed by the hard copy.
+  const direct = a?.podKind === 'HPOD';
 
-  const step = (label: string, a?: OrderStepActor | null): Line => ({
-    label,
-    at: a?.at ?? null,
-    by: person(a?.byName, a?.byPhone),
-  });
-
-  const updates = sheet?.updates ?? [];
-  const milestone = (label: string, kind: TrackingKind, at?: string | null): Line => {
-    const u = updates.find((x) => x.kind === kind);
-    return { label, at: u?.recordedAt ?? at ?? null, by: person(u?.recordedByName, u?.recordedByPhone) };
-  };
-
-  // The advance documents are a set: everyone who did them, and when the last one was done.
-  const advance = docs.filter((d) => d.gatesAdvance);
-  const docsLine = (
-    label: string,
-    at: (d: TripDocument) => string | null,
-    by: (d: TripDocument) => string | null,
-    all: boolean,
-  ): Line => {
-    const done = advance.filter((d) => at(d));
-    if (done.length === 0 || (all && done.length < advance.length)) return { label, at: null, by: null };
-    const people = [...new Set(done.map(by).filter(Boolean))].join(', ');
-    return { label, at: done.map((d) => at(d) as string).sort().pop() as string, by: people || null };
-  };
-
-  // One line for every update typed while the truck is on the road.
-  const transit = updates.filter((u) => u.kind === 'DEPARTED' || u.kind === 'UPDATE');
-  const pod = order.activity?.podKind === 'HPOD' ? 'H-POD' : 'E-POD';
-
-  const lines: Line[] = [
-    step('Order booked', order.activity?.booked),
-    step('Vehicle allocated', order.activity?.vehicleAllocated),
-    milestone('Truck reached loading point', 'REACHED_LOADING', sheet?.reachedLoadingAt),
-    milestone('Truck loaded and load marked', 'LOADED', sheet?.loadedAt),
-    docsLine(
-      'Advance documents uploaded',
-      (d) => d.uploadedAt,
-      (d) => person(d.uploadedBy, d.uploadedByPhone),
-      false,
-    ),
-    docsLine(
-      'Advance documents verified',
-      (d) => d.verifiedAt,
-      (d) => person(d.verifiedBy, d.verifiedByPhone),
-      true,
-    ),
-    ...(transit.length > 0
-      ? transit.map((u) => ({
-          label: `Truck in transit update${u.location ? ` · ${u.location}` : ''}`,
-          at: u.recordedAt,
-          by: person(u.recordedByName, u.recordedByPhone),
-        }))
-      : [{ label: 'Truck in transit update', at: null, by: null }]),
-    milestone('Truck reached unloading point', 'REACHED', sheet?.reachedDestinationAt),
-    milestone('Truck unloaded', 'UNLOADED', sheet?.deliveredAt),
-    step(`${pod} uploaded`, order.activity?.podUploaded),
-    step(`${pod} verified`, order.activity?.podVerified),
+  const rows: [string, ReactNode][] = [
+    ['Order booked', done(a?.booked)],
+    ['Vehicle allocated', done(a?.vehicleAllocated)],
+    ...(direct
+      ? ([
+          ['H-POD uploaded', done(a?.podUploaded)],
+          ['H-POD verified', done(a?.podVerified)],
+        ] as [string, ReactNode][])
+      : ([
+          ['E-POD uploaded', done(a?.podUploaded)],
+          ['E-POD verified', done(a?.podVerified)],
+          ['H-POD uploaded', done(a?.hardCopyUploaded)],
+          ['H-POD verified', done(a?.hardCopyVerified)],
+        ] as [string, ReactNode][])),
   ];
 
   return (
-    <Panel title="🧾 Order details">
-      <ol style={{ margin: 0, paddingLeft: 22, fontSize: 'var(--text-sm)', display: 'grid', gap: 6 }}>
-        {lines.map((l, i) => (
-          <li key={i} className={l.at ? undefined : 'muted'}>
-            {l.label}
-            {l.at ? (
-              <>
-                {' — '}
-                {l.by && <strong>{l.by}</strong>}
-                <span className="muted">
-                  {l.by ? ' · ' : ''}
-                  {fmtDateTime(l.at)}
-                </span>
-              </>
-            ) : (
-              ' — not yet'
-            )}
-          </li>
-        ))}
-      </ol>
+    <Panel title="🧾 Order details" pad={false}>
+      <FactList facts={rows} />
     </Panel>
   );
 }

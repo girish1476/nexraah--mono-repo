@@ -20,8 +20,12 @@ const DATA_CHANGED_EVENT = 'nexraah:data-changed';
  * Returns when the data was last refreshed, for a "Live · updated" stamp.
  */
 export function useLiveRefresh(refresh: () => Promise<unknown> | void, everyMs = 30_000): Date | null {
+  // Always the newest `refresh` — it closes over the screen's current filters —
+  // without restarting the timer each time the screen re-renders.
   const latest = useRef(refresh);
-  latest.current = refresh;
+  useEffect(() => {
+    latest.current = refresh;
+  });
   const [at, setAt] = useState<Date | null>(null);
 
   useEffect(() => {

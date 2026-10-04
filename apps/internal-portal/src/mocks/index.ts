@@ -3689,6 +3689,17 @@ const routes: [string, RegExp, Handler][] = [
           podUploaded: stepBy(trip?.podUploadedAt, trip?.podUploadedBy),
           podVerified: stepBy(trip?.podVerifiedAt, trip?.podVerifiedBy),
           podKind: trip ? ((db.podReceipts.find((r: any) => r.tripId === trip.id) as any)?.podKind ?? null) : null,
+          // The signed hard copy behind an E-POD — its scan uploaded, then checked.
+          ...(() => {
+            const r: any = trip ? db.podReceipts.find((x: any) => x.tripId === trip.id) : null;
+            const uploaded = r && (r.hardCopyAttachmentIds ?? []).length > 0 && r.hardCopyReceivedOn;
+            return {
+              hardCopyUploaded: uploaded ? { at: r.hardCopyReceivedOn, byName: null, byPhone: null } : null,
+              hardCopyVerified: r?.hardCopyVerifiedAt
+                ? { at: r.hardCopyVerifiedAt, byName: r.hardCopyVerifiedByName ?? null, byPhone: r.hardCopyVerifiedByPhone ?? null }
+                : null,
+            };
+          })(),
         },
         comments: orderCommentsFor(indent.id),
       });
@@ -4687,6 +4698,8 @@ const routes: [string, RegExp, Handler][] = [
       if (receipt.hardCopyVerifiedAt) fail(409, 'HARD_COPY_ALREADY_VERIFIED', 'The hard copy is already verified.');
       const sdrCodes = applyPodFindings(trip, body, role);
       receipt.hardCopyVerifiedAt = helpers.now();
+      receipt.hardCopyVerifiedByName = USERS[role].name;
+      receipt.hardCopyVerifiedByPhone = (USERS[role] as any).phone ?? null;
       receipt.hardCopyDetails = { ...(body?.details ?? {}), remarks: body?.remarks ?? null };
       return ok({ tripId: trip.id, verifiedAt: receipt.hardCopyVerifiedAt, verifiedBy: USERS[role].name, sdrCodes });
     },

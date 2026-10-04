@@ -193,11 +193,12 @@ export class OrdersService {
       (await this.repo.getByIndentId(ref)) ??
       (await this.repo.getByIndentCode(ref));
     if (!order) throw new NotFoundException('Order not found');
-    const [events, comments, allocation, podKind] = await Promise.all([
+    const [events, comments, allocation, podKind, hardCopy] = await Promise.all([
       this.repo.events(order.id),
       this.repo.comments(order.id),
       this.repo.vehicleAllocation(order.indentId),
       order.tripId ? this.repo.podKind(order.tripId) : null,
+      order.tripId ? this.repo.hardCopy(order.tripId) : null,
     ]);
     // Who did the steps the order's activity list names, with their phone.
     const stepActor = (status: string, pick: 'first' | 'last') => {
@@ -214,6 +215,19 @@ export class OrdersService {
       podUploaded: stepActor('POD_UPLOADED', 'last'),
       podVerified: stepActor('POD_VERIFIED', 'last'),
       podKind,
+      // The signed hard copy behind an E-POD. Who uploaded its scan is not
+      // kept, so that line carries the date it reached us and no name.
+      hardCopyUploaded:
+        hardCopy && (hardCopy.attachmentIds ?? []).length > 0 && hardCopy.receivedOn
+          ? { at: String(hardCopy.receivedOn), byName: null, byPhone: null }
+          : null,
+      hardCopyVerified: hardCopy?.verifiedAt
+        ? {
+            at: String(hardCopy.verifiedAt),
+            byName: hardCopy.verifiedByName ?? null,
+            byPhone: hardCopy.verifiedByPhone ?? null,
+          }
+        : null,
     };
 
     // Margin is the one figure here that is not simply "what was on the
