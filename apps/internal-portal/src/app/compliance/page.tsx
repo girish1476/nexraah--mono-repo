@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { errorMessage } from '@/apis';
+import { useLiveRefresh } from '@/lib/live';
 import {
   Column,
   DataTable,
@@ -95,6 +96,7 @@ export default function CompliancePage() {
     getComplianceQueues().then(setQueues).catch((e) => setError(errorMessage(e)));
   };
   useEffect(load, []);
+  useLiveRefresh(() => getComplianceQueues().then(setQueues));
 
   const columns: Column<Row>[] = [
     { key: 'ref', label: 'Reference', mono: true, render: (r) => r.ref },

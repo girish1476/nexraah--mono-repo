@@ -8,26 +8,25 @@ import { useState } from 'react';
  * sending the operator back through the onboarding wizard. Same capture
  * contract as `vendors/new/page.tsx`'s `CaptureRow` (kept as a separate,
  * intentionally duplicated component rather than a shared import, so this
- * file never needs to touch `new/page.tsx`) — same geotag-on-capture
- * behaviour for anything marked `requireGeotag`, so a re-captured selfie is
- * held to the same at-the-yard standard as the original.
+ * file never needs to touch `new/page.tsx`). A re-uploaded yard photo is held
+ * to the same standard as the original: a photo from a GPS camera app with the
+ * time and place printed on it, which Compliance checks.
  */
 export function UploadCell({
   placeholder,
   needsReference = true,
-  useCamera = false,
-  requireGeotag = false,
+  imageOnly = false,
   normalize,
   validate,
   onUpload,
 }: {
   placeholder: string;
   needsReference?: boolean;
-  useCamera?: boolean;
-  requireGeotag?: boolean;
+  /** A photo, not a PDF — picked from the gallery, so a stamped photo can be chosen. */
+  imageOnly?: boolean;
   normalize?: (value: string) => string;
   validate?: (value: string) => string | undefined;
-  onUpload: (value: string, file: File, geo?: { latitude: number; longitude: number }) => void | Promise<void>;
+  onUpload: (value: string, file: File) => void | Promise<void>;
 }) {
   const [value, setValue] = useState('');
   const [file, setFile] = useState<File | null>(null);
@@ -42,26 +41,11 @@ export function UploadCell({
 
   const canUpload = needsReference ? !!value.trim() && !error && !!file : !!file;
 
-  /** Best-effort — a denied or unsupported geolocation prompt never blocks the upload. */
-  const captureGeo = () =>
-    new Promise<{ latitude: number; longitude: number } | undefined>((resolve) => {
-      if (typeof navigator === 'undefined' || !navigator.geolocation) {
-        resolve(undefined);
-        return;
-      }
-      navigator.geolocation.getCurrentPosition(
-        (pos) => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
-        () => resolve(undefined),
-        { timeout: 8000 },
-      );
-    });
-
   const handleUpload = async () => {
     if (!canUpload || !file || busy) return;
     setBusy(true);
     try {
-      const geo = requireGeotag ? await captureGeo() : undefined;
-      await onUpload(needsReference ? value.trim() : '', file, geo);
+      await onUpload(needsReference ? value.trim() : '', file);
       setValue('');
       setFile(null);
     } finally {
@@ -89,8 +73,7 @@ export function UploadCell({
       )}
       <input
         type="file"
-        accept={useCamera ? 'image/*' : 'image/*,application/pdf'}
-        capture={useCamera ? 'environment' : undefined}
+        accept={imageOnly ? 'image/*' : 'image/*,application/pdf'}
         style={{ width: 120, fontSize: 11 }}
         onChange={(e) => setFile(e.target.files?.[0] ?? null)}
         disabled={busy}

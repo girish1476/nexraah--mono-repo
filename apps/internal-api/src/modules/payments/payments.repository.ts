@@ -83,6 +83,12 @@ export class PaymentsRepository {
       .execute();
   }
 
+  /** The trip's E-LR number once it is issued — a draft has none. */
+  async findIssuedLrCode(tripId: string): Promise<string | null> {
+    const row = await this.db.selectFrom('lorry_receipts').select('code').where('trip_id', '=', tripId).executeTakeFirst();
+    return row?.code ?? null;
+  }
+
   chargeCostTotal(tripId: string) {
     return this.db
       .selectFrom('trip_charges')

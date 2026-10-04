@@ -55,6 +55,26 @@ export function hydrate(db: Record<string, any>, branches: any[]): void {
   }
 }
 
+/** Fired on `window` when the working data changed under this tab — see `followOtherTabs`. */
+export const DATA_CHANGED_EVENT = 'nexraah:data-changed';
+
+/**
+ * Keeps this tab's data in step with every other tab of the console.
+ *
+ * Each tab holds its own copy in memory, so without this a payment released in
+ * one tab stayed unreleased in the next until it was reloaded. The browser
+ * tells every other tab when the saved data is rewritten; this takes the new
+ * data in and announces it, so live screens refresh at once.
+ */
+export function followOtherTabs(db: Record<string, any>, branches: any[]): void {
+  if (!hasStorage() || isDemoData()) return;
+  window.addEventListener('storage', (e) => {
+    if (e.key !== STORE_KEY || !e.newValue) return;
+    hydrate(db, branches);
+    window.dispatchEvent(new Event(DATA_CHANGED_EVENT));
+  });
+}
+
 let pending = false;
 
 /** Saves the working data. Called after every change; coalesced so a burst is one write. */
@@ -87,7 +107,7 @@ export function forgetSaved(): void {
 const PEOPLE_KEY = 'nexraah.people.v1';
 
 export interface SavedPeople {
-  accounts: { userId: string; name: string; email: string; role: string; branch: string | null }[];
+  accounts: { userId: string; name: string; email: string; phone?: string; role: string; branch: string | null }[];
   disabled: string[];
   allowedAt: Record<string, string>;
 }

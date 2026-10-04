@@ -99,8 +99,10 @@ export function PodCheckDialog({
   const problem = (() => {
     if (!form.deliveredOn) return 'Enter the delivery date written on the proof.';
     if (form.deliveredOn > today) return 'The delivery date cannot be in the future.';
-    if (form.shortage.on && form.shortage.description.trim().length < 5) return 'Describe the shortage in a few words.';
-    if (form.damage.on && form.damage.description.trim().length < 5) return 'Describe the damage in a few words.';
+    if (form.shortage.on && form.shortage.description.trim().length < 5)
+      return 'Verify is off: the shortage description (first box under Shortage) needs at least 5 characters.';
+    if (form.damage.on && form.damage.description.trim().length < 5)
+      return 'Verify is off: the damage description (first box under Damage) needs at least 5 characters.';
     return null;
   })();
 
@@ -138,7 +140,15 @@ export function PodCheckDialog({
         </label>
         {value.on && (
           <FormGrid>
-            <Field label="What is written on the proof" required>
+            <Field
+              label={`Describe the ${key} written on the proof`}
+              required
+              error={
+                value.description.trim().length < 5
+                  ? 'At least 5 characters, in words — the amount goes in the box beside this one.'
+                  : undefined
+              }
+            >
               <input
                 value={value.description}
                 onChange={(e) => setFinding(key, { ...value, description: e.target.value })}
@@ -264,7 +274,7 @@ export function PodCheckDialog({
         </div>
       </div>
       {problem && (
-        <div className="hint" role="status">
+        <div className="hint" role="status" style={{ color: 'var(--red)' }}>
           {problem}
         </div>
       )}

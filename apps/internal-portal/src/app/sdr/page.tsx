@@ -6,6 +6,7 @@ import { errorMessage } from '@/apis';
 import { WaiverDialog, WaiverEvidence } from '@/components/waiver-dialog';
 import { uploadAttachment } from '@/lib/attachments';
 import { fmtDate, inr } from '@/lib/format';
+import { useLiveRefresh } from '@/lib/live';
 import {
   Column,
   DataTable,
@@ -71,6 +72,12 @@ export default function SdrPage() {
       .catch((e) => setError(errorMessage(e)));
   };
   useEffect(load, []);
+  useLiveRefresh(() =>
+    Promise.all([listSdr(), getSdrSummary()]).then(([r, s]) => {
+      setRows(r);
+      setSummary(s);
+    }),
+  );
 
   const submitWaive = async (evidence: WaiverEvidence) => {
     if (!waiving) return;

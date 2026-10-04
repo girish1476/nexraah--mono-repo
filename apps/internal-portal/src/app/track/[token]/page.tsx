@@ -45,6 +45,8 @@ export default function PublicTrackingPage() {
   const { token } = useParams<{ token: string }>();
   const [data, setData] = useState<PublicTracking | null>(null);
   const [ended, setEnded] = useState<string | null>(null);
+  // A link nobody ever made is not one that ended — it gets its own heading.
+  const [unknown, setUnknown] = useState(false);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
@@ -61,6 +63,7 @@ export default function PublicTrackingPage() {
           // 404 and 410 are final — the link is wrong, switched off, or the truck is unloaded.
           if (e instanceof ApiError && (e.status === 404 || e.status === 410)) {
             setEnded(e.message);
+            setUnknown(e.status === 404);
             setData(null);
           } else {
             setFailed(true);
@@ -89,10 +92,10 @@ export default function PublicTrackingPage() {
       {ended && (
         <div className="track-card track-ended">
           <div className="track-ended-emoji" aria-hidden>
-            🏁
+            {unknown ? '🔗' : '🏁'}
           </div>
-          <h1>Tracking has ended</h1>
-          <p>{ended}</p>
+          <h1>{unknown ? 'Tracking link not found' : 'Tracking has ended'}</h1>
+          <p>{unknown ? 'Check that the whole link was copied, or ask Nexraah to send it again.' : ended}</p>
         </div>
       )}
 

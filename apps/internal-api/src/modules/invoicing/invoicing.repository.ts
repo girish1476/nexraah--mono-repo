@@ -43,6 +43,8 @@ export class InvoicingRepository {
         'invoices.status as status',
         'invoices.cancel_reason as cancelReason',
         'invoices.notes as notes',
+        'invoices.sac_code as sacCode',
+        'invoices.details as details',
       ]);
   }
 
@@ -185,6 +187,23 @@ export class InvoicingRepository {
         'trips.advance_paid as advancePaidPaise',
         'trips.pod_penalty as podPenaltyPaise',
       ])
+      .execute();
+  }
+
+  /**
+   * The reverse of `markTripsBilled`, for a cancelled invoice: its loads go
+   * back to unbilled so a corrected invoice can be raised for them, and a trip
+   * that closed only because it was both paid and billed is open again.
+   */
+  unmarkTripsBilled(db: DbExecutor, tripIds: string[]) {
+    if (tripIds.length === 0) return Promise.resolve(undefined);
+    return db
+      .updateTable('trips')
+      .set({
+        billed: false,
+        stage: sql<string>`case when stage = 'CLOSED' and balance_paid > 0 then 'DELIVERED' else stage end`,
+      })
+      .where('id', 'in', tripIds)
       .execute();
   }
 

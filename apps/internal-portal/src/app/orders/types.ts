@@ -231,8 +231,16 @@ export interface OrderEvent {
   status: OrderStatus;
   stepNo: number;
   actorName: string | null;
+  actorPhone?: string | null;
   note: string | null;
   at: string;
+}
+
+/** Who did one step of the order and when. `byName` is null when nobody is on record for it. */
+export interface OrderStepActor {
+  at: string;
+  byName: string | null;
+  byPhone: string | null;
 }
 
 /** One transfer that has actually gone out, with the bank reference it went under. */
@@ -312,6 +320,14 @@ export interface OrderDetail extends OrderListRow {
     deliveredAt: string | null;
   };
   podStatus?: string | null;
+  /** The steps that are not on the tracking sheet or the documents — for the activity list on Details. */
+  activity?: {
+    booked: OrderStepActor | null;
+    vehicleAllocated: OrderStepActor | null;
+    podUploaded: OrderStepActor | null;
+    podVerified: OrderStepActor | null;
+    podKind: 'EPOD' | 'HPOD' | null;
+  };
   /** The client invoice this order is billed on, once one exists. */
   invoice?: {
     id: string;

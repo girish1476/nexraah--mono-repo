@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { ApiError, ApprovalRequiredError, errorMessage, request } from '@/apis';
 import { fmtDate, inr, inrCompact, pct } from '@/lib/format';
+import { useLiveRefresh } from '@/lib/live';
 import { ROLES, RoleCode } from '@/lib/permissions';
 import {
   Banner,
@@ -42,6 +43,7 @@ import {
   verifyKyc,
 } from '../apis';
 import { CheckStatus, FleetRow, KycItem, VendorDetail, VendorDocument } from '../types';
+import { DocPreview } from '@/components/doc-preview';
 import { UploadCell } from '../upload-cell';
 import { VendorPlacements } from './placements';
 
@@ -64,6 +66,25 @@ const KYC_VALIDATE: Record<string, (value: string) => string | undefined> = {
   PAN: (v) => (PAN_RE.test(v) ? undefined : 'PAN looks wrong, e.g. AAKCR2148L'),
   AADHAAR: (v) => (AADHAAR_LAST4_RE.test(v) ? undefined : 'Enter the last four digits only'),
 };
+const KYC_TITLE: Record<string, string> = {
+  PAN: 'PAN card',
+  AADHAAR: 'Aadhaar card',
+  ADDRESS: 'Address proof',
+  SELFIE: 'Yard photo (time and location stamped)',
+};
+const KYC_NUMBER_LABEL: Record<string, string> = {
+  PAN: 'PAN number',
+  AADHAAR: 'Aadhaar number',
+  ADDRESS: 'Reference',
+};
+
+/** "FY 2026-27" for the financial year (1 April – 31 March) a `YYYY-MM-DD` date falls in. */
+function financialYearLabel(date: string): string {
+  const [y, m] = date.split('-').map(Number);
+  const start = m >= 4 ? y : y - 1;
+  return `FY ${start}-${String(start + 1).slice(2)}`;
+}
+
 const KYC_PLACEHOLDER: Record<string, string> = {
   PAN: 'PAN number',
   AADHAAR: 'Last four digits',
@@ -90,24 +111,30 @@ export default function VendorDetailPage() {
   const [holdOpen, setHoldOpen] = useState(false);
   const [holdReason, setHoldReason] = useState('');
   const [policyOpen, setPolicyOpen] = useState(false);
-  const [policyPct, setPolicyPct] = useState(40);
+  const [policyPct, setPolicyPct] = useState('40');
   const [policyReason, setPolicyReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [awaitingApproval, setAwaitingApproval] = useState(false);
   const [rejecting, setRejecting] = useState<{ table: 'kyc' | 'document'; kind: string } | null>(null);
   const [rejectReason, setRejectReason] = useState('');
 
+  const apply = (v: VendorDetail) => {
+    // The advance figure moving means the pending request was approved — the
+    // approver works from another screen, so this is the only signal here.
+    if (vendor && v.advancePct !== vendor.advancePct) setAwaitingApproval(false);
+    setVendor(v);
+    setUnmet(pendingItems(v));
+  };
   const load = () => {
     setError(null);
     getVendor(id)
-      .then((v) => {
-        setVendor(v);
-        setPolicyPct(v.advancePct);
-        setUnmet(pendingItems(v));
-      })
+      .then(apply)
       .catch((e) => setError(errorMessage(e)));
   };
   useEffect(load, [id]);
+  // An approval lands from the approver's screen, not this one — without this
+  // the old advance % stayed on screen until a manual reload.
+  useLiveRefresh(() => getVendor(id).then(apply));
 
   // A vendor left as a draft (a tab closed before the last wizard step) had no way
   // to be sent for verification from its own page.
@@ -255,20 +282,11 @@ export default function VendorDetailPage() {
     return attachmentId;
   };
 
-  const onUploadKyc = async (
-    kind: string,
-    value: string,
-    file: File,
-    geo?: { latitude: number; longitude: number },
-  ) => {
+  const onUploadKyc = async (kind: string, value: string, file: File) => {
     try {
-      const attachmentId = await attach(file, {
-        kind,
-        entityType: 'vendor',
-        entityId: id,
-        latitude: geo?.latitude,
-        longitude: geo?.longitude,
-      });
+      // No browser location: the yard photo carries its own printed time and
+      // place stamp, and that is what Compliance verifies.
+      const attachmentId = await attach(file, { kind, entityType: 'vendor', entityId: id });
       await submitKyc(id, kind, { value, route: 'MANUAL', attachmentId });
       load();
       toast(`${kind} uploaded · queued for compliance`);
@@ -291,7 +309,7 @@ export default function VendorDetailPage() {
   const onPolicySubmit = async () => {
     setBusy(true);
     try {
-      await changeAdvancePolicy(id, policyPct, policyReason);
+      await changeAdvancePolicy(id, Number(policyPct), policyReason);
       toast('Advance policy change requested');
     } catch (e) {
       if (e instanceof ApprovalRequiredError) {
@@ -311,140 +329,187 @@ export default function VendorDetailPage() {
   if (error) return <ErrorState message={error} retry={load} />;
   if (!vendor) return <Loading what="Loading the vendor file" />;
 
-  const kycColumns: Column<KycItem>[] = [
-    { key: 'kind', label: 'Check', render: (r) => r.kind },
-    {
-      key: 'value',
-      label: 'Reference',
-      mono: true,
-      render: (r) => (
-        <>
-          {r.valueMasked}
-          {r.status === 'REJECTED' && r.rejectReason && (
-            <div style={{ color: 'var(--red)', fontSize: 11.5 }}>Rejected: {r.rejectReason}</div>
-          )}
-          {r.geo && (
-            <div>
-              <a
-                className="muted"
-                style={{ fontSize: 11.5 }}
-                href={`https://maps.google.com/?q=${r.geo.lat},${r.geo.lng}`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                <span aria-hidden>📍</span> Where it was taken — opens the map
-              </a>
+  /*
+   * Identity checks and the legal file are shown the way an order's documents
+   * are: the file itself beside what is written on it. These papers are held
+   * for later disputes, so the photo has to be on the page — a row saying
+   * "Verified" with nothing to open is not a record of anything.
+   */
+  const statusTag = (status: CheckStatus) =>
+    status === 'VERIFIED' ? (
+      <Tag tone="mint">Verified</Tag>
+    ) : status === 'PENDING' ? (
+      <Tag tone="flag">Waiting for Compliance</Tag>
+    ) : status === 'REJECTED' ? (
+      <Tag tone="red">Rejected — upload again</Tag>
+    ) : (
+      <Tag tone="grey">Not uploaded</Tag>
+    );
+
+  const kycCard = (r: KycItem) => (
+    <div key={r.kind} data-doc={r.kind} className="doc-card">
+      <DocPreview attachmentId={r.attachmentId ?? null} label={KYC_TITLE[r.kind] ?? r.kind} />
+      <div style={{ minWidth: 0 }}>
+        <div className="doc-card-head">
+          <strong>{KYC_TITLE[r.kind] ?? r.kind}</strong>
+          {statusTag(r.status)}
+        </div>
+        <dl className="doc-facts">
+          {r.kind !== 'SELFIE' && (
+            <div style={{ display: 'contents' }}>
+              <dt>{KYC_NUMBER_LABEL[r.kind] ?? 'Reference'}</dt>
+              <dd className="mono">
+                {r.valueMasked ? (r.kind === 'AADHAAR' ? `XXXX XXXX ${r.valueMasked}` : r.valueMasked) : '—'}
+              </dd>
             </div>
           )}
-        </>
-      ),
-    },
-    {
-      key: 'act',
-      label: '',
-      align: 'right',
-      render: (r) => {
-        if (can('vendor.verify') && r.status === 'PENDING') {
-          return (
-            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-              <button className="btn btn-secondary btn-sm" onClick={() => onVerifyKyc(r.kind)}>
+          {r.verifiedAt && (
+            <div style={{ display: 'contents' }}>
+              <dt>Verified on</dt>
+              <dd>{fmtDate(r.verifiedAt)}</dd>
+            </div>
+          )}
+        </dl>
+        {r.kind === 'SELFIE' && r.status === 'PENDING' && (
+          <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+            Check the date, time and address printed on the photo match this transporter’s yard.
+          </div>
+        )}
+        {r.status === 'REJECTED' && r.rejectReason && (
+          <div style={{ color: 'var(--red)', fontSize: 'var(--text-sm)', marginTop: 8 }}>Rejected: {r.rejectReason}</div>
+        )}
+        {r.geo && (
+          <div style={{ marginTop: 8 }}>
+            <a
+              className="muted"
+              style={{ fontSize: 11.5 }}
+              href={`https://maps.google.com/?q=${r.geo.lat},${r.geo.lng}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <span aria-hidden>📍</span> Where it was uploaded from — opens the map
+            </a>
+          </div>
+        )}
+        <div className="doc-actions">
+          {can('vendor.verify') && r.status === 'PENDING' && (
+            <>
+              <button className="btn btn-sm" onClick={() => onVerifyKyc(r.kind)}>
                 Verify
               </button>
-              <button
-                className="btn btn-secondary btn-sm"
-                onClick={() => setRejecting({ table: 'kyc', kind: r.kind })}
-              >
+              <button className="btn btn-secondary btn-sm" onClick={() => setRejecting({ table: 'kyc', kind: r.kind })}>
                 Reject
               </button>
-            </div>
-          );
-        }
-        if (can('vendor.edit') && (r.status === 'MISSING' || r.status === 'REJECTED')) {
-          return (
+            </>
+          )}
+          {/* Verified by mistake — the wrong paper, or one that does not match. Taking the
+              verification back sends it to be uploaded again, with the reason on record. */}
+          {can('vendor.verify') && r.status === 'VERIFIED' && (
+            <button className="btn btn-secondary btn-sm" onClick={() => setRejecting({ table: 'kyc', kind: r.kind })}>
+              Wrong document — reject
+            </button>
+          )}
+          {can('vendor.edit') && (r.status === 'MISSING' || r.status === 'REJECTED') && (
             <UploadCell
               placeholder={KYC_PLACEHOLDER[r.kind] ?? 'Reference'}
               needsReference={r.kind !== 'SELFIE'}
-              useCamera={r.kind === 'SELFIE'}
-              requireGeotag={r.kind === 'SELFIE'}
+              imageOnly={r.kind === 'SELFIE'}
               normalize={KYC_NORMALIZE[r.kind]}
               validate={KYC_VALIDATE[r.kind]}
-              onUpload={(value, file, geo) => onUploadKyc(r.kind, value, file, geo)}
+              onUpload={(value, file) => onUploadKyc(r.kind, value, file)}
             />
-          );
-        }
-        return (
-          <span className="muted" style={{ fontSize: 11.5 }}>
-            {r.status === 'VERIFIED'
-              ? '✓ Verified'
-              : r.status === 'PENDING'
-                ? 'Waiting for Compliance'
-                : r.status === 'REJECTED'
-                  ? 'Rejected — upload again'
-                  : 'Not uploaded'}
-          </span>
-        );
-      },
-    },
-  ];
-
-  const docColumns: Column<VendorDocument>[] = [
-    { key: 'kind', label: 'Document', render: (r) => r.kind.replace(/_/g, ' ') },
-    {
-      key: 'ref',
-      label: 'Reference',
-      mono: true,
-      render: (r) => (
-        <>
-          {r.reference ?? '—'}
-          {r.status === 'REJECTED' && r.rejectReason && (
-            <div style={{ color: 'var(--red)', fontSize: 11.5 }}>Rejected: {r.rejectReason}</div>
           )}
-        </>
-      ),
-    },
-    { key: 'valid', label: 'Valid to', render: (r) => fmtDate(r.validTo) },
-    {
-      key: 'act',
-      label: '',
-      align: 'right',
-      render: (r) => {
-        if (can('vendor.verify') && r.status === 'PENDING') {
-          return (
-            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-              <button className="btn btn-secondary btn-sm" onClick={() => onVerifyDocument(r.kind)}>
-                Verify
-              </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const today = new Date().toLocaleDateString('en-CA');
+
+  const docCard = (r: VendorDocument) => {
+    const title = r.kind.replace(/_/g, ' ');
+    /*
+     * A TDS declaration covers one financial year (1 April – 31 March) and is
+     * due again once that year has ended. One uploaded before the year was
+     * recorded says nothing about which year it covers, so it is asked for
+     * again too. Uploading the new one replaces what is shown here and goes
+     * back to Compliance to verify.
+     */
+    const yearly = r.kind === 'TDS_DECLARATION';
+    const due = yearly && r.status !== 'MISSING' && (!r.validTo || r.validTo.slice(0, 10) < today);
+    return (
+      <div key={r.kind} data-doc={r.kind} className="doc-card">
+        <DocPreview attachmentId={r.attachmentId} label={title} />
+        <div style={{ minWidth: 0 }}>
+          <div className="doc-card-head">
+            <strong>{title}</strong>
+            {due ? <Tag tone="red">Due for {financialYearLabel(today)}</Tag> : statusTag(r.status)}
+          </div>
+          <dl className="doc-facts">
+            <div style={{ display: 'contents' }}>
+              <dt>Reference</dt>
+              <dd className="mono">{r.reference ?? '—'}</dd>
+            </div>
+            {yearly ? (
+              <div style={{ display: 'contents' }}>
+                <dt>Financial year</dt>
+                <dd>
+                  {r.validTo
+                    ? `${financialYearLabel(r.validTo)} · until ${fmtDate(r.validTo)}`
+                    : r.status === 'MISSING'
+                      ? '—'
+                      : 'Not recorded'}
+                </dd>
+              </div>
+            ) : (
+              <div style={{ display: 'contents' }}>
+                <dt>Valid to</dt>
+                <dd>{fmtDate(r.validTo)}</dd>
+              </div>
+            )}
+          </dl>
+          {yearly && (
+            <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+              Needed afresh every financial year. Upload the new year’s declaration here after 31 March.
+            </div>
+          )}
+          {r.status === 'REJECTED' && r.rejectReason && (
+            <div style={{ color: 'var(--red)', fontSize: 'var(--text-sm)', marginTop: 8 }}>Rejected: {r.rejectReason}</div>
+          )}
+          <div className="doc-actions">
+            {can('vendor.verify') && r.status === 'PENDING' && (
+              <>
+                <button className="btn btn-sm" onClick={() => onVerifyDocument(r.kind)}>
+                  Verify
+                </button>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setRejecting({ table: 'document', kind: r.kind })}
+                >
+                  Reject
+                </button>
+              </>
+            )}
+            {can('vendor.verify') && r.status === 'VERIFIED' && (
               <button
                 className="btn btn-secondary btn-sm"
                 onClick={() => setRejecting({ table: 'document', kind: r.kind })}
               >
-                Reject
+                Wrong document — reject
               </button>
-            </div>
-          );
-        }
-        if (can('vendor.edit') && (r.status === 'MISSING' || r.status === 'REJECTED')) {
-          return (
-            <UploadCell
-              placeholder="Reference or number"
-              onUpload={(value, file) => onUploadDocument(r.kind, value, file)}
-            />
-          );
-        }
-        return (
-          <span className="muted" style={{ fontSize: 11.5 }}>
-            {r.status === 'VERIFIED'
-              ? '✓ Verified'
-              : r.status === 'PENDING'
-                ? 'Waiting for Compliance'
-                : r.status === 'REJECTED'
-                  ? 'Rejected — upload again'
-                  : 'Not uploaded'}
-          </span>
-        );
-      },
-    },
-  ];
+            )}
+            {can('vendor.edit') && (r.status === 'MISSING' || r.status === 'REJECTED' || due) && (
+              <UploadCell
+                placeholder="Reference or number"
+                needsReference={!yearly}
+                onUpload={(value, file) => onUploadDocument(r.kind, value, file)}
+              />
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const fleetColumns: Column<FleetRow>[] = [
     { key: 'reg', label: 'Registration', mono: true, render: (r) => r.registration },
@@ -512,7 +577,13 @@ export default function VendorDetailPage() {
                   {vendor.advancePct}%
                 </span>
                 {can('vendor.advance_policy') && !awaitingApproval && (
-                  <button className="btn btn-secondary btn-sm" onClick={() => setPolicyOpen(true)}>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => {
+                      setPolicyPct(String(vendor.advancePct));
+                      setPolicyOpen(true);
+                    }}
+                  >
                     Change
                   </button>
                 )}
@@ -665,16 +736,16 @@ export default function VendorDetailPage() {
 
         <VendorPlacements vendorId={id} vendorCode={vendor.code} />
 
-        <Panel title="Identity checks" pad={false}>
-          <DataTable columns={kycColumns} rows={vendor.kyc} rowKey={(r) => r.kind} />
-          <div className="muted" style={{ fontSize: 11.5, padding: '10px 14px' }}>
+        <Panel title="Identity checks">
+          <div style={{ display: 'grid', gap: 12 }}>{vendor.kyc.map(kycCard)}</div>
+          <div className="muted" style={{ fontSize: 11.5, marginTop: 12 }}>
             Only the last 4 digits of Aadhaar are stored, to protect the transporter&apos;s privacy. Photos are
             stored securely and only Compliance staff can open them.
           </div>
         </Panel>
 
-        <Panel title="Legal file" pad={false}>
-          <DataTable columns={docColumns} rows={vendor.documents} rowKey={(r) => r.kind} />
+        <Panel title="Legal file">
+          <div style={{ display: 'grid', gap: 12 }}>{vendor.documents.map(docCard)}</div>
         </Panel>
 
         <Panel title="Fleet" pad={false}>
@@ -725,19 +796,20 @@ export default function VendorDetailPage() {
         title="Change the advance policy"
         body="This is not applied when you submit it. It goes out for approval and takes effect only once a role senior to operations approves it."
         confirmLabel="Request change"
-        confirmDisabled={policyReason.trim().length < 20}
+        confirmDisabled={policyPct === '' || policyReason.trim().length < 20}
         busy={busy}
         onConfirm={onPolicySubmit}
         onClose={() => setPolicyOpen(false)}
       >
         <Field label="New advance %" required>
-          <select value={policyPct} onChange={(e) => setPolicyPct(Number(e.target.value))}>
-            {[0, 40, 70, 90].map((p) => (
-              <option key={p} value={p}>
-                {p}%
-              </option>
-            ))}
-          </select>
+          <input
+            type="text"
+            inputMode="numeric"
+            maxLength={2}
+            placeholder="e.g. 40"
+            value={policyPct}
+            onChange={(e) => setPolicyPct(e.target.value.replace(/\D/g, '').slice(0, 2))}
+          />
         </Field>
         <Field label="Reason" required hint="At least 20 characters — it is stored on the approval and audited.">
           <textarea rows={3} value={policyReason} onChange={(e) => setPolicyReason(e.target.value)} />

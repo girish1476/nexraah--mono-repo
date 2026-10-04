@@ -181,6 +181,6 @@ test.describe('today — branch scoping (a scoped Operations user)', () => {
 
     await setRole(page, 'OPS');
     await page.goto('/today');
-    await expect(page.getByText('All branches')).toBeVisible();
+    await expect(page.getByText('All branches').first()).toBeVisible();
   });
 });

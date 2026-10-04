@@ -236,10 +236,14 @@ export function ladder(facts: LadderFacts): OrderStatus {
  *
  * An empty configured set means nothing gates the advance — vacuously
  * satisfied, not blocked forever.
+ *
+ * An issued E-LR stands in for the loading slip: it carries the same packages
+ * and weight, so a trip with one is not asked for the slip as well.
  */
-export function advanceDocsIn(configuredKinds: string[], byKind: Map<string, string>): boolean {
+export function advanceDocsIn(configuredKinds: string[], byKind: Map<string, string>, lrIssued = false): boolean {
   if (configuredKinds.length === 0) return true;
   return configuredKinds.every((kind) => {
+    if (kind === 'LOADING_SLIP' && lrIssued) return true;
     const status = byKind.get(kind);
     return status === 'PENDING' || status === 'VERIFIED';
   });

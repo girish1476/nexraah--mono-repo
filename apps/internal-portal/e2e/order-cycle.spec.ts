@@ -193,7 +193,7 @@ test.describe('the order cycle, from the order page', () => {
     // The details Compliance typed show on the card.
     await expect(page.locator('[data-doc="vehicle"]')).toContainText('MH15GT4482');
     await tab(page, /Details/).click();
-    await expect(page.getByText('📎 Documents — uploaded and verified')).toBeVisible();
+    await expect(page.getByText('📎 Advance documents', { exact: true })).toBeVisible();
     await shot('06-verified');
   });
 
@@ -213,10 +213,9 @@ test.describe('the order cycle, from the order page', () => {
     // In transit, the order offers the client invoice straight from its Next step.
     await tab(page, /Details/).click();
     await expect(page.getByRole('link', { name: /Raise the client invoice/ })).toBeVisible();
-    // Details names who uploaded each document, who verified it, and who updated tracking.
-    await expect(page.getByRole('columnheader', { name: 'Uploaded by' })).toBeVisible();
-    await expect(page.getByRole('columnheader', { name: 'Verified by' })).toBeVisible();
-    await expect(page.getByText('Tracking updated by')).toBeVisible();
+    // Details names who uploaded the advance documents and who verified them.
+    await expect(page.getByText('Advance documents uploaded by')).toBeVisible();
+    await expect(page.getByText('Advance documents verified by')).toBeVisible();
     await shot('07-on-the-road');
   });
 

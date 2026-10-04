@@ -36,6 +36,27 @@ export class ApprovalsRegistry {
     return this.handlers.get(this.key(kind, entityType));
   }
 
+  /**
+   * Optional: what to tidy up when a request of this kind is turned down or
+   * withdrawn. Most kinds need nothing — the request simply never happens —
+   * but a kind that parked a row of its own while it waited (a rate revision
+   * marked PENDING) must close that row, or it reads as waiting forever.
+   * Runs inside the same transaction that marks the approval REJECTED.
+   */
+  registerRejection(kind: ApprovalKind, entityType: string, handler: ApprovalHandler): void {
+    const key = this.key(kind, entityType);
+    if (this.rejectionHandlers.has(key)) {
+      throw new Error(`ApprovalsRegistry: a rejection handler for ${key} is already registered.`);
+    }
+    this.rejectionHandlers.set(key, handler);
+  }
+
+  getRejection(kind: ApprovalKind, entityType: string): ApprovalHandler | undefined {
+    return this.rejectionHandlers.get(this.key(kind, entityType));
+  }
+
+  private readonly rejectionHandlers = new Map<string, ApprovalHandler>();
+
   private key(kind: ApprovalKind, entityType: string): string {
     return `${kind}:${entityType}`;
   }

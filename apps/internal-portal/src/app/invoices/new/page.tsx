@@ -77,7 +77,8 @@ export default function NewInvoicePage() {
     const presetClient = params.get('client');
     const presetTrip = params.get('trip');
     if (presetClient) setClientId(presetClient);
-    if (presetTrip) setSelected({ [presetTrip]: true });
+    // Several trips, comma-separated, when re-raising a cancelled invoice.
+    if (presetTrip) setSelected(Object.fromEntries(presetTrip.split(',').filter(Boolean).map((t) => [t, true])));
   }, []);
 
   const client = clients.find((c) => c.id === clientId);

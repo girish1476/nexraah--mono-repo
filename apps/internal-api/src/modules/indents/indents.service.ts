@@ -16,6 +16,7 @@ import { setFleetVehicleStatus } from '../../common/fleet-status';
 import { IndentsRepository, type IndentListFilters } from './indents.repository';
 import type { CreateIndentDto } from './dto/create-indent.dto';
 import type { PlacementDto } from './dto/placement.dto';
+import type { CorrectVehicleDto } from './dto/correct-vehicle.dto';
 import type { RecordQuoteDto } from './dto/record-quote.dto';
 import type { CancelIndentDto } from './dto/cancel-indent.dto';
 
@@ -693,6 +694,78 @@ export class IndentsService implements OnModuleInit {
       return { transitDelay };
     });
     return { ...(await this.getById(indentId)), transitDelay };
+  }
+
+  /**
+   * Corrects a truck number that was typed wrongly.
+   *
+   * Not the same thing as putting a different truck on the load — that is
+   * `placement`, which also takes the new driver and is closed once the trip
+   * has left. This is the same truck with its number put right, so it stays
+   * open while the truck is on the road: a wrong digit is usually noticed at
+   * the loading point or from the e-way bill, after the trip has started.
+   *
+   * It stops at unloading. From there the number is on the proof of delivery
+   * and on its way to the client's bill, and changing it is a correction to
+   * those papers, raised as a ticket.
+   *
+   * The number is put right everywhere it was copied to — the load, the trip
+   * and the lorry receipt — and the reason is kept in the activity log.
+   */
+  async correctVehicle(indentId: string, dto: CorrectVehicleDto, actor: AuthenticatedUser) {
+    const vehicleNo = dto.vehicleNo.trim().toUpperCase();
+    await this.indentsRepository.transaction().execute(async (trx) => {
+      const indent = await this.indentsRepository.findByIdForUpdate(trx, indentId);
+      if (!indent) throw new DomainException(404, 'NOT_FOUND', `Unknown indent: ${indentId}`);
+      if (!indent.vehicle_no) {
+        throw new DomainException(409, 'NO_VEHICLE', 'No truck has been allocated to this load yet.');
+      }
+      if (indent.vehicle_no === vehicleNo) {
+        throw new DomainException(409, 'SAME_VEHICLE', 'That is the truck number already on this load.');
+      }
+
+      const trip = await trx
+        .selectFrom('trips')
+        .select(['id', 'stage'])
+        .where('indent_id', '=', indentId)
+        .where('stage', '!=', 'CANCELLED')
+        .forUpdate()
+        .executeTakeFirst();
+      if (trip && trip.stage !== 'OPEN' && trip.stage !== 'IN_TRANSIT') {
+        throw new DomainException(
+          409,
+          'TRIP_UNLOADED',
+          'The truck has been unloaded, so its number is already on the delivery papers. Raise a ticket to have it corrected.',
+        );
+      }
+
+      await setFleetVehicleStatus(trx, indent.vendor_id, indent.vehicle_no, 'AVAILABLE');
+      await setFleetVehicleStatus(trx, indent.vendor_id, vehicleNo, 'ON_TRIP');
+      await this.indentsRepository.update(trx, indentId, { vehicle_no: vehicleNo });
+
+      if (trip) {
+        await trx.updateTable('trips').set({ vehicle_no: vehicleNo }).where('id', '=', trip.id).execute();
+        // The lorry receipt carries its own copy of the truck, taken when it was drawn up.
+        const receipts = await trx.selectFrom('lorry_receipts').select(['id', 'vehicle']).where('trip_id', '=', trip.id).execute();
+        for (const lr of receipts) {
+          const vehicle = typeof lr.vehicle === 'string' ? JSON.parse(lr.vehicle) : lr.vehicle;
+          await trx
+            .updateTable('lorry_receipts')
+            .set({ vehicle: JSON.stringify({ ...(vehicle as Record<string, unknown>), registration: vehicleNo }) })
+            .where('id', '=', lr.id)
+            .execute();
+        }
+      }
+
+      await this.auditService.record(trx, actor, {
+        action: 'VEHICLE_CORRECTED',
+        entityType: 'indents',
+        entityId: indentId,
+        before: { vehicleNo: indent.vehicle_no },
+        after: { vehicleNo, reason: dto.reason.trim() },
+      });
+    });
+    return this.getById(indentId);
   }
 
   /** Legacy path for indents still in VEHICLE_PLACED; award now creates the trip. */

@@ -112,13 +112,14 @@ const SECTIONS: { title: string; note: string; items: DocItem[] }[] = [
   },
   {
     title: '📦 Loading',
-    note: 'Slips from the loading point. With the loading slip in, no lorry receipt is needed — generate an E-LR from it only if the client asks for one.',
+    note: 'Slips from the loading point. The loading slip and the E-LR stand in for each other — with the slip in, an E-LR is only for a client who asks for one; with the E-LR issued, the slip is not needed and its packages and weight are taken from the E-LR.',
     items: [
       {
         id: 'loading-slip',
         title: 'Loading slip',
         kinds: ['LOADING_SLIP'],
         fields: [
+          { key: 'lrNo', label: 'LR number' },
           { key: 'packages', label: 'Packages loaded', type: 'number' },
           { key: 'loadedWeightTn', label: 'Weight loaded (MT)', type: 'number' },
         ],
@@ -201,6 +202,8 @@ export function OrderDocumentsTab({
   const [overrideOpen, setOverrideOpen] = useState(false);
   const [overrideReason, setOverrideReason] = useState('');
   const [trip, setTrip] = useState<TripDetail | null>(null);
+  /** Details being put right on a document that is already verified — it stays verified. */
+  const [amending, setAmending] = useState(false);
   const [docs, setDocs] = useState<TripDocument[] | null>(null);
   const [crossCheck, setCrossCheck] = useState<CrossCheckResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -247,6 +250,14 @@ export function OrderDocumentsTab({
 
   const docsFor = (item: DocItem) => docs.filter((d) => item.kinds.includes(d.kind));
   const lrStarted = !!trip.lr;
+  // An issued E-LR stands in for the loading slip, and already carries its details.
+  const lrIssued = !!trip.lr?.code;
+  const detailOf = (item: DocItem, f: DetailField, current: TripDocument[]): string => {
+    const raw = valueOf(item, f, current);
+    if (raw || item.id !== 'loading-slip' || !lrIssued) return raw;
+    const fromLr = f.key === 'lrNo' ? trip.lr?.code : f.key === 'packages' ? trip.lr?.goods?.packages : trip.lr?.goods?.weightTn;
+    return fromLr ? String(fromLr) : '';
+  };
   const slipIn = docs.some((d) => d.kind === 'LOADING_SLIP' && (d.status === 'PENDING' || d.status === 'VERIFIED'));
   const needsWeighment = !!client?.needsWeighmentSlip;
   const openLr = () => {
@@ -264,11 +275,12 @@ export function OrderDocumentsTab({
 
   const problem = editing && !file ? 'Choose the file to upload.' : null;
 
-  const openCheck = (item: DocItem) => {
+  const openCheck = (item: DocItem, amend = false) => {
+    setAmending(amend);
     const current = docsFor(item);
     const v: Record<string, string> = {};
     for (const f of item.fields) {
-      const raw = valueOf(item, f, current);
+      const raw = detailOf(item, f, current);
       v[f.key] = f.type === 'rupees' && raw ? String(Number(raw) / 100) : raw;
     }
     setValues(v);
@@ -306,7 +318,7 @@ export function OrderDocumentsTab({
     if (!item) return;
     setBusy(true);
     try {
-      for (const d of docsFor(item).filter((x) => x.status === 'PENDING')) {
+      for (const d of docsFor(item).filter((x) => x.status === (amending ? 'VERIFIED' : 'PENDING'))) {
         // Each kind gets its own details — the vehicle papers PDF carries five.
         const keyed: Record<string, string> = {};
         for (const f of item.fields) {
@@ -319,7 +331,7 @@ export function OrderDocumentsTab({
         await verifyTripDocument(tripId, d.kind, keyed);
       }
       setChecking(null);
-      toast(`Verified · ${item.title}`);
+      toast(`${amending ? 'Details saved' : 'Verified'} · ${item.title}`);
       load();
       onChanged();
     } catch (e) {
@@ -358,6 +370,8 @@ export function OrderDocumentsTab({
     const attachmentId = current.find((d) => d.attachmentId)?.attachmentId ?? null;
     const rejectedWhy = current.find((d) => d.rejectReason)?.rejectReason;
     const uploaded = state !== 'MISSING';
+    // With the E-LR issued, a loading slip that is not in (or was rejected) is not asked for.
+    const coveredByLr = item.id === 'loading-slip' && lrIssued && (state === 'MISSING' || state === 'REJECTED');
     // Not every client wants a weighment slip. For one that does not, the card
     // is closed as not needed — it can still be uploaded if one turns up.
     if (item.id === 'weighment' && !needsWeighment && !uploaded && !weighAnyway) {
@@ -387,24 +401,38 @@ export function OrderDocumentsTab({
         <div style={{ minWidth: 0 }}>
           <div className="doc-card-head">
             <strong>{item.title}</strong>
-            <Tag tone={STATE[state].tone}>{STATE[state].label}</Tag>
+            {coveredByLr ? (
+              <Tag tone="mint">Not needed · covered by E-LR {trip.lr?.code}</Tag>
+            ) : (
+              <Tag tone={STATE[state].tone}>{STATE[state].label}</Tag>
+            )}
             {item.id === 'weighment' && needsWeighment && <Tag tone="blue">Needed by this client</Tag>}
           </div>
           <dl className="doc-facts">
             {item.fields.map((f) => (
               <div key={f.key} style={{ display: 'contents' }}>
                 <dt>{f.label}</dt>
-                <dd>{shown(f, valueOf(item, f, current))}</dd>
+                <dd>{shown(f, detailOf(item, f, current))}</dd>
               </div>
             ))}
           </dl>
-          {rejectedWhy && state === 'REJECTED' && (
+          {rejectedWhy && state === 'REJECTED' && !coveredByLr && (
             <div style={{ color: 'var(--red)', fontSize: 'var(--text-sm)', marginTop: 8 }}>Rejected: {rejectedWhy}</div>
           )}
           <div className="doc-actions">
             {canUpload && loaded && (
-              <button className={uploaded ? 'btn btn-secondary btn-sm' : 'btn btn-sm'} disabled={busy} onClick={() => openUpload(item)}>
-                {uploaded ? (state === 'REJECTED' ? 'Upload again' : 'Replace file') : `Upload ${item.pdf ? 'PDF' : 'photo'}`}
+              <button
+                className={uploaded || coveredByLr ? 'btn btn-secondary btn-sm' : 'btn btn-sm'}
+                disabled={busy}
+                onClick={() => openUpload(item)}
+              >
+                {coveredByLr
+                  ? 'Upload one anyway'
+                  : uploaded
+                    ? state === 'REJECTED'
+                      ? 'Upload again'
+                      : 'Replace file'
+                    : `Upload ${item.pdf ? 'PDF' : 'photo'}`}
               </button>
             )}
             {canVerify && current.some((d) => d.status === 'PENDING') && (
@@ -416,6 +444,19 @@ export function OrderDocumentsTab({
                   Reject
                 </button>
               </>
+            )}
+            {/* Verified by mistake — the wrong paper, or details that do not match. Taking the
+                verification back sends it to be uploaded again, with the reason on record. */}
+            {canVerify && state === 'VERIFIED' && !current.some((d) => d.status === 'PENDING') && (
+              <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => setRejecting(item)}>
+                Wrong document — reject
+              </button>
+            )}
+            {/* A slip verified before its LR number was typed: the number can still be added or put right. */}
+            {item.id === 'loading-slip' && canVerify && state === 'VERIFIED' && (
+              <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => openCheck(item, true)}>
+                {valueOf(item, item.fields[0], current) ? 'Edit details' : '＋ Enter LR number'}
+              </button>
             )}
             {/* The loading slip stands in for the lorry receipt; an E-LR is generated from here if the client wants one. */}
             {item.id === 'loading-slip' && showLr && can('indent.manage') && (
@@ -506,6 +547,11 @@ export function OrderDocumentsTab({
                 tripId={tripId}
                 onLoaded={(d) => {
                   onLrLoaded?.(d.lr.code);
+                  // Issuing the E-LR changes what the loading slip card and the next step ask for.
+                  if ((d.lr.code ?? null) !== (trip.lr?.code ?? null)) {
+                    setTrip({ ...d.trip, lr: d.lr });
+                    onChanged();
+                  }
                 }}
               />
             </div>
@@ -587,9 +633,13 @@ export function OrderDocumentsTab({
 
       <Dialog
         open={!!checking}
-        title={checking ? `Verify · ${checking.title}` : ''}
-        body="Check the document, then type its details from it. They are saved with the verification."
-        confirmLabel="Verify"
+        title={checking ? `${amending ? 'Edit details' : 'Verify'} · ${checking.title}` : ''}
+        body={
+          amending
+            ? 'Correct or add the details typed from the document. It stays verified.'
+            : 'Check the document, then type its details from it. They are saved with the verification.'
+        }
+        confirmLabel={amending ? 'Save details' : 'Verify'}
         confirmDisabled={!!checkProblem}
         busy={busy}
         onConfirm={verify}

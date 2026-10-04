@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { useAtomValue } from 'jotai';
 import { errorMessage } from '@/apis';
 import { fmtDate, inr, inrCompact } from '@/lib/format';
+import { LiveStamp, useLiveRefresh } from '@/lib/live';
 import { sessionAtom } from '@/store/atoms';
 import {
   ActionCard,
@@ -142,6 +143,16 @@ export default function TodayPage() {
     loadDeskWork(can).then(setWork).catch(() => setWork([]));
   };
   useEffect(load, [can]);
+
+  // Kept current while it is open. A failed refresh keeps what is on screen
+  // rather than replacing the desk with an error.
+  const updatedAt = useLiveRefresh(() =>
+    Promise.all([
+      getToday().then(setData),
+      getDeskTargets().then(setTargets).catch(() => undefined),
+      loadDeskWork(can).then(setWork),
+    ]),
+  );
 
   if (error) return <ErrorState message={error} retry={load} />;
   if (!data) return <Loading what="Loading your work" />;
@@ -310,6 +321,7 @@ export default function TodayPage() {
         emoji="📌"
         title="Pending work for today"
         note="What is waiting on your desk"
+        right={<LiveStamp at={updatedAt} />}
       />
 
       <Stack gap={12}>

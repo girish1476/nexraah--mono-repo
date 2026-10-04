@@ -99,7 +99,8 @@ describe('the fixture ladder and the API ladder agree', () => {
   for (const s of SCENARIOS) {
     it(`agrees: ${s.name}`, () => {
       const byKind = new Map(s.docs.map((d) => [d.kind, d.status]));
-      const docsIn = apiAdvanceDocsIn(DOCS, byKind);
+      // An issued E-LR stands in for the loading slip, on both sides.
+      const docsIn = apiAdvanceDocsIn(DOCS, byKind, !!s.trip?.lrCode);
 
       const fromApi = apiLadder({
         indentStage: s.indentStage,

@@ -52,7 +52,12 @@ export const VENDOR_KYC_KINDS: { kind: string; label: string; note?: string; nee
     label: 'Address proof',
     note: 'Rent agreement, electricity bill, loading advice, or a photo of the yard name-board',
   },
-  { kind: 'SELFIE', label: 'Geo-stamped selfie at the yard', needsReference: false },
+  {
+    kind: 'SELFIE',
+    label: 'Time and location stamped photo at the yard',
+    note: 'Taken with a GPS camera app, so the date, time and address are printed on the photo. Compliance checks the stamp.',
+    needsReference: false,
+  },
 ];
 
 export const VENDOR_DOC_KINDS: { kind: string; label: string; note?: string; needsReference?: boolean }[] = [

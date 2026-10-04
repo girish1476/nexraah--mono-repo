@@ -75,6 +75,8 @@ Freight is always billed. Loading, unloading, detention and other appear **only 
 
 `extraCharges` is a list of named charge lines beyond the fixed heads — `{ "label": "…", "amountPaise": n }`, at most 20, label required and ≤ 60 characters. Each adds to the total. On `PATCH /invoices/:id` the list replaces the stored one when present (`[]` clears it) and is left alone when omitted.
 
+`sacCode` and `details` are set on `PATCH /invoices/:id` only. `sacCode` (4–8 digits) is this invoice's own SAC, for a load that is not a full truck load; it reads back `null` until one is set, and the printed invoice then shows `company.sac`. `details` (≤ 500 characters) is a free line printed on the invoice. Sending either as `""` clears it; omitting it leaves it alone.
+
 `discountPaise` is still accepted and still printed where an invoice carries one, but the invoice form no longer offers it.
 
 ---

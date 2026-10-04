@@ -496,7 +496,25 @@ export function StatStrip({ stats }: { stats: Stat[] }) {
   );
 }
 
-export function FactList({ facts }: { facts: [string, ReactNode][] }) {
+export function FactList({ facts, inline = false }: { facts: [string, ReactNode][]; inline?: boolean }) {
+  // `inline` lays the facts side by side in a single lane (label over value),
+  // wrapping onto further lanes only when the panel is too narrow to fit them.
+  if (inline) {
+    return (
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))' }}>
+        {facts.map(([k, v]) => (
+          <div key={k} style={{ display: 'flex', flexDirection: 'column', gap: 3, padding: '10px 14px', minWidth: 0 }}>
+            <span className="muted" style={{ fontSize: 11.5 }}>
+              {k}
+            </span>
+            <span className="mono" style={{ fontSize: 12.5, overflowWrap: 'anywhere' }}>
+              {v}
+            </span>
+          </div>
+        ))}
+      </div>
+    );
+  }
   return (
     <div>
       {facts.map(([k, v]) => (

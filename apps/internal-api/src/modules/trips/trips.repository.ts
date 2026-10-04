@@ -184,7 +184,12 @@ export class TripsRepository {
       .leftJoin('users as uploader', 'uploader.id', 'trip_documents.uploaded_by')
       .leftJoin('users as verifier', 'verifier.id', 'trip_documents.verified_by')
       .selectAll('trip_documents')
-      .select(['uploader.name as uploaded_by_name', 'verifier.name as verified_by_name'])
+      .select([
+        'uploader.name as uploaded_by_name',
+        'uploader.phone as uploaded_by_phone',
+        'verifier.name as verified_by_name',
+        'verifier.phone as verified_by_phone',
+      ])
       .where('trip_documents.trip_id', '=', tripId)
       .execute();
   }
@@ -431,6 +436,7 @@ export class TripsRepository {
         'trip_tracking_updates.status as status',
         'trip_tracking_updates.recorded_at as recordedAt',
         'users.name as recordedByName',
+        'users.phone as recordedByPhone',
       ])
       .where('trip_tracking_updates.trip_id', '=', tripId)
       .orderBy('trip_tracking_updates.recorded_at', 'asc')

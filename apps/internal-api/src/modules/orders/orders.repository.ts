@@ -295,10 +295,42 @@ export class OrdersRepository {
         'order_events.note as note',
         'order_events.at as at',
         'users.name as actorName',
+        'users.phone as actorPhone',
       ])
       .where('order_events.order_id', '=', orderId)
       .orderBy('order_events.at', 'asc')
       .execute();
+  }
+
+  /**
+   * Who allocated the truck, and when — read from the audit trail, since
+   * allocating a vehicle is not a step of its own on the ladder. The latest
+   * one, so a swapped truck shows whoever put the current one on.
+   */
+  vehicleAllocation(indentId: string) {
+    return this.db
+      .selectFrom('audit_events')
+      .leftJoin('users', 'users.id', 'audit_events.actor_id')
+      .select(['audit_events.at as at', 'users.name as byName', 'users.phone as byPhone'])
+      .where('audit_events.entity_type', '=', 'indents')
+      .where('audit_events.entity_id', '=', indentId)
+      .where('audit_events.action', '=', 'STATUS_CHANGE')
+      .where(sql<boolean>`audit_events.after->>'vehicleNo' is not null`)
+      .orderBy('audit_events.at', 'desc')
+      .limit(1)
+      .executeTakeFirst();
+  }
+
+  /** E-POD or H-POD — how the proof on this trip came in, once one has. */
+  async podKind(tripId: string) {
+    const row = await this.db
+      .selectFrom('pod_receipts')
+      .select(['pod_kind as podKind'])
+      .where('trip_id', '=', tripId)
+      .orderBy('created_at', 'desc')
+      .limit(1)
+      .executeTakeFirst();
+    return row?.podKind ?? null;
   }
 
   /**
@@ -362,7 +394,7 @@ export class OrdersRepository {
         // The rule itself lives in `order-ladder.ts` beside the ladder that
         // consumes it — this only supplies the rows.
         const byKind = new Map(present.map((d) => [d.kind, d.status]));
-        advanceDocsUploaded = advanceDocsIn(advanceDocKinds, byKind);
+        advanceDocsUploaded = advanceDocsIn(advanceDocKinds, byKind, !!trip.lrCode);
       }
     }
 
@@ -372,6 +404,9 @@ export class OrdersRepository {
           .innerJoin('invoices', 'invoices.id', 'invoice_trips.invoice_id')
           .select(['invoices.id as id'])
           .where('invoice_trips.trip_id', '=', trip.id)
+          // A load re-invoiced after a cancellation is on two invoices — the live one is the order's.
+          .orderBy(sql`invoices.status = 'CANCELLED'`)
+          .orderBy('invoices.created_at', 'desc')
           .executeTakeFirst()
       : undefined;
 

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { errorMessage } from '@/apis';
 import { fmtDateTime } from '@/lib/format';
+import { useLiveRefresh } from '@/lib/live';
 import {
   Column,
   DataTable,
@@ -75,6 +76,7 @@ export default function TicketsPage() {
   }, [filter]);
 
   useEffect(load, [load]);
+  useLiveRefresh(() => listTickets({ status: FILTERS.find((f) => f.key === filter)?.status }).then(setQueue));
 
   const act = async (id: string, body: { status?: TicketStatus; resolution?: string }) => {
     setBusy(true);

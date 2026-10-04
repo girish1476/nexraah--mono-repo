@@ -7,6 +7,7 @@ import { WaiverDialog, WaiverEvidence } from '@/components/waiver-dialog';
 import { uploadAttachment } from '@/lib/attachments';
 import { POD_STATUS_LABEL, POD_TONE } from '@/lib/documents';
 import { fmtDate, inr } from '@/lib/format';
+import { useLiveRefresh } from '@/lib/live';
 import { downloadCsv, todayStamp } from '@/lib/export-csv';
 import { activeFilterCount, emptyFilters, FilterBar, FilterField, FilterValues, matchesAny } from '@/lib/list-filters';
 import { ROLES } from '@/lib/permissions';
@@ -117,6 +118,11 @@ export default function PodPendingPage() {
       .catch((e) => setError(errorMessage(e)));
   };
   useEffect(load, [branch, transporter, ageing]);
+  useLiveRefresh(() =>
+    getPending({ branch: branch || undefined, transporter: transporter || undefined, ageing: ageing || undefined }).then(
+      setData,
+    ),
+  );
 
   const submitWaiver = async (evidence: WaiverEvidence) => {
     if (!waiving) return;

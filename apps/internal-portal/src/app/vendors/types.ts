@@ -38,8 +38,12 @@ export interface KycItem {
   verifiedAt: string | null;
   /** Set only while `status === 'REJECTED'` — cleared on the next re-upload. */
   rejectReason: string | null;
+  /** The uploaded file, for Compliance to open while verifying. Null while nothing is uploaded. */
+  attachmentId?: string | null;
   /**
-   * Where the photo was taken — the point of the geo-stamped selfie (BR-23).
+   * Where the browser said the photo was uploaded from. Only on uploads made
+   * before 2026-10-03: the yard photo now carries its own printed time and
+   * location stamp, which Compliance reads off the photo itself.
    * Null for kinds that never carry one and for uploads from before the
    * coordinates were persisted (they were collected and dropped until
    * 2026-09-02). Optional so older fixtures without the field still typecheck.

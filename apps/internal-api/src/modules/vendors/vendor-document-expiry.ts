@@ -29,6 +29,16 @@ import { LEGAL_DOCUMENT_KINDS, type DocumentKind } from './vendors.constants';
  */
 export const EXPIRING_DOCUMENT_KINDS: DocumentKind[] = [...LEGAL_DOCUMENT_KINDS];
 
+/**
+ * India's financial year (1 April – 31 March) that a moment falls in, on the
+ * Indian calendar whatever the server's own clock is set to.
+ */
+export function financialYearOf(now: Date): { from: string; to: string } {
+  const ist = new Date(now.getTime() + 5.5 * 3_600_000);
+  const start = ist.getUTCMonth() >= 3 ? ist.getUTCFullYear() : ist.getUTCFullYear() - 1;
+  return { from: `${start}-04-01`, to: `${start + 1}-03-31` };
+}
+
 /** How far ahead Compliance is warned, so a renewal can be chased in time. */
 export const EXPIRY_WARNING_DAYS = 30;
 

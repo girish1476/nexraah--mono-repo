@@ -23,6 +23,7 @@ import {
   EXPIRING_DOCUMENT_KINDS,
   EXPIRY_WARNING_DAYS,
   buildExpiryQueue,
+  financialYearOf,
   vendorExpiryReport,
 } from './vendor-document-expiry';
 import type { CreateVendorDto } from './dto/create-vendor.dto';
@@ -205,6 +206,9 @@ export class VendorsService implements OnModuleInit {
         verifiedBy: row?.verified_by ?? null,
         verifiedAt: row?.verified_at ?? null,
         rejectReason: row?.reject_reason ?? null,
+        // The file itself, so Compliance can look at what they are verifying —
+        // for the yard photo, the date, time and place printed on it.
+        attachmentId: row?.attachment_id ?? null,
         // Where the photo was taken — null for every upload from before the
         // geotag was persisted, and for kinds that never carry one.
         geo:
@@ -588,14 +592,23 @@ export class VendorsService implements OnModuleInit {
     this.assertKnownKind(kind, DOCUMENT_KINDS as readonly string[], 'document');
     await this.assertVendorExists(vendorId);
 
+    /*
+     * A TDS declaration is given for one financial year and is due again after
+     * 31 March. Stamping the year here is what lets the vendor's file say
+     * which year the declaration on it covers, and ask for the next one when
+     * that year ends. It is deliberately not in `EXPIRING_DOCUMENT_KINDS`: a
+     * late declaration is chased, it does not stop a truck.
+     */
+    const year = kind === 'TDS_DECLARATION' && !dto.validTo ? financialYearOf(new Date()) : null;
+
     return this.vendorsRepository.transaction().execute(async (trx) => {
       const row = await this.vendorsRepository.upsertDocument(trx, {
         vendorId,
         kind,
         attachmentId: dto.attachmentId,
         reference: dto.reference ?? null,
-        validFrom: dto.validFrom ?? null,
-        validTo: dto.validTo ?? null,
+        validFrom: dto.validFrom ?? year?.from ?? null,
+        validTo: dto.validTo ?? year?.to ?? null,
       });
       await this.auditService.record(trx, actor, {
         action: 'VENDOR_DOCUMENT_SUBMITTED',

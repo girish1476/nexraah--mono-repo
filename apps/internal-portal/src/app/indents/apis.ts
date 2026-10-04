@@ -65,6 +65,15 @@ export function awardQuote(id: string, quoteId: string, reason?: string) {
   return request<IndentDetail>({ url: `/indents/${id}/award`, method: 'POST', data: { quoteId, reason } });
 }
 
+/**
+ * POST /indents/:id/vehicle-correction · `indent.manage` — a mistyped truck
+ * number put right, on the load, the trip and the lorry receipt. Open until the
+ * truck is unloaded (409 TRIP_UNLOADED after).
+ */
+export function correctVehicle(id: string, body: { vehicleNo: string; reason: string }) {
+  return request<IndentDetail>({ url: `/indents/${id}/vehicle-correction`, method: 'POST', data: body });
+}
+
 /** POST /indents/:id/placement — allocates the vehicle (and driver) to the trip the award generated. */
 export function recordPlacement(id: string, body: PlacementBody) {
   return request<IndentDetail>({ url: `/indents/${id}/placement`, method: 'POST', data: body });

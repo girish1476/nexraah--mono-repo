@@ -295,7 +295,9 @@ export class TripsService implements OnModuleInit {
         attachmentId: row?.attachment_id ?? null,
         uploadedAt: row?.uploaded_at ?? row?.created_at ?? null,
         uploadedBy: row?.uploaded_by_name ?? null,
+        uploadedByPhone: row?.uploaded_by_phone ?? null,
         verifiedBy: row?.verified_by_name ?? null,
+        verifiedByPhone: row?.verified_by_phone ?? null,
         verifiedAt: row?.verified_at ?? null,
         rejectReason: row?.reject_reason ?? null,
         keyedValues: row?.keyed_values ?? null,
@@ -812,6 +814,7 @@ export class TripsService implements OnModuleInit {
         status: r.status ?? null,
         recordedAt: r.recordedAt,
         recordedByName: r.recordedByName ?? null,
+        recordedByPhone: r.recordedByPhone ?? null,
       })),
     };
   }
@@ -965,9 +968,11 @@ export class TripsService implements OnModuleInit {
   /** The advance-gating documents that have not been uploaded (or were rejected and not replaced). */
   private async missingAdvanceDocuments(tripId: string): Promise<string[]> {
     const set = await this.advanceDocumentSet();
-    const docs = await this.tripsRepository.findDocuments(tripId);
+    const [docs, lr] = await Promise.all([this.tripsRepository.findDocuments(tripId), this.tripsRepository.findLr(tripId)]);
     const status = new Map(docs.map((d) => [d.kind, d.status]));
     return [...set].filter((kind) => {
+      // An issued E-LR stands in for the loading slip.
+      if (kind === 'LOADING_SLIP' && lr?.code) return false;
       const s = status.get(kind);
       return s === undefined || s === 'REJECTED';
     });

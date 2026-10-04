@@ -8,6 +8,8 @@ import type { TrackingKind, TrackingSheet, TrackingStatus, TrackingUpdate } from
 import { RoutePoints, ShareState, getRoutePoints, getShare } from '@/app/trips/tracking-share';
 import { fmtDate, fmtDateTime } from '@/lib/format';
 import { placeQuery, placeText, routeMapLink, routeMapSrc } from '@/lib/route-map';
+import { TruckMap } from '@/components/truck-map';
+import type { OrderStatus } from '../types';
 import { RoutePointsPanel, ShareTrackingPanel } from './tracking-share-panels';
 import { Banner, Column, DataTable, ErrorState, Field, FormGrid, Loading, Panel, Stack, Tag, useCan, useToast } from '@/lib/ui';
 
@@ -62,10 +64,12 @@ const nowLocal = () => {
  */
 export function OrderTrackingTab({
   tripId,
+  status,
   onChanged,
   openDocuments,
 }: {
   tripId: string;
+  status: OrderStatus;
   onChanged: () => void;
   openDocuments: () => void;
 }) {
@@ -153,6 +157,9 @@ export function OrderTrackingTab({
   const open = sheet.stage === 'OPEN';
   const onRoad = sheet.stage === 'IN_TRANSIT';
   const done = !!sheet.deliveredAt;
+  // Once the proof of delivery is in, the sheet stops asking for it.
+  const podChecked = status === 'POD_VERIFIED' || status === 'BALANCE_RELEASED';
+  const podIn = podChecked || status === 'POD_UPLOADED';
 
   // The latest place the truck is known to be: a typed position with
   // coordinates, else the place typed, else where it loads.
@@ -164,6 +171,10 @@ export function OrderTrackingTab({
   const origin = placeQuery(points?.loading, sheet.fromCity);
   const destination = placeQuery(points?.unloading, sheet.toCity);
   const lastPosition = [...sheet.updates].reverse().find((u) => u.kind === 'UPDATE');
+  // Where the truck symbol goes: the last place anybody recorded for it — a
+  // position update, or the milestone it last reached. Shown from the first
+  // entry on the sheet, not only once the trip is on the road.
+  const lastSeen = [...sheet.updates].reverse().find((u) => u.kind !== 'EWAY_EXTENDED' && u.location.trim().length > 1);
   const via =
     onRoad && lastPosition
       ? lastPosition.lat !== null && lastPosition.lng !== null
@@ -297,7 +308,18 @@ export function OrderTrackingTab({
             </button>
           </div>
         )}
-        {done && (
+        {done && podIn && (
+          <div className="cycle-action">
+            <span className="muted" style={{ fontSize: 12.5 }}>
+              Unloaded {fmtDateTime(sheet.deliveredAt)}.{' '}
+              {podChecked ? 'The proof of delivery is uploaded and checked.' : 'The proof of delivery is uploaded and waiting to be checked.'}
+            </span>
+            <button className="btn btn-secondary" onClick={openDocuments}>
+              📎 Open Documents
+            </button>
+          </div>
+        )}
+        {done && !podIn && (
           <div className="cycle-action">
             <span className="muted" style={{ fontSize: 12.5 }}>
               Unloaded {fmtDateTime(sheet.deliveredAt)}. The proof of delivery — E-POD or H-POD — is uploaded on the
@@ -381,6 +403,27 @@ export function OrderTrackingTab({
               )}
             </>
           )}
+        </Panel>
+      )}
+
+      {lastSeen && !done && (
+        <Panel title={`🚚 Truck on the map · ${sheet.vehicleNo}`} pad={false}>
+          <TruckMap
+            truck={{ label: lastSeen.location, lat: lastSeen.lat, lng: lastSeen.lng, query: placeText(lastSeen.location) }}
+            from={{
+              label: sheet.fromCity ?? 'Loading point',
+              lat: points?.loading.lat,
+              lng: points?.loading.lng,
+              query: placeText(sheet.fromCity),
+            }}
+            to={{
+              label: sheet.toCity ?? 'Unloading point',
+              lat: points?.unloading.lat,
+              lng: points?.unloading.lng,
+              query: placeText(sheet.toCity),
+            }}
+            caption={`Truck last reported at ${lastSeen.location} on ${fmtDateTime(lastSeen.recordedAt)}. It moves here each time the tracking sheet is updated. The dashed line joins the points; the road route is on the map below.`}
+          />
         </Panel>
       )}
 

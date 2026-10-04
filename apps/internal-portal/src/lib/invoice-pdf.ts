@@ -88,8 +88,9 @@ export function downloadInvoicePdf(invoice: InvoiceDetail): void {
   y += 4.5;
   doc.text(`GSTIN ${invoice.company.gstin}  |  PAN ${invoice.company.pan}  |  CIN ${invoice.company.cin}`, MARGIN_X, y);
   // SAC — the GST service code for a goods transport agency's road transport
-  // service (996511), same field and same placement as the printed page.
-  doc.text(`SAC ${invoice.company.sac}`, RIGHT_X, y, { align: 'right' });
+  // service (996511), same field and same placement as the printed page: the
+  // invoice's own code when one was set on the edit screen, else the company's.
+  doc.text(`SAC ${invoice.sacCode || invoice.company.sac}`, RIGHT_X, y, { align: 'right' });
 
   if (invoice.code) {
     const narrow = 0.35;
@@ -180,6 +181,15 @@ export function downloadInvoicePdf(invoice: InvoiceDetail): void {
   doc.text('Total', chargeLabelX, y);
   doc.text(rs(invoice.totalPaise), RIGHT_X, y, { align: 'right' });
   doc.setFont('helvetica', 'normal');
+
+  // The free line from the edit screen, same place as on the printed page.
+  if (invoice.details) {
+    y += 8;
+    doc.setFontSize(8);
+    const lines = doc.splitTextToSize(`Details. ${clean(invoice.details)}`, CONTENT_W);
+    doc.text(lines, MARGIN_X, y);
+    y += (lines.length - 1) * 3.6;
+  }
 
   y += 10;
   doc.setLineWidth(0.3);

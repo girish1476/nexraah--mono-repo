@@ -10,7 +10,7 @@
 
 import { RoleCode } from '@/lib/permissions';
 import { applyCleanSlate } from './clean-data';
-import { hydrate, isDemoData } from './persist';
+import { followOtherTabs, hydrate, isDemoData } from './persist';
 
 const now = () => new Date().toISOString();
 const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
@@ -36,6 +36,8 @@ export interface FixtureAccount {
   userId: string;
   name: string;
   email: string;
+  /** Mobile number — shown beside the name wherever the console says who did a step. */
+  phone: string;
   role: RoleCode;
   /** Branch code, or `null` for someone who sees every branch. */
   branch: string | null;
@@ -64,20 +66,20 @@ export interface FixtureAccount {
  * branch with no rows would prove only that an empty list is empty.
  */
 export const ACCOUNTS: FixtureAccount[] = [
-  { userId: 'u-ops', name: 'Anil Deshmukh', email: 'anil@nexraah.in', role: 'OPS', branch: null },
-  { userId: 'u-ops-nsk', name: 'Sunita Rao', email: 'sunita@nexraah.in', role: 'OPS', branch: 'NSK' },
-  { userId: 'u-cmp', name: 'Meera Iyer', email: 'meera@nexraah.in', role: 'COMPLIANCE', branch: null },
-  { userId: 'u-fin', name: 'Rakesh Nair', email: 'rakesh@nexraah.in', role: 'FINANCE', branch: null },
+  { userId: 'u-ops', name: 'Anil Deshmukh', email: 'anil@nexraah.in', phone: '9820011201', role: 'OPS', branch: null },
+  { userId: 'u-ops-nsk', name: 'Sunita Rao', email: 'sunita@nexraah.in', phone: '9820011202', role: 'OPS', branch: 'NSK' },
+  { userId: 'u-cmp', name: 'Meera Iyer', email: 'meera@nexraah.in', phone: '9820011203', role: 'COMPLIANCE', branch: null },
+  { userId: 'u-fin', name: 'Rakesh Nair', email: 'rakesh@nexraah.in', phone: '9820011204', role: 'FINANCE', branch: null },
   // Business development. Added because `ROLE_CODES` gained `BD` and this map
   // had no entry for it — `USERS.BD` was `undefined`, which the `Record` cast
   // hid from the compiler and would have surfaced as a crash the first time
   // anything asked who verified a document as BD.
-  { userId: 'u-bd', name: 'Neha Bhatt', email: 'neha@nexraah.in', role: 'BD', branch: null },
-  { userId: 'u-lead', name: 'Vikram Shah', email: 'vikram@nexraah.in', role: 'LEADERSHIP', branch: null },
-  { userId: 'u-adm', name: 'S. Krishnan', email: 'krishnan@nexraah.in', role: 'ADMIN', branch: null },
+  { userId: 'u-bd', name: 'Neha Bhatt', email: 'neha@nexraah.in', phone: '9820011205', role: 'BD', branch: null },
+  { userId: 'u-lead', name: 'Vikram Shah', email: 'vikram@nexraah.in', phone: '9820011206', role: 'LEADERSHIP', branch: null },
+  { userId: 'u-adm', name: 'S. Krishnan', email: 'krishnan@nexraah.in', phone: '9820011207', role: 'ADMIN', branch: null },
   // The loading supervisor: assigned per trip, uploads that trip's loading and
   // vehicle documents. Unbranched, so any trip can be assigned to them.
-  { userId: 'u-lgs', name: 'Ravi Kumar', email: 'ravi@nexraah.in', role: 'LOADING_SUPERVISOR', branch: null },
+  { userId: 'u-lgs', name: 'Ravi Kumar', email: 'ravi@nexraah.in', phone: '9820011208', role: 'LOADING_SUPERVISOR', branch: null },
 ];
 
 /**
@@ -265,6 +267,13 @@ export const db = {
   sdr: [] as Record<string, any>[],
   /** Monthly targets per branch. Empty until an administrator sets one. */
   targets: [] as { branchId: string; month: string; metric: string; target: number }[],
+  /** Trip id → the token of its live tracking link. Kept here so the link still answers in the tab it opens in. */
+  trackingLinks: {} as Record<string, string>,
+  /** The exact loading and unloading points, per client and route. */
+  routePoints: {} as Record<
+    string,
+    Record<'loading' | 'unloading', { address: string | null; lat: number | null; lng: number | null }>
+  >,
   config: {
     modules: {
       rfq: true,
@@ -1631,4 +1640,5 @@ for (const trip of db.trips as { documents: Doc[] }[]) {
 if (!isDemoData()) {
   applyCleanSlate(db as unknown as Record<string, any>);
   hydrate(db as unknown as Record<string, any>, BRANCHES);
+  followOtherTabs(db as unknown as Record<string, any>, BRANCHES);
 }

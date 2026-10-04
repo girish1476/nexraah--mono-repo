@@ -893,6 +893,10 @@ export interface InvoicesTable {
   status: Generated<string>;
   cancel_reason: string | null;
   notes: string | null;
+  /** This invoice's own SAC. Null prints `config.company.sac`. */
+  sac_code: string | null;
+  /** A free line printed on the invoice — whatever it would otherwise miss. */
+  details: string | null;
   created_at: Generated<string>;
   updated_at: Generated<string>;
 }

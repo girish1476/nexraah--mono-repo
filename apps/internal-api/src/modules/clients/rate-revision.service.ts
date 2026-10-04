@@ -237,18 +237,24 @@ export class RateRevisionService implements OnModuleInit {
       /*
        * Re-checked here, not only at propose time. An approval can sit in the
        * inbox for days, and an effective date that was in the future when it
-       * was raised may be in the past by the time somebody signs it — at which
-       * point applying it would re-price loads raised in between. Better to
-       * refuse the approval than to backdate quietly.
+       * was raised may be in the past by the time somebody signs it. Applying
+       * it from that date would re-price loads raised in between, so the new
+       * rate starts on the day it is approved instead. That is not backdating
+       * — nothing before the approval moves — and refusing it outright left
+       * the change stuck: it could neither be approved nor replaced, because
+       * a lane takes one waiting change at a time.
        */
+      const now = new Date();
+      const today = isoDate(now);
+      const effectiveFrom = String(revision.effective_from) < today ? today : String(revision.effective_from);
       const recheck = checkRevision(
         toLane(lane),
         {
           newRatePaise: Number(revision.new_rate),
-          effectiveFrom: revision.effective_from,
+          effectiveFrom,
           reason: revision.reason,
         },
-        new Date(),
+        now,
       );
 
       if (!recheck.ok) {
@@ -261,7 +267,7 @@ export class RateRevisionService implements OnModuleInit {
 
       const rows = revisionRows(toLane(lane), {
         newRatePaise: Number(revision.new_rate),
-        effectiveFrom: revision.effective_from,
+        effectiveFrom,
       });
 
       await this.clientsRepository.closeLane(ctx.db, lane.id, rows.closeOldTo);
@@ -299,6 +305,7 @@ export class RateRevisionService implements OnModuleInit {
         status: 'APPLIED',
         to_lane_id: successor.id,
         approved_by: ctx.approverId,
+        effective_from: effectiveFrom,
       });
 
       await this.auditService.record(
@@ -312,6 +319,17 @@ export class RateRevisionService implements OnModuleInit {
           after: { laneId: successor.id, rate: rows.successor.ratePaise, validFrom: rows.successor.validFrom },
         },
       );
+    });
+
+    // Turned down, or withdrawn: the revision is closed with its approval, so
+    // the lane stops reading "waiting for sign-off" and can take a new change.
+    this.approvalsRegistry.registerRejection('RATE_REVISION', 'clients', async (action: RateRevisionAction, ctx) => {
+      await ctx.db
+        .updateTable('rate_revisions')
+        .set({ status: 'REJECTED', updated_at: new Date().toISOString() })
+        .where('id', '=', action.revisionId)
+        .where('status', '=', 'PENDING')
+        .execute();
     });
   }
 
@@ -735,6 +753,11 @@ function toLane(row: {
     validFrom: row.valid_from,
     validTo: row.valid_to,
   };
+}
+
+/** `YYYY-MM-DD` on the server's own calendar — the same "today" `checkRevision` measures against. */
+function isoDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function rupees(paise: number): string {

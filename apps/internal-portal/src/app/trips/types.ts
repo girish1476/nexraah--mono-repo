@@ -39,8 +39,10 @@ export interface TripDocument {
   uploadedAt: string | null;
   /** Who uploaded it, by name. */
   uploadedBy?: string | null;
+  uploadedByPhone?: string | null;
   /** Who verified it, by name. */
   verifiedBy: string | null;
+  verifiedByPhone?: string | null;
   verifiedAt: string | null;
   rejectReason: string | null;
   /** Feeds the BR-32 cross-check until NIC/OCR lands. */
@@ -167,6 +169,7 @@ export interface TrackingUpdate {
   status?: TrackingStatus | null;
   recordedAt: string;
   recordedByName: string | null;
+  recordedByPhone?: string | null;
 }
 
 export interface TrackingSheet {

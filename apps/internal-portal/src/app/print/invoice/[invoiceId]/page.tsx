@@ -98,8 +98,10 @@ function Copy({ invoice }: { invoice: InvoiceDetail }) {
             {/* SAC — the GST service code for a goods transport agency's road
                 transport service (996511). A tax invoice for a service is
                 required to carry it, the same way a goods invoice carries an
-                HSN code. */}
-            <div style={{ fontSize: 11 }}>SAC {invoice.company.sac}</div>
+                HSN code. A load that is not a full truck load carries its own
+                code, set on the invoice's edit screen; otherwise the
+                company's. */}
+            <div style={{ fontSize: 11 }}>SAC {invoice.sacCode || invoice.company.sac}</div>
             {invoice.code && (
               <div style={{ marginTop: 4 }}>
                 <Barcode value={invoice.code} height={30} />
@@ -165,6 +167,13 @@ function Copy({ invoice }: { invoice: InvoiceDetail }) {
             </tbody>
           </table>
         </div>
+
+        {/* The free line from the edit screen — whatever the invoice would otherwise miss. */}
+        {invoice.details && (
+          <div style={{ marginTop: 10, fontSize: 10.5, whiteSpace: 'pre-wrap' }}>
+            <strong>Details.</strong> {invoice.details}
+          </div>
+        )}
 
         <div style={{ border: '1px solid #000', padding: '6px 8px', marginTop: 10, fontSize: 10.5 }}>
           <strong>GST PAYABLE BY RECIPIENT UNDER REVERSE CHARGE</strong>

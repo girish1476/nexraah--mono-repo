@@ -64,6 +64,17 @@ export interface Invoice {
   status: InvoiceStatus;
   cancelReason: string | null;
   notes: string;
+  /** This invoice's own SAC, set on the edit screen. Null prints the company's (`company.sac`). */
+  sacCode?: string | null;
+  /** A free line printed on the invoice — whatever it would otherwise miss. */
+  details?: string;
+}
+
+/** What `PATCH /invoices/:id` accepts beyond the create body — both set only on the edit screen. */
+export interface InvoiceEdit extends Partial<InvoiceDraft> {
+  /** Empty goes back to the company's code. */
+  sacCode?: string;
+  details?: string;
 }
 
 export interface InvoiceDetail extends Invoice {

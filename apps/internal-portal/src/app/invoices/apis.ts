@@ -1,5 +1,5 @@
 import { idempotent, request } from '@/apis';
-import { Invoice, InvoiceDetail, InvoiceDraft, InvoiceStatus, Receipt, ReceivablesResponse } from './types';
+import { Invoice, InvoiceDetail, InvoiceDraft, InvoiceEdit, InvoiceStatus, Receipt, ReceivablesResponse } from './types';
 
 /** GET /invoices?q=&status=&from=&to= */
 export function listInvoices(params: { q?: string; status?: InvoiceStatus; from?: string; to?: string } = {}) {
@@ -25,7 +25,7 @@ export function createInvoice(body: InvoiceDraft) {
  * invoice or one with a receipt recorded against it (`INVOICE_LOCKED` /
  * `INVOICE_HAS_RECEIPTS`).
  */
-export function updateInvoice(id: string, body: Partial<InvoiceDraft>) {
+export function updateInvoice(id: string, body: InvoiceEdit) {
   return request<Invoice>({ url: `/invoices/${id}`, method: 'PATCH', data: body });
 }
 

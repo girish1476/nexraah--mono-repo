@@ -1,5 +1,16 @@
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsDateString, IsInt, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsDateString,
+  IsInt,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+  Min,
+  ValidateNested,
+} from 'class-validator';
 import { ExtraChargeDto } from './create-invoice.dto';
 
 /**
@@ -34,4 +45,11 @@ export class UpdateInvoiceDto {
   @Type(() => ExtraChargeDto)
   extraCharges?: ExtraChargeDto[];
   @IsOptional() @IsString() notes?: string;
+  /**
+   * This invoice's own SAC, for a load that is not a full truck load. An
+   * empty string clears it, so the invoice prints the company's code again.
+   */
+  @IsOptional() @Matches(/^(\d{4,8})?$/, { message: 'sacCode must be 4 to 8 digits.' }) sacCode?: string;
+  /** A free line printed on the invoice. An empty string clears it. */
+  @IsOptional() @IsString() @MaxLength(500) details?: string;
 }

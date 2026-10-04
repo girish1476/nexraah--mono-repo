@@ -178,7 +178,7 @@ const ALLOWED_AT: Record<string, string> = {};
 
 function rememberPeople() {
   savePeople({
-    accounts: ACCOUNTS.map(({ userId, name, email, role, branch }) => ({ userId, name, email, role, branch })),
+    accounts: ACCOUNTS.map(({ userId, name, email, phone, role, branch }) => ({ userId, name, email, phone, role, branch })),
     disabled: [...DISABLED_EMAILS],
     allowedAt: { ...ALLOWED_AT },
   });
@@ -204,22 +204,45 @@ export async function mockSendCode(email: string) {
  * are; if this browser has not met them yet they are added to the people
  * list, so their name shows on what they do.
  */
-export function mockSessionFor(person: { email: string; role: string; name: string }) {
+export function mockSessionFor(person: { email: string; role: string; name: string; branch?: string | null }) {
+  const account = adoptPerson(person);
+  DISABLED_EMAILS.delete(account.email);
+  rememberPeople();
+  return issue(account);
+}
+
+/** Lays one person from the server's list over this browser's copy; the server decides role, name and branch. */
+function adoptPerson(person: { email: string; role: string; name: string; branch?: string | null; phone?: string | null }) {
   const key = person.email.trim().toLowerCase();
   let account = CREDENTIALS[key];
   if (!account) {
-    account = { userId: `u-${Date.now().toString(36)}`, name: person.name, email: key, role: person.role as RoleCode, branch: null };
+    account = { userId: `u-${Date.now().toString(36)}-${ACCOUNTS.length}`, name: person.name, email: key, phone: '', role: person.role as RoleCode, branch: null };
     ACCOUNTS.push(account);
     CREDENTIALS[key] = account;
     ALLOWED_AT[account.userId] = new Date().toISOString();
   } else {
-    // The server's list decides the role.
     account.role = person.role as RoleCode;
     if (person.name) account.name = person.name;
   }
-  DISABLED_EMAILS.delete(key);
+  // `undefined` is a server that does not say (an older answer): keep what is here.
+  if (person.branch !== undefined) account.branch = person.branch;
+  if (person.phone) account.phone = person.phone;
+  return account;
+}
+
+/**
+ * Brings this browser's Users list in step with the server's (app/api/people),
+ * so every administrator sees the people any of them added.
+ */
+export function mockAdoptPeople(
+  people: { email: string; role: string; name: string; branch?: string | null; phone?: string | null; disabled?: boolean }[],
+) {
+  for (const person of people) {
+    const account = adoptPerson(person);
+    if (person.disabled) DISABLED_EMAILS.add(account.email);
+    else DISABLED_EMAILS.delete(account.email);
+  }
   rememberPeople();
-  return issue(account);
 }
 
 export async function mockVerifyCode(email: string, code: string) {
@@ -246,12 +269,25 @@ function roleMatrixView() {
   };
 }
 
+/**
+ * A typed mobile number as it is kept: ten digits. `''` when nothing was typed,
+ * `null` when what was typed is not an Indian mobile number — the same rule as
+ * `mobileOf` in internal-api's users.service.ts.
+ */
+function mobileOf(raw: unknown): string | null {
+  const typed = String(raw ?? '').trim();
+  if (!typed) return '';
+  const digits = typed.replace(/[\s-]/g, '').replace(/^(\+91|91|0)(?=\d{10}$)/, '');
+  return /^[6-9]\d{9}$/.test(digits) ? digits : null;
+}
+
 function allowedEmailView(a: FixtureAccount) {
   const branch = a.branch ? BRANCHES.find((b) => b.code === a.branch) : null;
   return {
     id: a.userId,
     email: a.email,
     name: a.name,
+    phone: a.phone || null,
     role: a.role,
     branch: branch ? { id: branch.id, code: branch.code, name: branch.name } : null,
     status: DISABLED_EMAILS.has(a.email.toLowerCase()) ? 'DISABLED' : 'ACTIVE',
@@ -363,9 +399,30 @@ function fail(httpStatus: number, code: string, message: string, details?: unkno
 
 /* ---- helpers ------------------------------------------------------------ */
 
-const findVendor = (idOrCode: string) =>
-  db.vendors.find((v) => v.id === idOrCode || v.code === idOrCode) ??
-  fail(404, 'NOT_FOUND', `Vendor ${idOrCode} not found`);
+/** What is kept of a typed identity number: Aadhaar as its last four digits (BR-04), anything else in full. */
+const kycValueMasked = (kind: string, value: unknown): string | null => {
+  const typed = String(value ?? '').trim();
+  if (!typed) return null;
+  return kind === 'AADHAAR' ? typed.replace(/\D/g, '').slice(-4) : typed;
+};
+
+/** India's financial year (1 April – 31 March) that a date falls in. */
+function financialYearOf(d: Date): { from: string; to: string } {
+  const start = d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1;
+  return { from: `${start}-04-01`, to: `${start + 1}-03-31` };
+}
+
+const findVendor = (idOrCode: string) => {
+  const vendor =
+    db.vendors.find((v) => v.id === idOrCode || v.code === idOrCode) ??
+    fail(404, 'NOT_FOUND', `Vendor ${idOrCode} not found`);
+  // Identity numbers saved before the fixture kept them the way the API does
+  // (`valueMasked`) were stored under `value` and never shown.
+  for (const k of (vendor.kyc ?? []) as any[]) {
+    if (k.valueMasked == null && k.value) k.valueMasked = kycValueMasked(k.kind, k.value);
+  }
+  return vendor;
+};
 
 const findIndent = (idOrCode: string) =>
   db.indents.find((i) => i.id === idOrCode || i.code === idOrCode) ??
@@ -632,9 +689,12 @@ function pendingLanesFor(clientId: string) {
 /** BR-07 / BR-58 — the advance gate, computed from the document set. */
 function advanceGate(trip: any) {
   const set: string[] = db.config.advance_document_set;
+  // An issued E-LR stands in for the loading slip — `advanceUnmet` in payments.service.ts.
+  const slipCovered = (kind: string) => kind === 'LOADING_SLIP' && !!trip.lrCode;
   const unmet = set
     .map((kind) => {
       const doc = trip.documents.find((d: any) => d.kind === kind);
+      if (doc?.status !== 'VERIFIED' && slipCovered(kind)) return null;
       if (!doc || doc.status === 'MISSING')
         return { key: kind, label: `${DOC_LABEL[kind] ?? kind} not uploaded`, state: 'MISSING' as const };
       if (doc.status === 'REJECTED')
@@ -650,8 +710,14 @@ function advanceGate(trip: any) {
     .filter(Boolean) as { key: string; label: string; state: 'MISSING' | 'UNVERIFIED' | 'REJECTED' }[];
 
   const cleared = set
-    .filter((kind) => trip.documents.find((d: any) => d.kind === kind)?.status === 'VERIFIED')
-    .map((kind) => ({ key: kind, label: DOC_LABEL[kind] ?? kind }));
+    .filter((kind) => trip.documents.find((d: any) => d.kind === kind)?.status === 'VERIFIED' || slipCovered(kind))
+    .map((kind) => ({
+      key: kind,
+      label:
+        slipCovered(kind) && trip.documents.find((d: any) => d.kind === kind)?.status !== 'VERIFIED'
+          ? `${DOC_LABEL[kind] ?? kind} — covered by E-LR ${trip.lrCode}`
+          : (DOC_LABEL[kind] ?? kind),
+    }));
 
   const grossPaise = Math.round((trip.buyRatePaise * (trip.advancePct ?? 40)) / 100);
   return { unmet, cleared, grossPaise, tdsPaise: 0, netPaise: grossPaise };
@@ -916,14 +982,15 @@ function addTrackingRow(
     note: row.note,
     recordedAt: row.at,
     recordedByName: ACCOUNTS.find((a) => a.userId === row.userId)?.name ?? null,
+    recordedByPhone: ACCOUNTS.find((a) => a.userId === row.userId)?.phone ?? null,
   });
 }
 
-/** Trip id → the token of its live tracking link. Gone once sharing is stopped. */
-const TRACKING_LINKS: Record<string, string> = {};
-
+// The live tracking links are `db.trackingLinks` — trip id → token, gone once
+// sharing is stopped. They are part of the saved data because the link opens in
+// another tab, which only knows what was saved.
 function shareStateFor(trip: any) {
-  const token = TRACKING_LINKS[trip.id] ?? null;
+  const token = db.trackingLinks[trip.id] ?? null;
   if (!token) return { token: null, active: false, endedBecause: null };
   return trip.deliveredAt
     ? { token, active: false, endedBecause: 'UNLOADED' }
@@ -932,11 +999,9 @@ function shareStateFor(trip: any) {
 
 type MockRoutePoint = { address: string | null; lat: number | null; lng: number | null };
 const NO_POINT: MockRoutePoint = { address: null, lat: null, lng: null };
-/**
- * The exact loading and unloading points, kept per client and route — so a
- * second trip for the same client on the same route finds them already there.
- */
-const ROUTE_POINTS: Record<string, { loading: MockRoutePoint; unloading: MockRoutePoint }> = {};
+// The exact loading and unloading points are `db.routePoints`, kept per client
+// and route — so a second trip for the same client on the same route finds them
+// already there.
 
 function routeKeyFor(trip: any): string {
   return `${trip.clientId}|${String(trip.lane ?? '').toLowerCase().replace(/\s+/g, '')}`;
@@ -944,7 +1009,7 @@ function routeKeyFor(trip: any): string {
 
 function routePointsFor(trip: any) {
   const [fromCity, toCity] = String(trip.lane ?? '').split('→').map((x: string) => x.trim());
-  const row = ROUTE_POINTS[routeKeyFor(trip)];
+  const row = db.routePoints[routeKeyFor(trip)];
   return {
     fromCity: fromCity || '',
     toCity: toCity || '',
@@ -1155,6 +1220,8 @@ export function advanceDocsUploaded(trip: any): boolean {
   const set: string[] = db.config.advance_document_set ?? [];
   if (set.length === 0) return true;
   return set.every((kind) => {
+    // An issued E-LR stands in for the loading slip — `advanceDocsIn` in order-ladder.ts.
+    if (kind === 'LOADING_SLIP' && trip.lrCode) return true;
     const doc = (trip.documents ?? []).find((d: any) => d.kind === kind);
     return Boolean(doc) && doc.status !== 'MISSING' && doc.status !== 'REJECTED';
   });
@@ -1208,9 +1275,9 @@ function orderNoFor(indent: any): string {
 
 function orderRow(indent: any) {
   const trip = db.trips.find((t: any) => t.indentCode === indent.code) ?? null;
-  const invoice = trip
-    ? (db.invoices.find((inv: any) => (inv.tripIds ?? []).includes(trip.id)) ?? null)
-    : null;
+  // A load re-invoiced after a cancellation is on two invoices — the live one is the order's.
+  const onTrip = trip ? db.invoices.filter((inv: any) => (inv.tripIds ?? []).includes(trip.id)) : [];
+  const invoice = onTrip.find((inv: any) => inv.status !== 'CANCELLED') ?? onTrip[0] ?? null;
   const status = orderLadder(indent, trip);
   return {
     id: indent.id,
@@ -1636,6 +1703,85 @@ export function rateRevisionRefusal(
   return null;
 }
 
+/** Today's date where the console is being used, as `YYYY-MM-DD`. */
+const localToday = () => new Date().toLocaleDateString('en-CA');
+
+/**
+ * Applies an approved rate change: the lane in force is closed the day before
+ * the new rate starts, and a successor lane opens at the new rate. Mirrors the
+ * `RATE_REVISION` handler in internal-api.
+ *
+ * A change approved after the date it asked to start from starts on the day it
+ * is approved instead. That is not backdating — nothing before the approval is
+ * re-priced — and refusing it would leave the change stuck in the inbox with no
+ * way to approve it.
+ */
+function applyMockRateRevision(revisionId: string, approverName: string) {
+  const revision =
+    db.rateRevisions.find((r: any) => r.id === revisionId) ??
+    fail(409, 'REVISION_NOT_FOUND', 'That rate revision no longer exists.');
+  if (revision.status !== 'PENDING') {
+    fail(409, 'REVISION_ALREADY_DECIDED', 'That rate revision has already been decided.');
+  }
+  const lanes: any[] = db.rateCards[revision.clientId] ?? [];
+  const lane =
+    lanes.find((l) => l.id === revision.fromLaneId) ??
+    fail(409, 'LANE_NOT_FOUND', 'The lane this revision was raised against no longer exists.');
+
+  const today = localToday();
+  const effectiveFrom = revision.effectiveFrom < today ? today : revision.effectiveFrom;
+  const refusal = rateRevisionRefusal(lane, {
+    newRatePaise: revision.newRatePaise,
+    effectiveFrom,
+    reason: revision.reason,
+  });
+  if (refusal) fail(409, 'REVISION_NO_LONGER_VALID', `${refusal.message} Raise a fresh revision.`);
+
+  const successor = {
+    ...lane,
+    id: `rc-${Date.now()}`,
+    ratePaise: revision.newRatePaise,
+    validFrom: effectiveFrom,
+    // A revision changes the price, not the term of the agreement.
+    validTo: lane.validTo ?? null,
+    approvalMailSubject: revision.approvalMailSubject ?? lane.approvalMailSubject ?? null,
+  };
+  lane.validTo = new Date(Date.parse(effectiveFrom) - 86_400_000).toISOString().slice(0, 10);
+  lanes.push(successor);
+
+  revision.status = 'APPLIED';
+  revision.toLaneId = successor.id;
+  revision.effectiveFrom = effectiveFrom;
+  revision.approvedByName = approverName;
+}
+
+/**
+ * Repairs rate changes left behind before approving one applied it: a change
+ * whose approval was given is applied now, and one whose approval was turned
+ * down is closed. Without this, data saved in the browser earlier keeps a lane
+ * "waiting for sign-off" for good, with no approval left to act on. A change
+ * that can no longer be applied (its lane was removed, say) is closed too, so
+ * a fresh one can be raised.
+ */
+function settleDecidedRevisions(): boolean {
+  let changed = false;
+  for (const revision of db.rateRevisions.filter((r: any) => r.status === 'PENDING')) {
+    const approval: any = db.approvals.find((a: any) => a.action?.revisionId === revision.id);
+    if (!approval || approval.status === 'PENDING') continue;
+    changed = true;
+    if (approval.status !== 'APPROVED') {
+      revision.status = 'REJECTED';
+      continue;
+    }
+    try {
+      applyMockRateRevision(revision.id, 'Approver');
+    } catch {
+      revision.status = 'REJECTED';
+    }
+  }
+  return changed;
+}
+
 /**
  * The lanes actually in force for a client today.
  *
@@ -1644,7 +1790,7 @@ export function rateRevisionRefusal(
  * the current one. History is still there; it just is not the answer to "what
  * do we charge them".
  */
-function lanesInForce(clientId: string, on: string = new Date().toISOString().slice(0, 10)): any[] {
+function lanesInForce(clientId: string, on: string = localToday()): any[] {
   return (db.rateCards[clientId] ?? []).filter(
     (l: any) => l.validFrom <= on && (!l.validTo || l.validTo >= on),
   );
@@ -1738,11 +1884,16 @@ const routes: [string, RegExp, Handler][] = [
             : 'This email is already allowed to sign in.',
         );
       }
+      const phone = mobileOf(body?.phone);
+      if (phone === null) fail(400, 'VALIDATION_FAILED', 'Enter a 10-digit mobile number.');
+      const taken = phone && ACCOUNTS.find((a) => a.phone === phone);
+      if (taken) fail(409, 'PHONE_ALREADY_USED', `That mobile number is already on ${taken.email}.`);
       const branch = body?.branchId ? BRANCHES.find((b) => b.id === body.branchId) : null;
       const account: FixtureAccount = {
         userId: `u-${Date.now().toString(36)}`,
         name: String(body?.name ?? '').trim() || email.split('@')[0],
         email,
+        phone,
         role: body.role as RoleCode,
         branch: branch?.code ?? null,
       };
@@ -1766,6 +1917,13 @@ const routes: [string, RegExp, Handler][] = [
       }
       if (body?.role) account.role = body.role;
       if (typeof body?.name === 'string' && body.name.trim()) account.name = body.name.trim();
+      if (body?.phone !== undefined) {
+        const phone = mobileOf(body.phone);
+        if (phone === null) fail(400, 'VALIDATION_FAILED', 'Enter a 10-digit mobile number.');
+        const taken = phone && ACCOUNTS.find((a) => a.phone === phone && a.userId !== account.userId);
+        if (taken) fail(409, 'PHONE_ALREADY_USED', `That mobile number is already on ${taken.email}.`);
+        account.phone = phone;
+      }
       if (body?.branchId !== undefined) {
         account.branch = body.branchId ? (BRANCHES.find((b) => b.id === body.branchId)?.code ?? null) : null;
       }
@@ -1976,6 +2134,15 @@ const routes: [string, RegExp, Handler][] = [
     /^\/approvals\/([^/]+)\/approve$/,
     ({ params, role }) => {
       const approval = db.approvals.find((a) => a.id === params[0]) ?? fail(404, 'NOT_FOUND', 'Approval not found');
+      if (approval.status !== 'PENDING') fail(409, 'ALREADY_DECIDED', `That request is already ${String(approval.status).toLowerCase()}.`);
+      // A rate change lands on the rate card only now — the same replay as
+      // `RATE_REVISION` in internal-api's rate-revision.service.ts. Done before
+      // the approval is marked, so a refusal leaves it waiting, not approved
+      // with nothing applied.
+      const revisionAction = (approval as any).action as { revisionId?: string } | undefined;
+      if (approval.kind === 'RATE_REVISION' && revisionAction?.revisionId) {
+        applyMockRateRevision(revisionAction.revisionId, USERS[role].name);
+      }
       approval.status = 'APPROVED';
       approval.approverId = USERS[role].userId;
       approval.decidedAt = helpers.now();
@@ -2036,6 +2203,40 @@ const routes: [string, RegExp, Handler][] = [
           approvalMailSubject: newLane.approvalMailSubject ?? null,
         });
       }
+      // The vendor's standing advance moves only now, and the change is written
+      // to its history — `ADVANCE_POLICY_CHANGE` in internal-api's vendors.service.ts.
+      const policy = (approval as any).action as { vendorId?: string; newPct?: number } | undefined;
+      if (approval.kind === 'ADVANCE_POLICY_CHANGE' && approval.entityType === 'vendor' && policy?.vendorId) {
+        const vendor = db.vendors.find((v: any) => v.id === policy.vendorId) as any;
+        if (vendor && typeof policy.newPct === 'number') {
+          (vendor.advanceHistory ??= []).push({
+            oldPct: vendor.advancePct,
+            newPct: policy.newPct,
+            changedBy: USERS[role].name,
+            changedAt: helpers.now().slice(0, 10),
+            approvalId: approval.id,
+          });
+          vendor.advancePct = policy.newPct;
+        }
+      }
+      // A one-off advance for this indent only — the transporter's standing
+      // figure is untouched. `ADVANCE_POLICY_CHANGE` in internal-api's indents.service.ts.
+      const indentAdvance = (approval as any).action as { indentId?: string; newPct?: number } | undefined;
+      if (approval.kind === 'ADVANCE_POLICY_CHANGE' && approval.entityType === 'indent' && indentAdvance?.indentId) {
+        const indent = db.indents.find((i: any) => i.id === indentAdvance.indentId) as any;
+        if (indent && typeof indentAdvance.newPct === 'number') {
+          indent.advancePct = indentAdvance.newPct;
+          indent.advancePctOverridden = true;
+          touchIndent(indent);
+        }
+      }
+      // The mismatch is acknowledged, not corrected: the lorry receipt is no
+      // longer blocked by it. `DOC_OVERRIDE` in internal-api's trips.service.ts.
+      const docOverride = (approval as any).action as { tripId?: string } | undefined;
+      if (approval.kind === 'DOC_OVERRIDE' && docOverride?.tripId) {
+        const trip = db.trips.find((t: any) => t.id === docOverride.tripId) as any;
+        if (trip) trip.crossCheckOverride = true;
+      }
       const award = (approval as any).action as { indentId: string; quoteId: string } | undefined;
       if (approval.kind === 'ABOVE_BAND_PRICE' && award) {
         const indent = db.indents.find((i: any) => i.id === award.indentId);
@@ -2051,6 +2252,14 @@ const routes: [string, RegExp, Handler][] = [
     ({ params, body, role }) => {
       if (!body?.note?.trim()) fail(400, 'NOTE_REQUIRED', 'A note is required to reject an approval.');
       const approval = db.approvals.find((a) => a.id === params[0]) ?? fail(404, 'NOT_FOUND', 'Approval not found');
+      if (approval.status !== 'PENDING') fail(409, 'ALREADY_DECIDED', `That request is already ${String(approval.status).toLowerCase()}.`);
+      // A turned-down rate change is closed with it, or the lane would read
+      // "waiting for sign-off" forever and refuse every later change.
+      const turnedDown = (approval as any).action as { revisionId?: string } | undefined;
+      if (approval.kind === 'RATE_REVISION' && turnedDown?.revisionId) {
+        const revision = db.rateRevisions.find((r: any) => r.id === turnedDown.revisionId);
+        if (revision && revision.status === 'PENDING') revision.status = 'REJECTED';
+      }
       approval.status = 'REJECTED';
       approval.note = body.note;
       approval.approverId = USERS[role].userId;
@@ -2398,10 +2607,16 @@ const routes: [string, RegExp, Handler][] = [
   [
     'POST',
     /^\/vendors\/([^/]+)\/kyc\/([^/]+)\/verify$/,
-    ({ params, role }) => {
+    ({ params, body, role }) => {
       const vendor = findVendor(params[0]);
       const item = vendor.kyc.find((k: any) => k.kind === params[1]) ?? fail(404, 'NOT_FOUND', 'KYC item not found');
-      item.status = 'VERIFIED';
+      // `approve: false` is a rejection — the same route, as in `VendorsService.verifyKyc`.
+      // This used to verify whatever it was sent, so rejecting an identity check verified it.
+      const rejected = body?.approve === false;
+      if (rejected && (!body?.reason || body.reason.trim().length < 20))
+        fail(400, 'REASON_TOO_SHORT', 'A reason of at least 20 characters is required.');
+      item.status = rejected ? 'REJECTED' : 'VERIFIED';
+      item.rejectReason = rejected ? body.reason.trim() : null;
       item.verifiedBy = USERS[role].name;
       item.verifiedAt = helpers.now();
       return ok(vendor);
@@ -2413,7 +2628,15 @@ const routes: [string, RegExp, Handler][] = [
     ({ params, body }) => {
       const vendor = findVendor(params[0]);
       const existing = vendor.kyc.find((k: any) => k.kind === params[1]);
-      const item = { kind: params[1], status: 'PENDING', verifiedBy: null, verifiedAt: null, ...body };
+      const item = {
+        kind: params[1],
+        status: 'PENDING',
+        verifiedBy: null,
+        verifiedAt: null,
+        rejectReason: null,
+        ...body,
+        valueMasked: kycValueMasked(params[1], body?.value),
+      };
       if (existing) Object.assign(existing, item);
       else vendor.kyc.push(item);
       return ok(vendor);
@@ -2429,6 +2652,7 @@ const routes: [string, RegExp, Handler][] = [
       if (body?.approve === false && (!body?.reason || body.reason.trim().length < 20))
         fail(400, 'REASON_TOO_SHORT', 'A reason of at least 20 characters is required.');
       doc.status = body?.approve === false ? 'REJECTED' : 'VERIFIED';
+      doc.rejectReason = body?.approve === false ? body.reason.trim() : null;
       // Same shape as internal-api's `verifyDocument` — not the vendor.
       return ok({ kind: doc.kind, status: doc.status });
     },
@@ -2439,7 +2663,17 @@ const routes: [string, RegExp, Handler][] = [
     ({ params, body }) => {
       const vendor = findVendor(params[0]);
       const existing = vendor.documents.find((d: any) => d.kind === params[1]);
-      const doc = { kind: params[1], status: 'PENDING', ...body };
+      // A TDS declaration is good for the financial year it is given in, and
+      // is due again after 31 March — the same rule as `submitDocument`.
+      const year = params[1] === 'TDS_DECLARATION' && !body?.validTo ? financialYearOf(new Date()) : null;
+      const doc = {
+        kind: params[1],
+        status: 'PENDING',
+        rejectReason: null,
+        validFrom: year?.from ?? null,
+        validTo: year?.to ?? null,
+        ...body,
+      };
       if (existing) Object.assign(existing, doc);
       else vendor.documents.push(doc);
       return ok(vendor);
@@ -2461,7 +2695,7 @@ const routes: [string, RegExp, Handler][] = [
         missing.push({ key: 'GOVERNMENT_CERTIFICATE', label: 'Government certificate not on file', state: 'MISSING' });
       if (!hasKyc('PAN')) missing.push({ key: 'PAN', label: 'PAN not captured', state: 'MISSING' });
       if (!hasKyc('AADHAAR')) missing.push({ key: 'AADHAAR', label: 'Aadhaar not captured', state: 'MISSING' });
-      if (!hasKyc('SELFIE')) missing.push({ key: 'SELFIE', label: 'Geo-stamped selfie not captured', state: 'MISSING' });
+      if (!hasKyc('SELFIE')) missing.push({ key: 'SELFIE', label: 'Time and location stamped yard photo not uploaded', state: 'MISSING' });
       if (vendor.partyType === 'OWNER' && !vendor.documents.some((d: any) => d.kind === 'RC'))
         missing.push({ key: 'RC', label: 'Registration certificate mandatory for an Owner', state: 'MISSING' });
       if (missing.length) fail(409, 'VENDOR_INCOMPLETE', 'The vendor file is incomplete.', { unmet: missing });
@@ -2535,6 +2769,7 @@ const routes: [string, RegExp, Handler][] = [
         requiredPermission: 'approve.exception',
         reason: body.reason,
         role,
+        action: { vendorId: vendor.id, newPct: Number(body.advancePct) },
       });
     },
   ],
@@ -3250,7 +3485,7 @@ const routes: [string, RegExp, Handler][] = [
   [
     'POST',
     /^\/indents$/,
-    ({ body }) => {
+    ({ body, userId }) => {
       /*
        * The client has to have been cleared by Compliance first — the gate
        * that makes client onboarding mean something rather than being a form
@@ -3282,6 +3517,7 @@ const routes: [string, RegExp, Handler][] = [
         code: nextNumber('INDENT'),
         stage: 'OPEN',
         createdAt: helpers.now(),
+        createdBy: userId,
         updatedAt: helpers.now(),
         buyRatePaise: null,
         vendorId: null,
@@ -3426,6 +3662,14 @@ const routes: [string, RegExp, Handler][] = [
         })(),
         payments: orderPaymentsFor(indent, trip, role, branch),
         events: orderEvents(row),
+        // Same shape as `OrdersService.getById`'s `activity`.
+        activity: {
+          booked: stepBy(indent.createdAt, indent.createdBy),
+          vehicleAllocated: trip?.vehicleNo ? stepBy(indent.vehicleAllocatedAt ?? indent.reportedAt, indent.vehicleAllocatedBy) : null,
+          podUploaded: stepBy(trip?.podUploadedAt, trip?.podUploadedBy),
+          podVerified: stepBy(trip?.podVerifiedAt, trip?.podVerifiedBy),
+          podKind: trip ? ((db.podReceipts.find((r: any) => r.tripId === trip.id) as any)?.podKind ?? null) : null,
+        },
         comments: orderCommentsFor(indent.id),
       });
     },
@@ -3490,7 +3734,7 @@ const routes: [string, RegExp, Handler][] = [
   [
     'POST',
     /^\/indents\/([^/]+)\/placement$/,
-    ({ params, body }) => {
+    ({ params, body, userId }) => {
       const indent = findIndent(params[0]);
       if (indent.stage !== 'VENDOR_ASSIGNED' && indent.stage !== 'TRIP_CREATED')
         fail(409, 'NOT_AWARDED', 'A vehicle can only be placed on an awarded indent.');
@@ -3521,9 +3765,42 @@ const routes: [string, RegExp, Handler][] = [
         stage: trip ? 'TRIP_CREATED' : 'VEHICLE_PLACED',
         transitDelay: !!body.transitDelay,
         placementRemarks: body.remarks ?? null,
+        vehicleAllocatedAt: helpers.now(),
+        vehicleAllocatedBy: userId,
       });
       setFleetVehicleStatus(indent.vendorId, driver.vehicleNo, 'ON_TRIP');
       if (trip) Object.assign(trip, driver);
+      touchIndent(indent);
+      return ok(indentView(indent));
+    },
+  ],
+  // A mistyped truck number put right — mirrors `IndentsService.correctVehicle`.
+  [
+    'POST',
+    /^\/indents\/([^/]+)\/vehicle-correction$/,
+    ({ params, body, role }) => {
+      if (!SEED_GRANTS[role]?.includes('indent.manage')) fail(403, 'FORBIDDEN', 'You cannot change this load.');
+      const indent = findIndent(params[0]);
+      const vehicleNo = String(body?.vehicleNo ?? '').trim().toUpperCase();
+      if (vehicleNo.length < 4) fail(400, 'VALIDATION_ERROR', 'Enter the truck number.');
+      if (String(body?.reason ?? '').trim().length < 5) fail(400, 'VALIDATION_ERROR', 'Say why the number is being corrected.');
+      if (!indent.vehicleNo) fail(409, 'NO_VEHICLE', 'No truck has been allocated to this load yet.');
+      if (indent.vehicleNo === vehicleNo) fail(409, 'SAME_VEHICLE', 'That is the truck number already on this load.');
+      const trip = tripForIndent(indent);
+      if (trip && trip.stage !== 'OPEN' && trip.stage !== 'IN_TRANSIT') {
+        fail(
+          409,
+          'TRIP_UNLOADED',
+          'The truck has been unloaded, so its number is already on the delivery papers. Raise a ticket to have it corrected.',
+        );
+      }
+      releaseFleetVehicle(indent.vendorId, indent.vehicleNo);
+      setFleetVehicleStatus(indent.vendorId, vehicleNo, 'ON_TRIP');
+      indent.vehicleNo = vehicleNo;
+      if (trip) {
+        trip.vehicleNo = vehicleNo;
+        if (trip.lr?.vehicle) trip.lr.vehicle.registration = vehicleNo;
+      }
       touchIndent(indent);
       return ok(indentView(indent));
     },
@@ -3656,6 +3933,7 @@ const routes: [string, RegExp, Handler][] = [
         requiredPermission: 'approve.exception',
         reason: body.reason,
         role,
+        action: { indentId: indent.id, newPct: Number(body.advancePct) },
       });
     },
   ],
@@ -3775,6 +4053,7 @@ const routes: [string, RegExp, Handler][] = [
         doc.keyedValues = { ...(doc.keyedValues ?? {}), ...body.keyedValues };
       doc.status = 'VERIFIED';
       doc.verifiedBy = personName(userId, role);
+      doc.verifiedByPhone = personPhone(userId, role);
       doc.verifiedAt = helpers.now();
       doc.rejectReason = null;
       return ok(doc);
@@ -3829,6 +4108,7 @@ const routes: [string, RegExp, Handler][] = [
         attachmentId: body?.attachmentId ?? `att-${params[1].toLowerCase()}`,
         uploadedAt: helpers.now(),
         uploadedBy: personName(userId, role),
+        uploadedByPhone: personPhone(userId, role),
         // A new file is checked again — the old verification was of the old file.
         verifiedBy: null,
         verifiedAt: null,
@@ -3883,6 +4163,7 @@ const routes: [string, RegExp, Handler][] = [
         requiredPermission: 'approve.exception',
         reason: body.reason,
         role,
+        action: { tripId: trip.id },
       });
     },
   ],
@@ -3998,8 +4279,8 @@ const routes: [string, RegExp, Handler][] = [
       const trip = findTrip(params[0]);
       if (!trip.vehicleNo) fail(409, 'NOT_PLACED', 'Allocate the vehicle first — there is nothing to track yet.');
       if (trip.deliveredAt) fail(409, 'TRACKING_CLOSED', 'This truck has been unloaded; tracking has ended.');
-      if (!TRACKING_LINKS[trip.id]) {
-        TRACKING_LINKS[trip.id] = `demo-${trip.id}-${Math.random().toString(36).slice(2, 12)}`;
+      if (!db.trackingLinks[trip.id]) {
+        db.trackingLinks[trip.id] = `demo-${trip.id}-${Math.random().toString(36).slice(2, 12)}`;
       }
       return ok(shareStateFor(trip));
     },
@@ -4010,8 +4291,8 @@ const routes: [string, RegExp, Handler][] = [
     ({ params, role }) => {
       if (!roleCan(role, 'indent.manage')) fail(403, 'PERMISSION_DENIED', 'Missing permission: indent.manage.');
       const trip = findTrip(params[0]);
-      const had = !!TRACKING_LINKS[trip.id];
-      delete TRACKING_LINKS[trip.id];
+      const had = !!db.trackingLinks[trip.id];
+      delete db.trackingLinks[trip.id];
       return ok({ token: null, active: false, endedBecause: had ? 'STOPPED' : null });
     },
   ],
@@ -4022,7 +4303,7 @@ const routes: [string, RegExp, Handler][] = [
     // the transporter, the rates or the desk's notes.
     ({ params }) => {
       const token = decodeURIComponent(params[0]);
-      const tripId = Object.keys(TRACKING_LINKS).find((id) => TRACKING_LINKS[id] === token);
+      const tripId = Object.keys(db.trackingLinks).find((id) => db.trackingLinks[id] === token);
       if (!tripId) fail(404, 'TRACKING_LINK_UNKNOWN', 'This tracking link is not valid.');
       const trip = findTrip(tripId as string);
       if (trip.deliveredAt)
@@ -4061,7 +4342,7 @@ const routes: [string, RegExp, Handler][] = [
       if (!roleCan(role, 'indent.manage')) fail(403, 'PERMISSION_DENIED', 'Missing permission: indent.manage.');
       const trip = findTrip(params[0]);
       const key = routeKeyFor(trip);
-      const row = ROUTE_POINTS[key] ?? { loading: { ...NO_POINT }, unloading: { ...NO_POINT } };
+      const row = db.routePoints[key] ?? { loading: { ...NO_POINT }, unloading: { ...NO_POINT } };
       for (const end of ['loading', 'unloading'] as const) {
         const p = body?.[end];
         if (!p) continue;
@@ -4069,7 +4350,7 @@ const routes: [string, RegExp, Handler][] = [
           fail(400, 'VALIDATION_ERROR', `Give both latitude and longitude for the ${end} point, or neither.`);
         row[end] = { address: String(p.address ?? '').trim() || null, lat: p.lat ?? null, lng: p.lng ?? null };
       }
-      ROUTE_POINTS[key] = row;
+      db.routePoints[key] = row;
       return ok(routePointsFor(trip));
     },
   ],
@@ -4340,7 +4621,7 @@ const routes: [string, RegExp, Handler][] = [
   [
     'POST',
     /^\/pod\/([^/]+)\/receive$/,
-    ({ params, body, role }) => {
+    ({ params, body, role, userId }) => {
       // H-POD — `PodService.receive`: the scan of the signed hard copy; the docket is optional.
       const trip = findTrip(params[0]);
       const ids: string[] = Array.isArray(body?.attachmentIds) ? body.attachmentIds : [];
@@ -4366,6 +4647,8 @@ const routes: [string, RegExp, Handler][] = [
       });
       trip.podStatus = 'RECEIVED';
       trip.podReceivedAt = receipt.receivedOn;
+      trip.podUploadedAt = helpers.now();
+      trip.podUploadedBy = userId;
       if (docket) trip.podCourierDocket = docket;
       return ok(receipt);
     },
@@ -4429,7 +4712,7 @@ const routes: [string, RegExp, Handler][] = [
     'POST',
     /^\/pod\/([^/]+)\/epod$/,
     // E-POD — `PodService.uploadEpod`: the proof as a photo or scan, no courier docket.
-    ({ params, body, role }) => {
+    ({ params, body, role, userId }) => {
       const trip = findTrip(params[0]);
       if (!trip.deliveredAt) fail(409, 'NOT_DELIVERED', 'The proof of delivery is uploaded once the truck is unloaded.');
       if (!['PENDING', 'ATTACHED', 'REJECTED'].includes(trip.podStatus))
@@ -4458,6 +4741,8 @@ const routes: [string, RegExp, Handler][] = [
       db.podReceipts.unshift(receipt);
       trip.podStatus = 'RECEIVED';
       trip.podReceivedAt = today;
+      trip.podUploadedAt = helpers.now();
+      trip.podUploadedBy = userId;
       return ok({ id: receipt.id, code: receipt.code, tripId: trip.id, podKind: 'EPOD', attachmentIds: ids, receivedOn: today });
     },
   ],
@@ -4478,6 +4763,7 @@ const routes: [string, RegExp, Handler][] = [
       trip.podStatus = 'VERIFIED';
       trip.podVerifiedBy = USERS[role].userId;
       trip.podVerifiedByName = USERS[role].name;
+      trip.podVerifiedAt = helpers.now();
       const receipt = db.podReceipts.find((r) => r.tripId === trip.id);
       if (receipt) receipt.details = { ...(body?.details ?? {}), remarks: body?.remarks ?? null };
       // Older callers: no explicit findings, so a failed shortage/damage check
@@ -5038,6 +5324,9 @@ const routes: [string, RegExp, Handler][] = [
         roundOffPaise,
         totalPaise: subtotalPaise + roundOffPaise,
         notes: body.notes ?? invoice.notes,
+        // Sent empty, either one is cleared; left out, it stays as it was.
+        sacCode: body.sacCode === undefined ? (invoice.sacCode ?? null) : String(body.sacCode).trim() || null,
+        details: body.details === undefined ? (invoice.details ?? '') : String(body.details).trim(),
       });
       return ok(invoice);
     },
@@ -5067,6 +5356,16 @@ const routes: [string, RegExp, Handler][] = [
     ({ params, body }) => {
       if (!body?.reason?.trim()) fail(400, 'REASON_REQUIRED', 'A cancellation reason is required.');
       const invoice = findInvoice(params[0]);
+      // A cancelled invoice gives its loads back so a corrected one can be
+      // raised — `InvoicingService.cancel`. A draft never marked them billed.
+      if (invoice.code && invoice.status !== 'CANCELLED') {
+        for (const tripId of invoice.tripIds ?? []) {
+          const trip: any = db.trips.find((t) => t.id === tripId);
+          if (!trip) continue;
+          trip.billed = false;
+          if (trip.stage === 'CLOSED' && trip.balancePaidPaise > 0) trip.stage = 'DELIVERED';
+        }
+      }
       invoice.status = 'CANCELLED';
       invoice.cancelReason = body.reason;
       return ok(invoice);
@@ -5077,6 +5376,20 @@ const routes: [string, RegExp, Handler][] = [
     /^\/invoices\/([^/]+)$/,
     ({ params }) => {
       const invoice = findInvoice(params[0]);
+      // Invoices cancelled before a cancellation gave its loads back left them
+      // marked billed with no live invoice behind them — release those here.
+      if (invoice.status === 'CANCELLED' && invoice.code) {
+        for (const tripId of invoice.tripIds ?? []) {
+          const trip: any = db.trips.find((t) => t.id === tripId);
+          const live = db.invoices.some(
+            (i: any) => i.code && i.status !== 'CANCELLED' && (i.tripIds ?? []).includes(tripId),
+          );
+          if (trip?.billed && !live) {
+            trip.billed = false;
+            if (trip.stage === 'CLOSED' && trip.balancePaidPaise > 0) trip.stage = 'DELIVERED';
+          }
+        }
+      }
       return ok({
         ...invoice,
         company: db.config.company,
@@ -5671,6 +5984,17 @@ function personName(userId: string, role: RoleCode): string {
   return ACCOUNTS.find((a) => a.userId === userId)?.name ?? USERS[role].name;
 }
 
+function personPhone(userId: string, role: RoleCode): string {
+  return ACCOUNTS.find((a) => a.userId === userId)?.phone ?? USERS[role].phone;
+}
+
+/** Who did a step and when — one entry of the order page's activity list. */
+function stepBy(at: string | null | undefined, userId: string | null | undefined) {
+  if (!at) return null;
+  const who = ACCOUNTS.find((a) => a.userId === userId);
+  return { at, byName: who?.name ?? null, byPhone: who?.phone ?? null };
+}
+
 function currentUserId(): string {
   if (typeof window === 'undefined') return USERS.OPS.userId;
   const result = readToken(localStorage.getItem('token'), 'access');
@@ -5713,6 +6037,8 @@ export const mockAdapter: AxiosAdapter = async (config) => {
 
   // A visible pause; the console is never demonstrated against instant data.
   await new Promise((r) => setTimeout(r, 120));
+
+  if (path.startsWith('/clients') && settleDecidedRevisions()) persist(db as unknown as Record<string, any>, BRANCHES);
 
   for (const [routeMethod, pattern, handler] of routes) {
     if (routeMethod !== method) continue;

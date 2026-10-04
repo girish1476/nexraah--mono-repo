@@ -246,6 +246,9 @@ export class InvoicingService {
         round_off: roundOffPaise,
         total: totalPaise,
         notes: dto.notes ?? row.notes,
+        // Sent empty, either one is cleared; left out, it stays as it was.
+        sac_code: dto.sacCode === undefined ? row.sac_code : dto.sacCode.trim() || null,
+        details: dto.details === undefined ? row.details : dto.details.trim() || null,
       });
 
       await this.auditService.record(trx, actor, {
@@ -328,6 +331,16 @@ export class InvoicingService {
       });
 
       const links = await this.invoicingRepository.invoiceTripIds(id);
+      // The truck was still placed and the client still owes for it: a
+      // cancelled invoice gives its loads back so a corrected one can be raised.
+      // A draft never marked them billed (`generate()` does), so it has nothing
+      // to give back — and must not unbill a load another invoice has issued.
+      if (row.status !== 'DRAFT') {
+        await this.invoicingRepository.unmarkTripsBilled(
+          trx,
+          links.map((l) => l.trip_id),
+        );
+      }
       const client = await this.invoicingRepository.findClientById(updated.client_id);
       return this.invoiceDto(
         this.rawInvoiceToJoined(updated, client?.name ?? ''),
@@ -625,6 +638,8 @@ export class InvoicingService {
       status: string;
       cancel_reason: string | null;
       notes: string | null;
+      sac_code: string | null;
+      details: string | null;
     },
     clientName: string,
   ) {
@@ -649,6 +664,8 @@ export class InvoicingService {
       status: row.status,
       cancelReason: row.cancel_reason,
       notes: row.notes,
+      sacCode: row.sac_code,
+      details: row.details,
     };
   }
 
@@ -674,6 +691,8 @@ export class InvoicingService {
       status: string;
       cancelReason: string | null;
       notes: string | null;
+      sacCode: string | null;
+      details: string | null;
     },
     tripIds: string[],
   ) {
@@ -699,6 +718,10 @@ export class InvoicingService {
       status: row.status,
       cancelReason: row.cancelReason,
       notes: row.notes ?? '',
+      // Null until someone sets one on the edit screen — the printed invoice
+      // then falls back to `company.sac`.
+      sacCode: row.sacCode ?? null,
+      details: row.details ?? '',
     };
   }
 }

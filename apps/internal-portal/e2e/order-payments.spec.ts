@@ -79,11 +79,11 @@ test.describe('Order page', () => {
     await expect(page.getByText('HDFCN00120855')).toBeVisible();
   });
 
-  test('Details carries the next step and the vehicle tracking panel', async ({ page }) => {
+  test('Details carries the next step, and leaves tracking to the Tracking tab', async ({ page }) => {
     await setRole(page, 'OPS');
     await openOrder(page);
     await expect(page.getByText(/👉 Next step/).first()).toBeVisible();
-    await expect(page.getByText('📍 Vehicle tracking')).toBeVisible();
+    await expect(page.getByText('📍 Vehicle tracking')).toHaveCount(0);
   });
 
   test('Details carries the client invoice, the addresses, the transporter and the document record', async ({ page }) => {
@@ -92,7 +92,7 @@ test.describe('Order page', () => {
     await expect(page.getByRole('heading', { name: /🧾 (Client invoice|Invoice )/ })).toBeVisible();
     await expect(page.getByText('Loading address', { exact: true })).toBeVisible();
     await expect(page.getByText('Transporter phone')).toBeVisible();
-    await expect(page.getByText('📎 Documents — uploaded and verified')).toBeVisible();
+    await expect(page.getByText('📎 Advance documents', { exact: true })).toBeVisible();
   });
 
   test('Documents shows each document’s photo beside the details on it, not who uploaded it', async ({ page }) => {

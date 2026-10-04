@@ -82,6 +82,15 @@ export function OrderInvoiceTab({ order }: { order: OrderDetail }) {
         right={
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <Tag tone={STATUS_TONE[invoice.status]}>{STATUS_LABEL[invoice.status]}</Tag>
+            {/* A cancelled invoice leaves the load unbilled — the client still owes for it. */}
+            {invoice.status === 'CANCELLED' && order.tripId && can('invoice.create') && (
+              <Link
+                className="btn btn-sm"
+                href={`/invoices/new?client=${encodeURIComponent(order.clientId)}&trip=${encodeURIComponent(order.tripId)}`}
+              >
+                Raise a new invoice
+              </Link>
+            )}
             <Link className="btn btn-secondary btn-sm" href={`/invoices/${invoice.id}`}>
               Open invoice
             </Link>

@@ -192,7 +192,11 @@ export function OrderNextStep({
   // ---- Before the truck leaves -------------------------------------------------
   if (trip.stage === 'OPEN') {
     const gating = trip.documents.filter((d) => d.gatesAdvance);
-    const docsIn = gating.filter((d) => d.status === 'PENDING' || d.status === 'VERIFIED').length;
+    // An issued E-LR stands in for the loading slip.
+    const lrIssued = !!trip.lr?.code;
+    const docsIn = gating.filter(
+      (d) => d.status === 'PENDING' || d.status === 'VERIFIED' || (d.kind === 'LOADING_SLIP' && lrIssued),
+    ).length;
     const lrStarted = !!trip.lr && trip.lr.status !== 'RELEASED';
     // The loading slip stands in for the lorry receipt.
     const slipIn = trip.documents.some((d) => d.kind === 'LOADING_SLIP' && (d.status === 'PENDING' || d.status === 'VERIFIED'));

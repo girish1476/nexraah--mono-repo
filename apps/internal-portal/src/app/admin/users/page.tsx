@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { errorMessage } from '@/apis';
+import { peopleStoreEnabled, realEmailEnabled } from '@/lib/auth';
 import { ROLE_CODES, ROLES } from '@/lib/permissions';
 import {
   Column,
@@ -21,7 +22,52 @@ import { listBranches } from '../branches/apis';
 import { Branch } from '../branches/types';
 import { getRoleMatrix } from '../roles/apis';
 import { CustomRole } from '../roles/types';
-import { AllowedEmail, allowEmail, listAllowedEmails, updateAllowedEmail } from './apis';
+import { AllowedEmail, MOBILE_RE, allowEmail, listAllowedEmails, updateAllowedEmail } from './apis';
+
+/**
+ * A person's mobile number, edited in place — typed, then saved when the box is
+ * left or Enter is pressed. A number that is not a mobile number is not sent:
+ * the box says so and keeps what was typed.
+ */
+function MobileCell({
+  value,
+  label,
+  disabled,
+  onSave,
+}: {
+  value: string;
+  label: string;
+  disabled: boolean;
+  onSave: (next: string) => void;
+}) {
+  const [typed, setTyped] = useState(value);
+  const changed = typed.trim() !== value;
+  const valid = MOBILE_RE.test(typed.trim());
+  const save = () => {
+    if (changed && valid) onSave(typed.trim());
+  };
+  return (
+    <div>
+      <input
+        type="tel"
+        inputMode="numeric"
+        maxLength={16}
+        aria-label={label}
+        aria-invalid={changed && !valid}
+        style={{ width: 130 }}
+        value={typed}
+        disabled={disabled}
+        placeholder="Add a number"
+        onChange={(e) => setTyped(e.target.value.replace(/[^\d+\s-]/g, ''))}
+        onBlur={save}
+        onKeyDown={(e) => e.key === 'Enter' && save()}
+      />
+      {changed && typed.trim() && !valid && (
+        <div style={{ color: 'var(--red)', fontSize: 11.5 }}>Enter a 10-digit mobile number</div>
+      )}
+    </div>
+  );
+}
 
 /**
  * Allowed emails — `/admin/users` · `config.manage`.
@@ -53,6 +99,7 @@ export default function AllowedEmailsPage() {
   ];
   const roleLabel = (code: string) => roleOptions.find((o) => o.code === code)?.label ?? code;
   const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
   const [branchId, setBranchId] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -60,6 +107,13 @@ export default function AllowedEmailsPage() {
     setError(null);
     listAllowedEmails().then(setRows).catch((e) => setError(errorMessage(e)));
   };
+  // Real codes are emailed, but this list is not shared with the server that
+  // sends them: adding someone here would not let them in, so the screen says so.
+  const [browserOnly, setBrowserOnly] = useState(false);
+  useEffect(() => {
+    void Promise.all([realEmailEnabled(), peopleStoreEnabled()]).then(([real, store]) => setBrowserOnly(real && !store));
+  }, []);
+
   useEffect(() => {
     load();
     listBranches().then(setBranches).catch(() => setBranches([]));
@@ -69,14 +123,16 @@ export default function AllowedEmailsPage() {
   }, []);
 
   const emailValid = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
+  const phoneValid = MOBILE_RE.test(phone.trim());
 
   const onAllow = async () => {
-    if (!emailValid || !role) return;
+    if (!emailValid || !role || !phoneValid) return;
     setBusy(true);
     try {
       const added = await allowEmail({
         email: email.trim().toLowerCase(),
         role,
+        phone: phone.trim(),
         name: name.trim() || undefined,
         branchId: branchId || undefined,
       });
@@ -86,6 +142,7 @@ export default function AllowedEmailsPage() {
       setEmail('');
       setRole('');
       setName('');
+      setPhone('');
       setBranchId('');
     } catch (e) {
       toast(errorMessage(e));
@@ -118,6 +175,22 @@ export default function AllowedEmailsPage() {
           <div className="muted" style={{ fontSize: 12 }}>{r.name}</div>
         </div>
       ),
+    },
+    {
+      key: 'phone',
+      label: 'Mobile',
+      render: (r) =>
+        editable ? (
+          <MobileCell
+            key={`${r.id}:${r.phone ?? ''}`}
+            value={r.phone ?? ''}
+            label={`Mobile number for ${r.email}`}
+            disabled={saving === r.id}
+            onSave={(next) => patchRow(r, { phone: next }, `Mobile number for ${r.email} saved`)}
+          />
+        ) : (
+          (r.phone ?? <span className="muted">—</span>)
+        ),
     },
     {
       key: 'role',
@@ -215,6 +288,18 @@ export default function AllowedEmailsPage() {
         }
       />
 
+      {browserOnly && (
+        <div
+          className="surface"
+          role="note"
+          style={{ borderLeft: '2px solid var(--color-accent)', padding: '11px 13px', fontSize: 12.5, marginBottom: 12 }}
+        >
+          Sign-in codes are emailed only to the people on the deployment’s own list. Someone added here is kept in this
+          browser and will not get a code until the shared list of people is set up — ask whoever looks after the
+          hosting.
+        </div>
+      )}
+
       {error && <ErrorState message={error} retry={load} />}
       {!rows && !error && <Loading what="Loading allowed emails" />}
       {rows && (
@@ -233,7 +318,7 @@ export default function AllowedEmailsPage() {
         title="Allow an email to sign in"
         body="They can sign in straight away: they type this email on the sign-in screen and get a one-time code by email."
         confirmLabel="Allow"
-        confirmDisabled={!emailValid || !role}
+        confirmDisabled={!emailValid || !role || !phoneValid}
         busy={busy}
         onConfirm={onAllow}
         onClose={() => setOpen(false)}
@@ -245,6 +330,21 @@ export default function AllowedEmailsPage() {
             onChange={(e) => setEmail(e.target.value)}
             placeholder="name@company.com"
             autoFocus
+          />
+        </Field>
+        <Field
+          label="Mobile number"
+          required
+          hint="Ten digits. Shown beside their name on the steps they do."
+          error={phone.trim() && !phoneValid ? 'Enter a 10-digit mobile number, starting with 6, 7, 8 or 9' : undefined}
+        >
+          <input
+            type="tel"
+            inputMode="numeric"
+            maxLength={16}
+            value={phone}
+            onChange={(e) => setPhone(e.target.value.replace(/[^\d+\s-]/g, ''))}
+            placeholder="e.g. 98480 12345"
           />
         </Field>
         <Field label="Role" required hint="What they can see and do once signed in. You can change it later.">

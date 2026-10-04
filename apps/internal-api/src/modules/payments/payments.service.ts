@@ -606,13 +606,20 @@ export class PaymentsService {
   }
 
   private async advanceUnmet(tripId: string): Promise<UnmetItem[]> {
-    const [docSet, docs] = await Promise.all([this.advanceDocumentSet(), this.paymentsRepository.findDocuments(tripId)]);
+    const [docSet, docs, lrCode] = await Promise.all([
+      this.advanceDocumentSet(),
+      this.paymentsRepository.findDocuments(tripId),
+      this.paymentsRepository.findIssuedLrCode(tripId),
+    ]);
     const byKind = new Map(docs.map((d) => [d.kind, d.status]));
     const unmet: UnmetItem[] = [];
     for (const kind of docSet) {
       const status = byKind.get(kind);
       const label = DOC_LABEL[kind] ?? kind;
       if (status === 'VERIFIED') continue;
+      // An issued E-LR stands in for the loading slip — it is the system's own
+      // record of the same packages and weight.
+      if (kind === 'LOADING_SLIP' && lrCode) continue;
       if (!status) unmet.push({ key: kind, label: `${label} not uploaded`, state: 'MISSING' });
       else if (status === 'REJECTED') unmet.push({ key: kind, label: `${label} rejected`, state: 'REJECTED' });
       else unmet.push({ key: kind, label: `${label} uploaded but not verified`, state: 'UNVERIFIED' });
@@ -621,11 +628,21 @@ export class PaymentsService {
   }
 
   private async advanceCleared(tripId: string) {
-    const [docSet, docs] = await Promise.all([this.advanceDocumentSet(), this.paymentsRepository.findDocuments(tripId)]);
+    const [docSet, docs, lrCode] = await Promise.all([
+      this.advanceDocumentSet(),
+      this.paymentsRepository.findDocuments(tripId),
+      this.paymentsRepository.findIssuedLrCode(tripId),
+    ]);
     const byKind = new Map(docs.map((d) => [d.kind, d.status]));
     return docSet
-      .filter((kind) => byKind.get(kind) === 'VERIFIED')
-      .map((kind) => ({ key: kind, label: DOC_LABEL[kind] ?? kind }));
+      .filter((kind) => byKind.get(kind) === 'VERIFIED' || (kind === 'LOADING_SLIP' && !!lrCode))
+      .map((kind) => ({
+        key: kind,
+        label:
+          kind === 'LOADING_SLIP' && byKind.get(kind) !== 'VERIFIED'
+            ? `${DOC_LABEL[kind] ?? kind} — covered by E-LR ${lrCode}`
+            : (DOC_LABEL[kind] ?? kind),
+      }));
   }
 
   /**

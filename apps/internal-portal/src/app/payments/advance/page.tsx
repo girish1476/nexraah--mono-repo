@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { errorMessage } from '@/apis';
 import { AdvancePanel } from '@/components/advance-panel';
 import { inr } from '@/lib/format';
+import { useLiveRefresh } from '@/lib/live';
 import { downloadCsv, todayStamp } from '@/lib/export-csv';
 import { activeFilterCount, emptyFilters, FilterBar, FilterField, FilterValues, matchesAny } from '@/lib/list-filters';
 import {
@@ -66,6 +67,7 @@ export default function AdvanceQueuePage() {
     listAdvanceQueue().then(setRows).catch((e) => setError(errorMessage(e)));
   };
   useEffect(load, []);
+  useLiveRefresh(() => listAdvanceQueue().then(setRows));
 
   const columns: Column<AdvanceQueueRow>[] = [
     { key: 'trip', label: 'Trip number', mono: true, render: (r) => r.tripCode },

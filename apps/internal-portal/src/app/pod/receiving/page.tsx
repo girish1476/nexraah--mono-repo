@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { errorMessage } from '@/apis';
 import { POD_STATUS_LABEL, POD_TONE } from '@/lib/documents';
 import { fmtDate, inr } from '@/lib/format';
+import { useLiveRefresh } from '@/lib/live';
 import { downloadCsv, todayStamp } from '@/lib/export-csv';
 import { activeFilterCount, emptyFilters, FilterBar, FilterField, FilterValues, matchesAny } from '@/lib/list-filters';
 import {
@@ -103,6 +104,7 @@ export default function PodReceivingPage() {
     getReceiving().then(setData).catch((e) => setError(errorMessage(e)));
   };
   useEffect(load, []);
+  useLiveRefresh(() => getReceiving().then(setData));
 
   const submit = async () => {
     if (!logging) return;

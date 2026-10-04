@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { errorMessage } from '@/apis';
 import { fmtDate, inr } from '@/lib/format';
+import { useLiveRefresh } from '@/lib/live';
 import { downloadCsv, todayStamp } from '@/lib/export-csv';
 import { activeFilterCount, emptyFilters, FilterBar, FilterField, FilterValues, matchesAny } from '@/lib/list-filters';
 import {
@@ -78,6 +79,8 @@ export default function IndentsPage() {
       .catch((e) => setError(errorMessage(e)));
   };
   useEffect(load, [stage]);
+  // Not `load` itself: that blanks the list first, which would flash a skeleton every 30 seconds.
+  useLiveRefresh(() => listIndents({ stage: stage || undefined }).then(setRows));
 
   const visible = useMemo(
     () =>

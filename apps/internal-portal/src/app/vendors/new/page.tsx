@@ -353,24 +353,16 @@ export default function VendorWizardPage() {
     return id;
   };
 
-  const captureKyc = async (
-    kind: string,
-    value: string,
-    file: File,
-    geo?: { latitude: number; longitude: number },
-  ) => {
+  const captureKyc = async (kind: string, value: string, file: File) => {
     if (!vendorId) return;
     try {
-      const attachmentId = await attach(file, {
-        kind,
-        entityType: 'vendor',
-        entityId: vendorId,
-        latitude: geo?.latitude,
-        longitude: geo?.longitude,
-      });
+      // No browser location is sent with the yard photo: it would only say
+      // where the person uploading was sitting. The time and place are the
+      // stamp printed on the photo, and Compliance checks that.
+      const attachmentId = await attach(file, { kind, entityType: 'vendor', entityId: vendorId });
       await submitKyc(vendorId, kind, { value, route: 'MANUAL', attachmentId });
       setKycDone((d) => ({ ...d, [kind]: true }));
-      toast(`${kind} captured · queued for compliance`);
+      toast(`${kind === 'SELFIE' ? 'Yard photo' : kind} uploaded · waiting for Compliance to verify`);
     } catch (e) {
       toast(errorMessage(e));
     }
@@ -534,8 +526,10 @@ export default function VendorWizardPage() {
         {step === 1 && (
           <Panel title="2 · Identity and legal file">
             <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }}>
-              The geo-stamped selfie is our executive standing with the transporter at their yard — captured here
-              by an internal user, never by the transporter. Aadhaar is stored as the last four digits only.
+              The yard photo is our executive standing with the transporter at their yard, taken with a GPS camera
+              app so the date, time and address are printed on it. Upload that photo here — the console does not
+              read your location; Compliance verifies the stamp on the photo. Aadhaar is stored as the last four
+              digits only.
             </p>
             <div style={{ display: 'grid', gap: 10 }}>
               {VENDOR_KYC_KINDS.map((k) => (
@@ -550,9 +544,8 @@ export default function VendorWizardPage() {
                   needsReference={k.needsReference !== false}
                   normalize={KYC_NORMALIZE[k.kind]}
                   validate={KYC_VALIDATE[k.kind]}
-                  useCamera={k.kind === 'SELFIE'}
-                  requireGeotag={k.kind === 'SELFIE'}
-                  onCapture={(value, file, geo) => captureKyc(k.kind, value, file, geo)}
+                  imageOnly={k.kind === 'SELFIE'}
+                  onCapture={(value, file) => captureKyc(k.kind, value, file)}
                 />
               ))}
               <GovCertRow
@@ -723,19 +716,18 @@ function CaptureRow({
   onCapture,
   normalize,
   validate,
-  useCamera = false,
-  requireGeotag = false,
+  imageOnly = false,
   needsReference = true,
 }: {
   label: string;
   note?: string;
   placeholder: string;
   done: boolean;
-  onCapture: (value: string, file: File, geo?: { latitude: number; longitude: number }) => void | Promise<void>;
+  onCapture: (value: string, file: File) => void | Promise<void>;
   normalize?: (value: string) => string;
   validate?: (value: string) => string | undefined;
-  useCamera?: boolean;
-  requireGeotag?: boolean;
+  /** A photo, not a PDF. Picked from the gallery, so a stamped photo from a GPS camera app can be chosen. */
+  imageOnly?: boolean;
   /** `false` — document upload only, no typed reference/number field. */
   needsReference?: boolean;
 }) {
@@ -752,26 +744,11 @@ function CaptureRow({
 
   const canCapture = needsReference ? !!value.trim() && !error && !!file : !!file;
 
-  /** Best-effort — a denied or unsupported geolocation prompt never blocks the capture. */
-  const captureGeo = () =>
-    new Promise<{ latitude: number; longitude: number } | undefined>((resolve) => {
-      if (typeof navigator === 'undefined' || !navigator.geolocation) {
-        resolve(undefined);
-        return;
-      }
-      navigator.geolocation.getCurrentPosition(
-        (pos) => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
-        () => resolve(undefined),
-        { timeout: 8000 },
-      );
-    });
-
   const handleCapture = async () => {
     if (!canCapture || !file || busy) return;
     setBusy(true);
     try {
-      const geo = requireGeotag ? await captureGeo() : undefined;
-      await onCapture(needsReference ? value.trim() : '', file, geo);
+      await onCapture(needsReference ? value.trim() : '', file);
     } finally {
       setBusy(false);
     }
@@ -808,8 +785,7 @@ function CaptureRow({
       {!done && (
         <input
           type="file"
-          accept={useCamera ? 'image/*' : 'image/*,application/pdf'}
-          capture={useCamera ? 'environment' : undefined}
+          accept={imageOnly ? 'image/*' : 'image/*,application/pdf'}
           style={{ flex: '0 1 180px', fontSize: 11.5 }}
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
           disabled={busy}
@@ -817,7 +793,7 @@ function CaptureRow({
       )}
       {error && needsReference && <span style={{ fontSize: 11.5, color: 'var(--red)' }}>{error}</span>}
       {done ? (
-        <Tag tone="mint">Captured</Tag>
+        <Tag tone="flag">Uploaded · waiting for Compliance</Tag>
       ) : (
         <button className="btn btn-secondary btn-sm" disabled={!canCapture || busy} onClick={handleCapture}>
           {busy ? 'Capturing…' : 'Capture'}
@@ -894,7 +870,7 @@ function GovCertRow({
         />
       )}
       {done ? (
-        <Tag tone="mint">Captured</Tag>
+        <Tag tone="flag">Uploaded · waiting for Compliance</Tag>
       ) : (
         <button className="btn btn-secondary btn-sm" disabled={!canCapture || busy} onClick={handleCapture}>
           {busy ? 'Capturing…' : 'Capture'}

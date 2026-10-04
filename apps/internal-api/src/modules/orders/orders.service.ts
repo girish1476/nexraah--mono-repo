@@ -193,7 +193,28 @@ export class OrdersService {
       (await this.repo.getByIndentId(ref)) ??
       (await this.repo.getByIndentCode(ref));
     if (!order) throw new NotFoundException('Order not found');
-    const [events, comments] = await Promise.all([this.repo.events(order.id), this.repo.comments(order.id)]);
+    const [events, comments, allocation, podKind] = await Promise.all([
+      this.repo.events(order.id),
+      this.repo.comments(order.id),
+      this.repo.vehicleAllocation(order.indentId),
+      order.tripId ? this.repo.podKind(order.tripId) : null,
+    ]);
+    // Who did the steps the order's activity list names, with their phone.
+    const stepActor = (status: string, pick: 'first' | 'last') => {
+      const hits = events.filter((e) => e.status === status);
+      const e = pick === 'first' ? hits[0] : hits[hits.length - 1];
+      return e ? { at: e.at, byName: e.actorName ?? null, byPhone: e.actorPhone ?? null } : null;
+    };
+    const activity = {
+      booked: stepActor('INDENT_CREATED', 'first'),
+      vehicleAllocated:
+        allocation && order.vehicleNo
+          ? { at: allocation.at, byName: allocation.byName ?? null, byPhone: allocation.byPhone ?? null }
+          : null,
+      podUploaded: stepActor('POD_UPLOADED', 'last'),
+      podVerified: stepActor('POD_VERIFIED', 'last'),
+      podKind,
+    };
 
     // Margin is the one figure here that is not simply "what was on the
     // records": it follows the Profit and loss rule for who may see it —
@@ -280,6 +301,7 @@ export class OrdersService {
       payments,
       events,
       comments,
+      activity,
     };
   }
 

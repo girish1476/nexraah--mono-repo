@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useAtomValue } from 'jotai';
 import { errorMessage } from '@/apis';
 import { fmtDateTime, inr } from '@/lib/format';
+import { useLiveRefresh } from '@/lib/live';
 import { permissionsAtom, roleAtom } from '@/store/atoms';
 import {
   Dialog,
@@ -71,6 +72,7 @@ export default function ApprovalsPage() {
       .catch((e) => setError(errorMessage(e)));
   };
   useEffect(load, []);
+  useLiveRefresh(() => listApprovals({ status: 'PENDING' }).then(setRows));
 
   const mine = (rows ?? []).filter((r) => permissions.includes(r.requiredPermission));
 

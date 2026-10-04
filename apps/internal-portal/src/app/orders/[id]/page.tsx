@@ -6,13 +6,10 @@ import { useParams } from 'next/navigation';
 import { errorMessage } from '@/apis';
 import { AdvancePanel } from '@/components/advance-panel';
 import { BalancePanel } from '@/components/balance-panel';
-import { getTracking, getTripDocuments } from '@/app/trips/apis';
-import type { TrackingSheet, TripDocument } from '@/app/trips/types';
-import { docLabel } from '@/lib/documents';
+import { getTrip, getTripDocuments } from '@/app/trips/apis';
+import type { TripDocument } from '@/app/trips/types';
 import { fmtDate, fmtDateTime, inr } from '@/lib/format';
 import {
-  Column,
-  DataTable,
   EmptyState,
   ErrorState,
   FactList,
@@ -25,15 +22,18 @@ import {
   Split,
   Stack,
   Tag,
+  useCan,
 } from '@/lib/ui';
 import { getOrder } from '../apis';
+import { OrderActivityList } from './activity-list';
+import { CorrectVehicleButton } from './correct-vehicle';
 import { ORDER_STATUS_LABEL, ORDER_STATUS_TONE, OrderDetail } from '../types';
 import { OrderCommentsButton } from './comments-button';
 import { OrderDocumentsTab } from './documents-tab';
 import { OrderInvoiceTab } from './invoice-tab';
 import { OrderMoney } from './order-money';
 import { OrderNextStep, type OrderTabTarget } from './next-step';
-import { KIND_LABEL as TRACKING_KIND_LABEL, OrderTrackingTab } from './tracking-tab';
+import { OrderTrackingTab } from './tracking-tab';
 
 type OrderTab = 'details' | 'documents' | 'tracking';
 
@@ -47,12 +47,15 @@ const TABS: { key: OrderTab; label: string; emoji: string }[] = [
  *  rather than "done", the same way `JourneyMini` on the orders list does. */
 const STUCK_STATUSES: OrderDetail['status'][] = ['FAILED', 'POD_FORFEITED'];
 
-const DOC_STATE: Record<string, { tone: 'mint' | 'flag' | 'red' | 'grey'; label: string }> = {
-  MISSING: { tone: 'grey', label: 'Not uploaded' },
-  PENDING: { tone: 'flag', label: 'Waiting for check' },
-  VERIFIED: { tone: 'mint', label: 'Verified' },
-  REJECTED: { tone: 'red', label: 'Rejected' },
-};
+/** The steps before unloading — while a mistyped truck number can still be corrected. */
+const VEHICLE_CORRECTABLE: OrderDetail['status'][] = [
+  'INDENT_CREATED',
+  'TRIP_GENERATED',
+  'LR_ISSUED',
+  'ADVANCE_DOCS_UPLOADED',
+  'ADVANCE_PAID',
+  'TRACKING',
+];
 
 /**
  * `/orders/[id]` — the whole lifecycle of one order, one screen, one URL.
@@ -77,12 +80,30 @@ export default function OrderDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<OrderTab>('details');
   const [lrCode, setLrCode] = useState<string | null>(null);
+  const [slipLrNo, setSlipLrNo] = useState<string | null>(null);
+  const can = useCan();
 
   const load = () => {
     setError(null);
     getOrder(id).then(setOrder).catch((e) => setError(errorMessage(e)));
   };
   useEffect(load, [id]);
+
+  // The LR this order goes by: the E-LR when one is issued, else the number
+  // typed off the loading slip. Read again whenever the order is reloaded.
+  const tripId = order?.tripId;
+  useEffect(() => {
+    if (!tripId) return;
+    getTrip(tripId)
+      .then((t) => setLrCode(t.lr?.code ?? null))
+      .catch(() => undefined);
+    getTripDocuments(tripId)
+      .then((docs) => {
+        const raw = docs.find((d) => d.kind === 'LOADING_SLIP')?.keyedValues?.lrNo;
+        setSlipLrNo(raw ? String(raw) : null);
+      })
+      .catch(() => undefined);
+  }, [tripId, order]);
 
   const openTab = (target: OrderTabTarget | OrderTab) => {
     setTab(target);
@@ -96,9 +117,6 @@ export default function OrderDetailPage() {
     <ModuleGuard module="orders">
       <PageHeader
         title={order.indentCode}
-        sub={`${order.clientName} · ${order.lane}${order.tripCode ? ` · trip ${order.tripCode}` : ''}${
-          order.vehicleNo ? ` · 🚛 ${order.vehicleNo}` : ''
-        }`}
         module="orders"
         right={
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
@@ -112,7 +130,7 @@ export default function OrderDetailPage() {
         who="Every desk can open this. Operations moves the load forward; Compliance checks the documents; Finance releases the payments."
       />
 
-      {/* The record IDs one order is known by, who it's for, and where it's going. */}
+      {/* The record IDs one order is known by, who it's for, and where it's going — said here once, not also under the title. */}
       <div className="record-status" style={{ marginBottom: 20 }}>
         <div>
           <div className="eyebrow">Indent</div>
@@ -130,7 +148,13 @@ export default function OrderDetailPage() {
           <div>
             <div className="eyebrow">LR</div>
             <div className="record-status-value">
-              {lrCode ? <Link href={`/trips/${order.tripId}/lr`}>{lrCode}</Link> : <span className="muted">Not issued</span>}
+              {lrCode ? (
+                <Link href={`/trips/${order.tripId}/lr`}>{lrCode}</Link>
+              ) : slipLrNo ? (
+                <span className="mono">{slipLrNo}</span>
+              ) : (
+                <span className="muted">Not issued</span>
+              )}
             </div>
           </div>
         )}
@@ -139,9 +163,15 @@ export default function OrderDetailPage() {
           <div className="eyebrow">Truck</div>
           <div className="record-status-value">
             {order.vehicleNo ? (
-              <span className="mono" style={{ letterSpacing: '0.02em' }}>
-                {order.vehicleNo}
-              </span>
+              <>
+                <span className="mono" style={{ letterSpacing: '0.02em' }}>
+                  {order.vehicleNo}
+                </span>
+                {/* A mistyped number can be put right until the truck is unloaded. */}
+                {can('indent.manage') && VEHICLE_CORRECTABLE.includes(order.status) && (
+                  <CorrectVehicleButton indentId={order.indentId} vehicleNo={order.vehicleNo} onCorrected={load} />
+                )}
+              </>
             ) : (
               <span className="muted">Not allocated</span>
             )}
@@ -204,7 +234,7 @@ export default function OrderDetailPage() {
 
       {tab === 'tracking' &&
         (order.tripId ? (
-          <OrderTrackingTab tripId={order.tripId} onChanged={load} openDocuments={() => openTab('documents')} />
+          <OrderTrackingTab tripId={order.tripId} status={order.status} onChanged={load} openDocuments={() => openTab('documents')} />
         ) : (
           <EmptyState
             title="Tracking starts once a vehicle is allocated"
@@ -246,34 +276,45 @@ function DetailsTab({
           )
         }
       >
-        <Panel title="📦 Order" pad={false}>
-          <FactList
-            facts={[
-              ['Client', order.clientName],
-              ['Material', order.material],
-              ['Weight', `${order.weightTn} MT`],
-              ['Truck type', order.truckType],
-              ['Pickup date', fmtDate(order.pickupDate)],
-              ['Branch', order.branchName],
-              ['Freight (sell)', inr(order.sellRatePaise)],
-              ['Freight (buy)', order.buyRatePaise !== null ? inr(order.buyRatePaise) : 'not awarded yet'],
-            ]}
-          />
-        </Panel>
+        {/* Side by side; one under the other when the page is too narrow for both. */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+            gap: 16,
+            alignItems: 'start',
+          }}
+        >
+          <Panel title="📦 Order" pad={false}>
+            <FactList
+              facts={[
+                ['Client', order.clientName],
+                ['Material', order.material],
+                ['Weight', `${order.weightTn} MT`],
+                ['Truck type', order.truckType],
+                ['Pickup date', fmtDate(order.pickupDate)],
+                ['Branch', order.branchName],
+                ['Freight (sell)', inr(order.sellRatePaise)],
+                ['Freight (buy)', order.buyRatePaise !== null ? inr(order.buyRatePaise) : 'not awarded yet'],
+              ]}
+            />
+          </Panel>
 
-        <Panel title="📍 From and to" pad={false}>
-          <FactList
-            facts={[
-              ['From', order.fromCity],
-              ['Loading address', order.pickupAddress || <span className="muted">Not given on the load request</span>],
-              ['To', order.toCity],
-              ['Unloading address', order.dropAddress || <span className="muted">Not given on the load request</span>],
-            ]}
-          />
-        </Panel>
+          <Panel title="📍 From and to" pad={false}>
+            <FactList
+              facts={[
+                ['From', order.fromCity],
+                ['Loading address', order.pickupAddress || <span className="muted">Not given on the load request</span>],
+                ['To', order.toCity],
+                ['Unloading address', order.dropAddress || <span className="muted">Not given on the load request</span>],
+              ]}
+            />
+          </Panel>
+        </div>
 
         <Panel title="🚛 Transporter and vehicle" pad={false}>
           <FactList
+            inline
             facts={[
               ['Transporter', order.vendorName ?? <span className="muted">Not awarded yet</span>],
               ['Transporter code', order.vendorCode ?? '—'],
@@ -284,8 +325,6 @@ function DetailsTab({
             ]}
           />
         </Panel>
-
-        {order.tripId && <TrackingSummary tripId={order.tripId} status={order.status} openTracking={() => openTab('tracking')} />}
 
         {order.tripId && <DocumentStatus tripId={order.tripId} openDocuments={() => openTab('documents')} />}
 
@@ -329,93 +368,32 @@ function DetailsTab({
             ))}
           </Stack>
         </Panel>
+
+        <OrderActivityList order={order} />
       </Split>
     </>
   );
 }
 
-/** The latest line of the tracking sheet and the milestones reached, on Details. */
-function TrackingSummary({ tripId, status, openTracking }: { tripId: string; status: string; openTracking: () => void }) {
-  const [sheet, setSheet] = useState<TrackingSheet | null>(null);
-  useEffect(() => {
-    getTracking(tripId).then(setSheet).catch(() => setSheet(null));
-  }, [tripId, status]);
-  const latest = sheet ? [...sheet.updates].reverse()[0] : undefined;
-  // The last few lines of the sheet, newest first, with who made each.
-  const recent = sheet ? [...sheet.updates].reverse().slice(0, 5) : [];
-  return (
-    <Panel
-      title="📍 Vehicle tracking"
-      right={
-        <button className="btn btn-secondary btn-sm" onClick={openTracking}>
-          Open Tracking
-        </button>
-      }
-      pad={false}
-    >
-      <FactList
-        facts={[
-          ['Reached loading point', sheet?.reachedLoadingAt ? fmtDateTime(sheet.reachedLoadingAt) : '—'],
-          ['Loaded', sheet?.loadedAt ? fmtDateTime(sheet.loadedAt) : '—'],
-          ['On the road since', sheet?.departedAt ? fmtDateTime(sheet.departedAt) : '—'],
-          ['Reached unloading point', sheet?.reachedDestinationAt ? fmtDateTime(sheet.reachedDestinationAt) : '—'],
-          ['Unloaded', sheet?.deliveredAt ? fmtDateTime(sheet.deliveredAt) : '—'],
-          [
-            'Last update',
-            latest ? `${latest.location} · ${fmtDateTime(latest.recordedAt)}${latest.note ? ` · ${latest.note}` : ''}` : 'Nothing yet',
-          ],
-          ['Last updated by', latest?.recordedByName ?? '—'],
-        ]}
-      />
-      {recent.length > 0 && (
-        <div style={{ padding: '0 var(--space-4) var(--space-3)' }}>
-          <div className="muted" style={{ fontSize: 'var(--text-sm)', fontWeight: 600, margin: 'var(--space-2) 0' }}>
-            Tracking updated by
-          </div>
-          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 'var(--text-sm)', display: 'grid', gap: 4 }}>
-            {recent.map((u) => (
-              <li key={u.id}>
-                {TRACKING_KIND_LABEL[u.kind] ?? u.kind}
-                {u.location ? ` · ${u.location}` : ''} — <strong>{u.recordedByName ?? 'automatic'}</strong>
-                <span className="muted"> · {fmtDateTime(u.recordedAt)}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </Panel>
-  );
-}
-
-/** Which documents are uploaded, and who checked them — the record, kept off the Documents tab. */
+/** Who uploaded the advance documents, and who checked them — the record, kept off the Documents tab. */
 function DocumentStatus({ tripId, openDocuments }: { tripId: string; openDocuments: () => void }) {
   const [docs, setDocs] = useState<TripDocument[] | null>(null);
   useEffect(() => {
     getTripDocuments(tripId).then(setDocs).catch(() => setDocs([]));
   }, [tripId]);
-  const rows = (docs ?? []).filter((d) => d.kind !== 'POD');
-  const columns: Column<TripDocument>[] = [
-    { key: 'doc', label: 'Document', render: (r) => r.label || docLabel(r.kind) },
-    {
-      key: 'up',
-      label: 'Uploaded by',
-      render: (r) =>
-        r.uploadedAt ? `${r.uploadedBy ?? '—'} · ${fmtDateTime(r.uploadedAt)}` : <span className="muted">Not uploaded</span>,
-    },
-    {
-      key: 'ver',
-      label: 'Verified by',
-      render: (r) => (r.verifiedBy ? `${r.verifiedBy} · ${fmtDateTime(r.verifiedAt)}` : <span className="muted">—</span>),
-    },
-    {
-      key: 'state',
-      label: 'State',
-      render: (r) => <Tag tone={DOC_STATE[r.status]?.tone ?? 'grey'}>{DOC_STATE[r.status]?.label ?? r.status}</Tag>,
-    },
-  ];
+  const advance = (docs ?? []).filter((d) => d.gatesAdvance);
+  // One line for the whole set: everyone who did it, and when the last one was done.
+  const summary = (by: (d: TripDocument) => string | null | undefined, at: (d: TripDocument) => string | null) => {
+    const done = advance.filter((d) => at(d));
+    if (done.length === 0) return '—';
+    const names = [...new Set(done.map((d) => by(d) ?? '—'))].join(', ');
+    const last = done.map((d) => at(d) as string).sort().pop() as string;
+    const count = done.length < advance.length ? ` · ${done.length} of ${advance.length}` : '';
+    return `${names} · ${fmtDateTime(last)}${count}`;
+  };
   return (
     <Panel
-      title="📎 Documents — uploaded and verified"
+      title="📎 Advance documents"
       right={
         <button className="btn btn-secondary btn-sm" onClick={openDocuments}>
           Open Documents
@@ -423,7 +401,16 @@ function DocumentStatus({ tripId, openDocuments }: { tripId: string; openDocumen
       }
       pad={false}
     >
-      {docs === null ? <Loading what="Loading documents" /> : <DataTable columns={columns} rows={rows} rowKey={(r) => r.kind} />}
+      {docs === null ? (
+        <Loading what="Loading documents" />
+      ) : (
+        <FactList
+          facts={[
+            ['Advance documents uploaded by', summary((d) => d.uploadedBy, (d) => d.uploadedAt)],
+            ['Advance documents verified by', summary((d) => d.verifiedBy, (d) => d.verifiedAt)],
+          ]}
+        />
+      )}
     </Panel>
   );
 }

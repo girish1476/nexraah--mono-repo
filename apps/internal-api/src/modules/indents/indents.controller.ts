@@ -8,6 +8,7 @@ import { IndentsService } from './indents.service';
 import { CreateIndentDto } from './dto/create-indent.dto';
 import { AwardIndentDto } from './dto/award-indent.dto';
 import { PlacementDto } from './dto/placement.dto';
+import { CorrectVehicleDto } from './dto/correct-vehicle.dto';
 import { AdvancePctDto } from './dto/advance-pct.dto';
 import { RecordQuoteDto } from './dto/record-quote.dto';
 import { CancelIndentDto } from './dto/cancel-indent.dto';
@@ -77,6 +78,13 @@ export class IndentsController {
   @RequirePermission('indent.manage')
   placement(@Param('id') id: string, @Body() dto: PlacementDto, @CurrentUser() user: AuthenticatedUser) {
     return this.indentsService.placement(id, dto, user);
+  }
+
+  // A mistyped truck number put right — the same truck, not a different one.
+  @Post(':id/vehicle-correction')
+  @RequirePermission('indent.manage')
+  correctVehicle(@Param('id') id: string, @Body() dto: CorrectVehicleDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.indentsService.correctVehicle(id, dto, user);
   }
 
   @Post(':id/trip')

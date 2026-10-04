@@ -69,6 +69,8 @@ export default function EditInvoicePage() {
     detentionRupees: 0,
     otherRupees: 0,
     notes: '',
+    sacCode: '',
+    details: '',
   });
   const [extraRows, setExtraRows] = useState<ExtraChargeRow[]>([]);
 
@@ -86,6 +88,9 @@ export default function EditInvoicePage() {
           detentionRupees: inv.detentionPaise / 100,
           otherRupees: inv.otherPaise / 100,
           notes: inv.notes,
+          // The box opens on the code the invoice prints today — its own, or the company's.
+          sacCode: inv.sacCode || inv.company.sac,
+          details: inv.details ?? '',
         });
         setExtraRows(toExtraChargeRows(inv.extraCharges));
       })
@@ -174,9 +179,16 @@ export default function EditInvoicePage() {
     isDraft &&
     (chosen.length !== invoice.tripIds.length || chosen.some((t) => !invoice.tripIds.includes(t.id)));
 
+  const sacCode = form.sacCode.trim();
+  const sacProblem = sacCode && !/^\d{4,8}$/.test(sacCode) ? 'A SAC code is 4 to 8 digits.' : undefined;
+
   const submit = async () => {
     if (hasUnnamedExtraCharge(extraRows)) {
       toast('Give every added charge a name.');
+      return;
+    }
+    if (sacProblem) {
+      toast(sacProblem);
       return;
     }
     setBusy(true);
@@ -192,6 +204,10 @@ export default function EditInvoicePage() {
         otherPaise: form.otherRupees * 100,
         extraCharges: toExtraCharges(extraRows),
         notes: form.notes,
+        // The company's own code is not stored against the invoice — left at
+        // that, the invoice keeps following whatever Admin sets.
+        sacCode: sacCode === invoice.company.sac ? '' : sacCode,
+        details: form.details,
       });
       toast('Invoice updated');
       router.push(`/invoices/${id}`);
@@ -230,7 +246,11 @@ export default function EditInvoicePage() {
       <PageHeader
         path={`/invoices/${invoice.code ?? 'draft'}/edit`}
         title={invoice.code ? `Edit ${invoice.code}` : 'Edit draft'}
-        sub={isDraft ? 'Anything can change on a draft.' : 'Dates, charges and notes only — the consignments are locked once issued.'}
+        sub={
+          isDraft
+            ? 'Anything can change on a draft.'
+            : 'Dates, charges, notes, SAC code and details only — the consignments are locked once issued.'
+        }
         module="invoices"
       />
 
@@ -317,6 +337,31 @@ export default function EditInvoicePage() {
           <ExtraChargeFields rows={extraRows} onChange={setExtraRows} />
         </Panel>
 
+        <Panel title="Details">
+          <FormGrid>
+            <Field
+              label="SAC code"
+              hint={`${invoice.company.sac} is the full-truck-load code. Change it when this load is not FTL.`}
+              error={sacProblem}
+            >
+              <input
+                inputMode="numeric"
+                value={form.sacCode}
+                onChange={(e) => setForm({ ...form, sacCode: e.target.value })}
+                placeholder={invoice.company.sac}
+              />
+            </Field>
+            <Field label="Details" hint="Anything the invoice missed — a PO number, a reference. Printed on the invoice.">
+              <input
+                value={form.details}
+                maxLength={500}
+                onChange={(e) => setForm({ ...form, details: e.target.value })}
+                placeholder="e.g. PO 4500123456 dated 28 Sep 2026"
+              />
+            </Field>
+          </FormGrid>
+        </Panel>
+
         <Panel title="Total">
           <div style={{ display: 'grid', gap: 4, maxWidth: 380 }}>
             <Row label="Freight" value={inr(freightPaise)} />
@@ -349,7 +394,7 @@ export default function EditInvoicePage() {
             <button
               className="btn"
               onClick={submit}
-              disabled={busy || !clientId || (isDraft && chosen.length === 0)}
+              disabled={busy || !clientId || !!sacProblem || (isDraft && chosen.length === 0)}
             >
               Save changes
             </button>

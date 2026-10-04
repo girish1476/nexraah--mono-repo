@@ -5,12 +5,14 @@ import { DomainException } from '../../common/domain-exception';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
 import { AuditService } from '../audit/audit.service';
 import { INTERNAL_ROLES } from '../roles/roles.constants';
-import type { AllowEmailDto, UpdateAllowedEmailDto } from './dto/allow-email.dto';
+import { mobileOf, type AllowEmailDto, type UpdateAllowedEmailDto } from './dto/allow-email.dto';
 
 export interface AllowedEmail {
   id: string;
   email: string;
   name: string;
+  /** Ten digits. Null for someone added before the number was asked for. */
+  phone: string | null;
   role: string;
   branch: { id: string; code: string; name: string } | null;
   status: 'ACTIVE' | 'DISABLED';
@@ -62,10 +64,13 @@ export class UsersService {
       }
       const roleId = await this.roleId(trx, dto.role);
       await this.assertBranch(trx, dto.branchId);
+      const phone = dto.phone ? mobileOf(dto.phone) : null;
+      await this.assertPhoneFree(trx, phone, null);
       const inserted = await trx
         .insertInto('users')
         .values({
           email,
+          phone,
           name: dto.name?.trim() || email.split('@')[0],
           role_id: roleId,
           branch_id: dto.branchId ?? null,
@@ -95,9 +100,13 @@ export class UsersService {
     }
     return this.db.transaction().execute(async (trx) => {
       const before = await this.one(trx, id);
-      const patch: { role_id?: string; name?: string; branch_id?: string | null; status?: string } = {};
+      const patch: { role_id?: string; name?: string; phone?: string; branch_id?: string | null; status?: string } = {};
       if (dto.role) patch.role_id = await this.roleId(trx, dto.role);
       if (dto.name !== undefined) patch.name = dto.name.trim() || before.name;
+      if (dto.phone !== undefined) {
+        patch.phone = mobileOf(dto.phone);
+        await this.assertPhoneFree(trx, patch.phone, id);
+      }
       if (dto.branchId !== undefined) {
         await this.assertBranch(trx, dto.branchId ?? undefined);
         patch.branch_id = dto.branchId;
@@ -131,6 +140,7 @@ export class UsersService {
         'users.id as id',
         'users.email as email',
         'users.name as name',
+        'users.phone as phone',
         'users.status as status',
         'users.auth_user_id as authUserId',
         'users.created_at as createdAt',
@@ -158,6 +168,17 @@ export class UsersService {
     return row.id;
   }
 
+  /** One mobile number, one person — two people on one number is nearly always a typing slip. */
+  private async assertPhoneFree(db: DbExecutor, phone: string | null, exceptId: string | null): Promise<void> {
+    if (!phone) return;
+    let query = db.selectFrom('users').select(['id', 'email']).where('phone', '=', phone);
+    if (exceptId) query = query.where('id', '!=', exceptId);
+    const taken = await query.executeTakeFirst();
+    if (taken) {
+      throw new DomainException(409, 'PHONE_ALREADY_USED', `That mobile number is already on ${taken.email}.`);
+    }
+  }
+
   private async assertBranch(db: DbExecutor, branchId: string | undefined): Promise<void> {
     if (!branchId) return;
     const row = await db.selectFrom('branches').select('id').where('id', '=', branchId).executeTakeFirst();
@@ -169,6 +190,7 @@ function toAllowed(r: {
   id: string;
   email: string;
   name: string;
+  phone: string | null;
   status: string;
   authUserId: string | null;
   createdAt: string;
@@ -181,6 +203,7 @@ function toAllowed(r: {
     id: r.id,
     email: r.email,
     name: r.name,
+    phone: r.phone,
     role: r.role,
     branch: r.branchId ? { id: r.branchId, code: r.branchCode ?? '', name: r.branchName ?? '' } : null,
     status: r.status === 'DISABLED' ? 'DISABLED' : 'ACTIVE',

@@ -3,6 +3,7 @@ import { assertReason, DomainException } from '../../common/domain-exception';
 import type { ApprovalDto } from '../../common/approval-required.response';
 import { ApprovalRequiredResponse } from '../../common/approval-required.response';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
+import type { DbExecutor } from '../../db/kysely';
 import { AuditService } from '../audit/audit.service';
 import { ApprovalsRepository } from './approvals.repository';
 import { ApprovalsRegistry } from './approvals.registry';
@@ -178,6 +179,7 @@ export class ApprovalsService {
       }
       this.assertCanDecide(row.kind as ApprovalKind, actor);
 
+      await this.runRejection(trx, row, actor);
       const decided = await this.approvalsRepository.decide(trx, id, 'REJECTED', actor.userId, note);
       // NFR-03: the requester is notified — part 13's notification dispatch
       // (C10) owns delivery; this only records the fact for now.
@@ -213,6 +215,7 @@ export class ApprovalsService {
       if (row.status !== 'PENDING') {
         throw new DomainException(409, 'ALREADY_DECIDED', `That request is already ${row.status.toLowerCase()}.`);
       }
+      await this.runRejection(trx, row, actor);
       const decided = await this.approvalsRepository.decide(trx, id, 'REJECTED', actor.userId, note);
       await this.auditService.record(trx, actor, {
         action: 'APPROVAL_WITHDRAWN',
@@ -229,6 +232,25 @@ export class ApprovalsService {
    * a static `@RequirePermission(...)` on the controller route can't express
    * it — the check has to happen here, once the row's `kind` is known.
    */
+  /** The owning module's tidy-up for a turned-down request, when it registered one. Same transaction. */
+  private async runRejection(
+    trx: DbExecutor,
+    row: { id: string; kind: string; entity_type: string; entity_id: string; payload: unknown },
+    actor: AuthenticatedUser,
+  ): Promise<void> {
+    const handler = this.registry.getRejection(row.kind as ApprovalKind, row.entity_type);
+    if (!handler) return;
+    await handler((row.payload as ApprovalPayload).action, {
+      db: trx,
+      approvalId: row.id,
+      entityType: row.entity_type,
+      entityId: row.entity_id,
+      approverId: actor.userId,
+      approverName: actor.name,
+      approverRole: actor.role,
+    });
+  }
+
   private assertCanDecide(kind: ApprovalKind, actor: AuthenticatedUser): void {
     const required = REQUIRED_PERMISSION_BY_KIND[kind];
     if (actor.permissions.get(required) !== 'EDIT') {

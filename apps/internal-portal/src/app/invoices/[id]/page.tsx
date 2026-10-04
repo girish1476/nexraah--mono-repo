@@ -117,6 +117,15 @@ export default function InvoiceDetailPage() {
                 Cancel
               </button>
             )}
+            {/* The loads on a cancelled invoice are unbilled again — the client still owes for them. */}
+            {invoice.status === 'CANCELLED' && can('invoice.create') && (
+              <Link
+                href={`/invoices/new?client=${encodeURIComponent(invoice.clientId)}&trip=${encodeURIComponent((invoice.tripIds ?? []).join(','))}`}
+                className="btn"
+              >
+                Raise a new invoice
+              </Link>
+            )}
           </div>
         }
       />
@@ -158,7 +167,8 @@ export default function InvoiceDetailPage() {
       >
         {invoice.status === 'CANCELLED' && (
           <Banner tone="red" title="Cancelled">
-            {invoice.cancelReason}. The row and its number are kept — an invoice is never deleted.
+            {invoice.cancelReason}. The row and its number are kept — an invoice is never deleted. Its consignments
+            are unbilled again, so a corrected invoice can be raised for them.
           </Banner>
         )}
 

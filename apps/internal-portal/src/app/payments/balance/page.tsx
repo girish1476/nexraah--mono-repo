@@ -5,6 +5,7 @@ import { errorMessage } from '@/apis';
 import { BalancePanel } from '@/components/balance-panel';
 import { POD_STATUS_LABEL, POD_TONE } from '@/lib/documents';
 import { inr } from '@/lib/format';
+import { useLiveRefresh } from '@/lib/live';
 import { downloadCsv, todayStamp } from '@/lib/export-csv';
 import { activeFilterCount, emptyFilters, FilterBar, FilterField, FilterValues, matchesAny } from '@/lib/list-filters';
 import {
@@ -72,6 +73,7 @@ export default function BalanceQueuePage() {
     listBalanceQueue().then(setRows).catch((e) => setError(errorMessage(e)));
   };
   useEffect(load, []);
+  useLiveRefresh(() => listBalanceQueue().then(setRows));
 
   const columns: Column<BalanceQueueRow>[] = [
     { key: 'trip', label: 'Trip number', mono: true, render: (r) => r.tripCode },
