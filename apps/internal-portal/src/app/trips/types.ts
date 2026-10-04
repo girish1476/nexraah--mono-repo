@@ -26,6 +26,12 @@ export interface TripListRow {
   departedAt?: string | null;
   clientId?: string | null;
   indentId?: string | null;
+  /** On an invoice's loads only: the per-tonne rate when the client's lane is priced per tonne. */
+  ratePerTonnePaise?: number | null;
+  /** On an invoice's loads only: the weight loaded, from the loading slip or the E-LR. */
+  loadedWeightTn?: number | null;
+  /** On an invoice's loads only: the LR number typed off the loading slip, when no E-LR was issued. */
+  slipLrNo?: string | null;
 }
 
 export interface TripDocument {

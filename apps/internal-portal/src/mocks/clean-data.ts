@@ -71,6 +71,22 @@ export function applyCleanSlate(db: Record<string, any>): void {
       ]
     : [];
 
+  // ---- the company, as it is printed on the invoice -----------------------------
+  // The seeded company is a made-up one for the regression data. A clean start
+  // carries the real letterhead, so the first invoice raised prints correctly;
+  // Admin → Control panel still edits every line of it.
+  if (db.config?.company) {
+    db.config.company = {
+      ...db.config.company,
+      name: 'Nexus Freight Private Limited',
+      gstin: '37AAKCN9322K1ZY',
+      pan: 'AAKCN9322K',
+      cin: '',
+      address: '9-1-128, Ganesh Nagar, Revenue Ward 64, Gajuwaka, Visakhapatnam, Andhra Pradesh - 530026',
+      bank: 'Account No: 256303933846 · IFSC Code: INDB0000081',
+    };
+  }
+
   // ---- everything operational starts empty --------------------------------------
   for (const key of [
     'approvals',

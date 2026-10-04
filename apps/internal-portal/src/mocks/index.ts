@@ -1115,6 +1115,26 @@ function tripSummary(t: any) {
 }
 
 /**
+ * What the printed invoice says about a load beyond its freight: the per-tonne
+ * rate when the client's lane is priced per tonne, the weight loaded (off the
+ * loading slip, else the E-LR), and the LR number typed off the slip when no
+ * E-LR was issued.
+ */
+function invoiceTripFacts(t: any) {
+  const indent: any = db.indents.find((i: any) => i.code === t.indentCode);
+  const lane: any = indent
+    ? (db.rateCards[indent.clientId] ?? []).find((l: any) => l.id === indent.rateCardLaneId)
+    : null;
+  const slip = (t.documents ?? []).find((d: any) => d.kind === 'LOADING_SLIP')?.keyedValues ?? {};
+  const weight = Number(slip.loadedWeightTn || t.lr?.goods?.weightTn || 0);
+  return {
+    ratePerTonnePaise: lane?.rateBasis === 'PMT' ? (lane.ratePaise ?? null) : null,
+    loadedWeightTn: weight > 0 ? weight : null,
+    slipLrNo: slip.lrNo ? String(slip.lrNo) : null,
+  };
+}
+
+/**
  * The branch a signed-in user is scoped to, or null for someone who sees the
  * whole company. Scoping is a property of the *user* now, not of their role —
  * BRANCH_MGR is gone and Operations absorbed it, so the only thing that can
@@ -5394,7 +5414,10 @@ const routes: [string, RegExp, Handler][] = [
         ...invoice,
         company: db.config.company,
         client: db.clients.find((c) => c.id === invoice.clientId) ?? null,
-        trips: (invoice.tripIds ?? []).map((id: string) => db.trips.find((t) => t.id === id)).filter(Boolean).map(tripSummary),
+        trips: (invoice.tripIds ?? [])
+          .map((id: string) => db.trips.find((t) => t.id === id))
+          .filter(Boolean)
+          .map((t: any) => ({ ...tripSummary(t), ...invoiceTripFacts(t) })),
         receipts: db.receipts.filter((r) => r.invoiceId === invoice.id),
       });
     },

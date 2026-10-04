@@ -1,24 +1,40 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { CSSProperties, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { errorMessage } from '@/apis';
 import { getInvoice } from '@/app/invoices/apis';
 import { InvoiceDetail } from '@/app/invoices/types';
-import { Barcode } from '@/components/barcode';
-import { fmtDate, inr } from '@/lib/format';
+import {
+  INVOICE_BLUE,
+  INVOICE_BRAND,
+  INVOICE_EMAIL,
+  INVOICE_NAVY,
+  INVOICE_TAGLINE,
+  INVOICE_TERMS,
+  INVOICE_WEBSITE,
+  amount,
+  invoiceLines,
+  invoiceStatus,
+  invoiceTotals,
+  isoDay,
+  lrNumbers,
+  noteLines,
+} from '@/lib/invoice-layout';
 import { ErrorState, Loading } from '@/lib/ui';
 
 /**
  * Printed invoice — `/print/invoice/[invoiceId]` (part 08 §2.1).
  *
- * A single copy — this is the bill Finance sends to the client, not a
- * document that travels with the goods, so there's nothing for a second
- * party to countersign and keep. (The lorry receipt is the multi-copy,
- * multi-signature document — see `/print/lr/[tripId]`.) Carries the company
- * block, the charge table across the six heads, the reverse-charge
- * declaration, terms, a barcode of the invoice number and an
- * authorised-signature block. There is no tax line anywhere.
+ * A single copy — this is the bill Finance sends to the client. It is laid
+ * out as the company's own invoice is: the letterhead (logo, company name,
+ * brand line), INVOICE with its number and whether it is paid, who is billing
+ * whom, one table of items, the totals, how to pay, the reverse-charge note,
+ * terms, a signature line, and the footer band with the website and address.
+ *
+ * What it says comes from `lib/invoice-layout.ts`, shared with the downloaded
+ * PDF, so the two cannot disagree. No tax is charged on it: the Tax column is
+ * 0% and the note says the client pays GST under reverse charge.
  */
 export default function PrintInvoicePage() {
   const { invoiceId } = useParams<{ invoiceId: string }>();
@@ -39,25 +55,29 @@ export default function PrintInvoicePage() {
           Print
         </button>
         <span className="muted" style={{ fontSize: 12, alignSelf: 'center' }}>
-          A4
+          A4 · switch on “Background graphics” in the print dialog so the dark header row and footer print
         </span>
       </div>
 
-      <Copy invoice={invoice} />
+      <Sheet invoice={invoice} />
     </div>
   );
 }
 
-function Copy({ invoice }: { invoice: InvoiceDetail }) {
-  const heads: [string, number][] = [
-    ['Freight', invoice.freightPaise],
-    ['Loading', invoice.loadingPaise],
-    ['Unloading', invoice.unloadingPaise],
-    ['Detention', invoice.detentionPaise],
-    ['Other', invoice.otherPaise],
-    ...(invoice.extraCharges ?? []).map((c): [string, number] => [c.label, c.amountPaise]),
-    ...(invoice.discountPaise > 0 ? ([['Discount', -invoice.discountPaise]] as [string, number][]) : []),
-  ];
+const cell: CSSProperties = { padding: '9px 10px', verticalAlign: 'top' };
+const head: CSSProperties = { padding: '8px 10px', fontWeight: 400, color: '#fff' };
+
+function Sheet({ invoice }: { invoice: InvoiceDetail }) {
+  const { company } = invoice;
+  const status = invoiceStatus(invoice.status);
+  const lines = invoiceLines(invoice);
+  const totals = invoiceTotals(invoice);
+  const total = (label: string, paise: number, band: boolean) => (
+    <tr style={band ? { background: '#efefef' } : undefined}>
+      <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 700 }}>{label}</td>
+      <td style={{ padding: '6px 10px', textAlign: 'right', width: 130 }}>₹{amount(paise)}</td>
+    </tr>
+  );
 
   return (
     <div
@@ -65,184 +85,135 @@ function Copy({ invoice }: { invoice: InvoiceDetail }) {
       style={{
         maxWidth: 780,
         margin: '0 auto',
-        border: '1px solid #000',
-        padding: 16,
-        fontFamily: 'var(--font-body)',
-        position: 'relative',
-        overflow: 'hidden',
+        fontFamily: 'Arial, Helvetica, sans-serif',
+        fontSize: 12,
+        color: '#111',
+        // The header row and the footer band are backgrounds; without this a
+        // browser drops them on paper unless "Background graphics" is ticked.
+        WebkitPrintColorAdjust: 'exact',
+        printColorAdjust: 'exact',
       }}
     >
-      <Watermark />
-
-      {/* Everything below sits above the watermark by DOM order alone — a
-          static sibling always paints over an absolutely-positioned earlier
-          one in the same stacking context — but the explicit z-index makes
-          that not an accident anyone has to know to preserve. */}
-      <div style={{ position: 'relative', zIndex: 1 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '2px solid #000', paddingBottom: 10 }}>
-          <div>
-            <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 22 }}>{invoice.company.name}</div>
-            <div style={{ fontSize: 11 }}>{invoice.company.address}</div>
-            <div style={{ fontSize: 11 }}>
-              GSTIN {invoice.company.gstin} · PAN {invoice.company.pan} · CIN {invoice.company.cin}
-            </div>
-          </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 10, letterSpacing: '.14em', textTransform: 'uppercase' }}>Tax invoice</div>
-            <div className="mono" style={{ fontSize: 17 }}>
-              {invoice.code ?? 'DRAFT'}
-            </div>
-            <div style={{ fontSize: 11 }}>
-              Dated {fmtDate(invoice.invoiceDate)} · due {fmtDate(invoice.dueDate)}
-            </div>
-            {/* SAC — the GST service code for a goods transport agency's road
-                transport service (996511). A tax invoice for a service is
-                required to carry it, the same way a goods invoice carries an
-                HSN code. A load that is not a full truck load carries its own
-                code, set on the invoice's edit screen; otherwise the
-                company's. */}
-            <div style={{ fontSize: 11 }}>SAC {invoice.sacCode || invoice.company.sac}</div>
-            {invoice.code && (
-              <div style={{ marginTop: 4 }}>
-                <Barcode value={invoice.code} height={30} />
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div style={{ padding: '8px 0', borderBottom: '1px solid #000' }}>
-          <div style={{ fontSize: 9.5, letterSpacing: '.12em', textTransform: 'uppercase' }}>Billed to</div>
-          <div>{invoice.clientName}</div>
-          <div style={{ fontSize: 11 }}>
-            {invoice.client?.billingCity} · GSTIN {invoice.client?.gstin ?? '—'}
-          </div>
-        </div>
-
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, marginTop: 8 }}>
-          <thead>
-            <tr>
-              {['LR', 'Trip', 'Lane', 'Delivered', 'Freight'].map((h) => (
-                <th key={h} style={{ textAlign: 'left', borderBottom: '1px solid #000', padding: '5px 4px', fontSize: 10 }}>
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {invoice.trips.map((t) => (
-              <tr key={t.id}>
-                <td style={{ padding: '4px' }}>{t.lrCode ?? '—'}</td>
-                <td style={{ padding: '4px' }}>{t.code}</td>
-                <td style={{ padding: '4px' }}>{t.lane}</td>
-                <td style={{ padding: '4px' }}>{fmtDate(t.deliveredAt)}</td>
-                <td style={{ padding: '4px', textAlign: 'right' }}>{inr(t.sellRatePaise)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
-          <table style={{ fontSize: 11.5, minWidth: 260 }}>
-            <tbody>
-              {heads.map(([label2, value]) => (
-                <tr key={label2}>
-                  <td style={{ padding: '2px 8px' }}>{label2}</td>
-                  <td style={{ padding: '2px 8px', textAlign: 'right' }} className="mono">
-                    {inr(value)}
-                  </td>
-                </tr>
-              ))}
-              <tr>
-                <td style={{ padding: '2px 8px' }}>Round off</td>
-                <td style={{ padding: '2px 8px', textAlign: 'right' }} className="mono">
-                  {inr(invoice.roundOffPaise)}
-                </td>
-              </tr>
-              <tr>
-                <td style={{ padding: '4px 8px', borderTop: '1px solid #000', fontWeight: 700 }}>Total</td>
-                <td style={{ padding: '4px 8px', borderTop: '1px solid #000', textAlign: 'right', fontWeight: 700 }} className="mono">
-                  {inr(invoice.totalPaise)}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        {/* The free line from the edit screen — whatever the invoice would otherwise miss. */}
-        {invoice.details && (
-          <div style={{ marginTop: 10, fontSize: 10.5, whiteSpace: 'pre-wrap' }}>
-            <strong>Details.</strong> {invoice.details}
-          </div>
-        )}
-
-        <div style={{ border: '1px solid #000', padding: '6px 8px', marginTop: 10, fontSize: 10.5 }}>
-          <strong>GST PAYABLE BY RECIPIENT UNDER REVERSE CHARGE</strong>
-          <div>Section 9(3), CGST Act 2017. No tax has been charged on this invoice.</div>
-        </div>
-
-        <div style={{ fontSize: 9.5, marginTop: 8, lineHeight: 1.45 }}>
-          <strong>Terms.</strong> Payment is due within the agreed credit period from the invoice date. Interest may
-          be charged on overdue amounts. Any discrepancy must be notified in writing within seven days of receipt of
-          this invoice. Bank details: {invoice.company.bank}.
-        </div>
-
-        {/* "For {company}" above a blank space left for a pen signature, the
-            title below a rule under it — the standard layout for an Indian
-            tax invoice's signature block. The title (default "Authorised
-            Signatory") is `config.company.signatory`, editable from
-            `/admin` — added because it used to be fixed text with no field
-            behind it, so there was no way to name a specific signatory. */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 24 }}>
-          <div style={{ minWidth: 200, textAlign: 'center' }}>
-            <div style={{ fontSize: 10.5 }}>For {invoice.company.name}</div>
-            <div style={{ borderTop: '1px solid #000', marginTop: 34, paddingTop: 4, fontSize: 10 }}>
-              {invoice.company.signatory}
-            </div>
+      {/* ---- letterhead ---- */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 4px 18px' }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/nexraah-logo-print.png" alt={`${INVOICE_BRAND} logo`} style={{ height: 118, width: 'auto' }} />
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: 21, fontWeight: 700, color: INVOICE_NAVY, textTransform: 'uppercase' }}>{company.name}</div>
+          <div style={{ fontSize: 11, marginTop: 4 }}>
+            <strong style={{ color: INVOICE_BLUE }}>{INVOICE_BRAND}</strong>{' '}
+            <em style={{ color: '#333' }}>{INVOICE_TAGLINE}</em>
           </div>
         </div>
       </div>
-    </div>
-  );
-}
+      <div style={{ borderTop: `4px solid ${INVOICE_NAVY}` }} />
+      <div style={{ borderTop: `1px solid ${INVOICE_BLUE}`, marginTop: 14 }} />
 
-/**
- * A faint centred logo behind the whole sheet, so a page torn loose from its
- * other pages, or a photocopy of one, is still recognisably Nexraah's.
- *
- * `public/logo.png` is a solid navy square, not a logo cut out on
- * transparency — dropping it in at low opacity as-is would print as a pale
- * grey box, not a watermark. `invert(1)` flips it to a near-white square
- * with a dark mark, and `multiply` blended onto the sheet's own white
- * disappears that near-white square into the page while leaving the dark
- * mark as a faint tint — the standard way to fake a transparent watermark
- * from a logo that was only ever exported on its brand colour. `grayscale(1)`
- * runs first: without it, the logo's light-blue swoosh inverts to an orange
- * smudge rather than a neutral grey one, which reads as a printing fault
- * rather than a watermark — every other letterhead watermark on record is
- * monochrome for the same reason. It's a real rendered image, not a CSS
- * background, so it survives printing even with a browser's "background
- * graphics" print option left off — that setting only suppresses
- * `background-color`/`background-image`.
- */
-function Watermark() {
-  return (
-    <img
-      src="/logo.png"
-      alt=""
-      aria-hidden
-      style={{
-        position: 'absolute',
-        top: '50%',
-        left: '50%',
-        transform: 'translate(-50%, -50%)',
-        width: 360,
-        height: 360,
-        opacity: 0.07,
-        filter: 'grayscale(1) invert(1)',
-        mixBlendMode: 'multiply',
-        pointerEvents: 'none',
-        zIndex: 0,
-      }}
-    />
+      {/* ---- INVOICE, its number, and whether it is paid ---- */}
+      <div style={{ textAlign: 'right', padding: '18px 14px 0' }}>
+        <div style={{ fontSize: 24, fontWeight: 700, letterSpacing: '.02em' }}>INVOICE</div>
+        <div style={{ fontWeight: 700, fontSize: 11.5 }}># {invoice.code ?? 'DRAFT'}</div>
+        <div style={{ fontSize: 11.5, color: status.paid ? '#16803c' : '#e03a3a' }}>{status.label}</div>
+      </div>
+
+      {/* ---- who is billing whom ---- */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24, padding: '26px 14px 0', lineHeight: 1.45 }}>
+        <div style={{ maxWidth: '52%' }}>
+          <div style={{ fontWeight: 700 }}>{company.name}</div>
+          <div>{company.address}</div>
+          <div>GST Number: {company.gstin}</div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontWeight: 700 }}>Bill To:</div>
+          <div style={{ fontWeight: 700 }}>{invoice.clientName}</div>
+          {invoice.client?.billingCity && <div>{invoice.client.billingCity}</div>}
+          <div>GST Number: {invoice.client?.gstin ?? '—'}</div>
+          <div style={{ marginTop: 12 }}>Invoice Date: {isoDay(invoice.invoiceDate)}</div>
+          <div>Due Date: {isoDay(invoice.dueDate)}</div>
+          {/* A load that is not a full truck load carries its own SAC, set on the edit screen; otherwise the company's. */}
+          <div>SAC Code: {invoice.sacCode || company.sac}</div>
+          <div>LR Number: {lrNumbers(invoice)}</div>
+        </div>
+      </div>
+
+      {/* ---- the items ---- */}
+      <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 28 }}>
+        <thead>
+          <tr style={{ background: INVOICE_NAVY }}>
+            <th style={{ ...head, textAlign: 'left', width: 30 }}>#</th>
+            <th style={{ ...head, textAlign: 'left' }}>Item</th>
+            <th style={{ ...head, textAlign: 'center', width: 60 }}>Qty</th>
+            <th style={{ ...head, textAlign: 'right', width: 110 }}>Rate</th>
+            <th style={{ ...head, textAlign: 'center', width: 60 }}>Tax</th>
+            <th style={{ ...head, textAlign: 'right', width: 110 }}>Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lines.map((l, i) => (
+            <tr key={`${l.title}-${i}`}>
+              <td style={{ ...cell, fontWeight: 700 }}>{i + 1}</td>
+              <td style={cell}>
+                <div style={{ fontWeight: 700 }}>{l.title}</div>
+                {l.sub.map((s) => (
+                  <div key={s} style={{ fontSize: 11, color: '#333' }}>
+                    {s}
+                  </div>
+                ))}
+              </td>
+              <td style={{ ...cell, textAlign: 'center', fontWeight: 700 }}>{l.qty}</td>
+              <td style={{ ...cell, textAlign: 'right', fontWeight: 700 }}>{amount(l.amountPaise)}</td>
+              <td style={{ ...cell, textAlign: 'center', fontWeight: 700 }}>0%</td>
+              <td style={{ ...cell, textAlign: 'right', fontWeight: 700 }}>{amount(l.amountPaise)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {/* ---- totals ---- */}
+      <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 34 }}>
+        <tbody>
+          {total('Sub Total', totals.subTotalPaise, false)}
+          {totals.roundOffPaise !== 0 && total('Round Off', totals.roundOffPaise, false)}
+          {total('Total', totals.totalPaise, true)}
+          {totals.receivedPaise > 0 && total('Amount Received', totals.receivedPaise, false)}
+          {total('Amount Due', totals.duePaise, true)}
+        </tbody>
+      </table>
+
+      {/* ---- how to pay, the note, the terms ---- */}
+      <div style={{ padding: '28px 14px 0', lineHeight: 1.5 }}>
+        <div style={{ fontWeight: 700 }}>Offline Payment:</div>
+        <div>Bank Transfer</div>
+
+        <div style={{ fontWeight: 700, marginTop: 14 }}>Note:</div>
+        {noteLines(invoice).map((line, i) => (
+          <div key={i}>{line}</div>
+        ))}
+
+        <div style={{ fontWeight: 700, marginTop: 14 }}>Terms &amp; Conditions:</div>
+        <div>{INVOICE_TERMS}</div>
+
+        <div style={{ marginTop: 40 }}>Authorized Signature _________________________</div>
+      </div>
+
+      {/* ---- footer band ---- */}
+      <div
+        style={{
+          marginTop: 44,
+          background: INVOICE_NAVY,
+          borderTop: `3px solid ${INVOICE_BLUE}`,
+          color: '#fff',
+          textAlign: 'center',
+          padding: '9px 12px 11px',
+          fontFamily: 'Georgia, "Times New Roman", serif',
+          fontSize: 11.5,
+        }}
+      >
+        <div style={{ fontWeight: 700 }}>
+          {INVOICE_WEBSITE} <span style={{ color: INVOICE_BLUE, margin: '0 14px' }}>|</span> {INVOICE_EMAIL}
+        </div>
+        <div style={{ marginTop: 2 }}>{company.address}</div>
+      </div>
+    </div>
   );
 }

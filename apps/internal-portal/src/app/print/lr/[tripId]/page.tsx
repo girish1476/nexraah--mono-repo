@@ -75,7 +75,8 @@ function Sheet({ label, trip, config }: { label: string; trip: TripDetail; confi
           <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 22 }}>{config.company.name}</div>
           <div style={{ fontSize: 11 }}>{config.company.address}</div>
           <div style={{ fontSize: 11 }}>
-            GSTIN {config.company.gstin} · PAN {config.company.pan} · CIN {config.company.cin}
+            GSTIN {config.company.gstin} · PAN {config.company.pan}
+            {config.company.cin ? ` · CIN ${config.company.cin}` : ''}
           </div>
         </div>
         <div style={{ textAlign: 'right' }}>

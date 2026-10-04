@@ -264,19 +264,21 @@ test.describe('printed invoice', () => {
    * printed values against the seed in `mocks/db.ts`, which now matches
    * `config.company`'s real shape field for field, SAC code included.
    */
-  test('company header prints the real company details and the SAC code, not blanks', async ({ page }) => {
+  test('the invoice prints the company, the client, the SAC code and its items', async ({ page }) => {
     await setRole(page, 'FINANCE');
     await page.goto('/print/invoice/inv-411');
 
-    // Exact: the company name also appears in the signature line at the foot
-    // of the sheet ("For Nexraah Logistics Private Limited · authorised
-    // signatory"), which a substring match catches too.
-    await expect(page.getByText('Nexraah Logistics Private Limited', { exact: true })).toBeVisible();
-    await expect(page.getByText('GSTIN 27AABCN4471K1ZV', { exact: false })).toBeVisible();
-    await expect(page.getByText('PAN AABCN4471K', { exact: false })).toBeVisible();
-    await expect(page.getByText('CIN U63030MH2019PTC332211', { exact: false })).toBeVisible();
+    // The company name is on the letterhead and again above its address.
+    await expect(page.getByText('Nexraah Logistics Private Limited', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('GST Number: 27AABCN4471K1ZV')).toBeVisible();
+    await expect(page.getByText('INVOICE', { exact: true })).toBeVisible();
+    await expect(page.getByText('Bill To:')).toBeVisible();
     // 996511 — a goods transport agency's road transport service.
-    await expect(page.getByText('SAC 996511')).toBeVisible();
+    await expect(page.getByText('SAC Code: 996511')).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'Amount' })).toBeVisible();
+    await expect(page.getByText(/^Transportation charges/).first()).toBeVisible();
+    await expect(page.getByText('Amount Due')).toBeVisible();
+    await expect(page.getByText('GST is payable on RCM. I.E. IGST(5%)')).toBeVisible();
   });
 });
 
