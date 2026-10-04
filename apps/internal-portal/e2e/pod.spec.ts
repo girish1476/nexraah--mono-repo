@@ -265,7 +265,7 @@ test.describe('POD verify and approve', () => {
 
     await page.getByText('Goods arrived damaged').click();
     await expect(verify).toBeDisabled();
-    await expect(page.getByText('Describe the damage in a few words.')).toBeVisible();
+    await expect(page.getByText(/the damage description .* needs at least 5 characters/)).toBeVisible();
 
     await page.getByPlaceholder(/drums dented/).fill('One carton corner crushed; consignee accepted with a remark.');
     await expect(verify).toBeEnabled();

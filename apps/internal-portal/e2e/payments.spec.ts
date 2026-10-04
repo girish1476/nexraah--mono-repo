@@ -59,7 +59,8 @@ test.describe('Advance', () => {
     await expect(r.locator('td[data-label="Transporter"]')).toHaveText('Rathod Roadlines');
     await expect(r.locator('td[data-label="Advance amount"]')).toHaveText('40%');
     await expect(r.locator('td[data-label="Amount"]')).toHaveText('₹23,360');
-    await expect(r.locator('td[data-label="Can we pay yet?"]')).toHaveText('4 unmet');
+    // Three, not four: this trip's issued E-LR stands in for the loading slip.
+    await expect(r.locator('td[data-label="Can we pay yet?"]')).toHaveText('3 unmet');
   });
 
   test('FINANCE can see exactly what is missing and what has cleared, but release stays disabled behind the document gate', async ({

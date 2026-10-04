@@ -200,13 +200,17 @@ test.describe('the order cycle, from the order page', () => {
   test('7 · FINANCE releases the advance — the order moves to the road by itself', async () => {
     await signOut(page);
     await signInAs(page, 'FINANCE');
+    // Finance releases the advance on the Payments screen, not on the order page.
     await page.goto(orderUrl);
+    const payTrip = (await page.locator('.record-status').getByRole('link').nth(1).innerText()).trim();
+    await page.goto('/payments/advance');
+    await page.locator('table.table tbody tr').filter({ hasText: payTrip }).getByRole('button', { name: 'Open' }).click();
     await page.getByRole('button', { name: /^Release/ }).first().click();
     const r = dialog(page, 'Release advance');
     await field(r, 'UTR').fill('UTR100200300');
     await r.getByRole('button', { name: 'Confirm release' }).click();
     await expect(page.getByText(/Advance released/).first()).toBeVisible();
-    await page.reload();
+    await page.goto(orderUrl);
     await expect(page.locator('main').getByText('On the road').first()).toBeVisible();
     await tab(page, /Tracking/).click();
     await expect(page.getByRole('listitem').filter({ hasText: 'On the road' })).toHaveAttribute('aria-current', 'step');
@@ -301,16 +305,20 @@ test.describe('the order cycle, from the order page', () => {
     await expect(page.getByText(/Approved · the balance is unblocked/)).toBeVisible();
   });
 
-  test('12 · FINANCE releases the balance from Details — the order is complete', async () => {
+  test('12 · FINANCE releases the balance on Payments — the order is complete', async () => {
     await signOut(page);
     await signInAs(page, 'FINANCE');
+    // Finance releases the balance on the Payments screen, not on the order page.
     await page.goto(orderUrl);
+    const payTrip = (await page.locator('.record-status').getByRole('link').nth(1).innerText()).trim();
+    await page.goto('/payments/balance');
+    await page.locator('table.table tbody tr').filter({ hasText: payTrip }).getByRole('button', { name: 'Open' }).click();
     await page.getByRole('button', { name: /^Release/ }).first().click();
     const r = dialog(page, 'Release balance');
     await field(r, 'UTR').fill('UTR400500600');
     await r.getByRole('button', { name: 'Confirm release' }).click();
     await expect(page.getByText(/Balance released/).first()).toBeVisible();
-    await page.reload();
+    await page.goto(orderUrl);
     await expect(page.locator('main').getByText('Final payment out').first()).toBeVisible();
     await shot('12-complete');
   });

@@ -295,13 +295,17 @@ test.describe('real data, end to end', () => {
       await verifyCard(page, card);
     }
     await signInAs(page, 'FINANCE');
+    // Finance releases the advance on the Payments screen, not on the order page.
     await page.goto(orderUrl);
+    const payTrip = (await page.locator('.record-status').getByRole('link').nth(1).innerText()).trim();
+    await page.goto('/payments/advance');
+    await page.locator('table.table tbody tr').filter({ hasText: payTrip }).getByRole('button', { name: 'Open' }).click();
     await page.getByRole('button', { name: /^Release/ }).first().click();
     const r = dialog(page, 'Release advance');
     await field(r, 'UTR').fill('UTR555666777');
     await r.getByRole('button', { name: 'Confirm release' }).click();
     await expect(page.getByText(/Advance released/).first()).toBeVisible();
-    await page.reload();
+    await page.goto(orderUrl);
     await expect(page.locator('main').getByText('On the road').first()).toBeVisible();
     await shot('06-on-road');
   });
@@ -346,7 +350,11 @@ test.describe('real data, end to end', () => {
 
   test('9 · FINANCE pays the balance, invoices the client and records the payment', async () => {
     await signInAs(page, 'FINANCE');
+    // Finance releases the balance on the Payments screen, not on the order page.
     await page.goto(orderUrl);
+    const payTrip = (await page.locator('.record-status').getByRole('link').nth(1).innerText()).trim();
+    await page.goto('/payments/balance');
+    await page.locator('table.table tbody tr').filter({ hasText: payTrip }).getByRole('button', { name: 'Open' }).click();
     await page.getByRole('button', { name: /^Release/ }).first().click();
     const r = dialog(page, 'Release balance');
     await field(r, 'UTR').fill('UTR888999000');
@@ -376,8 +384,11 @@ test.describe('real data, end to end', () => {
     await page.getByRole('button', { name: /Allow an email|Add/ }).first().click();
     const add = dialog(page, 'Allow an email to sign in');
     await field(add, 'Email').fill('priya@nexraah.in');
+    // A mobile number is required for everyone who can sign in.
+    await field(add, 'Mobile').fill('9876512340');
     await field(add, 'Role').selectOption('OPS');
-    await field(add, 'Name').fill('Priya Menon');
+    // By its own label: the mobile field's hint also says "their name".
+    await add.locator('div.field').filter({ hasText: /^Name/ }).locator('input').fill('Priya Menon');
     await add.getByRole('button', { name: 'Allow' }).click();
     await expect(page.getByText(/priya@nexraah.in can now sign in/)).toBeVisible();
     await page.reload();

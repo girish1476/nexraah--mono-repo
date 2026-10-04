@@ -227,7 +227,11 @@ test.describe('beside the main cycle', () => {
     }
 
     await switchTo(page, 'FINANCE');
+    // Finance releases the advance on the Payments screen, not on the order page.
     await page.goto(orderUrl);
+    const payTrip = (await page.locator('.record-status').getByRole('link').nth(1).innerText()).trim();
+    await page.goto('/payments/advance');
+    await page.locator('table.table tbody tr').filter({ hasText: payTrip }).getByRole('button', { name: 'Open' }).click();
     await page.getByRole('button', { name: /^Release/ }).first().click();
     const r = dialog(page, 'Release advance');
     await field(r, 'UTR').fill('UTR700800900');

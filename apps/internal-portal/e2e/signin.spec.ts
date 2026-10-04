@@ -59,16 +59,21 @@ async function signIn(page: Page, email = OPS_EMAIL, code = DEMO_CODE) {
 const formAlert = (page: Page) => page.locator('form').getByRole('alert');
 
 /**
- * Sign out is in the sidebar, which is off-canvas below the 900px breakpoint
- * — so on the `mobile` project the drawer has to be opened to reach it.
- * Checking for the hamburger rather than branching on the project name keeps
- * this working whatever viewport a project is configured with.
+ * Sign out is on the top bar at every width — the desktop bar above the page,
+ * the phone bar beside the menu button — so there is no drawer to open first
+ * (an open drawer would cover it).
  */
 async function signOutFromShell(page: Page) {
-  const hamburger = page.getByRole('button', { name: 'Open menu' });
-  if (await hamburger.isVisible()) await hamburger.click();
   await page.getByRole('button', { name: 'Sign out' }).click();
 }
+
+/**
+ * Who is signed in, as the top bar shows it: the name and branch in words on
+ * the desktop, and on a phone the initials, which carry the same words as
+ * their label.
+ */
+const signedInAs = (page: Page, words: string) =>
+  page.locator(`.userbar-who:visible:has-text("${words}"), .userbar-avatar[aria-label*="${words}"]:visible`).first();
 
 test.describe('signing in', () => {
   test('an unauthenticated visitor is sent to the sign-in screen', async ({ page }) => {
@@ -83,7 +88,7 @@ test.describe('signing in', () => {
     // OPS lands on /today — the redirect is SessionBootstrap's, driven by the
     // role in the session the server returned, not by anything this form knew.
     await expect(page).toHaveURL(/\/today/, { timeout: NAV_TIMEOUT });
-    await expect(page.getByText('Anil Deshmukh')).toBeVisible({ timeout: NAV_TIMEOUT });
+    await expect(signedInAs(page, 'Anil Deshmukh')).toBeVisible({ timeout: NAV_TIMEOUT });
   });
 
   test('a wrong code says so and does not sign anyone in', async ({ page }) => {
@@ -136,7 +141,7 @@ test.describe('signing in', () => {
     await page.getByRole('button', { name: /^Send me a code/ }).click();
     await page.getByLabel('Digit 1').fill(DEMO_CODE);
     await expect(page).toHaveURL(/\/today/, { timeout: NAV_TIMEOUT });
-    await expect(page.getByText('Nashik branch').first()).toBeVisible({ timeout: NAV_TIMEOUT });
+    await expect(signedInAs(page, 'Nashik branch')).toBeVisible({ timeout: NAV_TIMEOUT });
   });
 
   test('signing in stores a refresh token and an expiry, not just an access token', async ({

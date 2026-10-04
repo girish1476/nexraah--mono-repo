@@ -177,10 +177,13 @@ test.describe('today — branch scoping (a scoped Operations user)', () => {
     // unless something checks the claim actually arrived.
     await setRole(page, scopedOperations());
     await page.goto('/today');
-    await expect(page.getByText('Nashik branch').first()).toBeVisible();
+    // The top bar says it in words on the desktop; on a phone the initials carry it as their label.
+    const scope = (words: string) =>
+      page.locator(`.userbar-who:visible:has-text("${words}"), .userbar-avatar[aria-label*="${words}"]:visible`).first();
+    await expect(scope('Nashik branch')).toBeVisible();
 
     await setRole(page, 'OPS');
     await page.goto('/today');
-    await expect(page.getByText('All branches').first()).toBeVisible();
+    await expect(scope('All branches')).toBeVisible();
   });
 });
