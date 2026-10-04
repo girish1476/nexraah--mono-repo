@@ -7,7 +7,7 @@ import { TRACKING_STATUS_LABEL } from '@/app/trips/types';
 import type { TrackingKind, TrackingSheet, TrackingStatus, TrackingUpdate } from '@/app/trips/types';
 import { RoutePoints, ShareState, getRoutePoints, getShare } from '@/app/trips/tracking-share';
 import { fmtDate, fmtDateTime } from '@/lib/format';
-import { placeQuery, routeMapLink, routeMapSrc } from '@/lib/route-map';
+import { placeQuery, placeText, routeMapLink, routeMapSrc } from '@/lib/route-map';
 import { RoutePointsPanel, ShareTrackingPanel } from './tracking-share-panels';
 import { Banner, Column, DataTable, ErrorState, Field, FormGrid, Loading, Panel, Stack, Tag, useCan, useToast } from '@/lib/ui';
 
@@ -168,7 +168,8 @@ export function OrderTrackingTab({
     onRoad && lastPosition
       ? lastPosition.lat !== null && lastPosition.lng !== null
         ? `${lastPosition.lat},${lastPosition.lng}`
-        : lastPosition.location
+        : // A typed place ("Thanjavur") is sent as a location, not a search.
+          placeText(lastPosition.location)
       : null;
   const truckAt = withCoords ? `${withCoords.location} (${withCoords.lat}, ${withCoords.lng})` : latest?.location ?? null;
 

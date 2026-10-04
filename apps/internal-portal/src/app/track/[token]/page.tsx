@@ -18,7 +18,7 @@ import { ApiError } from '@/apis';
 import { PublicTracking, getPublicTracking } from '@/app/trips/tracking-share';
 import { TRACKING_STATUS_LABEL } from '@/app/trips/types';
 import { fmtDateTime } from '@/lib/format';
-import { placeQuery, routeMapLink, routeMapSrc } from '@/lib/route-map';
+import { placeQuery, placeText, routeMapLink, routeMapSrc } from '@/lib/route-map';
 
 const REFRESH_MS = 60_000;
 
@@ -118,7 +118,7 @@ function Tracking({ t }: { t: PublicTracking }) {
   const positions = t.updates.filter((u) => u.kind === 'UPDATE');
   const last = positions[positions.length - 1];
   const onRoad = step >= 3;
-  const via = onRoad && last ? (last.lat !== null && last.lng !== null ? `${last.lat},${last.lng}` : last.location) : null;
+  const via = onRoad && last ? (last.lat !== null && last.lng !== null ? `${last.lat},${last.lng}` : placeText(last.location)) : null;
   const history = [...t.updates].reverse();
 
   return (

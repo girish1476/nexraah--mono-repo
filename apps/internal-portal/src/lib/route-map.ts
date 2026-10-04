@@ -11,10 +11,25 @@ export interface RoutePoint {
   lng: number | null;
 }
 
+/**
+ * A typed place name, made unambiguous for Google.
+ *
+ * A bare word is a *search*, not a place: "Thanjavur" on its own found a
+ * filter-coffee shop of that name instead of the town. Naming the country
+ * makes Google read it as a location — "Thanjavur, India" is the city.
+ * Coordinates, and text that already names India, are left as they are.
+ */
+export function placeText(text: string | null | undefined): string {
+  const t = (text ?? '').trim().replace(/\s+/g, ' ');
+  if (!t) return 'India';
+  if (/^-?\d{1,2}\.\d+\s*,\s*-?\d{1,3}\.\d+$/.test(t)) return t.replace(/\s+/g, '');
+  return /\bindia\b/i.test(t) ? t : `${t}, India`;
+}
+
 /** What Google should search for: the exact pin, else the address, else the city. */
 export function placeQuery(point: RoutePoint | null | undefined, city: string | null): string {
   if (point && point.lat !== null && point.lng !== null) return `${point.lat},${point.lng}`;
-  return point?.address?.trim() || city || 'India';
+  return placeText(point?.address?.trim() || city);
 }
 
 /**
