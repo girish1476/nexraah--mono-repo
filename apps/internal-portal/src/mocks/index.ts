@@ -2058,6 +2058,24 @@ const routes: [string, RegExp, Handler][] = [
           approvalMailSubject: newLane.approvalMailSubject ?? null,
         });
       }
+      // A one-off advance for this indent only — the transporter's standing
+      // figure is untouched. `ADVANCE_POLICY_CHANGE` in internal-api's indents.service.ts.
+      const indentAdvance = (approval as any).action as { indentId?: string; newPct?: number } | undefined;
+      if (approval.kind === 'ADVANCE_POLICY_CHANGE' && approval.entityType === 'indent' && indentAdvance?.indentId) {
+        const indent = db.indents.find((i: any) => i.id === indentAdvance.indentId) as any;
+        if (indent && typeof indentAdvance.newPct === 'number') {
+          indent.advancePct = indentAdvance.newPct;
+          indent.advancePctOverridden = true;
+          touchIndent(indent);
+        }
+      }
+      // The mismatch is acknowledged, not corrected: the lorry receipt is no
+      // longer blocked by it. `DOC_OVERRIDE` in internal-api's trips.service.ts.
+      const docOverride = (approval as any).action as { tripId?: string } | undefined;
+      if (approval.kind === 'DOC_OVERRIDE' && docOverride?.tripId) {
+        const trip = db.trips.find((t: any) => t.id === docOverride.tripId) as any;
+        if (trip) trip.crossCheckOverride = true;
+      }
       const award = (approval as any).action as { indentId: string; quoteId: string } | undefined;
       if (approval.kind === 'ABOVE_BAND_PRICE' && award) {
         const indent = db.indents.find((i: any) => i.id === award.indentId);
@@ -3678,6 +3696,7 @@ const routes: [string, RegExp, Handler][] = [
         requiredPermission: 'approve.exception',
         reason: body.reason,
         role,
+        action: { indentId: indent.id, newPct: Number(body.advancePct) },
       });
     },
   ],
@@ -3905,6 +3924,7 @@ const routes: [string, RegExp, Handler][] = [
         requiredPermission: 'approve.exception',
         reason: body.reason,
         role,
+        action: { tripId: trip.id },
       });
     },
   ],

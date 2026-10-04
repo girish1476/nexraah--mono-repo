@@ -246,31 +246,41 @@ function DetailsTab({
           )
         }
       >
-        <Panel title="📦 Order" pad={false}>
-          <FactList
-            facts={[
-              ['Client', order.clientName],
-              ['Material', order.material],
-              ['Weight', `${order.weightTn} MT`],
-              ['Truck type', order.truckType],
-              ['Pickup date', fmtDate(order.pickupDate)],
-              ['Branch', order.branchName],
-              ['Freight (sell)', inr(order.sellRatePaise)],
-              ['Freight (buy)', order.buyRatePaise !== null ? inr(order.buyRatePaise) : 'not awarded yet'],
-            ]}
-          />
-        </Panel>
+        {/* Side by side; one under the other when the page is too narrow for both. */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+            gap: 16,
+            alignItems: 'start',
+          }}
+        >
+          <Panel title="📦 Order" pad={false}>
+            <FactList
+              facts={[
+                ['Client', order.clientName],
+                ['Material', order.material],
+                ['Weight', `${order.weightTn} MT`],
+                ['Truck type', order.truckType],
+                ['Pickup date', fmtDate(order.pickupDate)],
+                ['Branch', order.branchName],
+                ['Freight (sell)', inr(order.sellRatePaise)],
+                ['Freight (buy)', order.buyRatePaise !== null ? inr(order.buyRatePaise) : 'not awarded yet'],
+              ]}
+            />
+          </Panel>
 
-        <Panel title="📍 From and to" pad={false}>
-          <FactList
-            facts={[
-              ['From', order.fromCity],
-              ['Loading address', order.pickupAddress || <span className="muted">Not given on the load request</span>],
-              ['To', order.toCity],
-              ['Unloading address', order.dropAddress || <span className="muted">Not given on the load request</span>],
-            ]}
-          />
-        </Panel>
+          <Panel title="📍 From and to" pad={false}>
+            <FactList
+              facts={[
+                ['From', order.fromCity],
+                ['Loading address', order.pickupAddress || <span className="muted">Not given on the load request</span>],
+                ['To', order.toCity],
+                ['Unloading address', order.dropAddress || <span className="muted">Not given on the load request</span>],
+              ]}
+            />
+          </Panel>
+        </div>
 
         <Panel title="🚛 Transporter and vehicle" pad={false}>
           <FactList

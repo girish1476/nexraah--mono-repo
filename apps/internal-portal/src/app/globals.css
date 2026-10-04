@@ -1250,6 +1250,111 @@ table.table tbody tr:nth-child(even):hover {
   }
 }
 
+/* ---- top bar: who is signed in, light/dark, sign out -----------------------
+   Stays at the top right of every screen. On the desktop it is the first thing
+   inside `.app-main` (the element that scrolls), pulled out to that element's
+   edges; on a phone the same controls ride in `.mobile-topbar` instead. */
+.userbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  justify-content: flex-end;
+  margin: -24px -30px 20px;
+  padding: 9px 30px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-divider);
+}
+.userbar-items {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.userbar-who {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.userbar-avatar {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-divider);
+  background: var(--color-accent-tint);
+  color: var(--color-accent-700);
+  font-size: 13px;
+  font-weight: 700;
+}
+.userbar-name {
+  font-size: var(--text-md);
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.userbar-role {
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+.theme-switch {
+  flex: none;
+  width: 52px;
+  height: 28px;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-pill);
+  background: var(--color-divider);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.theme-switch.is-on {
+  background: var(--color-accent);
+}
+.theme-switch-knob {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+  font-size: 12px;
+  line-height: 1;
+  transition: transform var(--transition-fast);
+}
+.theme-switch.is-on .theme-switch-knob {
+  transform: translateX(24px);
+}
+.userbar-signout {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text);
+  cursor: pointer;
+}
+.userbar-signout:hover {
+  background: var(--color-accent-tint);
+  color: var(--color-accent-700);
+}
+@media (max-width: 900px) {
+  .userbar {
+    display: none;
+  }
+}
+
 /* Below the console breakpoint the sidebar becomes an off-canvas drawer
    behind a hamburger toggle (`.mobile-topbar`) — same nav, same permission
    filtering, just reachable on an operator's phone (NFR-06). */

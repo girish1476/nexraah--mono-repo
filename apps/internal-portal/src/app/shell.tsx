@@ -26,7 +26,8 @@ function hrefPath(href: string): string {
 }
 
 /**
- * Sidebar, identity strip and the pending-approvals badge.
+ * Sidebar, the top bar (who is signed in, light/dark, sign out) and the
+ * pending-approvals badge.
  *
  * A module the signed-in role lacks is **absent** from this navigation, never
  * greyed (part 01 §2.2). The role is read from the session the server issued
@@ -137,16 +138,19 @@ export function Shell({ session, children }: { session: Session | null; children
         </div>
         {/* On a phone the sidebar is behind a hamburger, so the one badge that
             means "somebody is waiting on you" has to survive out here too. */}
-        {pendingApprovals > 0 && (
-          <Link
-            href="/admin/approvals"
-            className="nav-badge"
-            style={{ marginLeft: 'auto', textDecoration: 'none' }}
-            aria-label={`${pendingApprovals} approvals waiting for you`}
-          >
-            {pendingApprovals}
-          </Link>
-        )}
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+          {pendingApprovals > 0 && (
+            <Link
+              href="/admin/approvals"
+              className="nav-badge"
+              style={{ textDecoration: 'none' }}
+              aria-label={`${pendingApprovals} approvals waiting for you`}
+            >
+              {pendingApprovals}
+            </Link>
+          )}
+          <UserBar role={role} session={session} compact />
+        </div>
       </div>
       <div
         className={`nav-backdrop no-print${navOpen ? ' open' : ''}`}
@@ -323,11 +327,12 @@ export function Shell({ session, children }: { session: Session | null; children
               );
             })}
           </nav>
-
-          <RoleStrip role={role} session={session} />
         </aside>
 
         <main className="app-main" style={{ flex: 1, minWidth: 0, padding: '24px 30px 72px' }}>
+          <div className="userbar no-print">
+            <UserBar role={role} session={session} />
+          </div>
           {children}
 
           {/*
@@ -365,14 +370,17 @@ export function Shell({ session, children }: { session: Session | null; children
   );
 }
 
-function RoleStrip({ role, session }: { role: RoleCode; session: Session | null }) {
-  // The "🧪 Switch role (testing only)" dropdown that used to sit here is
-  // gone along with `lib/dev-tokens.ts`. It worked by swapping in another
-  // seat's pre-signed JWT, which only had anything to swap *to* because six
-  // of them were checked into the repo. With a password screen, becoming
-  // another person means signing in as them — the same thing this button
-  // starts, one step earlier.
-  //
+/**
+ * Who is signed in, the light/dark switch and sign-out — on the top bar.
+ *
+ * These sat at the foot of the sidebar, under the navigation, where signing
+ * out meant scrolling a menu. They are not navigation, so they are out of that
+ * panel and stay in the top right corner of every screen.
+ *
+ * `compact` is the phone bar: no room for the name beside the menu button and
+ * the logo, so the initials stand for the person there.
+ */
+function UserBar({ role, session, compact = false }: { role: RoleCode; session: Session | null; compact?: boolean }) {
   // router.push, not window.location — a hard navigation re-executes every
   // JS module from scratch, which would silently reset the mock adapter's
   // in-memory `db` back to its seed data on sign-out. Client-side routing
@@ -384,76 +392,65 @@ function RoleStrip({ role, session }: { role: RoleCode; session: Session | null 
     signOut();
     router.push('/signin');
   };
+  const name = session?.name ?? 'Signing in…';
+  const roleLabel = session?.roleLabel ?? ROLES[role].label;
+  // Branch scope is the difference between "12 loads are late" meaning your
+  // branch or the whole company, so it stays beside the role.
+  const scope = session?.branch ? `${session.branch.name} branch` : 'All branches';
   const initials = (session?.name ?? '?')
     .split(' ')
     .map((p) => p[0])
     .slice(0, 2)
     .join('')
     .toUpperCase();
+  const dark = theme === 'dark';
 
   return (
-    <div style={{ padding: '14px 16px 2px', borderTop: '1px solid var(--color-divider)', marginTop: 6 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div
-          aria-hidden
-          style={{
-            width: 34,
-            height: 34,
-            borderRadius: 'var(--radius-pill)',
-            flex: 'none',
-            display: 'grid',
-            placeItems: 'center',
-            background: 'var(--color-accent-tint)',
-            color: 'var(--color-accent-700)',
-            fontSize: 13,
-            fontWeight: 700,
-            border: '1px solid var(--color-divider)',
-          }}
-        >
+    <div className="userbar-items">
+      <div className="userbar-who" title={compact ? `${name} · ${roleLabel} · ${scope}` : undefined}>
+        <div className="userbar-avatar" aria-hidden={!compact} aria-label={compact ? `${name}, ${roleLabel}, ${scope}` : undefined}>
           {initials}
         </div>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 'var(--text-md)', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {session?.name ?? 'Signing in…'}
+        {!compact && (
+          <div style={{ minWidth: 0 }}>
+            <div className="userbar-name">{name}</div>
+            <div className="muted userbar-role">
+              {roleLabel} · <Glyph size={12}>{session?.branch ? '🏬' : '🌐'}</Glyph> {scope}
+            </div>
           </div>
-          <div className="muted" style={{ fontSize: 'var(--text-sm)' }}>
-            {session?.roleLabel ?? ROLES[role].label}
-          </div>
-        </div>
-      </div>
-      {/* Branch scope is the difference between "12 loads are late" meaning
-          your branch or the whole company. It was set in monospace, which
-          read as a code; it is a place, so it reads as one. */}
-      <div
-        style={{
-          fontSize: 'var(--text-sm)',
-          marginTop: 9,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          color: 'var(--color-text-soft)',
-        }}
-      >
-        <Glyph size={13}>{session?.branch ? '🏬' : '🌐'}</Glyph>
-        {session?.branch ? `${session.branch.name} branch` : 'All branches'}
+        )}
       </div>
 
       <button
-        className="btn btn-secondary btn-sm"
+        type="button"
+        role="switch"
+        aria-checked={dark}
+        aria-label="Dark mode"
+        title={dark ? 'Dark mode is on' : 'Dark mode is off'}
+        className={dark ? 'theme-switch is-on' : 'theme-switch'}
         onClick={toggleTheme}
-        aria-pressed={theme === 'dark'}
-        style={{ width: '100%', marginTop: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}
       >
-        <Glyph size={13}>{theme === 'dark' ? '☀️' : '🌙'}</Glyph>
-        {theme === 'dark' ? 'Light mode' : 'Dark mode'}
+        <span className="theme-switch-knob" aria-hidden>
+          {dark ? '🌙' : '☀️'}
+        </span>
       </button>
 
-      <button
-        className="btn btn-secondary btn-sm"
-        onClick={endSession}
-        style={{ width: '100%', marginTop: 8, marginBottom: 14 }}
-      >
-        Sign out
+      <button type="button" className="userbar-signout" aria-label="Sign out" title="Sign out" onClick={endSession}>
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+          <path d="M16 17l5-5-5-5" />
+          <path d="M21 12H9" />
+        </svg>
       </button>
     </div>
   );
