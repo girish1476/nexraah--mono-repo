@@ -1247,21 +1247,28 @@ table.table tbody tr:nth-child(even):hover {
   .app-main {
     height: 100vh;
     overflow-y: auto;
+    /* The top bar is the first thing in here and sticks to the very top, so the
+       space above the page comes from the bar's own margin, not from padding:
+       padding above a sticky bar is a strip the page scrolls through, visibly. */
+    padding-top: 0 !important;
   }
 }
 
 /* ---- top bar: who is signed in, light/dark, sign out -----------------------
    Stays at the top right of every screen. On the desktop it is the first thing
    inside `.app-main` (the element that scrolls), pulled out to that element's
-   edges; on a phone the same controls ride in `.mobile-topbar` instead. */
+   side edges; on a phone the same controls ride in `.mobile-topbar` instead. */
 .userbar {
   position: sticky;
   top: 0;
   z-index: 30;
   display: flex;
   justify-content: flex-end;
-  margin: -24px -30px 20px;
-  padding: 9px 30px;
+  align-items: center;
+  box-sizing: border-box;
+  height: 56px;
+  margin: 0 -30px 24px;
+  padding: 0 30px;
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-divider);
 }
