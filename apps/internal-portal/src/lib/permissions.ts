@@ -81,7 +81,7 @@ export const ROLES: Record<RoleCode, RoleDef> = {
   ADMIN: {
     code: 'ADMIN',
     label: 'Administrator',
-    landsOn: '/admin',
+    landsOn: '/dashboard',
     owns: 'Configuration, users, roles',
   },
   /**
@@ -583,6 +583,7 @@ const ROUTE_MODULES: [string, ModuleKey][] = [
   ['/records', 'records'],
   ['/search', 'search'],
   ['/tickets', 'tickets'],
+  ['/dashboard', 'admin'],
   ['/admin', 'admin'],
 ];
 
@@ -914,6 +915,14 @@ export const NAV: NavGroup[] = [
     area: 'control',
     emoji: '⚙️',
     items: [
+      {
+        label: 'Dashboard',
+        href: '/dashboard',
+        module: 'admin',
+        emoji: '📊',
+        note: 'The whole console in charts',
+        permission: 'config.manage',
+      },
       {
         label: 'Approvals',
         href: '/admin/approvals',
