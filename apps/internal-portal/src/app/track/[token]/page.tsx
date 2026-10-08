@@ -166,6 +166,7 @@ function Tracking({ t }: { t: PublicTracking }) {
       <div className="track-card track-map">
         <iframe
           title={`Route — ${t.fromCity ?? 'loading point'} to ${t.toCity ?? 'unloading point'}`}
+          className="map-embed"
           src={routeMapSrc(origin, destination, via)}
           loading="lazy"
           referrerPolicy="no-referrer-when-downgrade"

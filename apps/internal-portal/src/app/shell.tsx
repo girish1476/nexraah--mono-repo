@@ -20,6 +20,8 @@ import { ReportProblemButton } from './tickets/report-button';
  * would need this to match against the current path, so it stays rather
  * than being re-added the next time one does.
  */
+const SIDEBAR_KEY = 'nexraah-sidebar';
+
 function hrefPath(href: string): string {
   const q = href.indexOf('?');
   return q === -1 ? href : href.slice(0, q);
@@ -46,6 +48,30 @@ export function Shell({ session, children }: { session: Session | null; children
   const role: RoleCode = session?.role ?? 'OPS';
   const [pendingApprovals, setPendingApprovals] = useState(0);
   const [navOpen, setNavOpen] = useState(false);
+  /*
+   * The desktop sidebar folds away to give a wide table or a map the whole
+   * screen, from the button at the left of the top bar. The choice is kept in
+   * this browser, like the theme, so it holds from screen to screen. (On a
+   * phone the sidebar is already a drawer — `navOpen` above.)
+   */
+  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => {
+    try {
+      setCollapsed(window.localStorage.getItem(SIDEBAR_KEY) === 'closed');
+    } catch {
+      // Storage blocked: the sidebar simply starts open.
+    }
+  }, []);
+  const toggleSidebar = () => {
+    setCollapsed((was) => {
+      try {
+        window.localStorage.setItem(SIDEBAR_KEY, was ? 'open' : 'closed');
+      } catch {
+        // Storage blocked: the choice holds until the page is reloaded.
+      }
+      return !was;
+    });
+  };
   /*
    * Which areas the person has opened or closed by hand. Absent means "not
    * touched", which falls back to opening whichever area holds the page they
@@ -159,7 +185,7 @@ export function Shell({ session, children }: { session: Session | null; children
       />
       <div style={{ display: 'flex', minHeight: '100vh', alignItems: 'flex-start' }}>
         <aside
-          className={`no-print sidebar${navOpen ? ' open' : ''}`}
+          className={`no-print sidebar${navOpen ? ' open' : ''}${collapsed ? ' is-collapsed' : ''}`}
           style={{
             flex: 'none',
             width: 'var(--sidebar-w)',
@@ -254,10 +280,11 @@ export function Shell({ session, children }: { session: Session | null; children
                       {group.emoji && <Glyph size={13}>{group.emoji}</Glyph>}
                       <span style={{ flex: 1, textAlign: 'left' }}>{group.label}</span>
                       <span className="nav-area-count">{group.items.length}</span>
-                      {/* A clear open/close control: + when the group is folded, − when it is open. */}
+                      {/* A clear open/close control: + when the group is folded, turning into − as it opens. */}
                       <span className="nav-area-icon" aria-hidden="true">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round">
-                          {open ? <path d="M5 12h14" /> : <path d="M12 5v14M5 12h14" />}
+                          <path d="M5 12h14" />
+                          <path className="nav-area-icon-bar" d="M12 5v14" />
                         </svg>
                       </span>
                     </button>
@@ -272,8 +299,13 @@ export function Shell({ session, children }: { session: Session | null; children
                     real and reachable by a direct link or a script, just not
                     painted, which is also what stops the group from losing
                     its scroll position or remounting each time it opens.
+
+                    A class rather than the `hidden` attribute, so the rows
+                    slide open and shut instead of snapping; closed, they are
+                    `visibility: hidden` — not painted, not focusable.
                   */}
-                  <div hidden={!open}>
+                  <div className={open ? 'nav-area-rows is-open' : 'nav-area-rows'}>
+                    <div className="nav-area-rows-inner">
                     {group.items.map((item) => {
                       /*
                        * Three of the delivery-proof rows are presets of two
@@ -310,6 +342,7 @@ export function Shell({ session, children }: { session: Session | null; children
                         </Link>
                       );
                     })}
+                    </div>
                   </div>
                 </div>
               );
@@ -319,6 +352,20 @@ export function Shell({ session, children }: { session: Session | null; children
 
         <main className="app-main" style={{ flex: 1, minWidth: 0, padding: '24px 30px 72px' }}>
           <div className="userbar no-print">
+            <button
+              type="button"
+              className="userbar-menu"
+              aria-label={collapsed ? 'Show the menu' : 'Hide the menu'}
+              aria-expanded={!collapsed}
+              title={collapsed ? 'Show the menu' : 'Hide the menu'}
+              onClick={toggleSidebar}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="3" y="4" width="18" height="16" rx="2.5" />
+                <path d="M9 4v16" />
+                <path className="userbar-menu-arrow" d={collapsed ? 'M13.5 9.5 16 12l-2.5 2.5' : 'M16 9.5 13.5 12l2.5 2.5'} />
+              </svg>
+            </button>
             <UserBar role={role} session={session} />
           </div>
           {children}

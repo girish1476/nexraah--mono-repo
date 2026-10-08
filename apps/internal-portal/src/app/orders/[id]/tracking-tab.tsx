@@ -430,6 +430,7 @@ export function OrderTrackingTab({
       <Panel title="🗺️ Route map" pad={false}>
         <iframe
           title={`Route — ${sheet.fromCity ?? 'loading point'} to ${sheet.toCity ?? 'unloading point'}`}
+          className="map-embed"
           src={routeMapSrc(origin, destination, via)}
           style={{ width: '100%', height: 360, border: 0, display: 'block' }}
           loading="lazy"

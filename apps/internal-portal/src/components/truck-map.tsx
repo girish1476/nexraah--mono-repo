@@ -190,6 +190,7 @@ export function TruckMap({
       <div
         ref={frame}
         data-testid="truck-map"
+        className="map-frame"
         style={{ position: 'relative', height: HEIGHT, overflow: 'hidden', background: '#e8ecef' }}
       >
         {width > 0 &&
@@ -198,6 +199,7 @@ export function TruckMap({
             <img
               key={`${zoom}/${t.x}/${t.y}`}
               alt=""
+              className="map-tile"
               src={`https://tile.openstreetmap.org/${zoom}/${((t.x % edge) + edge) % edge}/${t.y}.png`}
               width={TILE}
               height={TILE}
@@ -232,6 +234,7 @@ export function TruckMap({
           </button>
         </div>
         <div
+          className="map-credit"
           style={{
             position: 'absolute',
             right: 0,
