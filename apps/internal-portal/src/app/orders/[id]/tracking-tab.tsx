@@ -422,7 +422,41 @@ export function OrderTrackingTab({
               lng: points?.unloading.lng,
               query: placeText(sheet.toCity),
             }}
-            caption={`Truck last reported at ${lastSeen.location} on ${fmtDateTime(lastSeen.recordedAt)}. It moves here each time the tracking sheet is updated. The dashed line joins the points; the road route is on the map below.`}
+            side={{
+              eyebrow: `${sheet.fromCity ?? 'Loading point'} to ${sheet.toCity ?? 'unloading point'}`,
+              heading: `Truck ${sheet.vehicleNo ?? ''}`.trim(),
+              status: onRoad
+                ? sheet.reachedDestinationAt
+                  ? 'At the unloading point'
+                  : 'En route'
+                : sheet.loadedAt
+                  ? 'Loaded · waiting to leave'
+                  : sheet.reachedLoadingAt
+                    ? 'At the loading point'
+                    : 'On the way to the loading point',
+              facts: [
+                ['Last reported at', lastSeen.location],
+                ['Reported', fmtDateTime(lastSeen.recordedAt)],
+                [
+                  'Reported by',
+                  [lastSeen.recordedByName, lastSeen.recordedByPhone].filter(Boolean).join(' · ') || 'Automatic',
+                ],
+                [
+                  'Next stop',
+                  onRoad || sheet.loadedAt
+                    ? `Unloading point · ${sheet.toCity ?? '—'}`
+                    : `Loading point · ${sheet.fromCity ?? '—'}`,
+                ],
+                ...(sheet.departedAt
+                  ? ([['Left the loading point', fmtDateTime(sheet.departedAt)]] as [string, string][])
+                  : []),
+                ...(sheet.eway?.validTill
+                  ? ([['E-way bill valid till', fmtDateTime(sheet.eway.validTill)]] as [string, string][])
+                  : []),
+              ],
+              note: lastSeen.note,
+            }}
+            caption={`The truck moves here each time the tracking sheet is updated. Drag the map to move it. The lines and distances are straight-line; the road route is on the map below.`}
           />
         </Panel>
       )}

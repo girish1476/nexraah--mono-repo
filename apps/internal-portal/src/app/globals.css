@@ -3817,3 +3817,247 @@ input[type='radio'] {
   background: var(--color-accent);
   border-color: var(--color-accent);
 }
+
+/* ---- the truck map (components/truck-map.tsx) -------------------------------
+   A map with its controls laid over it: the Light / Dark / Satellite buttons
+   and zoom at the top left, the legend at the bottom left, the credit at the
+   bottom right, and on a wide screen a card about the truck down the right.
+   Everything laid over the map is a white (or, in dark mode, dark) card with a
+   shadow, so it reads on any of the three maps. */
+.truck-map-frame {
+  position: relative;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.truck-map-frame:active {
+  cursor: grabbing;
+}
+.truck-map-frame img {
+  pointer-events: none;
+}
+
+.truck-map-styles,
+.truck-map-zoom {
+  position: absolute;
+  left: 12px;
+  display: flex;
+  gap: 6px;
+  z-index: 3;
+}
+.truck-map-styles {
+  top: 12px;
+}
+.truck-map-zoom {
+  top: 54px;
+  flex-direction: column;
+}
+.truck-map-styles button,
+.truck-map-zoom button {
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    border-color var(--transition-fast);
+}
+.truck-map-zoom button {
+  width: 32px;
+  padding: 0;
+  font-size: 15px;
+}
+.truck-map-styles button:hover,
+.truck-map-zoom button:hover {
+  background: var(--color-accent-tint);
+  color: var(--color-accent-700);
+}
+.truck-map-styles button.is-on {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #ffffff;
+}
+:root[data-theme='dark'] .truck-map-styles button.is-on {
+  color: #10151d;
+}
+
+/* A numbered stop: 1 is the loading point, 2 the unloading point. */
+.truck-map-stop {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  background: #16306b;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  z-index: 1;
+}
+.truck-map-truck {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 2px solid #f26b21;
+  background: #ffffff;
+  font-size: 22px;
+  line-height: 1;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45);
+  z-index: 2;
+}
+.truck-map-label {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  max-width: 220px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: rgba(16, 24, 44, 0.86);
+  color: #ffffff;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.truck-map-legend {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  max-width: calc(100% - 24px);
+  padding: 6px 12px;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 11.5px;
+  font-weight: 600;
+  box-shadow: var(--shadow-md);
+  z-index: 3;
+}
+.truck-map-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.truck-map-legend i {
+  display: inline-block;
+  width: 22px;
+  height: 0;
+  border-top: 3px solid #f26b21;
+}
+.truck-map-legend i.is-todo {
+  border-top: 3px dashed var(--color-text-soft);
+}
+.truck-map-legend-note {
+  font-weight: 400;
+  color: var(--color-text-soft);
+}
+.truck-map-credit {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  padding: 1px 6px;
+  background: color-mix(in srgb, var(--color-surface) 82%, transparent);
+  color: var(--color-text-soft);
+  font-size: 10px;
+  z-index: 1;
+}
+.truck-map-credit a {
+  color: inherit;
+}
+
+/* The card about the truck. Over the map's right side on a wide screen;
+   under the map, full width, on a narrow one. */
+.truck-map-side {
+  padding: 14px 16px;
+  border-top: 1px solid var(--color-divider);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  cursor: auto;
+  user-select: text;
+}
+.truck-map-side.is-over {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  width: 288px;
+  overflow-y: auto;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 4;
+}
+.truck-map-side-head {
+  margin-top: 2px;
+  font-size: var(--text-lg);
+  font-weight: 700;
+  line-height: 1.25;
+}
+.truck-map-side-status {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--mint-edge);
+  background: var(--mint-tint);
+  color: var(--mint);
+  font-weight: 600;
+}
+.truck-map-side-facts {
+  margin: 12px 0 0;
+  display: grid;
+  gap: 10px;
+}
+.truck-map-side-facts dt {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-soft);
+  font-weight: 600;
+}
+.truck-map-side-facts dd {
+  margin: 1px 0 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.truck-map-side-note {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-divider);
+  color: var(--color-text-soft);
+  font-style: italic;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 640px) {
+  .truck-map-legend-note {
+    display: none;
+  }
+}
