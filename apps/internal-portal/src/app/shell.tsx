@@ -192,12 +192,12 @@ export function Shell({ session, children }: { session: Session | null; children
             borderRight: '1px solid var(--color-divider)',
             background: 'var(--color-surface)',
             minHeight: '100vh',
-            padding: '18px 0 20px',
+            padding: '0 0 20px',
             display: 'flex',
             flexDirection: 'column',
           }}
         >
-          <div style={{ padding: '2px 16px 16px', display: 'flex', alignItems: 'center', gap: 11 }}>
+          <div className="sidebar-brand" style={{ padding: '0 16px', display: 'flex', alignItems: 'center', gap: 11 }}>
             <img
               src="/logo.png"
               alt=""

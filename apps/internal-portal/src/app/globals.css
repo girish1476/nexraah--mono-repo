@@ -3646,3 +3646,174 @@ details[open] > summary::before {
 :root[data-theme='dark'] .map-credit a {
   color: #9bd0ff;
 }
+
+/* ---- one line across the top; blocks that share an edge ---------------------
+   The sidebar's brand block is exactly as tall as the top bar, with the same
+   rule under it, so the two read as one header running the width of the
+   console instead of two that end at different heights. */
+.sidebar-brand {
+  flex: none;
+  height: 56px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--color-divider);
+  margin-bottom: var(--space-3);
+}
+
+/* The note under a page's title ran to 78 characters and stopped, while the
+   panels under it ran the full width — two different right-hand edges on one
+   screen. The box now runs the full width like everything below it; the text
+   inside keeps a readable measure. */
+.page-intro {
+  max-width: none;
+}
+.page-intro > * {
+  max-width: 96ch;
+}
+
+/* ---- one size for every control; one blue ----------------------------------
+   Design only — sizes, alignment and colour. Nothing here moves or renames
+   anything on a screen.
+
+   Sizes. A field was 36px tall and the button beside it 40px, so a row of
+   "field, field, button" never sat on one line. Fields, toolbar filters and
+   buttons are all 40px now. Inside a table row or a card, where there is less
+   room, the small button and a bare input are both 34px. */
+.field input:not([type='checkbox'], [type='radio'], [type='file']),
+.field select,
+.toolbar input:not([type='checkbox'], [type='radio']),
+.toolbar select,
+.filter-bar input:not([type='checkbox'], [type='radio']),
+.filter-bar select {
+  min-height: 40px;
+  padding: 9px 12px;
+}
+.field textarea {
+  padding: 10px 12px;
+  line-height: 1.5;
+}
+.field > label {
+  color: var(--color-text);
+}
+.btn-sm {
+  min-height: 34px;
+}
+
+/* An input, select or text box typed straight into a table cell or a card,
+   with no `.field` around it, was the browser's own grey box: a different
+   height, border and font from every field beside it. They now match. Kept to
+   the console's own pages (`.app-main`), and written with `:where()` so any
+   screen that styles its own input still wins. */
+.app-main
+  :where(
+    input:not([type='checkbox'], [type='radio'], [type='file'], [type='range'], [type='color'], [type='hidden']),
+    select,
+    textarea
+  ) {
+  font-family: inherit;
+  font-size: var(--text-md);
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-divider-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+.app-main :where(input, select, textarea):hover:not(:disabled, :focus) {
+  border-color: var(--color-neutral-400);
+}
+.app-main :where(input, select, textarea):focus {
+  outline: none;
+  border-color: var(--color-accent-400);
+  box-shadow: var(--shadow-focus);
+}
+.app-main :where(input, select, textarea):disabled {
+  background: var(--color-surface-sunken);
+  color: var(--color-text-soft);
+  cursor: not-allowed;
+}
+
+/* "Choose file" was the one control on every upload that still looked like
+   the operating system's. It is drawn as the console's own small button. */
+input[type='file'] {
+  font-family: inherit;
+  font-size: var(--text-sm);
+  color: var(--color-text-soft);
+  max-width: 100%;
+}
+input[type='file']::file-selector-button {
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  margin-right: var(--space-3);
+  border: 1px solid var(--color-divider-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast);
+}
+input[type='file']::file-selector-button:hover {
+  background: var(--color-neutral-200);
+  border-color: var(--color-neutral-400);
+}
+
+input[type='checkbox'],
+input[type='radio'] {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  vertical-align: -3px;
+}
+
+/* The browser's own parts — date pickers, the list a select opens, scrollbar
+   corners — follow the theme too, instead of staying white in dark mode. */
+:root {
+  color-scheme: light;
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+/* Colour. The menu group bars were a sky blue of their own beside the navy
+   blue of every button and link — two blues on one screen. They take the
+   console's one accent now, in both themes, from the same tokens. */
+.nav-area-toggle,
+:root[data-theme='dark'] .nav-area-toggle {
+  background: var(--color-accent-tint);
+  border-color: transparent;
+  color: var(--color-accent-700);
+}
+.nav-area-toggle:hover,
+.nav-area-toggle[aria-expanded='true'],
+:root[data-theme='dark'] .nav-area-toggle:hover,
+:root[data-theme='dark'] .nav-area-toggle[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--color-accent) 16%, var(--color-surface));
+  border-color: color-mix(in srgb, var(--color-accent) 28%, transparent);
+}
+.nav-area-toggle .nav-area-count,
+:root[data-theme='dark'] .nav-area-toggle .nav-area-count {
+  background: var(--color-surface);
+  color: var(--color-accent-700);
+}
+.nav-area-icon,
+.nav-area-toggle:hover .nav-area-icon,
+.nav-area-toggle[aria-expanded='true'] .nav-area-icon {
+  background: var(--color-accent);
+  color: #ffffff;
+}
+:root[data-theme='dark'] .nav-area-icon {
+  color: #10151d;
+}
+
+/* The dark-mode switch is the same accent when it is on, not a third blue. */
+.theme-switch.is-on {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
