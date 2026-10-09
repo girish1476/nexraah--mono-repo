@@ -1,0 +1,57 @@
+/* A finishing pass over the console, made while looking at the screens
+   themselves. Loaded after globals.css; each rule here says what it puts right.
+   Design only — no screen gains, loses or moves anything. */
+
+/* ---- one typeface -----------------------------------------------------------
+   Amounts, codes and every value in a facts panel were set in a typewriter
+   face. In a column of rupees that reads as a ledger; everywhere else it read
+   as a different console: a client's name in one face on the left and in
+   another on the right of the same panel, and "Edit", "Keep" and "Switch off"
+   in typewriter letters because their table cell was. The body face already
+   draws its figures at one width (`tabular-nums` is set on <body>), which is
+   the only thing the typewriter face was there for — so figures still stack
+   on the decimal, and everything is one family. */
+:root {
+  --font-mono: var(--font-body);
+}
+.mono,
+.num {
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+.btn,
+button,
+input,
+select,
+textarea {
+  font-family: var(--font-body);
+}
+
+/* ---- codes and amounts stay on one line --------------------------------------
+   A truck number broke as "MH 12 QR / 8841" and an amount as "₹1.86 / Cr" when
+   a table ran out of room. A code or an amount split across two lines is hard
+   to read and easy to misread; the table scrolls sideways instead. */
+table.table td .mono,
+table.table td.mono,
+table.table td.num,
+table.table td .num {
+  white-space: nowrap;
+}
+table.table td .btn {
+  white-space: nowrap;
+}
+
+/* ---- values in a facts panel --------------------------------------------------
+   Label on the left, value on the right: the value is the thing being looked
+   for, so it carries the weight and the label recedes. */
+.surface .mono {
+  font-weight: 500;
+}
+
+/* ---- the floating Ask button --------------------------------------------------
+   It sat over the last row's buttons at the foot of a long table. A little
+   room is kept clear under every page so the last row can be scrolled above
+   it. */
+.app-main {
+  scroll-padding-bottom: 96px;
+}

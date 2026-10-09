@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { ReactNode } from 'react';
 import { Providers } from './providers';
 import './globals.css';
+import './polish.css';
 
 export const metadata: Metadata = {
   title: 'Nexraah · Internal console',

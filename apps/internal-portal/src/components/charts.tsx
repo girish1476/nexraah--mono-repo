@@ -169,9 +169,9 @@ export function Columns({
   const max = Math.max(...points.map((p) => p.value), 0);
   if (points.length === 0 || max === 0) return <ChartEmpty>{empty}</ChartEmpty>;
 
-  const W = 720;
-  const H = 200;
-  const PAD = { l: 34, r: 8, t: 18, b: 24 };
+  const W = 1100;
+  const H = 240;
+  const PAD = { l: 40, r: 12, t: 22, b: 28 };
   const innerW = W - PAD.l - PAD.r;
   const innerH = H - PAD.t - PAD.b;
   const slot = innerW / points.length;
@@ -229,7 +229,8 @@ export function Columns({
           {format(points[peak].value)}
         </text>
         {points.map((p, i) =>
-          i % every === 0 || i === points.length - 1 ? (
+          // The last day is always named; a regular label too close to it would run into it.
+          (i % every === 0 && points.length - 1 - i >= every) || i === points.length - 1 ? (
             <text key={i} className="viz-tick" x={PAD.l + i * slot + slot / 2} y={H - 6} textAnchor="middle">
               {p.label}
             </text>

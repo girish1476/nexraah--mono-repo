@@ -26,7 +26,7 @@
 /* ---- headline numbers ---- */
 .viz-tiles {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-3);
   margin-bottom: var(--space-5);
 }
@@ -138,7 +138,7 @@
 }
 .viz-hbar {
   display: grid;
-  grid-template-columns: minmax(120px, 34%) minmax(0, 1fr);
+  grid-template-columns: minmax(110px, 210px) minmax(0, 1fr);
   align-items: center;
   gap: var(--space-3);
   padding: 6px 8px;
@@ -299,4 +299,23 @@
   margin-top: 4px;
   font-size: var(--text-sm);
   color: var(--color-text-soft);
+}
+
+/* Four headline numbers to a row, two on a narrow screen, one on a phone —
+   never five and three. */
+@media (max-width: 1180px) {
+  .viz-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 520px) {
+  .viz-tiles {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.viz-tick {
+  font-size: 11px;
+}
+.viz-peak {
+  font-size: 12px;
 }
