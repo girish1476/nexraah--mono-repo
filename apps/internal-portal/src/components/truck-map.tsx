@@ -147,6 +147,17 @@ async function fuelWithin(metres: number, from: Pin): Promise<FuelStation[] | nu
 
 /** The nearest fuel stations to a point, nearest first; null when the search could not be made. */
 async function nearestFuel(from: Pin): Promise<FuelStation[] | null> {
+  // Asked through the console's own server first (app/api/fuel): the map
+  // service answers a request that says who it is, which a browser cannot.
+  try {
+    const res = await fetch(`/api/fuel?lat=${from.lat}&lng=${from.lng}`);
+    if (res.ok) {
+      const body = (await res.json()) as { stations?: FuelStation[] };
+      if (Array.isArray(body.stations)) return body.stations.slice(0, FUEL_SHOWN);
+    }
+  } catch {
+    // Fall through to asking the map service directly.
+  }
   try {
     const near = await fuelWithin(30_000, from);
     if (near === null) return null;
