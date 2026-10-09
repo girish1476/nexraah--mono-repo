@@ -1,5 +1,7 @@
 'use client';
 
+import './truck-map.css';
+
 import { PointerEvent as ReactPointerEvent, ReactNode, useEffect, useRef, useState } from 'react';
 
 /**
@@ -100,6 +102,61 @@ function kmBetween(a: Pin, b: Pin): number {
 }
 
 const km = (n: number) => `${n < 10 ? n.toFixed(1) : Math.round(n).toLocaleString('en-IN')} km`;
+
+/* ---- the nearest fuel --------------------------------------------------------
+   Fuel stations near the truck, from OpenStreetMap's own data (asked through
+   its Overpass service — the same free source as the map, no key). Looked for
+   within 30 km first and, where that finds nothing, within 80 km. The distance
+   is straight-line from the truck's last reported place. */
+
+export interface FuelStation {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  km: number;
+}
+
+const FUEL_SHOWN = 8;
+
+async function fuelWithin(metres: number, from: Pin): Promise<FuelStation[] | null> {
+  const around = `(around:${metres},${from.lat},${from.lng})`;
+  const query = `[out:json][timeout:20];(node["amenity"="fuel"]${around};way["amenity"="fuel"]${around};);out center 80;`;
+  const res = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`);
+  if (!res.ok) return null;
+  const body = (await res.json()) as {
+    elements?: { type: string; id: number; lat?: number; lon?: number; center?: { lat: number; lon: number }; tags?: Record<string, string> }[];
+  };
+  return (body.elements ?? [])
+    .map((e) => {
+      const lat = e.lat ?? e.center?.lat;
+      const lng = e.lon ?? e.center?.lon;
+      if (typeof lat !== 'number' || typeof lng !== 'number') return null;
+      const tags = e.tags ?? {};
+      return {
+        id: `${e.type}/${e.id}`,
+        name: tags.name || tags.brand || tags.operator || 'Fuel station',
+        lat,
+        lng,
+        km: kmBetween(from, { lat, lng }),
+      };
+    })
+    .filter((s): s is FuelStation => !!s)
+    .sort((a, b) => a.km - b.km);
+}
+
+/** The nearest fuel stations to a point, nearest first; null when the search could not be made. */
+async function nearestFuel(from: Pin): Promise<FuelStation[] | null> {
+  try {
+    const near = await fuelWithin(30_000, from);
+    if (near === null) return null;
+    if (near.length > 0) return near.slice(0, FUEL_SHOWN);
+    const wider = await fuelWithin(80_000, from);
+    return wider === null ? null : wider.slice(0, FUEL_SHOWN);
+  } catch {
+    return null;
+  }
+}
 
 /* ---- the three looks of the map ---------------------------------------------
    Light is OpenStreetMap's own map. Dark is CARTO's dark map, drawn from the
@@ -241,6 +298,12 @@ export function TruckMap({
   const [drag, setDrag] = useState({ x: 0, y: 0 });
   const grip = useRef<{ id: number; x: number; y: number; ox: number; oy: number } | null>(null);
   const [style, pickStyle] = useMapStyle();
+  /** The nearest-fuel pop-up: shut, searching, the stations found, or that the search failed. */
+  const [fuel, setFuel] = useState<{ open: boolean; state: 'idle' | 'searching' | 'found' | 'failed'; stations: FuelStation[] }>({
+    open: false,
+    state: 'idle',
+    stations: [],
+  });
 
   // Looked up again only when a place actually changes, not on every refresh of the sheet.
   const key = JSON.stringify([truck, from, to].map((p) => (p ? [p.lat ?? null, p.lng ?? null, p.query ?? null] : null)));
@@ -248,6 +311,8 @@ export function TruckMap({
     let cancelled = false;
     setNudge(0);
     setDrag({ x: 0, y: 0 });
+    // The truck has moved: fuel found near where it was is no longer the nearest.
+    setFuel({ open: false, state: 'idle', stations: [] });
     Promise.all([resolve(truck), resolve(from), resolve(to)]).then(([t, f, d]) => {
       if (!cancelled) setPins(t ? { truck: t, from: f, to: d } : null);
     });
@@ -272,7 +337,12 @@ export function TruckMap({
   const clear = over ? SIDE_W + SIDE_GAP * 2 : 0;
   const view = Math.max(200, (width || 800) - clear);
 
-  const all = [pins.from, pins.truck, pins.to].filter((p): p is Pin => !!p);
+  // With the fuel pop-up open the map closes in on the truck and the stations
+  // found; otherwise it frames the whole trip.
+  const onFuel = fuel.open && fuel.state === 'found' && fuel.stations.length > 0;
+  const all: Pin[] = onFuel
+    ? [pins.truck, ...fuel.stations.slice(0, 5)]
+    : [pins.from, pins.truck, pins.to].filter((p): p is Pin => !!p);
   const zoom = Math.max(3, Math.min(17, fitZoom(all, view, HEIGHT) + nudge));
   // Zoomed in by hand, the map follows the truck; otherwise it frames the whole trip.
   const centre = nudge > 0 ? [pins.truck] : all;
@@ -297,7 +367,7 @@ export function TruckMap({
 
   // Dragging moves the map; letting go leaves it there.
   const onDown = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if ((e.target as HTMLElement).closest('button, a, .truck-map-side')) return;
+    if ((e.target as HTMLElement).closest('button, a, .truck-map-side, .truck-map-fuel')) return;
     grip.current = { id: e.pointerId, x: e.clientX, y: e.clientY, ox: drag.x, oy: drag.y };
     e.currentTarget.setPointerCapture(e.pointerId);
   };
@@ -335,6 +405,74 @@ export function TruckMap({
       ]
     : [];
 
+  const findFuel = () => {
+    setFuel((f) => ({ ...f, open: true }));
+    if (fuel.state === 'searching' || fuel.state === 'found') return;
+    setFuel({ open: true, state: 'searching', stations: [] });
+    const from = pins.truck;
+    void nearestFuel(from).then((stations) =>
+      setFuel((f) => (stations === null ? { ...f, state: 'failed', stations: [] } : { ...f, state: 'found', stations })),
+    );
+  };
+  const fuelButton = (
+    <button type="button" className="btn btn-secondary btn-sm truck-map-fuel-btn" onClick={findFuel}>
+      <span aria-hidden>⛽</span> Nearest fuel
+    </button>
+  );
+  // The stations found stay pinned on the map, numbered as in the list, until the truck moves.
+  const fuelPins = fuel.state === 'found' ? fuel.stations : [];
+
+  const fuelPopup = fuel.open && (
+    <div className="truck-map-fuel" role="dialog" aria-label="Nearest fuel stations">
+      <div className="truck-map-fuel-head">
+        <div>
+          <strong>⛽ Nearest fuel</strong>
+          <div className="truck-map-fuel-sub">from {truck?.label || 'the truck’s last reported place'} · straight-line distance</div>
+        </div>
+        <button type="button" className="truck-map-fuel-close" aria-label="Close" onClick={() => setFuel((f) => ({ ...f, open: false }))}>
+          ×
+        </button>
+      </div>
+      {fuel.state === 'searching' && <div className="truck-map-fuel-msg">Looking for fuel stations nearby…</div>}
+      {fuel.state === 'failed' && (
+        <div className="truck-map-fuel-msg">
+          The search could not be made just now.{' '}
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={findFuel}
+          >
+            Try again
+          </button>
+        </div>
+      )}
+      {fuel.state === 'found' && fuel.stations.length === 0 && (
+        <div className="truck-map-fuel-msg">No fuel station is on the map within 80 km of this place.</div>
+      )}
+      {fuel.state === 'found' && fuel.stations.length > 0 && (
+        <ol className="truck-map-fuel-list">
+          {fuel.stations.map((s, i) => (
+            <li key={s.id}>
+              <span className="truck-map-fuel-no" aria-hidden>
+                {i + 1}
+              </span>
+              <span className="truck-map-fuel-name">{s.name}</span>
+              <span className="truck-map-fuel-km">{km(s.km)}</span>
+              <a
+                href={`https://www.google.com/maps/dir/?api=1&origin=${pins.truck.lat},${pins.truck.lng}&destination=${s.lat},${s.lng}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Directions ↗
+              </a>
+            </li>
+          ))}
+        </ol>
+      )}
+      <div className="truck-map-fuel-foot">Fuel stations as recorded on OpenStreetMap — one that is missing there will not be listed.</div>
+    </div>
+  );
+
   const card = side && (
     <aside className={over ? 'truck-map-side is-over' : 'truck-map-side'} aria-label="About this truck">
       {side.eyebrow && <div className="eyebrow">{side.eyebrow}</div>}
@@ -349,6 +487,7 @@ export function TruckMap({
         ))}
       </dl>
       {side.note && <div className="truck-map-side-note">“{side.note}”</div>}
+      <div className="truck-map-side-actions">{fuelButton}</div>
     </aside>
   );
 
@@ -397,6 +536,22 @@ export function TruckMap({
             </svg>
             {pins.from && stop(pins.from, 1, `Loading point — ${from?.label ?? ''}`)}
             {pins.to && stop(pins.to, 2, `Unloading point — ${to?.label ?? ''}`)}
+            {fuelPins.map((s, i) => {
+              const p = at(s);
+              return (
+                <div
+                  key={s.id}
+                  role="img"
+                  aria-label={`Fuel ${i + 1} — ${s.name}, ${km(s.km)}`}
+                  title={`${s.name} · ${km(s.km)}`}
+                  className="truck-map-fuel-pin"
+                  style={{ left: p.x, top: p.y }}
+                >
+                  <span aria-hidden>⛽</span>
+                  <b>{i + 1}</b>
+                </div>
+              );
+            })}
             <div
               role="img"
               aria-label={`Truck — ${truck?.label ?? ''}`}
@@ -442,6 +597,8 @@ export function TruckMap({
         <div className="truck-map-credit">{STYLES[style].credit}</div>
 
         {over && card}
+        {!side && <div className="truck-map-fuel-solo">{fuelButton}</div>}
+        {fuelPopup}
       </div>
       {!over && card}
       {caption && (

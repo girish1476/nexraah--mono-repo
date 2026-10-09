@@ -1,0 +1,157 @@
+/* The truck map's nearest-fuel pop-up (components/truck-map.tsx). The map's own
+   styles are in globals.css under "the truck map"; these are kept beside the
+   component because they belong to this one feature. */
+
+.truck-map-side-actions {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-divider);
+}
+.truck-map-fuel-btn {
+  width: 100%;
+}
+/* Where there is no card beside the map, the button sits on the map itself. */
+.truck-map-fuel-solo {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 3;
+}
+.truck-map-fuel-solo .truck-map-fuel-btn {
+  width: auto;
+  box-shadow: var(--shadow-md);
+}
+
+/* The pop-up: a card laid over the middle of the map. */
+.truck-map-fuel {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(420px, calc(100% - 24px));
+  max-height: calc(100% - 24px);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-lg);
+  font-size: var(--text-sm);
+  cursor: auto;
+  user-select: text;
+  z-index: 6;
+}
+.truck-map-fuel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--color-divider);
+}
+.truck-map-fuel-head strong {
+  font-size: var(--text-base);
+}
+.truck-map-fuel-sub {
+  margin-top: 2px;
+  color: var(--color-text-soft);
+}
+.truck-map-fuel-close {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.truck-map-fuel-close:hover {
+  background: var(--color-accent-tint);
+}
+.truck-map-fuel-msg {
+  padding: 16px 14px;
+  color: var(--color-text-soft);
+}
+.truck-map-fuel-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  overflow-y: auto;
+}
+.truck-map-fuel-list li {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+}
+.truck-map-fuel-list li + li {
+  border-top: 1px solid var(--color-divider);
+}
+.truck-map-fuel-no {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #0f7a4d;
+  color: #ffffff;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+.truck-map-fuel-name {
+  font-size: var(--text-md);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.truck-map-fuel-km {
+  font-variant-numeric: tabular-nums lining-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.truck-map-fuel-list a {
+  white-space: nowrap;
+  font-weight: 600;
+}
+.truck-map-fuel-foot {
+  padding: 8px 14px 10px;
+  border-top: 1px solid var(--color-divider);
+  color: var(--color-text-soft);
+  font-size: 11.5px;
+}
+
+/* A station on the map, numbered as in the list. */
+.truck-map-fuel-pin {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 2px solid #0f7a4d;
+  background: #ffffff;
+  font-size: 14px;
+  line-height: 1;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  z-index: 1;
+}
+.truck-map-fuel-pin b {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #0f7a4d;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+}
