@@ -195,55 +195,70 @@ export default function RateChangesPage() {
     { key: 'from', label: 'From location', render: ({ lane: l }) => l.origin },
     { key: 'to', label: 'To location', render: ({ lane: l }) => l.destination },
     { key: 'transit', label: 'Transit days', render: ({ lane: l }) => l.transitDays },
-    { key: 'rate', label: 'Lane rate', render: ({ lane: l }) => rateWithBasis(inr(l.ratePaise), l.rateBasis) },
+    {
+      key: 'rate',
+      label: 'Lane rate',
+      render: ({ lane: l }) => (
+        <span style={{ whiteSpace: 'nowrap' }}>{rateWithBasis(inr(l.ratePaise), l.rateBasis)}</span>
+      ),
+    },
     {
       key: 'period',
       label: 'In force',
-      render: ({ lane: l }) =>
-        `${fmtDate(l.validFrom)} — ${l.validTo ? fmtDate(l.validTo) : 'open-ended'}`,
+      render: ({ lane: l }) => (
+        <span style={{ whiteSpace: 'nowrap' }}>
+          {fmtDate(l.validFrom)} — {l.validTo ? fmtDate(l.validTo) : 'open-ended'}
+        </span>
+      ),
     },
-    ...(canDelete
-      ? [
-          {
-            key: 'delete',
-            label: '',
-            render: ({ lane: l }: LiveLane) => (
-              <button
-                className="btn btn-ghost btn-sm"
-                onClick={() =>
-                  setDeleting({
-                    label: `${l.origin} → ${l.destination} · ${l.truckType} at ${rateWithBasis(inr(l.ratePaise), l.rateBasis)}`,
-                    run: (reason) => deleteRateLane(clientId, l.id, reason),
-                  })
-                }
-              >
-                🗑 Delete
-              </button>
-            ),
-          },
-        ]
-      : []),
     {
+      // One actions cell, pushed to the row's right edge, so the buttons sit
+      // together instead of floating in two half-empty columns.
       key: 'go',
       label: '',
-      render: ({ lane: l, replacedFrom }) =>
-        lanesPendingChange.has(`${l.origin} → ${l.destination}·${l.truckType}`) ? (
-          <Tag tone="flag" emoji="⏳">
-            Change waiting for sign-off
-          </Tag>
-        ) : replacedFrom ? (
-          <Tag tone="grey" emoji="📅">
-            New rate starts {fmtDate(replacedFrom)}
-          </Tag>
-        ) : (
-          <button
-            className="btn btn-secondary btn-sm"
-            disabled={!can('rate.revise')}
-            onClick={() => startEdit(l)}
-          >
-            Change this rate
-          </button>
-        ),
+      render: ({ lane: l, replacedFrom }) => (
+        <div
+          style={{
+            display: 'flex',
+            gap: 8,
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            marginLeft: 'auto',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {canDelete && (
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() =>
+                setDeleting({
+                  label: `${l.origin} → ${l.destination} · ${l.truckType} at ${rateWithBasis(inr(l.ratePaise), l.rateBasis)}`,
+                  run: (reason) => deleteRateLane(clientId, l.id, reason),
+                })
+              }
+            >
+              🗑 Delete
+            </button>
+          )}
+          {lanesPendingChange.has(`${l.origin} → ${l.destination}·${l.truckType}`) ? (
+            <Tag tone="flag" emoji="⏳">
+              Change waiting for sign-off
+            </Tag>
+          ) : replacedFrom ? (
+            <Tag tone="grey" emoji="📅">
+              New rate starts {fmtDate(replacedFrom)}
+            </Tag>
+          ) : (
+            <button
+              className="btn btn-secondary btn-sm"
+              disabled={!can('rate.revise')}
+              onClick={() => startEdit(l)}
+            >
+              Change this rate
+            </button>
+          )}
+        </div>
+      ),
     },
   ];
 
@@ -370,17 +385,19 @@ export default function RateChangesPage() {
         answered with what was true at the time.
       </PageIntro>
 
-      <Panel>
-        <Field label="Client" hint="Only clients with a rate card have lanes to change.">
-          <select value={clientId} onChange={(e) => setClientId(e.target.value)}>
-            {clients.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name} · {c.billingCity}
-              </option>
-            ))}
-          </select>
-        </Field>
-      </Panel>
+      <div style={{ marginBottom: 16 }}>
+        <Panel>
+          <Field label="Client" hint="Only clients with a rate card have lanes to change.">
+            <select value={clientId} onChange={(e) => setClientId(e.target.value)}>
+              {clients.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} · {c.billingCity}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </Panel>
+      </div>
 
       <StatStrip
         stats={[

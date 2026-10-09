@@ -19,6 +19,6 @@ import { RateRevisionService } from './rate-revision.service';
    */
   controllers: [ClientOnboardingController, RateRevisionController, ClientsController],
   providers: [ClientsService, ClientsRepository, ClientOnboardingService, RateRevisionService],
-  exports: [ClientsRepository, ClientOnboardingService],
+  exports: [ClientsRepository, ClientOnboardingService, ClientsService],
 })
 export class ClientsModule {}

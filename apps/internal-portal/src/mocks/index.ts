@@ -2347,6 +2347,26 @@ const routes: [string, RegExp, Handler][] = [
       });
     },
   ],
+  // The assistant answers from records it looks up through an outside model,
+  // which only the real server can reach. The fixture does not pretend to be one.
+  [
+    'POST',
+    /^\/assistant\/chat$/,
+    () => fail(503, 'ASSISTANT_NOT_SET_UP', 'The assistant is not available in this demo — it needs the real server.'),
+  ],
+  // Reading a document's details ("Fetch") is done by the real server, which
+  // sends the file to be read. The fixture has nothing to read it with, and
+  // inventing values would put made-up numbers into a form people verify from.
+  [
+    'POST',
+    /^\/attachments\/read$/,
+    () => fail(503, 'OCR_NOT_SET_UP', 'Reading documents is not available in this demo. Type the details in by hand.'),
+  ],
+  [
+    'POST',
+    /^\/attachments\/([^/]+)\/read$/,
+    () => fail(503, 'OCR_NOT_SET_UP', 'Reading documents is not available in this demo. Type the details in by hand.'),
+  ],
   [
     'GET',
     /^\/attachments\/([^/]+)\/url$/,

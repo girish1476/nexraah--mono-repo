@@ -10,6 +10,6 @@ import { PodRepository } from './pod.repository';
   imports: [ControlPanelModule, OrdersModule, SdrModule],
   controllers: [PodController],
   providers: [PodService, PodRepository],
-  exports: [PodRepository],
+  exports: [PodRepository, PodService],
 })
 export class PodModule {}

@@ -9,6 +9,7 @@ import { request } from '@/apis';
 import { signOut } from '@/lib/auth';
 import { Glyph, areaVars } from '@/lib/ui';
 import { useTheme } from '@/lib/theme';
+import { Assistant } from '@/components/assistant';
 import { ReportProblemButton } from './tickets/report-button';
 
 /**
@@ -50,7 +51,7 @@ export function Shell({ session, children }: { session: Session | null; children
   const [navOpen, setNavOpen] = useState(false);
   /*
    * The desktop sidebar folds away to give a wide table or a map the whole
-   * screen, from the button at the left of the top bar. The choice is kept in
+   * screen, from the button in its own header. The choice is kept in
    * this browser, like the theme, so it holds from screen to screen. (On a
    * phone the sidebar is already a drawer — `navOpen` above.)
    */
@@ -221,6 +222,23 @@ export function Shell({ session, children }: { session: Session | null; children
                 Freight desk
               </div>
             </div>
+            {/* The desktop open/close control lives here, in the sidebar's own
+                header. Folded, the sidebar is off the screen and takes this
+                button with it, so the top bar carries the way back. */}
+            <button
+              type="button"
+              className="userbar-menu sidebar-toggle"
+              aria-label="Hide the menu"
+              aria-expanded={!collapsed}
+              title="Hide the menu"
+              onClick={toggleSidebar}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="3" y="4" width="18" height="16" rx="2.5" />
+                <path d="M9 4v16" />
+                <path className="userbar-menu-arrow" d="M16 9.5 13.5 12l2.5 2.5" />
+              </svg>
+            </button>
             {/* Sits above the mobile topbar's own hamburger/X (z-index) when the
                 drawer is open, so the drawer always has a reachable dismiss
                 control instead of relying solely on the backdrop tap. */}
@@ -352,20 +370,22 @@ export function Shell({ session, children }: { session: Session | null; children
 
         <main className="app-main" style={{ flex: 1, minWidth: 0, padding: '24px 30px 72px' }}>
           <div className="userbar no-print">
-            <button
-              type="button"
-              className="userbar-menu"
-              aria-label={collapsed ? 'Show the menu' : 'Hide the menu'}
-              aria-expanded={!collapsed}
-              title={collapsed ? 'Show the menu' : 'Hide the menu'}
-              onClick={toggleSidebar}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <rect x="3" y="4" width="18" height="16" rx="2.5" />
-                <path d="M9 4v16" />
-                <path className="userbar-menu-arrow" d={collapsed ? 'M13.5 9.5 16 12l-2.5 2.5' : 'M16 9.5 13.5 12l2.5 2.5'} />
-              </svg>
-            </button>
+            {collapsed && (
+              <button
+                type="button"
+                className="userbar-menu is-reopen"
+                aria-label="Show the menu"
+                aria-expanded={false}
+                title="Show the menu"
+                onClick={toggleSidebar}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="3" y="4" width="18" height="16" rx="2.5" />
+                  <path d="M9 4v16" />
+                  <path className="userbar-menu-arrow" d="M13.5 9.5 16 12l-2.5 2.5" />
+                </svg>
+              </button>
+            )}
             <UserBar role={role} session={session} />
           </div>
           {children}
@@ -400,6 +420,8 @@ export function Shell({ session, children }: { session: Session | null; children
             <ReportProblemButton />
           </div>
         </main>
+        {/* On every screen, like the ticket button — a question comes up wherever the person happens to be. */}
+        <Assistant />
       </div>
     </div>
   );

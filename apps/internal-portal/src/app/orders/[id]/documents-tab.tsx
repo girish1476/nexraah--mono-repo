@@ -18,7 +18,7 @@ import {
 import type { CrossCheckResult, TripDetail, TripDocument } from '@/app/trips/types';
 import { getClient } from '@/app/clients/apis';
 import type { Client } from '@/app/clients/types';
-import { uploadAttachment } from '@/lib/attachments';
+import { readDocument, uploadAttachment, type ReadField } from '@/lib/attachments';
 import { fmtDate, inr } from '@/lib/format';
 import { Banner, Dialog, ErrorState, Field, FormGrid, Loading, Panel, Stack, Tag, useCan, useToast } from '@/lib/ui';
 import { sessionAtom } from '@/store/atoms';
@@ -28,6 +28,8 @@ interface DetailField {
   key: string;
   label: string;
   type?: 'text' | 'date' | 'rupees' | 'number';
+  /** The kind of number a text box holds, which Fetch holds its reading to. */
+  format?: ReadField['format'];
   required?: boolean;
   /** Which document kind the value is stored on, for a card that covers several (the vehicle PDF). */
   kind?: string;
@@ -41,6 +43,8 @@ interface DocItem {
   title: string;
   /** The trip document kinds this one file stands for. */
   kinds: string[];
+  /** What kind of paper Fetch is told it is reading, where that is not simply the first of `kinds`. */
+  docType?: string;
   fields: DetailField[];
   /** The vehicle papers come as one PDF, not photos. */
   pdf?: boolean;
@@ -59,7 +63,7 @@ const SECTIONS: { title: string; note: string; items: DocItem[] }[] = [
         fields: [
           { key: 'invoiceNo', label: 'Invoice number', required: true },
           { key: 'invoiceValue', label: 'Invoice value (₹)', type: 'rupees', required: true },
-          { key: 'consignorGstin', label: 'Consignor GSTIN' },
+          { key: 'consignorGstin', label: 'Consignor GSTIN', format: 'gstin' },
           { key: 'consigneeName', label: 'Consignee name' },
         ],
       },
@@ -68,8 +72,8 @@ const SECTIONS: { title: string; note: string; items: DocItem[] }[] = [
         title: 'E-way bill',
         kinds: ['EWAY_BILL'],
         fields: [
-          { key: 'ewayNo', label: 'E-way bill number' },
-          { key: 'vehicleNo', label: 'Vehicle number on it', required: true },
+          { key: 'ewayNo', label: 'E-way bill number', format: 'ewayBill' },
+          { key: 'vehicleNo', label: 'Vehicle number on it', required: true, format: 'vehicle' },
           { key: 'validTill', label: 'Valid till', type: 'date', required: true },
         ],
       },
@@ -83,9 +87,10 @@ const SECTIONS: { title: string; note: string; items: DocItem[] }[] = [
         id: 'vehicle',
         title: 'Vehicle papers (one PDF)',
         kinds: ['RC', 'INSURANCE', 'FITNESS', 'PERMIT', 'PUC'],
+        docType: 'VEHICLE_PAPERS',
         pdf: true,
         fields: [
-          { key: 'rcNo', label: 'RC number', required: true, kind: 'RC' },
+          { key: 'rcNo', label: 'RC number', required: true, kind: 'RC', format: 'vehicle' },
           { key: 'permitValidTill', label: 'Permit valid till', type: 'date', required: true, kind: 'PERMIT', storeAs: 'validTill' },
           { key: 'insuranceValidTill', label: 'Insurance (IC) valid till', type: 'date', required: true, kind: 'INSURANCE', storeAs: 'validTill' },
           { key: 'fitnessValidTill', label: 'Fitness valid till', type: 'date', required: true, kind: 'FITNESS', storeAs: 'validTill' },
@@ -103,9 +108,9 @@ const SECTIONS: { title: string; note: string; items: DocItem[] }[] = [
         title: 'Driving licence',
         kinds: ['DRIVING_LICENCE'],
         fields: [
-          { key: 'dlNo', label: 'Licence number', required: true },
+          { key: 'dlNo', label: 'Licence number', required: true, format: 'drivingLicence' },
           { key: 'validTill', label: 'Valid till', type: 'date', required: true },
-          { key: 'driverName', label: 'Driver name' },
+          { key: 'driverName', label: 'Driver name', format: 'name' },
         ],
       },
     ],
@@ -215,6 +220,11 @@ export function OrderDocumentsTab({
   const [checking, setChecking] = useState<DocItem | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
+  /** "Fetch" in progress, and the boxes it filled — marked so the checker knows which to look at. */
+  const [fetching, setFetching] = useState(false);
+  const [fetched, setFetched] = useState<string[]>([]);
+  /** What the reader had to say about a box — a date already passed, a character settled by the pattern. */
+  const [fetchNotes, setFetchNotes] = useState<Record<string, string>>({});
   const [rejecting, setRejecting] = useState<DocItem | null>(null);
   const [reason, setReason] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
@@ -284,7 +294,54 @@ export function OrderDocumentsTab({
       v[f.key] = f.type === 'rupees' && raw ? String(Number(raw) / 100) : raw;
     }
     setValues(v);
+    setFetched([]);
+    setFetchNotes({});
     setChecking(item);
+  };
+
+  /**
+   * "Fetch" — reads the details off the document and fills the boxes that are
+   * still empty. What a person has already typed is never overwritten, and
+   * nothing is saved: the checker still looks at each value and presses Verify.
+   */
+  const fetchDetails = async () => {
+    const item = checking;
+    const attachmentId = item ? docsFor(item).find((d) => d.attachmentId)?.attachmentId : null;
+    if (!item || !attachmentId) return;
+    setFetching(true);
+    try {
+      const read = await readDocument(
+        attachmentId,
+        item.title,
+        item.fields.map((f) => ({ key: f.key, label: f.label, type: f.type, format: f.format })),
+        item.docType ?? item.kinds[0],
+      );
+      // Only the boxes still empty are filled, and only those are marked as fetched.
+      const filled = item.fields
+        .map((f) => f.key)
+        .filter((key) => read.values[key] && !String(values[key] ?? '').trim());
+      setValues((current) => ({ ...current, ...Object.fromEntries(filled.map((key) => [key, read.values[key]])) }));
+      setFetched((keys) => [...new Set([...keys, ...filled])]);
+      // A note is shown for a box Fetch filled, or one it left blank on purpose — never beside what a person typed.
+      setFetchNotes((notes) => ({
+        ...notes,
+        ...Object.fromEntries(
+          Object.entries(read.notes ?? {}).filter(([key]) => filled.includes(key) || !String(values[key] ?? '').trim()),
+        ),
+      }));
+      const found = Object.keys(read.values).length;
+      toast(
+        found === 0
+          ? 'Nothing could be read off this document — type the details in.'
+          : found < item.fields.length
+            ? `Fetched ${found} of ${item.fields.length} details — check them and type the rest.`
+            : 'Details fetched — check each one against the document before verifying.',
+      );
+    } catch (e) {
+      toast(errorMessage(e));
+    } finally {
+      setFetching(false);
+    }
   };
 
   const checkProblem = (() => {
@@ -654,17 +711,44 @@ export function OrderDocumentsTab({
               width={checking.pdf ? 150 : 170}
               height={checking.pdf ? 190 : 210}
             />
-            <FormGrid>
-              {checking.fields.map((f) => (
-                <Field key={f.key} label={f.label} required={f.required}>
-                  <input
-                    type={f.type === 'date' ? 'date' : f.type === 'rupees' || f.type === 'number' ? 'number' : 'text'}
-                    value={values[f.key] ?? ''}
-                    onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}
-                  />
-                </Field>
-              ))}
-            </FormGrid>
+            <div style={{ minWidth: 0 }}>
+              {/* Two ways to fill the boxes: type them, or Fetch reads them off the document. */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+                <span className="muted" style={{ fontSize: 12, flex: '1 1 160px' }}>
+                  Type the details, or fetch them from the document.
+                </span>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  disabled={fetching || busy || !docsFor(checking).some((d) => d.attachmentId)}
+                  onClick={fetchDetails}
+                >
+                  {fetching ? 'Fetching…' : '✨ Fetch'}
+                </button>
+              </div>
+              <FormGrid>
+                {checking.fields.map((f) => (
+                  <Field
+                    key={f.key}
+                    label={f.label}
+                    required={f.required}
+                    hint={
+                      fetchNotes[f.key] ?? (fetched.includes(f.key) ? 'Fetched from the document — check it' : undefined)
+                    }
+                  >
+                    <input
+                      type={f.type === 'date' ? 'date' : f.type === 'rupees' || f.type === 'number' ? 'number' : 'text'}
+                      value={values[f.key] ?? ''}
+                      onChange={(e) => {
+                        setValues({ ...values, [f.key]: e.target.value });
+                        // Once a person has changed it, it is theirs, not the reader's.
+                        setFetched((keys) => keys.filter((k) => k !== f.key));
+                        setFetchNotes(({ [f.key]: _gone, ...rest }) => rest);
+                      }}
+                    />
+                  </Field>
+                ))}
+              </FormGrid>
+            </div>
           </div>
         )}
         {checkProblem && (

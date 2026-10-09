@@ -5,7 +5,9 @@
  * `config.advance_document_set`, read from the server, never this file.
  */
 
-export type DocGroup = 'CLIENT' | 'VEHICLE' | 'DRIVER' | 'LOADING' | 'LR' | 'POD';
+import type { ReadField } from './attachments';
+
+export type DocGroup ='CLIENT' | 'VEHICLE' | 'DRIVER' | 'LOADING' | 'LR' | 'POD';
 
 export const DOC_LABELS: Record<string, string> = {
   CLIENT_INVOICE_OR_PO: 'Client invoice or purchase order',
@@ -91,7 +93,34 @@ export const GOVERNMENT_CERTIFICATE_KINDS: { kind: string; label: string }[] = [
   { kind: 'UDYAM', label: 'Udyam / MSME certificate' },
 ];
 
-export const CHARGE_TYPES = ['LOADING', 'UNLOADING', 'LABOUR', 'HALT', 'DETENTION', 'OTHER'] as const;
+/**
+ * What "Fetch" reads off each of a transporter's papers. `reference` is the
+ * one number box beside the file picker; the cancelled cheque has no such box
+ * and instead fills the bank details asked for on the Payment step.
+ *
+ * `format` names the kind of number, which the server holds the reading to —
+ * see `ReadField` in `lib/attachments.ts`. A kind not listed here has nothing
+ * on it worth reading (the yard photo, the TDS declaration).
+ */
+export const VENDOR_READ: Record<string, { fields: ReadField[] }> = {
+  PAN: { fields: [{ key: 'reference', label: 'PAN number', format: 'pan' }] },
+  AADHAAR: { fields: [{ key: 'reference', label: 'Aadhaar number', format: 'aadhaarLast4' }] },
+  ADDRESS: { fields: [{ key: 'reference', label: 'Consumer, agreement or other reference number of this document' }] },
+  RC: { fields: [{ key: 'reference', label: 'Registration number', format: 'vehicle' }] },
+  TRADE_LICENCE: { fields: [{ key: 'reference', label: 'Licence number' }] },
+  LABOUR_LICENCE: { fields: [{ key: 'reference', label: 'Licence or registration number' }] },
+  UDYAM: { fields: [{ key: 'reference', label: 'Udyam registration number', format: 'udyam' }] },
+  TRANSPORTER_AGREEMENT: { fields: [{ key: 'reference', label: 'Agreement number' }] },
+  BANK_STATEMENT: {
+    fields: [
+      { key: 'bankAccount', label: 'Account number', format: 'bankAccount' },
+      { key: 'ifsc', label: 'IFSC', format: 'ifsc' },
+      { key: 'accountHolder', label: 'Account holder name', format: 'name' },
+    ],
+  },
+};
+
+export const CHARGE_TYPES =['LOADING', 'UNLOADING', 'LABOUR', 'HALT', 'DETENTION', 'OTHER'] as const;
 export type ChargeType = (typeof CHARGE_TYPES)[number];
 
 export const PAYMENT_MODES = ['NEFT', 'RTGS', 'IMPS', 'UPI', 'CHEQUE', 'CASH'] as const;

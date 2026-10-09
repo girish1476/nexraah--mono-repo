@@ -36,6 +36,15 @@ export class StorageService {
     }
   }
 
+  /** The file's bytes, for the one server-side reader of a document — `modules/ocr`. Never sent to a browser from here. */
+  async download(path: string): Promise<Buffer> {
+    const { data, error } = await this.client.storage.from(this.bucket).download(path);
+    if (error || !data) {
+      throw new DomainException(502, 'STORAGE_DOWNLOAD_FAILED', error?.message ?? 'Unable to read the file.');
+    }
+    return Buffer.from(await data.arrayBuffer());
+  }
+
   /** `attachment-retention` (modules/jobs) is the one caller — everywhere else only ever uploads or signs. */
   async remove(path: string): Promise<void> {
     const { error } = await this.client.storage.from(this.bucket).remove([path]);

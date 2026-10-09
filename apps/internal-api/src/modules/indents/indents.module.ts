@@ -9,6 +9,6 @@ import { IndentsRepository } from './indents.repository';
   imports: [VendorsModule, OrdersModule],
   controllers: [IndentsController],
   providers: [IndentsService, IndentsRepository],
-  exports: [IndentsRepository],
+  exports: [IndentsRepository, IndentsService],
 })
 export class IndentsModule {}

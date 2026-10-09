@@ -18,6 +18,8 @@ import { ConfigModule as ControlPanelModule } from './modules/config/config.modu
 import { RolesModule } from './modules/roles/roles.module';
 import { UsersModule } from './modules/users/users.module';
 import { AttachmentsModule } from './modules/attachments/attachments.module';
+import { OcrModule } from './modules/ocr/ocr.module';
+import { AssistantModule } from './modules/assistant/assistant.module';
 import { VendorsModule } from './modules/vendors/vendors.module';
 import { ComplianceModule } from './modules/compliance/compliance.module';
 import { ClientsModule } from './modules/clients/clients.module';
@@ -53,6 +55,7 @@ import { JobsModule } from './modules/jobs/jobs.module';
     RolesModule,
     UsersModule,
     AttachmentsModule,
+    OcrModule,
     VendorsModule,
     ComplianceModule,
     ClientsModule,
@@ -73,6 +76,7 @@ import { JobsModule } from './modules/jobs/jobs.module';
     PortalModule,
     JobsModule,
     ImportModule,
+    AssistantModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
