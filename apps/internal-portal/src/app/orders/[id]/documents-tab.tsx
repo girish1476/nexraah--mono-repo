@@ -452,10 +452,11 @@ export function OrderDocumentsTab({
                 Wrong document — reject
               </button>
             )}
-            {/* A slip verified before its LR number was typed: the number can still be added or put right. */}
-            {item.id === 'loading-slip' && canVerify && state === 'VERIFIED' && (
+            {/* Details typed wrongly at verification can be put right afterwards, on every document —
+                and a slip verified before its LR number was typed can still be given one. */}
+            {canVerify && state === 'VERIFIED' && item.fields.length > 0 && (
               <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => openCheck(item, true)}>
-                {valueOf(item, item.fields[0], current) ? 'Edit details' : '＋ Enter LR number'}
+                {item.id === 'loading-slip' && !valueOf(item, item.fields[0], current) ? '＋ Enter LR number' : '✏️ Edit details'}
               </button>
             )}
             {/* The loading slip stands in for the lorry receipt; an E-LR is generated from here if the client wants one. */}

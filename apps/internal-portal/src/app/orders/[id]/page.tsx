@@ -6,7 +6,7 @@ import { useParams } from 'next/navigation';
 import { errorMessage } from '@/apis';
 import { getTrip, getTripDocuments } from '@/app/trips/apis';
 import type { TripDocument } from '@/app/trips/types';
-import { fmtDate, fmtDateTime } from '@/lib/format';
+import { fmtDate, fmtDateTime, inr } from '@/lib/format';
 import {
   EmptyState,
   ErrorState,
@@ -25,6 +25,7 @@ import {
 import { getOrder } from '../apis';
 import { OrderActivityList } from './activity-list';
 import { CorrectVehicleButton } from './correct-vehicle';
+import { CorrectAwardedRateButton, EditLoadButton } from '@/components/corrections';
 import { ORDER_STATUS_LABEL, ORDER_STATUS_TONE, OrderDetail } from '../types';
 import { OrderCommentsButton } from './comments-button';
 import { OrderDocumentsTab } from './documents-tab';
@@ -295,6 +296,7 @@ function DetailsTab({
   reload: () => void;
   openTab: (t: OrderTabTarget | OrderTab) => void;
 }) {
+  const canEdit = useCan()('indent.manage');
   return (
     <>
       <div style={{ marginBottom: 16 }}>
@@ -325,7 +327,28 @@ function DetailsTab({
             alignItems: 'start',
           }}
         >
-          <Panel title="📦 Order" pad={false}>
+          <Panel
+            title="📦 Order"
+            pad={false}
+            right={
+              // Anything typed wrongly on the load request can be put right, at any stage.
+              canEdit && order.status !== 'CANCELLED' ? (
+                <EditLoadButton
+                  indentId={order.indentId}
+                  load={{
+                    material: order.material,
+                    weightTn: order.weightTn,
+                    truckType: order.truckType,
+                    pickupDate: order.pickupDate,
+                    sellRatePaise: order.sellRatePaise,
+                    pickupAddress: order.pickupAddress,
+                    dropAddress: order.dropAddress,
+                  }}
+                  onCorrected={reload}
+                />
+              ) : undefined
+            }
+          >
             <FactList
               facts={[
                 ['Client', order.clientName],
@@ -351,7 +374,18 @@ function DetailsTab({
           </Panel>
         </div>
 
-        <Panel title="🚛 Transporter and vehicle" pad={false}>
+        <Panel
+          title="🚛 Transporter and vehicle"
+          pad={false}
+          right={
+            canEdit && order.buyRatePaise !== null && order.status !== 'CANCELLED' ? (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--text-sm)' }}>
+                <span className="muted">Rate {inr(order.buyRatePaise)}</span>
+                <CorrectAwardedRateButton indentId={order.indentId} onCorrected={reload} />
+              </span>
+            ) : undefined
+          }
+        >
           <FactList
             inline
             facts={[

@@ -59,3 +59,12 @@ export function proposeRateLane(
 ) {
   return request<never>({ url: `/clients/${clientId}/rate-card`, method: 'POST', data: body });
 }
+
+/** PATCH /clients/:id/rate-revisions/:revisionId — corrects a rate change still waiting for sign-off. */
+export function editRateRevision(
+  clientId: string,
+  revisionId: string,
+  body: { newRatePaise?: number; effectiveFrom?: string; reason?: string },
+) {
+  return request<RateRevision>({ url: `/clients/${clientId}/rate-revisions/${revisionId}`, method: 'PATCH', data: body });
+}

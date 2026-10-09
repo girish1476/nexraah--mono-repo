@@ -33,6 +33,7 @@ import {
   setLaneBand,
 } from '../apis';
 import { DeleteRateDialog, useCanDeleteRates } from '../delete-rate-dialog';
+import { EditLaneDialog, RejectedLanesPanel, useCanCorrectRates, type LaneEditTarget } from '../rate-corrections';
 import { LiveLane, liveLanes } from '../lanes';
 import {
   CLIENT_STATUS_LABEL,
@@ -162,6 +163,10 @@ export default function ClientDetailPage() {
 
   const [pending, setPending] = useState<PendingRateLane[]>([]);
   const canDelete = useCanDeleteRates();
+  // A rate typed wrongly is corrected in place — agreed or still waiting.
+  const canCorrect = useCanCorrectRates();
+  const [editingLane, setEditingLane] = useState<LaneEditTarget | null>(null);
+  const [rateTick, setRateTick] = useState(0);
   const [deleting, setDeleting] = useState<{ label: string; run: (reason: string) => Promise<unknown> } | null>(null);
 
   const load = () => {
@@ -195,6 +200,11 @@ export default function ClientDetailPage() {
       render: (r) => (
         <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap' }}>
           <Tag tone="flag">Awaiting approval</Tag>
+          {canCorrect && (
+            <button className="btn btn-ghost btn-sm" onClick={() => setEditingLane({ mode: 'pending', approvalId: r.approvalId, lane: r })}>
+              ✏️ Edit
+            </button>
+          )}
           {canDelete && (
             <button
               className="btn btn-ghost btn-sm"
@@ -277,6 +287,20 @@ export default function ClientDetailPage() {
       ),
     },
     { key: 'rfq', label: 'Won in quote (RFQ)', mono: true, render: ({ lane: r }) => r.rfqLaneId },
+    ...(canCorrect
+      ? [
+          {
+            key: 'edit',
+            label: '',
+            align: 'right' as const,
+            render: ({ lane: r }: LiveLane) => (
+              <button className="btn btn-ghost btn-sm" onClick={() => setEditingLane({ mode: 'agreed', laneId: r.id, lane: r })}>
+                ✏️ Edit
+              </button>
+            ),
+          },
+        ]
+      : []),
     ...(canDelete
       ? [
           {
@@ -422,6 +446,17 @@ export default function ClientDetailPage() {
           )}
         </Panel>
 
+        {/* Turned down: kept, so it can be corrected and sent again rather than typed afresh. */}
+        <RejectedLanesPanel
+          clientId={id}
+          clientName={client.name}
+          refreshKey={rateTick}
+          onResent={() => {
+            load();
+            setRateTick((t) => t + 1);
+          }}
+        />
+
         {/* A lane added here is not on the rate card until it is approved, so
             it used to vanish — and was added again. It shows here meanwhile. */}
         {pending.length > 0 && (
@@ -442,6 +477,15 @@ export default function ClientDetailPage() {
       </Split>
 
       <DeleteRateDialog target={deleting} onClose={() => setDeleting(null)} onDeleted={load} />
+      <EditLaneDialog
+        clientId={id}
+        target={editingLane}
+        onClose={() => setEditingLane(null)}
+        onSaved={() => {
+          load();
+          setRateTick((t) => t + 1);
+        }}
+      />
 
       <Dialog
         open={bandLane !== null}

@@ -1828,6 +1828,9 @@ function laneClash(
   const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
   const clash = (db.rateCards[clientId] ?? []).some(
     (l: any) =>
+      // A deleted rate is gone: it must not refuse the corrected one entered in its place.
+      !l.deletedAt &&
+      l.id !== (lane as { exceptLaneId?: string }).exceptLaneId &&
       same(l.origin, lane.origin) &&
       same(l.destination, lane.destination) &&
       same(l.truckType, lane.truckType) &&
@@ -3803,6 +3806,280 @@ const routes: [string, RegExp, Handler][] = [
       if (trip) Object.assign(trip, driver);
       touchIndent(indent);
       return ok(indentView(indent));
+    },
+  ],
+  /* ------------------------------------------------ corrections --------
+   * Putting a mistake right, at any point in the flow. Each takes effect at
+   * once and needs a reason, which is kept: on the order's comments for a load
+   * or a quote, on the lane or proposal for a rate. Mirrors the API's
+   * `IndentsService.correctDetails` / `correctQuote` and
+   * `RateRevisionService.correctLane` / `editPendingLane` / `editPendingRevision`.
+   */
+  [
+    'PATCH',
+    /^\/indents\/([^/]+)\/details$/,
+    ({ params, body, role, userId }) => {
+      if (!SEED_GRANTS[role]?.includes('indent.manage') && !SEED_GRANTS[role]?.includes('indent.create'))
+        fail(403, 'FORBIDDEN', 'You cannot change this load.');
+      const indent = findIndent(params[0]);
+      const reason = String(body?.reason ?? '').trim();
+      if (reason.length < 5) fail(400, 'VALIDATION_ERROR', 'Say why the load request is being corrected.');
+      if (indent.stage === 'CANCELLED') fail(409, 'CANCELLED', 'This load was cancelled; there is nothing to correct.');
+      const trip = tripForIndent(indent);
+      const invoiced = !!trip && db.invoices.some((i: any) => i.status !== 'CANCELLED' && (i.tripIds ?? []).includes(trip.id));
+
+      const next: Record<string, unknown> = {};
+      const text = (key: string, min: number, label: string) => {
+        if (body?.[key] === undefined) return;
+        const v = String(body[key] ?? '').trim().replace(/\s+/g, ' ');
+        if (v.length < min) fail(400, 'VALIDATION_ERROR', `Enter the ${label}.`);
+        next[key] = v;
+      };
+      text('material', 2, 'material');
+      text('truckType', 2, 'truck type');
+      if (body?.pickupAddress !== undefined) next.pickupAddress = String(body.pickupAddress ?? '').trim() || null;
+      if (body?.dropAddress !== undefined) next.dropAddress = String(body.dropAddress ?? '').trim() || null;
+      if (body?.pickupDate !== undefined) {
+        if (!/^\d{4}-\d{2}-\d{2}/.test(String(body.pickupDate))) fail(400, 'VALIDATION_ERROR', 'Enter the pickup date.');
+        next.pickupDate = String(body.pickupDate).slice(0, 10);
+      }
+      if (body?.weightTn !== undefined) {
+        const w = Number(body.weightTn);
+        if (!(w > 0) || w > 200) fail(400, 'VALIDATION_ERROR', 'Enter the weight in tonnes.');
+        next.weightTn = w;
+      }
+      if (body?.sellRatePaise !== undefined) {
+        const r = Number(body.sellRatePaise);
+        if (!Number.isInteger(r) || r < 1) fail(400, 'VALIDATION_ERROR', 'Enter the freight as a positive amount.');
+        next.sellRatePaise = r;
+      }
+      // Once the client is billed, the figures on the bill cannot move under it.
+      const billed = ['weightTn', 'sellRatePaise'].filter((k) => k in next && next[k] !== indent[k]);
+      if (invoiced && billed.length > 0)
+        fail(409, 'ALREADY_INVOICED', 'The client has been invoiced for this load, so its weight and freight can no longer be changed here. Cancel the invoice first.');
+
+      const LABEL: Record<string, string> = {
+        material: 'Material', truckType: 'Truck type', pickupAddress: 'Loading address', dropAddress: 'Unloading address',
+        pickupDate: 'Pickup date', weightTn: 'Weight', sellRatePaise: 'Freight (sell)',
+      };
+      const show = (k: string, v: unknown) =>
+        v === null || v === undefined || v === '' ? '—' : k === 'sellRatePaise' ? rupeesOf(Number(v)) : k === 'weightTn' ? `${v} MT` : String(v);
+      const changed = Object.keys(next).filter((k) => next[k] !== (indent[k] ?? null));
+      if (changed.length === 0) fail(409, 'NOTHING_CHANGED', 'Nothing was changed.');
+      const lines = changed.map((k) => `${LABEL[k]}: ${show(k, indent[k])} → ${show(k, next[k])}`);
+      Object.assign(indent, next);
+      if (trip) {
+        if ('material' in next) trip.material = next.material;
+        if ('weightTn' in next) trip.weightTn = next.weightTn;
+        if ('truckType' in next) trip.vehicleType = next.truckType;
+        if ('sellRatePaise' in next) trip.sellRatePaise = next.sellRatePaise;
+      }
+      db.orderComments.push({
+        id: `oc-${Date.now()}-${db.orderComments.length + 1}`,
+        orderId: indent.id,
+        body: `✏️ Load request corrected — ${lines.join('; ')}. Reason: ${reason}`,
+        at: helpers.now(),
+        authorName: personName(userId, role),
+      });
+      touchIndent(indent);
+      return ok(indentView(indent));
+    },
+  ],
+  [
+    'PATCH',
+    /^\/indents\/([^/]+)\/quotes\/([^/]+)$/,
+    ({ params, body, role, userId }) => {
+      if (!SEED_GRANTS[role]?.includes('indent.manage')) fail(403, 'FORBIDDEN', 'You cannot change this quote.');
+      const indent = findIndent(params[0]);
+      const quote = indent.quotes.find((q: any) => q.id === params[1]) ?? fail(404, 'NOT_FOUND', 'Quote not found');
+      const reason = String(body?.reason ?? '').trim();
+      if (reason.length < 5) fail(400, 'VALIDATION_ERROR', 'Say why the quote is being corrected.');
+      const amount = Number(body?.amountPaise);
+      if (!Number.isInteger(amount) || amount < 1) fail(400, 'VALIDATION_ERROR', 'Enter the quote as a positive amount.');
+      if (!['SUBMITTED', 'ACCEPTED'].includes(quote.status))
+        fail(409, 'QUOTE_CLOSED', `This quote is ${String(quote.status).toLowerCase()} and can no longer be changed.`);
+      if (amount === quote.amountPaise) fail(409, 'NOTHING_CHANGED', 'That is the amount already on this quote.');
+      const trip = tripForIndent(indent);
+      if (quote.status === 'ACCEPTED' && trip) {
+        if (trip.balancePaidPaise > 0)
+          fail(409, 'BALANCE_PAID', 'The transporter has been paid in full for this load, so the awarded rate can no longer be changed.');
+        if (trip.advancePaidPaise > amount)
+          fail(409, 'BELOW_ADVANCE', `An advance of ${rupeesOf(trip.advancePaidPaise)} has already been paid; the rate cannot go below it.`);
+      }
+      const was = quote.amountPaise;
+      quote.amountPaise = amount;
+      quote.bandPosition = bandPositionFor(amount, indent.bidMinPaise ?? null, indent.bidMaxPaise ?? null);
+      if (quote.status === 'ACCEPTED') {
+        indent.buyRatePaise = amount;
+        if (trip) trip.buyRatePaise = amount;
+      }
+      db.orderComments.push({
+        id: `oc-${Date.now()}-${db.orderComments.length + 1}`,
+        orderId: indent.id,
+        body: `✏️ Quote corrected — ${quote.vendorName}: ${rupeesOf(was)} → ${rupeesOf(amount)}. Reason: ${reason}`,
+        at: helpers.now(),
+        authorName: personName(userId, role),
+      });
+      touchIndent(indent);
+      return ok(indentView(indent));
+    },
+  ],
+  [
+    'DELETE',
+    /^\/indents\/([^/]+)\/quotes\/([^/]+)$/,
+    ({ params, body, role, userId }) => {
+      if (!SEED_GRANTS[role]?.includes('indent.manage')) fail(403, 'FORBIDDEN', 'You cannot change this quote.');
+      const indent = findIndent(params[0]);
+      const at = indent.quotes.findIndex((q: any) => q.id === params[1]);
+      if (at < 0) fail(404, 'NOT_FOUND', 'Quote not found');
+      const quote = indent.quotes[at];
+      const reason = String(body?.reason ?? '').trim();
+      if (reason.length < 5) fail(400, 'VALIDATION_ERROR', 'Say why the quote is being removed.');
+      if (quote.status !== 'SUBMITTED' || indent.stage !== 'OPEN')
+        fail(409, 'QUOTE_CLOSED', 'Only a quote that has not been awarded can be removed. To change an awarded rate, correct the amount instead.');
+      indent.quotes.splice(at, 1);
+      db.orderComments.push({
+        id: `oc-${Date.now()}-${db.orderComments.length + 1}`,
+        orderId: indent.id,
+        body: `🗑️ Quote removed — ${quote.vendorName} at ${rupeesOf(quote.amountPaise)}. Reason: ${reason}`,
+        at: helpers.now(),
+        authorName: personName(userId, role),
+      });
+      touchIndent(indent);
+      return ok(indentView(indent));
+    },
+  ],
+  [
+    'GET',
+    /^\/clients\/([^/]+)\/rate-card\/rejected$/,
+    // Proposed lanes that were turned down — kept so they can be corrected and sent again.
+    ({ params }) =>
+      ok(
+        db.approvals
+          .filter((a: any) => a.kind === 'RATE_CARD_LANE' && a.status === 'REJECTED' && a.entityId === params[0] && a.action && !a.resubmittedAt)
+          .map((a: any) => ({
+            approvalId: a.id,
+            requesterName: a.requesterName,
+            rejectedAt: a.decidedAt ?? null,
+            note: a.note ?? null,
+            reason: a.reason ?? '',
+            ...a.action,
+          })),
+      ),
+  ],
+  [
+    'POST',
+    /^\/clients\/([^/]+)\/rate-card\/rejected\/([^/]+)\/dismiss$/,
+    // The corrected proposal went in; the turned-down one stops being offered.
+    ({ params }) => {
+      const a = db.approvals.find((x: any) => x.id === params[1] && x.kind === 'RATE_CARD_LANE' && x.entityId === params[0]);
+      if (!a) fail(404, 'NOT_FOUND', `Unknown request: ${params[1]}`);
+      a.resubmittedAt = helpers.now();
+      return ok({ approvalId: a.id });
+    },
+  ],
+  [
+    'PATCH',
+    /^\/clients\/([^/]+)\/rate-card\/pending\/([^/]+)$/,
+    // A proposal still waiting for sign-off, corrected in place — it stays waiting.
+    ({ params, body, role }) => {
+      if (!SEED_GRANTS[role]?.includes('rate.revise') && role !== 'LEADERSHIP' && role !== 'ADMIN')
+        fail(403, 'PERMISSION_DENIED', 'You cannot change a proposed rate.');
+      const approval = db.approvals.find((a: any) => a.id === params[1] && a.kind === 'RATE_CARD_LANE' && a.entityId === params[0]) as any;
+      if (!approval) fail(404, 'NOT_FOUND', `Unknown request: ${params[1]}`);
+      if (approval.status !== 'PENDING') fail(409, 'ALREADY_DECIDED', `That request is already ${String(approval.status).toLowerCase()}.`);
+      const lane = { ...approval.action };
+      if (body?.ratePaise !== undefined) lane.ratePaise = Number(body.ratePaise);
+      if (body?.rateBasis !== undefined) lane.rateBasis = body.rateBasis === 'PMT' ? 'PMT' : 'FTL';
+      if (body?.transitDays !== undefined) lane.transitDays = Number(body.transitDays);
+      if (body?.validFrom !== undefined) lane.validFrom = String(body.validFrom);
+      if (body?.validTo !== undefined) lane.validTo = body.validTo ? String(body.validTo) : null;
+      for (const k of ['origin', 'destination', 'truckType'] as const)
+        if (body?.[k] !== undefined) lane[k] = String(body[k] ?? '').trim().replace(/\s+/g, ' ');
+      if (lane.origin.length < 2 || lane.destination.length < 2 || lane.truckType.length < 2)
+        fail(400, 'VALIDATION_ERROR', 'Truck type, from and to are all required.');
+      if (!Number.isInteger(lane.ratePaise) || lane.ratePaise < 1) fail(400, 'VALIDATION_ERROR', 'The lane rate must be above zero.');
+      if (!Number.isInteger(lane.transitDays) || lane.transitDays < 0 || lane.transitDays > 60)
+        fail(400, 'VALIDATION_ERROR', 'Transit days should be a whole number of days.');
+      if (!lane.validFrom || (lane.validTo && lane.validTo < lane.validFrom)) fail(400, 'RATE_LANE_BAD_DATES', 'The rate cannot end before it starts.');
+      const clash = laneClash(params[0], lane);
+      if (clash) fail(400, 'RATE_LANE_LANE_EXISTS', clash);
+      const client = db.clients.find((c: any) => c.id === params[0]) as any;
+      approval.action = lane;
+      approval.amountPaise = lane.ratePaise;
+      approval.title = `New agreed rate · ${client?.name ?? ''} · ${lane.origin} → ${lane.destination}`;
+      approval.detail =
+        `${rupeesOf(lane.ratePaise)} ${lane.rateBasis === 'PMT' ? 'per tonne' : 'per truck'} · ${lane.truckType} · ${lane.transitDays} days · from ${lane.validFrom}` +
+        ` · corrected by ${USERS[role].name}`;
+      return ok(pendingLanesFor(params[0]).find((x) => x.approvalId === approval.id));
+    },
+  ],
+  [
+    'PATCH',
+    /^\/clients\/([^/]+)\/rate-card\/([^/]+)$/,
+    // An agreed rate typed wrongly, put right at once. The reason stays on the lane.
+    ({ params, body, role, userId }) => {
+      if (!SEED_GRANTS[role]?.includes('rate.revise') && role !== 'LEADERSHIP' && role !== 'ADMIN')
+        fail(403, 'PERMISSION_DENIED', 'You cannot change an agreed rate.');
+      const lane = (db.rateCards[params[0]] ?? []).find((l: any) => l.id === params[1] && !l.deletedAt) as any;
+      if (!lane) fail(404, 'NOT_FOUND', 'That rate is not on this client’s rate card.');
+      const reason = String(body?.reason ?? '').trim();
+      if (reason.length < 10) fail(400, 'REASON_TOO_SHORT', 'Say why this rate is being corrected (at least 10 characters).');
+      const next = { ...lane };
+      if (body?.ratePaise !== undefined) next.ratePaise = Number(body.ratePaise);
+      if (body?.rateBasis !== undefined) next.rateBasis = body.rateBasis === 'PMT' ? 'PMT' : 'FTL';
+      if (body?.transitDays !== undefined) next.transitDays = Number(body.transitDays);
+      if (body?.validFrom !== undefined) next.validFrom = String(body.validFrom);
+      if (body?.validTo !== undefined) next.validTo = body.validTo ? String(body.validTo) : null;
+      if (!Number.isInteger(next.ratePaise) || next.ratePaise < 1) fail(400, 'VALIDATION_ERROR', 'The lane rate must be above zero.');
+      if (!Number.isInteger(next.transitDays) || next.transitDays < 0 || next.transitDays > 60)
+        fail(400, 'VALIDATION_ERROR', 'Transit days should be a whole number of days.');
+      if (!next.validFrom || (next.validTo && next.validTo < next.validFrom)) fail(400, 'RATE_LANE_BAD_DATES', 'The rate cannot end before it starts.');
+      const clash = laneClash(params[0], { ...next, exceptLaneId: lane.id } as never);
+      if (clash) fail(400, 'RATE_LANE_LANE_EXISTS', 'Those dates overlap another agreed rate for the same route and truck type.');
+      const was = { ratePaise: lane.ratePaise, transitDays: lane.transitDays, validFrom: lane.validFrom, validTo: lane.validTo ?? null };
+      Object.assign(lane, {
+        ratePaise: next.ratePaise,
+        rateBasis: next.rateBasis ?? lane.rateBasis,
+        transitDays: next.transitDays,
+        validFrom: next.validFrom,
+        validTo: next.validTo ?? null,
+        correctedAt: helpers.now(),
+        correctedBy: personName(userId, role),
+        correctionReason: reason,
+        correctedFrom: was,
+      });
+      return ok(lane);
+    },
+  ],
+  [
+    'PATCH',
+    /^\/clients\/([^/]+)\/rate-revisions\/([^/]+)$/,
+    // A rate change still waiting for sign-off, corrected in place.
+    ({ params, body, role }) => {
+      if (!SEED_GRANTS[role]?.includes('rate.revise') && role !== 'LEADERSHIP' && role !== 'ADMIN')
+        fail(403, 'PERMISSION_DENIED', 'You cannot change a proposed rate.');
+      const r = db.rateRevisions.find((x: any) => x.id === params[1] && x.clientId === params[0]) as any;
+      if (!r) fail(404, 'NOT_FOUND', 'That rate change is not on this client.');
+      if (r.status !== 'PENDING') fail(409, 'ALREADY_DECIDED', 'Only a rate change still waiting for sign-off can be edited. Propose it again instead.');
+      const lane = (db.rateCards[params[0]] ?? []).find((l: any) => l.id === r.fromLaneId) as any;
+      if (!lane) fail(404, 'NOT_FOUND', 'The lane this change was for is no longer on the rate card.');
+      const draft = {
+        laneId: lane.id,
+        newRatePaise: body?.newRatePaise !== undefined ? Number(body.newRatePaise) : r.newRatePaise,
+        effectiveFrom: body?.effectiveFrom !== undefined ? String(body.effectiveFrom) : r.effectiveFrom,
+        reason: body?.reason !== undefined ? String(body.reason) : r.reason,
+      };
+      const refusal = rateRevisionRefusal(lane, draft as never);
+      if (refusal) fail(400, `RATE_REVISION_${refusal.code}`, refusal.message);
+      Object.assign(r, { newRatePaise: draft.newRatePaise, effectiveFrom: draft.effectiveFrom, reason: draft.reason });
+      const a = db.approvals.find((x: any) => x.action?.revisionId === r.id && x.status === 'PENDING') as any;
+      if (a) {
+        a.amountPaise = draft.newRatePaise;
+        a.reason = draft.reason;
+        a.detail = `${rupeesOf(lane.ratePaise)} → ${rupeesOf(draft.newRatePaise)} from ${draft.effectiveFrom} (${lane.truckType}) · corrected by ${USERS[role].name}`;
+      }
+      return ok(r);
     },
   ],
   // A mistyped truck number put right — mirrors `IndentsService.correctVehicle`.

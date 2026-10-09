@@ -129,9 +129,9 @@ test.describe('Compliance desk — FINANCE (VIEW) role', () => {
     // in the shell's footer on every screen for every role after this
     // assertion was written, and it opens a ticket, not a mutation of
     // anything on this desk.
-    // The top bar's own controls (light/dark, sign out) sit inside <main> too and change nothing on this desk.
+    // The top bar's own controls (hide the menu, light/dark, sign out) sit inside <main> too and change nothing on this desk.
     const mutatingButtons = main
-      .locator('button:not(.theme-switch):not(.userbar-signout)')
+      .locator('button:not(.userbar *)')
       .filter({ hasNotText: 'Report a problem' });
     await expect(mutatingButtons).toHaveCount(0);
 

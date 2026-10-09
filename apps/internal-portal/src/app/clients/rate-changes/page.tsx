@@ -22,6 +22,7 @@ import {
   Tag,
   useCan,
   useToast,
+  FormGrid,
 } from '@/lib/ui';
 import {
   deletePendingRateLane,
@@ -33,9 +34,10 @@ import {
 } from '../apis';
 import { AddLaneDialog } from '../add-lane-dialog';
 import { DeleteRateDialog, useCanDeleteRates } from '../delete-rate-dialog';
+import { useCanCorrectRates } from '../rate-corrections';
 import { LiveLane, liveLanes } from '../lanes';
 import { Client, PendingRateLane, RateCardLane, rateWithBasis } from '../types';
-import { listRateRevisions, proposeRateRevision } from './apis';
+import { editRateRevision, listRateRevisions, proposeRateRevision } from './apis';
 import {
   RateRevision,
   REVISION_STATUS_EMOJI,
@@ -90,6 +92,11 @@ export default function RateChangesPage() {
   const [pendingLanes, setPendingLanes] = useState<PendingRateLane[]>([]);
   const canDelete = useCanDeleteRates();
   const [deleting, setDeleting] = useState<{ label: string; run: (reason: string) => Promise<unknown> } | null>(null);
+  // A rate change still waiting, being corrected.
+  const canCorrect = useCanCorrectRates();
+  const [fixing, setFixing] = useState<RateRevision | null>(null);
+  const [fixRate, setFixRate] = useState('');
+  const [fixFrom, setFixFrom] = useState('');
 
   const loadClients = () => {
     setError(null);
@@ -270,6 +277,27 @@ export default function RateChangesPage() {
       sub: (r) => (r.requestedByName ? `asked for by ${r.requestedByName}` : ''),
     },
     { key: 'when', label: 'Raised', render: (r) => fmtDate(r.createdAt) },
+    ...(canCorrect
+      ? [
+          {
+            key: 'edit',
+            label: '',
+            render: (r: RateRevision) =>
+              r.status === 'PENDING' ? (
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => {
+                    setFixing(r);
+                    setFixRate(String(r.newRatePaise / 100));
+                    setFixFrom(String(r.effectiveFrom).slice(0, 10));
+                  }}
+                >
+                  ✏️ Edit
+                </button>
+              ) : null,
+          },
+        ]
+      : []),
     ...(canDelete
       ? [
           {
@@ -485,6 +513,46 @@ export default function RateChangesPage() {
       )}
 
       <DeleteRateDialog target={deleting} onClose={() => setDeleting(null)} onDeleted={() => loadClient(clientId)} />
+
+      {/* A rate change still waiting for sign-off, corrected where it waits. */}
+      <Dialog
+        open={!!fixing}
+        title="Edit the rate change"
+        body="This change is still waiting for sign-off. Correct it here and it stays in the approver’s inbox with the new figures."
+        facts={fixing ? [['Lane', fixing.lane ?? '—'], ['Rate now', inr(fixing.oldRatePaise)], ['Proposed', inr(fixing.newRatePaise)]] : undefined}
+        confirmLabel="Save the change"
+        confirmDisabled={
+          !fixing ||
+          !(Number(fixRate) > 0) ||
+          !fixFrom ||
+          (Math.round(Number(fixRate) * 100) === fixing.newRatePaise && fixFrom === String(fixing.effectiveFrom).slice(0, 10))
+        }
+        busy={busy}
+        onConfirm={async () => {
+          if (!fixing) return;
+          setBusy(true);
+          try {
+            await editRateRevision(clientId, fixing.id, { newRatePaise: Math.round(Number(fixRate) * 100), effectiveFrom: fixFrom });
+            toast('Rate change corrected — it is still waiting for sign-off');
+            setFixing(null);
+            loadClient(clientId);
+          } catch (e) {
+            toast(errorMessage(e));
+          } finally {
+            setBusy(false);
+          }
+        }}
+        onClose={() => setFixing(null)}
+      >
+        <FormGrid>
+          <Field label="New rate (₹)" required>
+            <input type="number" min="0" value={fixRate} onChange={(e) => setFixRate(e.target.value)} autoFocus />
+          </Field>
+          <Field label="From" required>
+            <input type="date" value={fixFrom} onChange={(e) => setFixFrom(e.target.value)} />
+          </Field>
+        </FormGrid>
+      </Dialog>
 
       {/* ---- propose one change ------------------------------------------ */}
       <Dialog

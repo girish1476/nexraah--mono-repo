@@ -20,6 +20,7 @@ import type { TripDetail } from '@/app/trips/types';
 import { fmtDateTime, inr } from '@/lib/format';
 import { Banner, Dialog, Field, Panel, Tag, useCan, useToast } from '@/lib/ui';
 import { sessionAtom } from '@/store/atoms';
+import { EditQuoteButton, RemoveQuoteButton } from '@/components/corrections';
 import type { OrderDetail } from '../types';
 
 /** Where the order page can send someone to finish a step in place. */
@@ -147,6 +148,27 @@ export function OrderNextStep({
                   {q.bandPosition === 'ABOVE_BAND' ? 'Above band' : q.bandPosition === 'BELOW_BAND' ? 'Below band' : 'In band'}
                 </Tag>
                 <strong style={{ minWidth: 90, textAlign: 'right' }}>{inr(q.amountPaise)}</strong>
+                {/* A quote typed wrongly is edited or removed here, before it is awarded. */}
+                {canRun && (
+                  <>
+                    <EditQuoteButton
+                      indentId={indent.id}
+                      quote={q}
+                      onCorrected={() => {
+                        load();
+                        onChanged();
+                      }}
+                    />
+                    <RemoveQuoteButton
+                      indentId={indent.id}
+                      quote={q}
+                      onRemoved={() => {
+                        load();
+                        onChanged();
+                      }}
+                    />
+                  </>
+                )}
                 {q.vendorStatus !== 'ACTIVE' ? (
                   <span className="muted" style={{ fontSize: 11.5 }}>
                     Not cleared by Compliance

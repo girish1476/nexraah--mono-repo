@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ApprovalRequiredError, errorMessage, request } from '@/apis';
 import { TRUCK_TYPES } from '@/lib/vehicles';
 import { CityField, Dialog, Field, FormGrid, useToast } from '@/lib/ui';
@@ -28,12 +28,31 @@ export function AddLaneDialog({
   open,
   onClose,
   onSent,
+  initial,
 }: {
   clientId: string;
   clientName: string;
   open: boolean;
   onClose: () => void;
   onSent: () => void;
+  /**
+   * A proposal to start from — one that was turned down, opened again so only
+   * the mistake needs changing. The approval mail is asked for afresh.
+   */
+  initial?: {
+    origin: string;
+    destination: string;
+    truckType: string;
+    ratePaise: number;
+    rateBasis?: RateBasis;
+    transitDays: number;
+    validFrom: string;
+    validTo?: string | null;
+    reason?: string;
+    approvalMailSubject?: string;
+    transitPenaltyApplies?: boolean;
+    transitPenaltyPerDayPaise?: number;
+  };
 }) {
   const toast = useToast();
   const [truckType, setTruckType] = useState('');
@@ -66,6 +85,24 @@ export function AddLaneDialog({
     setValidTo('');
     setReason('');
   };
+
+  // Opened on a turned-down proposal: everything it said is filled in again.
+  useEffect(() => {
+    if (!open || !initial) return;
+    setTruckType(initial.truckType);
+    setOrigin(initial.origin);
+    setDestination(initial.destination);
+    setTransitDays(String(initial.transitDays));
+    setRate(String(initial.ratePaise / 100));
+    setRateBasis(initial.rateBasis ?? 'FTL');
+    setValidFrom(String(initial.validFrom ?? '').slice(0, 10) || today());
+    setValidTo(initial.validTo ? String(initial.validTo).slice(0, 10) : '');
+    setReason(initial.reason ?? '');
+    setMailSubject(initial.approvalMailSubject ?? '');
+    setPenaltyApplies(!!initial.transitPenaltyApplies);
+    setPenaltyPerDay(initial.transitPenaltyPerDayPaise ? String(initial.transitPenaltyPerDayPaise / 100) : '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initial?.origin, initial?.destination, initial?.truckType, initial?.ratePaise]);
 
   const rupees = Number(rate);
   const days = Number(transitDays);

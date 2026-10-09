@@ -64,6 +64,9 @@ export default function ApprovalsPage() {
   const [rejecting, setRejecting] = useState<ApprovalRow | null>(null);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  // Why an approval could not go through — kept on its row until it does, since a
+  // message that fades in three seconds reads as "the button did nothing".
+  const [failed, setFailed] = useState<Record<string, string>>({});
 
   const load = () => {
     setError(null);
@@ -81,9 +84,12 @@ export default function ApprovalsPage() {
     try {
       await approve(row.id);
       toast(`Approved · ${row.entityId} — the original action has been executed`);
+      setFailed(({ [row.id]: _gone, ...rest }) => rest);
       load();
     } catch (e) {
-      toast(errorMessage(e));
+      const why = errorMessage(e);
+      toast(why);
+      setFailed((f) => ({ ...f, [row.id]: why }));
     } finally {
       setBusy(false);
     }
@@ -189,11 +195,30 @@ export default function ApprovalsPage() {
                       </div>
                     ) : (
                       <div className="muted" style={{ fontSize: 11.5, textAlign: 'right', lineHeight: 1.4 }}>
-                        Decided by {row.approverRole}
+                        You can see this but not decide it.
+                        <br />
+                        Approved by {row.approverRole}, Leadership or an administrator.
                       </div>
                     )}
                   </div>
                 </div>
+                {failed[row.id] && (
+                  <div
+                    role="alert"
+                    style={{
+                      marginTop: 10,
+                      padding: '8px 10px',
+                      borderRadius: 'var(--radius-sm)',
+                      background: 'var(--red-tint, rgba(220, 38, 38, 0.08))',
+                      color: 'var(--red)',
+                      fontSize: 'var(--text-sm)',
+                      lineHeight: 1.45,
+                    }}
+                  >
+                    <strong>This could not be approved.</strong> {failed[row.id]} It is still waiting — reject it with a note so it can
+                    be corrected and sent again, or fix what it clashes with and approve it again.
+                  </div>
+                )}
               </div>
             );
           })}

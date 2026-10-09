@@ -32,6 +32,7 @@ import {
 import { listVendors } from '@/app/vendors/apis';
 import type { VendorListRow } from '@/app/vendors/types';
 import { awardQuote, cancelIndent, createTrip, getIndent, reassignTransporter, recordQuote } from '../apis';
+import { EditLoadButton, EditQuoteButton, RemoveQuoteButton } from '@/components/corrections';
 import { IndentDetail, Quote } from '../types';
 
 const BAND_LABEL: Record<Quote['bandPosition'], string> = {
@@ -260,7 +261,15 @@ export default function IndentDetailPage() {
       label: '',
       align: 'right',
       render: (r) => {
-        if (indent.awardedQuoteId === r.id) return <Tag tone="mint">Awarded</Tag>;
+        if (indent.awardedQuoteId === r.id)
+          return (
+            <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+              <Tag tone="mint">Awarded</Tag>
+              {canAward && indent.stage !== 'CANCELLED' && (
+                <EditQuoteButton indentId={id} quote={r} awarded label="✏️ Correct" onCorrected={load} />
+              )}
+            </span>
+          );
         if (awaitingApproval === r.id) return <Tag tone="flag">Awaiting approval</Tag>;
         if (indent.stage !== 'OPEN') return <span className="muted">—</span>;
         if (r.vendorStatus !== 'ACTIVE')
@@ -276,9 +285,13 @@ export default function IndentDetailPage() {
             </span>
           );
         return (
-          <button className="btn btn-sm" disabled={busy} onClick={() => onAward(r)}>
-            {r.bandPosition === 'ABOVE_BAND' ? 'Request approval' : 'Award'}
-          </button>
+          <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+            <EditQuoteButton indentId={id} quote={r} onCorrected={load} />
+            <RemoveQuoteButton indentId={id} quote={r} onRemoved={load} />
+            <button className="btn btn-sm" disabled={busy} onClick={() => onAward(r)}>
+              {r.bandPosition === 'ABOVE_BAND' ? 'Request approval' : 'Award'}
+            </button>
+          </span>
         );
       },
     },
@@ -338,7 +351,28 @@ export default function IndentDetailPage() {
       <Split
         aside={
           <>
-            <Panel title="Indent" pad={false}>
+            <Panel
+              title="Indent"
+              pad={false}
+              right={
+                // Anything typed wrongly on the load request can be put right, at any stage.
+                canAward && indent.stage !== 'CANCELLED' ? (
+                  <EditLoadButton
+                    indentId={id}
+                    load={{
+                      material: indent.material,
+                      weightTn: indent.weightTn,
+                      truckType: indent.truckType,
+                      pickupDate: indent.pickupDate,
+                      sellRatePaise: indent.sellRatePaise,
+                      pickupAddress: indent.pickupAddress,
+                      dropAddress: indent.dropAddress,
+                    }}
+                    onCorrected={load}
+                  />
+                ) : undefined
+              }
+            >
               <FactList facts={indentFacts.filter((f): f is [string, ReactNode] => f !== null)} />
             </Panel>
 

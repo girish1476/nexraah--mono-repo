@@ -72,6 +72,9 @@ export interface IndentDetail {
   remarks: string;
   /** Internal only. Never present on any transporter-facing response (BR-55). */
   sellRatePaise: number;
+  /** Where the truck loads and unloads, as given on the load request. */
+  pickupAddress?: string | null;
+  dropAddress?: string | null;
   /** Written by the award, at the moment of the decision (BR-06). */
   buyRatePaise: number | null;
   rateSource: RateSource;

@@ -96,3 +96,40 @@ export function changeIndentAdvancePct(id: string, advancePct: number, reason: s
     data: { advancePct, reason },
   });
 }
+
+/* ---- corrections: a mistake put right, at once, with its reason kept ------ */
+
+export interface LoadCorrection {
+  material?: string;
+  weightTn?: number;
+  truckType?: string;
+  pickupDate?: string;
+  pickupAddress?: string;
+  dropAddress?: string;
+  sellRatePaise?: number;
+  reason: string;
+}
+
+/**
+ * PATCH /indents/:id/details · `indent.manage` — corrects what was typed on the
+ * load request. Takes effect at once, on the load and its trip; the reason goes
+ * to the order's comments. 409 ALREADY_INVOICED for weight or freight once the
+ * client has been billed.
+ */
+export function correctIndentDetails(id: string, body: LoadCorrection) {
+  return request<IndentDetail>({ url: `/indents/${id}/details`, method: 'PATCH', data: body });
+}
+
+/**
+ * PATCH /indents/:id/quotes/:quoteId · `indent.manage` — corrects a quote's
+ * amount. On an awarded quote the buy rate moves with it (409 BALANCE_PAID once
+ * the transporter is paid in full).
+ */
+export function correctQuote(id: string, quoteId: string, body: { amountPaise: number; reason: string }) {
+  return request<IndentDetail>({ url: `/indents/${id}/quotes/${quoteId}`, method: 'PATCH', data: body });
+}
+
+/** DELETE /indents/:id/quotes/:quoteId — removes a quote entered by mistake, before it is awarded. */
+export function removeQuote(id: string, quoteId: string, reason: string) {
+  return request<IndentDetail>({ url: `/indents/${id}/quotes/${quoteId}`, method: 'DELETE', data: { reason } });
+}

@@ -85,3 +85,57 @@ export function deleteRateRevision(clientId: string, revisionId: string, reason:
     data: { reason },
   });
 }
+
+/* ---- corrections to rates ------------------------------------------------- */
+
+export interface LaneCorrection {
+  ratePaise?: number;
+  rateBasis?: 'FTL' | 'PMT';
+  transitDays?: number;
+  validFrom?: string;
+  validTo?: string | null;
+}
+
+/**
+ * PATCH /clients/:id/rate-card/:laneId · `rate.revise`, Leadership or Admin —
+ * an agreed rate typed wrongly, put right at once. The reason stays on the lane.
+ */
+export function correctRateLane(clientId: string, laneId: string, body: LaneCorrection & { reason: string }) {
+  return request<RateCardLane>({ url: `/clients/${clientId}/rate-card/${laneId}`, method: 'PATCH', data: body });
+}
+
+/** PATCH /clients/:id/rate-card/pending/:approvalId — corrects a lane still waiting for sign-off; it stays waiting. */
+export function editPendingRateLane(clientId: string, approvalId: string, body: LaneCorrection) {
+  return request<PendingRateLane>({ url: `/clients/${clientId}/rate-card/pending/${approvalId}`, method: 'PATCH', data: body });
+}
+
+/** A proposed lane that was turned down — kept so it can be corrected and sent again. */
+export interface RejectedRateLane {
+  approvalId: string;
+  requesterName: string;
+  rejectedAt: string | null;
+  /** What the person who turned it down wrote. */
+  note: string | null;
+  reason: string;
+  origin: string;
+  destination: string;
+  truckType: string;
+  ratePaise: number;
+  rateBasis?: 'FTL' | 'PMT';
+  transitDays: number;
+  validFrom: string;
+  validTo: string | null;
+  transitPenaltyApplies?: boolean;
+  transitPenaltyPerDayPaise?: number;
+  approvalMailSubject?: string;
+}
+
+/** GET /clients/:id/rate-card/rejected */
+export function getRejectedRateLanes(clientId: string) {
+  return request<RejectedRateLane[]>({ url: `/clients/${clientId}/rate-card/rejected`, method: 'GET' });
+}
+
+/** POST /clients/:id/rate-card/rejected/:approvalId/dismiss — the corrected one went in; stop offering this one. */
+export function dismissRejectedRateLane(clientId: string, approvalId: string) {
+  return request<{ approvalId: string }>({ url: `/clients/${clientId}/rate-card/rejected/${approvalId}/dismiss`, method: 'POST' });
+}
