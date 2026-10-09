@@ -231,7 +231,14 @@ export function Columns({
         {points.map((p, i) =>
           // The last day is always named; a regular label too close to it would run into it.
           (i % every === 0 && points.length - 1 - i >= every) || i === points.length - 1 ? (
-            <text key={i} className="viz-tick" x={PAD.l + i * slot + slot / 2} y={H - 6} textAnchor="middle">
+            <text
+              key={i}
+              className="viz-tick"
+              // The last label ends at the chart's edge instead of being centred past it.
+              x={i === points.length - 1 ? W - PAD.r : PAD.l + i * slot + slot / 2}
+              y={H - 6}
+              textAnchor={i === points.length - 1 ? 'end' : 'middle'}
+            >
               {p.label}
             </text>
           ) : null,
