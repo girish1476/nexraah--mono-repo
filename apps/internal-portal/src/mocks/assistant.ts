@@ -174,7 +174,9 @@ export function answerLocally(question: string, r: Records): AssistantReply {
 
   // ---- hello, thanks, and "what are you" --------------------------------------
   if (/^(hi+|hello+|hey+|hai|hlo|namaste|namaskar(am)?|vanakkam|good (morning|afternoon|evening|day))\b[\s!.,]*$/.test(q) || /^(hi+|hello+|hey+)\b/.test(q) && q.length < 30) {
-    const first = String(r.me ?? '').trim().split(/\s+/)[0];
+    // The first real name: "S. Krishnan" is greeted as Krishnan, not as "S.".
+    const names = String(r.me ?? '').trim().split(/\s+/);
+    const first = names.find((n) => n.replace(/[^A-Za-z]/g, '').length >= 3) ?? names[0] ?? '';
     return {
       answer:
         `Hello${first ? `, ${first}` : ''}! I am the Nexraah assistant. I answer from the records in this console.\n\n` +
