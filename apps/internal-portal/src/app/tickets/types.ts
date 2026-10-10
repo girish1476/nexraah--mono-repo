@@ -7,6 +7,12 @@ export type TicketSeverity = 'BLOCKING' | 'NORMAL' | 'MINOR';
 /** The floor the server enforces, repeated so the form says so before you send. */
 export const MIN_DETAIL = 20;
 export const MIN_SUBJECT = 5;
+/**
+ * The floor for what a report says is wrong. Lower than `MIN_DETAIL` (which
+ * still holds for how a ticket was resolved): a short report that gets sent is
+ * worth more than a careful one nobody could send.
+ */
+export const MIN_REPORT = 5;
 
 export interface Ticket {
   id: string;

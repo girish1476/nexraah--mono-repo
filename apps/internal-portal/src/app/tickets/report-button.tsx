@@ -6,7 +6,7 @@ import { errorMessage } from '@/apis';
 import { Dialog, Field, Stack, useToast } from '@/lib/ui';
 import { raiseTicket } from './apis';
 import {
-  MIN_DETAIL,
+  MIN_REPORT,
   MIN_SUBJECT,
   TICKET_KIND_LABEL,
   TICKET_SEVERITY_LABEL,
@@ -52,9 +52,9 @@ export function ReportProblemButton({
   const [severity, setSeverity] = useState<TicketSeverity>('NORMAL');
 
   const problem = (() => {
-    if (subject.trim().length < MIN_SUBJECT) return 'Give it a short title.';
-    if (detail.trim().length < MIN_DETAIL) {
-      return `Say what is wrong in at least ${MIN_DETAIL} characters — enough for somebody who was not looking at your screen.`;
+    if (subject.trim().length < MIN_SUBJECT) return `Give it a short title — at least ${MIN_SUBJECT} letters.`;
+    if (detail.trim().length < MIN_REPORT) {
+      return `Say what is wrong, in a few words — at least ${MIN_REPORT} letters.`;
     }
     return null;
   })();
@@ -71,7 +71,7 @@ export function ReportProblemButton({
         entityType,
         entityId,
       });
-      toast(`Reported as ${ticket.code}. You can follow it on Tickets.`);
+      toast(`Reported as ${ticket.code}. See it under Control → Tickets.`);
       setOpen(false);
       setSubject('');
       setDetail('');

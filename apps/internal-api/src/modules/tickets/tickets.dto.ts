@@ -1,7 +1,7 @@
 import { IsIn, IsOptional, IsString, Length, MaxLength, MinLength } from 'class-validator';
 import {
   MAX_SUBJECT,
-  MIN_DETAIL,
+  MIN_REPORT,
   MIN_SUBJECT,
   TICKET_KINDS,
   TICKET_SEVERITIES,
@@ -14,8 +14,8 @@ import {
 export class RaiseTicketDto {
   @IsString() @Length(MIN_SUBJECT, MAX_SUBJECT) subject!: string;
 
-  /** The floor the approvals engine uses for a reason, for the same reason. */
-  @IsString() @MinLength(MIN_DETAIL) detail!: string;
+  /** A few words is enough to send a report; the longer floor is for how one was resolved. */
+  @IsString() @MinLength(MIN_REPORT) detail!: string;
 
   @IsOptional() @IsIn(TICKET_KINDS as unknown as string[]) kind?: TicketKind;
   @IsOptional() @IsIn(TICKET_SEVERITIES as unknown as string[]) severity?: TicketSeverity;
