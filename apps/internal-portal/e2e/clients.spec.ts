@@ -185,9 +185,9 @@ test.describe('new client form', () => {
 
     await page.getByRole('button', { name: 'Create client' }).click();
 
-    // name, billing city and contact (min-length) + phone + email +
+    // name, billing city, billing address, state, PIN code and contact + phone + email +
     // agreementNo (CONTRACT is the default engagement, via the zod .refine).
-    await expect(page.locator('span.err')).toHaveCount(6);
+    await expect(page.locator('span.err')).toHaveCount(9);
 
     // Which fields complain, rather than what each one says. The messages were
     // rewritten from terse validator-speak into instructions ("Ten digits" is
