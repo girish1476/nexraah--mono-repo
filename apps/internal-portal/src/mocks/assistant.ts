@@ -48,6 +48,11 @@ const STEP: Record<string, string> = {
 const rupees = (paise: number) => `₹${Math.round((paise ?? 0) / 100).toLocaleString('en-IN')}`;
 const when = (iso: string | null | undefined) =>
   iso ? new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+/** A date as people say it — "11 Oct" — whatever form the record keeps it in. */
+const day = (value: unknown) => {
+  const d = value ? new Date(String(value)) : null;
+  return d && !Number.isNaN(d.getTime()) ? d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+};
 const squash = (s: unknown) => String(s ?? '').replace(/[\s-]/g, '').toUpperCase();
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 /** At most `max` lines, then how many more there are — an answer is a pointer, not a report. */
@@ -165,7 +170,7 @@ export function answerLocally(question: string, r: Records): AssistantReply {
       const trip = tripOf(indent);
       return {
         answer:
-          `Order ${indent.code} — ${indent.clientName ?? '—'}, ${route(indent)}, pickup ${indent.pickupDate ?? '—'}.\n` +
+          `Order ${indent.code} — ${indent.clientName ?? '—'}, ${route(indent)}, pickup ${day(indent.pickupDate)}.\n` +
           `Status: ${STEP[r.orderStatus(indent, trip)] ?? 'unknown'}.\n` +
           (trip
             ? `Trip ${trip.code}${trip.vehicleNo ? ` · truck ${trip.vehicleNo}` : ' · no truck allocated yet'}${trip.vendorName ? ` · ${trip.vendorName}` : ''}.`
@@ -187,7 +192,7 @@ export function answerLocally(question: string, r: Records): AssistantReply {
     });
     return {
       answer: waiting.length
-        ? `${plural(waiting.length, 'load is', 'loads are')} still waiting for a truck:\n${listed(waiting.map((i) => `${orderLine(i)} · pickup ${i.pickupDate ?? '—'}`))}`
+        ? `${plural(waiting.length, 'load is', 'loads are')} still waiting for a truck:\n${listed(waiting.map((i) => `${orderLine(i)} · pickup ${day(i.pickupDate)}`))}`
         : 'No load is waiting for a truck right now.',
       sources: [{ label: 'All orders', href: '/orders' }],
     };
@@ -264,7 +269,7 @@ export function answerLocally(question: string, r: Records): AssistantReply {
     const total = unpaid.reduce((a: number, i: any) => a + (i.totalPaise ?? 0) - (i.receivedPaise ?? 0), 0);
     return {
       answer: unpaid.length
-        ? `Clients owe ${rupees(total)} across ${plural(unpaid.length, 'unpaid invoice')}:\n${listed(unpaid.map((i: any) => `${i.code} · ${i.clientName ?? '—'} · ${rupees((i.totalPaise ?? 0) - (i.receivedPaise ?? 0))} due ${i.dueDate ?? ''}`))}`
+        ? `Clients owe ${rupees(total)} across ${plural(unpaid.length, 'unpaid invoice')}:\n${listed(unpaid.map((i: any) => `${i.code} · ${i.clientName ?? '—'} · ${rupees((i.totalPaise ?? 0) - (i.receivedPaise ?? 0))} due ${day(i.dueDate)}`))}`
         : 'No invoice is unpaid.',
       sources: [{ label: 'Receivables', href: '/receivables' }],
     };
