@@ -133,6 +133,19 @@ export function Shell({ session, children }: { session: Session | null; children
     g.items.some((i) => i.href.includes('?') && i.href === currentHref),
   );
 
+  /**
+   * The one plain row that is the screen we are on: the longest row path the
+   * URL sits under. "/clients/verification" sits under both "/clients" and
+   * "/clients/verification"; matching on "starts with" alone lit both rows at
+   * once. The longest match is the screen itself, and only it is marked.
+   */
+  const currentRowPath = groups
+    .flatMap((g) => g.items)
+    .filter((i) => !i.href.includes('?'))
+    .map((i) => hrefPath(i.href))
+    .filter((p) => pathname === p || pathname.startsWith(`${p}/`))
+    .sort((a, b) => b.length - a.length)[0];
+
   return (
     <div>
       <div className="mobile-topbar no-print">
@@ -337,7 +350,7 @@ export function Shell({ session, children }: { session: Session | null; children
                       const path = hrefPath(item.href);
                       const active = item.href.includes('?')
                         ? item.href === currentHref
-                        : (pathname === path || pathname.startsWith(`${path}/`)) && !presetClaims;
+                        : path === currentRowPath && !presetClaims;
                       const badge =
                         item.module === 'approvals' && pendingApprovals > 0 ? pendingApprovals : null;
                       return (
