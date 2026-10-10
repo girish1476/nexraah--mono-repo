@@ -2354,7 +2354,7 @@ const routes: [string, RegExp, Handler][] = [
   [
     'POST',
     /^\/assistant\/chat$/,
-    ({ body }) => {
+    ({ body, role, userId }) => {
       const turns: { role?: string; content?: string }[] = Array.isArray(body?.messages) ? body.messages : [];
       const question = [...turns].reverse().find((t) => t.role === 'user')?.content ?? '';
       if (!String(question).trim()) fail(400, 'VALIDATION_ERROR', 'Ask a question.');
@@ -2364,6 +2364,9 @@ const routes: [string, RegExp, Handler][] = [
           advanceUnmet: (trip) => advanceGate(trip).unmet,
           balanceUnmet: (trip) => balanceGate(trip).unmet,
           orderStatus: (indent, trip) => orderLadder(indent, trip),
+          people: ACCOUNTS.map((a) => ({ name: a.name, role: a.role })),
+          branches: BRANCHES.map((b) => b.name),
+          me: personName(userId, role),
         }),
       );
     },

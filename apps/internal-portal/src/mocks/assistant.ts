@@ -27,6 +27,10 @@ interface Records {
   balanceUnmet: (trip: any) => { label: string }[];
   /** The step an order has reached, in the console's own codes. */
   orderStatus: (indent: any, trip: any) => string;
+  /** Everyone who can sign in, the branches, and who is asking — for greetings and head-counts. */
+  people?: { name: string; role: string }[];
+  branches?: string[];
+  me?: string;
 }
 
 const STEP: Record<string, string> = {
@@ -121,7 +125,34 @@ const CAN_ANSWER =
   '• unpaid invoices and what clients owe\n' +
   '• delivery proofs still pending\n' +
   '• transporters and clients waiting for Compliance\n' +
+  '• one client or transporter by name — “Tell me about Berger Paints”\n' +
+  '• an invoice by its number, this month’s billing and margin\n' +
+  '• how many orders, trips, clients, transporters, people or branches there are\n' +
   '• how to do something — “How do I correct a truck number?”';
+
+/** Words that say nothing about which record is meant. */
+const STOP = new Set(
+  'what when where which with from that this have does there their about show tell give list find many much please need want know status details detail data info information project nexraah console'.split(' '),
+);
+
+const ROLE_NAME: Record<string, string> = {
+  OPS: 'Operations',
+  COMPLIANCE: 'Compliance',
+  FINANCE: 'Finance',
+  BD: 'Business development',
+  LEADERSHIP: 'Leadership',
+  ADMIN: 'Administrator',
+  LOADING_SUPERVISOR: 'Loading supervisor',
+};
+
+/** A name counts as mentioned when the question holds it whole, or its first word when that is long enough to be telling. */
+function mentions(q: string, name: unknown): boolean {
+  const n = String(name ?? '').toLowerCase().trim();
+  if (n.length < 3) return false;
+  if (q.includes(n)) return true;
+  const first = n.split(/\s+/)[0];
+  return first.length >= 5 && new RegExp(`\\b${first.replace(/[^a-z0-9]/g, '')}\\b`).test(q);
+}
 
 export function answerLocally(question: string, r: Records): AssistantReply {
   const q = question.toLowerCase().trim();
@@ -130,6 +161,37 @@ export function answerLocally(question: string, r: Records): AssistantReply {
   const trips: any[] = db.trips ?? [];
   const tripOf = (indent: any) => trips.find((t) => t.indentId === indent.id || t.indentCode === indent.code) ?? null;
   const orderLine = (i: any) => `${i.code} · ${i.clientName ?? '—'} · ${route(i)}`;
+
+  const pendingApprovals = (db.approvals ?? []).filter((a: any) => a.status === 'PENDING').length;
+  const openTickets = (db.tickets ?? []).filter((t: any) => t.status === 'OPEN' || t.status === 'IN_PROGRESS').length;
+  const inProgress = indents.filter(
+    (i) => !['BALANCE_RELEASED', 'CANCELLED', 'FAILED', 'POD_FORFEITED'].includes(r.orderStatus(i, tripOf(i))),
+  ).length;
+  const standing =
+    `${plural(inProgress, 'load')} in progress, ` +
+    `${trips.filter((t) => t.stage === 'IN_TRANSIT').length} on the road, ` +
+    `${plural(pendingApprovals, 'approval')} waiting, ${plural(openTickets, 'ticket')} open`;
+
+  // ---- hello, thanks, and "what are you" --------------------------------------
+  if (/^(hi+|hello+|hey+|hai|hlo|namaste|namaskar(am)?|vanakkam|good (morning|afternoon|evening|day))\b[\s!.,]*$/.test(q) || /^(hi+|hello+|hey+)\b/.test(q) && q.length < 30) {
+    const first = String(r.me ?? '').trim().split(/\s+/)[0];
+    return {
+      answer:
+        `Hello${first ? `, ${first}` : ''}! I am the Nexraah assistant. I answer from the records in this console.\n\n` +
+        `Right now: ${standing}.\n\n` +
+        'Ask me about a truck, an order, payments, approvals, invoices, a client or a transporter — or how to do something here.',
+      sources: [{ label: 'Dashboard', href: '/dashboard' }],
+    };
+  }
+  if (/^(thanks|thank you|thank u|thx|ok thanks|great|ok|okay|fine|good|nice)\b[\s!.,]*$/.test(q)) {
+    return { answer: 'You are welcome. Ask me anything else about the console.', sources: [] };
+  }
+  if (/^(bye|goodbye|see you)\b/.test(q)) {
+    return { answer: 'Goodbye. I am here whenever you need something looked up.', sources: [] };
+  }
+  if (/who are you|what are you|what can you (do|answer)|^help\b|what (do|can) i ask|your name/.test(q)) {
+    return { answer: `I am the Nexraah assistant. I look things up in this console’s records; I cannot change anything.\n\n${CAN_ANSWER}`, sources: [] };
+  }
 
   // ---- how to do something -------------------------------------------------
   if (/^(how|where) (do|can|to|should)|how to\b/.test(q)) {
@@ -164,7 +226,8 @@ export function answerLocally(question: string, r: Records): AssistantReply {
 
   // ---- one order, by its number ---------------------------------------------
   const number = q.match(/\b\d{4,6}\b/);
-  if (number && /(order|indent|load|trip|status|where|stage)/.test(q)) {
+  // (An invoice number is digits too — "NEX-INV-000411" — and has its own answer below.)
+  if (number && !/\binv/.test(q) && /(order|indent|load|trip|status|where|stage)/.test(q)) {
     const indent = indents.find((i) => String(i.code) === number[0]) ?? indents.find((i) => String(tripOf(i)?.code) === number[0]);
     if (indent) {
       const trip = tripOf(indent);
@@ -182,6 +245,123 @@ export function answerLocally(question: string, r: Records): AssistantReply {
       answer: `I cannot find an order or trip numbered ${number[0]} in this console.`,
       sources: [{ label: 'All orders', href: '/orders' }],
     };
+  }
+
+  // ---- one invoice, by its number -------------------------------------------------
+  const invoiceNo = question.toUpperCase().match(/\b(?:NEX-)?INV-?\d{3,}\b/);
+  if (invoiceNo) {
+    const wanted = invoiceNo[0].replace(/[^A-Z0-9]/g, '');
+    const inv = (db.invoices ?? []).find((i: any) => String(i.code ?? '').replace(/[^A-Z0-9]/gi, '').toUpperCase().endsWith(wanted.replace(/^NEX/, '')));
+    if (inv) {
+      const due = (inv.totalPaise ?? 0) - (inv.receivedPaise ?? 0);
+      return {
+        answer:
+          `Invoice ${inv.code} — ${inv.clientName ?? '—'}, dated ${day(inv.invoiceDate)}, due ${day(inv.dueDate)}.\n` +
+          `Total ${rupees(inv.totalPaise)}, received ${rupees(inv.receivedPaise)}, still due ${rupees(Math.max(0, due))}.\n` +
+          `Status: ${String(inv.status ?? '').toLowerCase().replace(/_/g, ' ')}.`,
+        sources: [{ label: `Invoice ${inv.code}`, href: `/invoices/${inv.id}` }],
+      };
+    }
+    return { answer: `I cannot find invoice ${invoiceNo[0]} in this console.`, sources: [{ label: 'Invoices', href: '/invoices' }] };
+  }
+
+  // ---- one client or one transporter, by name ---------------------------------------
+  const client = (db.clients ?? []).find((c: any) => mentions(q, c.name) || mentions(q, c.code));
+  if (client) {
+    const theirs = indents.filter((i) => i.clientId === client.id || i.clientName === client.name);
+    const running = theirs.filter(
+      (i) => !['BALANCE_RELEASED', 'CANCELLED', 'FAILED', 'POD_FORFEITED'].includes(r.orderStatus(i, tripOf(i))),
+    );
+    const owed = (db.invoices ?? [])
+      .filter((i: any) => i.code && i.status !== 'CANCELLED' && (i.clientId === client.id || i.clientName === client.name))
+      .reduce((a: number, i: any) => a + Math.max(0, (i.totalPaise ?? 0) - (i.receivedPaise ?? 0)), 0);
+    const lanes: any[] = (db.rateCards?.[client.id] ?? []).filter((l: any) => !l.deletedAt);
+    return {
+      answer:
+        `${client.name} (${client.code}) — ${client.status === 'ACTIVE' ? 'cleared for work' : 'not yet cleared by Compliance'}.\n` +
+        `Billed at ${[client.billingAddress, client.billingCity, client.billingState, client.billingPincode].filter(Boolean).join(', ') || '—'}` +
+        `${client.gstin ? ` · GST ${client.gstin}` : ''}.\n` +
+        `Contact: ${[client.contact, client.phone].filter(Boolean).join(' · ') || '—'}. Credit ${client.creditDays ?? '—'} days.\n` +
+        `${plural(theirs.length, 'load')} in all, ${running.length} in progress. They owe ${rupees(owed)}.` +
+        (lanes.length ? `\nAgreed rates:\n${listed(lanes.map((l) => `${l.origin} → ${l.destination} · ${l.truckType} · ${rupees(l.ratePaise)}`), 4)}` : ''),
+      sources: [{ label: client.name, href: `/clients/${client.id}` }],
+    };
+  }
+  const vendor = (db.vendors ?? []).find((v: any) => mentions(q, v.legalName) || mentions(q, v.code));
+  if (vendor) {
+    const theirs = trips.filter((t) => t.vendorId === vendor.id);
+    const status: Record<string, string> = {
+      ACTIVE: 'cleared for loads',
+      PENDING_VERIFICATION: 'waiting for Compliance',
+      DRAFT: 'draft — not submitted',
+      SUSPENDED: 'on hold',
+      BLACKLISTED: 'blacklisted',
+    };
+    return {
+      answer:
+        `${vendor.legalName} (${vendor.code}) — ${status[vendor.status] ?? String(vendor.status).toLowerCase()}.\n` +
+        `Based at ${vendor.baseCity ?? '—'} · ${vendor.phone ?? '—'} · ${plural(vendor.fleetCount ?? 0, 'truck')} · advance ${vendor.advancePct ?? '—'}%.\n` +
+        `${plural(theirs.length, 'trip')} with us, ${theirs.filter((t) => t.stage === 'IN_TRANSIT').length} on the road now.`,
+      sources: [{ label: vendor.legalName, href: `/vendors/${vendor.id}` }],
+    };
+  }
+
+  // ---- this month's money -----------------------------------------------------------
+  if (/revenue|billed|billing|turnover|margin|profit|earn|sales/.test(q)) {
+    const month = new Date().toISOString().slice(0, 7);
+    const delivered = trips.filter((t) => String(t.deliveredAt ?? '').slice(0, 7) === month);
+    const billed = delivered.reduce((a, t) => a + (t.sellRatePaise ?? 0), 0);
+    const cost = delivered.reduce((a, t) => a + (t.buyRatePaise ?? 0), 0);
+    return {
+      answer: delivered.length
+        ? `This month: ${plural(delivered.length, 'trip')} delivered, ${rupees(billed)} billed to clients, ${rupees(cost)} paid to transporters — a margin of ${rupees(billed - cost)}${billed ? ` (${(((billed - cost) / billed) * 100).toFixed(1)}%)` : ''}.`
+        : 'No trip has been delivered this month yet, so there is nothing billed.',
+      sources: [
+        { label: 'Business snapshot', href: '/home' },
+        { label: 'Dashboard', href: '/dashboard' },
+      ],
+    };
+  }
+
+  // ---- shortage and damage -------------------------------------------------------------
+  if (/\bsdr\b|shortage|damage/.test(q)) {
+    const open = (db.sdr ?? []).filter((s: any) => s.status === 'OPEN');
+    return {
+      answer: open.length
+        ? `${plural(open.length, 'shortage or damage record is', 'shortage or damage records are')} open:\n${listed(open.map((s: any) => `${s.code ?? ''} · trip ${s.tripCode ?? s.tripId ?? ''} · ${rupees(s.amountPaise ?? s.outstandingPaise ?? 0)}`))}`
+        : 'No shortage or damage record is open.',
+      sources: [{ label: 'SDR · transporter issues', href: '/sdr' }],
+    };
+  }
+
+  // ---- how many of something --------------------------------------------------------------
+  if (/how many|number of|count of|total (number )?of|list (of )?(all )?(the )?(branch|people|user|staff)/.test(q)) {
+    if (/branch/.test(q)) {
+      const names = r.branches ?? [];
+      return { answer: `${plural(names.length, 'branch', 'branches')}: ${names.join(', ') || '—'}.`, sources: [{ label: 'Branches', href: '/admin/branches' }] };
+    }
+    if (/people|user|staff|employee|login|sign.?in/.test(q)) {
+      const people = r.people ?? [];
+      const byRole = new Map<string, number>();
+      for (const p of people) byRole.set(p.role, (byRole.get(p.role) ?? 0) + 1);
+      return {
+        answer: `${plural(people.length, 'person', 'people')} can sign in:\n${listed([...byRole.entries()].map(([role, n]) => `${ROLE_NAME[role] ?? role}: ${n}`), 10)}`,
+        sources: [{ label: 'Allowed emails', href: '/admin/users' }],
+      };
+    }
+    if (/trip|truck|vehicle/.test(q)) {
+      return {
+        answer: `${plural(trips.length, 'trip')} in all — ${trips.filter((t) => t.stage === 'IN_TRANSIT').length} on the road, ${trips.filter((t) => t.deliveredAt).length} delivered.`,
+        sources: [{ label: 'All orders', href: '/orders' }],
+      };
+    }
+    if (/order|load|indent/.test(q)) {
+      return { answer: `${plural(indents.length, 'load')} in all, ${inProgress} in progress.`, sources: [{ label: 'All orders', href: '/orders' }] };
+    }
+    if (/invoice|bill/.test(q)) {
+      const issued = (db.invoices ?? []).filter((i: any) => i.code && i.status !== 'CANCELLED');
+      return { answer: `${plural(issued.length, 'invoice')} issued.`, sources: [{ label: 'Invoices', href: '/invoices' }] };
+    }
   }
 
   // ---- loads waiting for a truck ---------------------------------------------
@@ -324,8 +504,26 @@ export function answerLocally(question: string, r: Records): AssistantReply {
     };
   }
 
-  // A how-to that did not start with "how", then give up honestly.
+  // A how-to that did not start with "how".
   const hit = HOW_TO.find((h) => h.match.test(q));
   if (hit) return { answer: hit.answer, sources: [hit.source] };
+
+  // Last, look for any word of the question in the records themselves — a city,
+  // a material, part of a name — and say which loads it turns up on.
+  const words = q.split(/[^a-z0-9]+/).filter((w) => w.length >= 4 && !STOP.has(w));
+  if (words.length) {
+    const found = indents.filter((i) => {
+      const hay = [i.code, i.clientName, i.fromCity, i.toCity, i.material, i.truckType, tripOf(i)?.vendorName, tripOf(i)?.vehicleNo]
+        .join(' ')
+        .toLowerCase();
+      return words.some((w) => hay.includes(w));
+    });
+    if (found.length) {
+      return {
+        answer: `I found ${plural(found.length, 'load')} matching that:\n${listed(found.map((i) => `${orderLine(i)} · ${STEP[r.orderStatus(i, tripOf(i))] ?? ''}`))}`,
+        sources: [{ label: 'All orders', href: '/orders' }],
+      };
+    }
+  }
   return { answer: `I could not work out what that is about. ${CAN_ANSWER}`, sources: [] };
 }
