@@ -99,7 +99,7 @@ export function Assistant() {
             <div>
               <strong>Ask Nexraah</strong>
               <div className="muted" style={{ fontSize: 11.5 }}>
-                Answers come from the records. Check the linked screen before acting on one.
+                Quick answers from the records in this console. Check the linked screen before acting on one.
               </div>
             </div>
             <div style={{ display: 'flex', gap: 4 }}>

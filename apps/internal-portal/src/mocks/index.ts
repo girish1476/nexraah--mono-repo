@@ -1,3 +1,4 @@
+import { answerLocally } from './assistant';
 import { planRecovery } from './sdr-recovery';
 import { computeTransitPenalty } from './transit-penalty';
 import { bandPositionFor } from './band-position';
@@ -2347,12 +2348,25 @@ const routes: [string, RegExp, Handler][] = [
       });
     },
   ],
-  // The assistant answers from records it looks up through an outside model,
-  // which only the real server can reach. The fixture does not pretend to be one.
+  // The real assistant answers through an outside model, which only the real
+  // server can reach. Until that is switched on, a stand-in answers the common
+  // questions straight from the records here — see `mocks/assistant.ts`.
   [
     'POST',
     /^\/assistant\/chat$/,
-    () => fail(503, 'ASSISTANT_NOT_SET_UP', 'The assistant is not available in this demo — it needs the real server.'),
+    ({ body }) => {
+      const turns: { role?: string; content?: string }[] = Array.isArray(body?.messages) ? body.messages : [];
+      const question = [...turns].reverse().find((t) => t.role === 'user')?.content ?? '';
+      if (!String(question).trim()) fail(400, 'VALIDATION_ERROR', 'Ask a question.');
+      return ok(
+        answerLocally(String(question), {
+          db: db as unknown as Record<string, any>,
+          advanceUnmet: (trip) => advanceGate(trip).unmet,
+          balanceUnmet: (trip) => balanceGate(trip).unmet,
+          orderStatus: (indent, trip) => orderLadder(indent, trip),
+        }),
+      );
+    },
   ],
   // Reading a document's details ("Fetch") is done by the real server, which
   // sends the file to be read. The fixture has nothing to read it with, and
