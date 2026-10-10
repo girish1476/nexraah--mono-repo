@@ -7,6 +7,7 @@ import { inr } from '@/lib/format';
 import {
   Column,
   DataTable,
+  Dialog,
   ErrorState,
   Field,
   FormGrid,
@@ -304,6 +305,8 @@ function CompanyExtras({
 }) {
   const [label, setLabel] = useState('');
   const [value, setValue] = useState('');
+  // The detail being removed, while its confirmation is open.
+  const [removing, setRemoving] = useState<CompanyExtra | null>(null);
   const name = label.trim();
   const taken = extra.some((e) => e.label.trim().toLowerCase() === name.toLowerCase());
   const problem = !name || !value.trim() ? null : taken ? 'There is already a detail with this name.' : null;
@@ -338,8 +341,14 @@ function CompanyExtras({
                   }
                 />
                 {editable && (
-                  <button className="btn btn-ghost btn-sm" aria-label={`Remove ${e.label}`} onClick={() => save(extra.filter((_, j) => j !== i))}>
-                    Remove
+                  // Drawn as a red button: as plain text beside the box it did not read as something to press.
+                  <button
+                    className="btn btn-sm"
+                    aria-label={`Remove ${e.label}`}
+                    onClick={() => setRemoving(e)}
+                    style={{ flex: 'none', background: 'transparent', color: 'var(--red)', borderColor: 'var(--red)' }}
+                  >
+                    🗑 Remove
                   </button>
                 )}
               </div>
@@ -369,6 +378,18 @@ function CompanyExtras({
           {problem}
         </div>
       )}
+      <Dialog
+        open={!!removing}
+        title="Remove this detail"
+        body="It stops being printed on the invoice and the lorry receipt from now on. It can be added again at any time."
+        facts={removing ? [[removing.label, removing.value]] : undefined}
+        confirmLabel="Remove"
+        onConfirm={() => {
+          if (removing) save(extra.filter((x) => x.label !== removing.label));
+          setRemoving(null);
+        }}
+        onClose={() => setRemoving(null)}
+      />
     </div>
   );
 }

@@ -66,7 +66,18 @@ test.describe('company details in the control panel', () => {
     await expect(add).toBeDisabled();
     await expect(extras).toContainText('There is already a detail with this name.');
 
-    await extras.getByRole('button', { name: 'Remove MSME Number' }).click();
+    // Removing asks first, and "Cancel" keeps it.
+    const remove = extras.getByRole('button', { name: 'Remove MSME Number' });
+    await expect(remove).toContainText('Remove');
+    await remove.click();
+    const dialog = page.locator('.surface', { has: page.getByRole('heading', { name: 'Remove this detail' }) }).last();
+    await expect(dialog).toContainText('Remove this detail');
+    await expect(dialog).toContainText('UDYAM-AP-10-0012345');
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(added).toHaveCount(1);
+
+    await remove.click();
+    await page.locator('.surface', { has: page.getByRole('heading', { name: 'Remove this detail' }) }).last().getByRole('button', { name: 'Remove', exact: true }).click();
     await expect(added).toHaveCount(0);
   });
 
