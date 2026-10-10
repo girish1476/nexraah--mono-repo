@@ -3,6 +3,7 @@ import { SupabaseJwtGuard } from '../../common/guards/supabase-jwt.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { assertAnyPermission } from '../../common/guards/assert-any-permission';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
 import { ClientOnboardingService } from './client-onboarding.service';
 import { SubmitClientDocumentDto } from './dto/submit-client-document.dto';
@@ -42,13 +43,19 @@ export class ClientOnboardingController {
     return this.onboarding.detail(id);
   }
 
+  /**
+   * Sending a paper in is not clearing it. The desk that creates the client
+   * (`client.manage`) uploads its papers on the same form, so it may send them;
+   * accepting or rejecting one, and clearing the client, stay `client.onboard`.
+   * A paper sent again is always put back to "waiting to be checked".
+   */
   @Post(':id/onboarding/documents')
-  @RequirePermission('client.onboard')
   submitDocument(
     @Param('id') id: string,
     @Body() dto: SubmitClientDocumentDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    assertAnyPermission(user, ['client.onboard', 'client.manage']);
     return this.onboarding.submitDocument(id, dto, user);
   }
 

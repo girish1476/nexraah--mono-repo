@@ -1,11 +1,13 @@
 'use client';
 
 import Link from 'next/link';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { errorMessage } from '@/apis';
+import { uploadAttachment } from '@/lib/attachments';
 import { capitalizeWords } from '@/lib/format';
 import { checkGstin } from '@/lib/gstin';
 import {
@@ -23,6 +25,23 @@ import {
   useToast,
 } from '@/lib/ui';
 import { createClient } from '../apis';
+import { submitClientDocument } from '../onboarding/apis';
+import type { ClientDocumentKind } from '../onboarding/types';
+
+/**
+ * The papers Compliance checks before a client can be given loads — the same
+ * list Client verification works through. A spot client has no rate contract
+ * to sign, so it is not asked for one.
+ */
+const PAPERS: { kind: ClientDocumentKind; label: string; hint: string; contractOnly?: boolean }[] = [
+  { kind: 'GST_CERTIFICATE', label: 'GST certificate', hint: 'Their GST registration certificate.' },
+  { kind: 'PAN', label: 'PAN card', hint: 'The company’s PAN card.' },
+  { kind: 'CREDIT_CHECK', label: 'Credit and credibility check', hint: 'The credit report, or what was found about them.' },
+  { kind: 'SIGNED_AGREEMENT', label: 'Signed rate agreement', hint: 'The agreement signed by both sides.', contractOnly: true },
+];
+
+/** The server refuses anything larger, so say so before sending it. */
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 const schema = z
   .object({
@@ -76,10 +95,47 @@ export default function NewClientPage() {
   const engagement = form.watch('engagement');
   const gstinValue = form.watch('gstin');
 
+  // The files chosen for each paper. They are sent once the client exists.
+  const [files, setFiles] = useState<Partial<Record<ClientDocumentKind, File>>>({});
+  const papers = PAPERS.filter((p) => !p.contractOnly || engagement === 'CONTRACT');
+  const chooseFile = (kind: ClientDocumentKind, file: File | undefined) => {
+    if (file && file.size > MAX_UPLOAD_BYTES) {
+      toast('That file is larger than 10 MB — choose a smaller scan or photo.');
+      return;
+    }
+    setFiles((f) => {
+      const next = { ...f };
+      if (file) next[kind] = file;
+      else delete next[kind];
+      return next;
+    });
+  };
+
   const submit = form.handleSubmit(async (values) => {
     try {
       const client = await createClient(values);
-      toast(`${client.code} · ${values.name} added`);
+      // Each paper goes up against the new client and waits for Compliance to
+      // check it. One that fails to send does not undo the client: it is named,
+      // and can be uploaded again from Client verification.
+      const failed: string[] = [];
+      for (const paper of papers) {
+        const file = files[paper.kind];
+        if (!file) continue;
+        try {
+          const attachmentId = await uploadAttachment(file, paper.kind, 'clients', client.id);
+          await submitClientDocument(client.id, { kind: paper.kind, attachmentId, reference: file.name });
+        } catch {
+          failed.push(paper.label);
+        }
+      }
+      const sent = papers.filter((p) => files[p.kind]).length - failed.length;
+      toast(
+        failed.length > 0
+          ? `${client.code} · ${values.name} added, but these could not be uploaded: ${failed.join(', ')}. Upload them from Client verification.`
+          : sent > 0
+            ? `${client.code} · ${values.name} added with ${sent} ${sent === 1 ? 'document' : 'documents'}`
+            : `${client.code} · ${values.name} added`,
+      );
       router.push(`/clients/${client.id}`);
     } catch (e) {
       toast(errorMessage(e));
@@ -231,6 +287,63 @@ export default function NewClientPage() {
           </FormGrid>
         </Panel>
 
+        <Panel title="Documents">
+          <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }}>
+            Upload the client’s papers here as you create them. Compliance checks each one before the client can be
+            given loads. A paper that is not to hand yet can be left out and uploaded later from Client verification.
+          </p>
+          <div data-client-papers style={{ display: 'grid', gap: 10 }}>
+            {papers.map((p) => {
+              const file = files[p.kind];
+              return (
+                <div
+                  key={p.kind}
+                  data-paper={p.kind}
+                  className="surface"
+                  style={{ padding: '10px 12px', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}
+                >
+                  <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+                    <div style={{ fontWeight: 600 }}>{p.label}</div>
+                    <div className="muted" style={{ fontSize: 12, overflowWrap: 'anywhere' }}>
+                      {file ? `📎 ${file.name}` : p.hint}
+                    </div>
+                  </div>
+                  <label className={file ? 'btn btn-secondary btn-sm' : 'btn btn-sm'} style={{ cursor: 'pointer' }}>
+                    {file ? 'Change file' : 'Upload file'}
+                    <input
+                      type="file"
+                      name={`paper-${p.kind}`}
+                      aria-label={`${p.label} file`}
+                      accept="image/*,application/pdf"
+                      hidden
+                      onChange={(e) => {
+                        const picked = e.target.files?.[0];
+                        // Cleared so picking the same file again still fires.
+                        e.target.value = '';
+                        if (picked) chooseFile(p.kind, picked);
+                      }}
+                    />
+                  </label>
+                  {file && (
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      aria-label={`Remove ${p.label} file`}
+                      onClick={() => chooseFile(p.kind, undefined)}
+                      style={{ background: 'transparent', color: 'var(--red)', borderColor: 'var(--red)' }}
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <p className="muted" style={{ fontSize: 11.5, marginBottom: 0 }}>
+            A scan or a photo — PDF, JPG or PNG, up to 10 MB each.
+          </p>
+        </Panel>
+
         <Panel title="Credit terms and service promise">
           <FormGrid>
             <Field
@@ -251,7 +364,7 @@ export default function NewClientPage() {
           </FormGrid>
           <div style={{ marginTop: 16 }}>
             <button className="btn" onClick={submit} disabled={form.formState.isSubmitting}>
-              Create client
+              {form.formState.isSubmitting ? 'Creating…' : 'Create client'}
             </button>
           </div>
         </Panel>

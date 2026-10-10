@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { errorMessage } from '@/apis';
+import { uploadAttachment } from '@/lib/attachments';
 import { fmtDate } from '@/lib/format';
 import {
   ActionCard,
@@ -29,6 +30,7 @@ import {
 import {
   activateClient,
   decideClientDocument,
+  getClientDocumentUrl,
   getClientOnboarding,
   listClientOnboarding,
   rejectClient,
@@ -59,6 +61,9 @@ const DOC_LABEL = {
 } as const;
 
 const DOC_EMOJI = { MISSING: '⬜', PENDING: '🔍', VERIFIED: '✅', REJECTED: '⛔' } as const;
+
+/** The server refuses anything larger, so say so before sending it. */
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 /**
  * `/clients/onboarding` — Compliance decides whether we carry for a client.
@@ -107,6 +112,43 @@ export default function ClientOnboardingPage() {
       toast(errorMessage(e));
     } finally {
       setBusy(false);
+    }
+  };
+
+  /*
+   * One hidden file picker serves every paper in the open file: a row's
+   * upload button notes which paper it is for, then opens the picker.
+   */
+  const fileInput = useRef<HTMLInputElement>(null);
+  const uploadKind = useRef<ClientOnboardingDocument['kind'] | null>(null);
+  const [uploading, setUploading] = useState<string | null>(null);
+
+  const pickFile = (kind: ClientOnboardingDocument['kind']) => {
+    uploadKind.current = kind;
+    fileInput.current?.click();
+  };
+
+  const onFilePicked = async (file: File | undefined) => {
+    const kind = uploadKind.current;
+    if (!file || !kind || !open) return;
+    if (file.size > MAX_UPLOAD_BYTES) {
+      toast('That file is larger than 10 MB — send a smaller scan or photo.');
+      return;
+    }
+    setUploading(kind);
+    await run(async () => {
+      const attachmentId = await uploadAttachment(file, kind, 'clients', open.id);
+      return submitClientDocument(open.id, { kind, attachmentId, reference: file.name });
+    });
+    setUploading(null);
+  };
+
+  const viewFile = async (attachmentId: string) => {
+    try {
+      const { url } = await getClientDocumentUrl(attachmentId);
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (e) {
+      toast(errorMessage(e));
     }
   };
 
@@ -300,6 +342,18 @@ export default function ClientOnboardingPage() {
               <div className="eyebrow" style={{ marginBottom: 8 }}>
                 Their papers
               </div>
+              <input
+                ref={fileInput}
+                type="file"
+                accept="image/*,application/pdf"
+                hidden
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  // Cleared so picking the same file again still fires.
+                  e.target.value = '';
+                  void onFilePicked(file);
+                }}
+              />
               <Stack gap={8}>
                 {open.documents.map((doc: ClientOnboardingDocument) => (
                   <div
@@ -318,12 +372,38 @@ export default function ClientOnboardingPage() {
                     </span>
                     <Tag tone={DOC_TONE[doc.status]}>{DOC_LABEL[doc.status]}</Tag>
 
+                    {doc.attachmentId && (
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => viewFile(doc.attachmentId as string)}
+                      >
+                        📎 View file
+                      </button>
+                    )}
+
                     {can('client.onboard') && (
-                      <span style={{ display: 'flex', gap: 6 }}>
+                      <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        {/* A checked paper is left alone; anything else can be sent, or sent again. */}
+                        {doc.status !== 'VERIFIED' && (
+                          <button
+                            className={doc.status === 'MISSING' ? 'btn btn-sm' : 'btn btn-secondary btn-sm'}
+                            disabled={busy}
+                            onClick={() => pickFile(doc.kind)}
+                          >
+                            {uploading === doc.kind
+                              ? 'Uploading…'
+                              : doc.attachmentId
+                                ? 'Replace file'
+                                : 'Upload file'}
+                          </button>
+                        )}
                         {doc.status === 'MISSING' ? (
+                          /* For a check done on a portal — a GSTIN looked up, a
+                             credit report pulled — where there is no scan to attach. */
                           <button
                             className="btn btn-secondary btn-sm"
                             disabled={busy}
+                            title="For a check with no file to attach, such as a GSTIN looked up online"
                             onClick={() =>
                               run(() => submitClientDocument(open.id, { kind: doc.kind, reference: 'Logged by Compliance' }))
                             }

@@ -35,6 +35,11 @@ export async function submitClientDocument(
   });
 }
 
+/** GET /attachments/:id/url — a short-lived signed URL to view an uploaded paper. */
+export async function getClientDocumentUrl(attachmentId: string): Promise<{ url: string }> {
+  return request<{ url: string }>({ url: `/attachments/${attachmentId}/url`, method: 'GET' });
+}
+
 export async function decideClientDocument(
   id: string,
   kind: ClientDocumentKind,
