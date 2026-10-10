@@ -3,7 +3,7 @@ import { planRecovery } from './sdr-recovery';
 import { computeTransitPenalty } from './transit-penalty';
 import { bandPositionFor } from './band-position';
 import { isDemoData, loadPeople, persist, savePeople } from './persist';
-import { fileFor, keepFile } from './files';
+import { fileFor, filesReady, keepFile } from './files';
 import { AxiosAdapter, AxiosError, AxiosRequestConfig, AxiosResponse } from 'axios';
 import { RoleCode, SEED_GRANTS } from '@/lib/permissions';
 import {
@@ -3573,7 +3573,13 @@ const routes: [string, RegExp, Handler][] = [
       if (body.rateSource === 'SPOT' && body.sellRatePaise <= body.sourcingRatePaise)
         fail(400, 'SPOT_BELOW_SOURCING', 'A spot freight must exceed the sourcing rate (BR-38).');
       const indent = {
-        id: `i-${db.indents.length + 1}`,
+        // One more than the count, stepped past any id already taken — a count
+        // alone can repeat an id once the list has ever been shorter than it was.
+        id: (() => {
+          let n = db.indents.length + 1;
+          while (db.indents.some((i: any) => i.id === `i-${n}`)) n += 1;
+          return `i-${n}`;
+        })(),
         code: nextNumber('INDENT'),
         stage: 'OPEN',
         createdAt: helpers.now(),
@@ -6397,6 +6403,9 @@ export const mockAdapter: AxiosAdapter = async (config) => {
   }
   const body = typeof config.data === 'string' ? safeParse(config.data) : config.data;
   const headers = normaliseHeaders(config.headers);
+
+  // Uploaded files are read back from the browser's database as the console starts.
+  await filesReady;
 
   // A visible pause; the console is never demonstrated against instant data.
   await new Promise((r) => setTimeout(r, 120));

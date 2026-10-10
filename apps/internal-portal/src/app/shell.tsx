@@ -55,6 +55,24 @@ export function Shell({ session, children }: { session: Session | null; children
    * this browser, like the theme, so it holds from screen to screen. (On a
    * phone the sidebar is already a drawer — `navOpen` above.)
    */
+  /*
+   * Set when the console's records could not be written to this browser's
+   * storage (see `persist` in mocks/persist.ts, whose event names these are).
+   * A failed save used to pass in silence, and the work done after it was gone
+   * on the next reload; a banner now says so while it can still be acted on.
+   */
+  const [saveFailed, setSaveFailed] = useState(false);
+  useEffect(() => {
+    const failed = () => setSaveFailed(true);
+    const saved = () => setSaveFailed(false);
+    window.addEventListener('nexraah:save-failed', failed);
+    window.addEventListener('nexraah:save-ok', saved);
+    return () => {
+      window.removeEventListener('nexraah:save-failed', failed);
+      window.removeEventListener('nexraah:save-ok', saved);
+    };
+  }, []);
+
   const [collapsed, setCollapsed] = useState(false);
   useEffect(() => {
     try {
@@ -401,6 +419,26 @@ export function Shell({ session, children }: { session: Session | null; children
             )}
             <UserBar role={role} session={session} />
           </div>
+          {saveFailed && (
+            <div
+              role="alert"
+              className="no-print"
+              style={{
+                marginBottom: 16,
+                padding: '11px 14px',
+                border: '1px solid var(--red-edge)',
+                borderLeft: '4px solid var(--red)',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--red-tint)',
+                color: 'var(--red)',
+                fontSize: 'var(--text-md)',
+                fontWeight: 600,
+              }}
+            >
+              ⚠ Your latest work could not be saved in this browser — its storage is full or blocked. Do not close or
+              reload this tab: what you have just entered would be lost. Tell an administrator.
+            </div>
+          )}
           {children}
 
           {/*

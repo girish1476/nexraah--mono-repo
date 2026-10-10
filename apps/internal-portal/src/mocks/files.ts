@@ -4,17 +4,29 @@
  * from storage on a signed URL.
  *
  * Photos are shrunk to a JPEG no wider than 1400px before they are kept, so a
- * phone photo of a lorry receipt costs a few hundred KB, not five MB. Kept in
- * this browser's storage when there is room, and in memory for the session
- * when there is not (a large PDF). Nothing leaves the browser.
+ * phone photo of a lorry receipt costs a few hundred KB, not five MB. Nothing
+ * leaves the browser.
+ *
+ * They are kept in the browser's database (IndexedDB), which has room for
+ * hundreds of megabytes. They used to be kept in `localStorage` beside the
+ * console's records, and that is a five-megabyte box for both together: a
+ * dozen document photos filled it, and from then on the records themselves
+ * could not be saved — silently. A load raised after that existed only until
+ * the page was next reloaded, and then "Indent i-6 not found". Files left in
+ * the old place are moved across the first time this runs, which gives the
+ * records their room back.
  *
  * A seeded document has no file behind it; it is shown as a drawn sample page
  * with its name on it, never a broken image.
  */
 
-const STORE_KEY = 'nexraah.mockfiles.v1';
+/** Where files used to be kept, beside the records. Emptied once its files are moved. */
+const LEGACY_KEY = 'nexraah.mockfiles.v1';
+const DB_NAME = 'nexraah-files';
+const STORE = 'files';
 const MAX_IMAGE_EDGE = 1400;
-const MAX_STORED_CHARS = 1_800_000;
+/** A file bigger than this (a long scanned PDF) is held for the session only. */
+const MAX_KEPT_BYTES = 12_000_000;
 
 export interface KeptFile {
   url: string;
@@ -22,27 +34,103 @@ export interface KeptFile {
   name: string;
 }
 
+/** Every kept file, by attachment id. Filled from the browser's database as the console starts. */
 const memory = new Map<string, KeptFile>();
 
-function stored(): Record<string, KeptFile> {
-  try {
-    const raw = typeof window !== 'undefined' ? window.localStorage.getItem(STORE_KEY) : null;
-    return raw ? (JSON.parse(raw) as Record<string, KeptFile>) : {};
-  } catch {
-    return {};
-  }
+function openDb(): Promise<IDBDatabase | null> {
+  return new Promise((resolve) => {
+    try {
+      if (typeof indexedDB === 'undefined') return resolve(null);
+      const request = indexedDB.open(DB_NAME, 1);
+      request.onupgradeneeded = () => request.result.createObjectStore(STORE);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => resolve(null);
+      request.onblocked = () => resolve(null);
+    } catch {
+      // Private browsing, or a browser that refuses: files last for the session only.
+      resolve(null);
+    }
+  });
 }
+
+const database: Promise<IDBDatabase | null> = typeof window === 'undefined' ? Promise.resolve(null) : openDb();
+
+function put(db: IDBDatabase, id: string, file: KeptFile): Promise<boolean> {
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).put(file, id);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+      tx.onabort = () => resolve(false);
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
+function readAll(db: IDBDatabase): Promise<void> {
+  return new Promise((resolve) => {
+    try {
+      const request = db.transaction(STORE, 'readonly').objectStore(STORE).openCursor();
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) return resolve();
+        memory.set(String(cursor.key), cursor.value as KeptFile);
+        cursor.continue();
+      };
+      request.onerror = () => resolve();
+    } catch {
+      resolve();
+    }
+  });
+}
+
+/** Moves files out of the records' storage into the database, and frees that storage. */
+async function moveLegacy(db: IDBDatabase | null): Promise<void> {
+  let legacy: Record<string, KeptFile> = {};
+  try {
+    const raw = window.localStorage.getItem(LEGACY_KEY);
+    if (!raw) return;
+    legacy = JSON.parse(raw) as Record<string, KeptFile>;
+  } catch {
+    return;
+  }
+  let allMoved = true;
+  for (const [id, file] of Object.entries(legacy)) {
+    if (!memory.has(id)) memory.set(id, file);
+    if (!db || !(await put(db, id, file))) allMoved = false;
+  }
+  // The old copy goes even when a file could not be moved: it stays shown for
+  // this session, and the records getting saved again matters more than a
+  // document photo that can be uploaded again.
+  try {
+    window.localStorage.removeItem(LEGACY_KEY);
+  } catch {
+    // nothing to do
+  }
+  void allMoved;
+}
+
+/**
+ * Resolves once the kept files are loaded and any left in the old place have
+ * been moved. The adapter waits for it before answering its first request, so
+ * a document is never shown as a sample page only because it was asked for a
+ * moment too early.
+ */
+export const filesReady: Promise<void> =
+  typeof window === 'undefined'
+    ? Promise.resolve()
+    : database
+        .then(async (db) => {
+          if (db) await readAll(db);
+          await moveLegacy(db);
+        })
+        .catch(() => undefined);
 
 function store(id: string, file: KeptFile) {
   memory.set(id, file);
-  if (file.url.length > MAX_STORED_CHARS) return;
-  try {
-    const all = stored();
-    all[id] = file;
-    window.localStorage.setItem(STORE_KEY, JSON.stringify(all));
-  } catch {
-    // Out of room: it stays in memory for this session.
-  }
+  void database.then((db) => (db ? put(db, id, file) : false));
 }
 
 function readAsDataUrl(blob: Blob): Promise<string> {
@@ -76,7 +164,7 @@ export async function keepFile(id: string, blob: Blob & { name?: string }): Prom
       store(id, { url: await shrinkImage(blob), mime: 'image/jpeg', name });
       return;
     }
-    if (blob.size <= MAX_STORED_CHARS * 0.7) {
+    if (blob.size <= MAX_KEPT_BYTES) {
       store(id, { url: await readAsDataUrl(blob), mime, name });
       return;
     }
@@ -88,7 +176,7 @@ export async function keepFile(id: string, blob: Blob & { name?: string }): Prom
 
 /** The kept file, or a drawn sample page for a document seeded without one. */
 export function fileFor(id: string): KeptFile {
-  const kept = memory.get(id) ?? stored()[id];
+  const kept = memory.get(id);
   if (kept) return kept;
   return { url: samplePage(id), mime: 'image/svg+xml', name: `${id}.svg` };
 }

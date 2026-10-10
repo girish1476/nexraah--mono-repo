@@ -77,16 +77,43 @@ export function followOtherTabs(db: Record<string, any>, branches: any[]): void 
 
 let pending = false;
 
+/** Fired on `window` when the working data could not be saved, and again when a later save goes through. */
+export const SAVE_FAILED_EVENT = 'nexraah:save-failed';
+export const SAVE_OK_EVENT = 'nexraah:save-ok';
+let lastSaveFailed = false;
+
+/** True while the newest work exists only in this tab's memory — the shell says so in a banner. */
+export function saveFailing(): boolean {
+  return lastSaveFailed;
+}
+
 /** Saves the working data. Called after every change; coalesced so a burst is one write. */
 export function persist(db: Record<string, any>, branches: any[]): void {
   if (!hasStorage() || isDemoData() || pending) return;
   pending = true;
   queueMicrotask(() => {
     pending = false;
+    const write = () => window.localStorage.setItem(STORE_KEY, JSON.stringify({ ...db, __branches: branches }));
     try {
-      window.localStorage.setItem(STORE_KEY, JSON.stringify({ ...db, __branches: branches }));
+      try {
+        write();
+      } catch {
+        // Out of room. Uploaded files used to be kept beside the records and
+        // are what filled it; they live in the browser's database now, so the
+        // old copy can go, and the records take the room.
+        window.localStorage.removeItem('nexraah.mockfiles.v1');
+        write();
+      }
+      if (lastSaveFailed) {
+        lastSaveFailed = false;
+        window.dispatchEvent(new Event(SAVE_OK_EVENT));
+      }
     } catch {
-      // Storage full or blocked: the console keeps working, it just will not survive a reload.
+      // Still no room, or storage is blocked. This used to pass in silence, and
+      // work done after it vanished on the next reload with nothing said. Now
+      // it is announced, so the person knows before they lose it.
+      lastSaveFailed = true;
+      window.dispatchEvent(new Event(SAVE_FAILED_EVENT));
     }
   });
 }
