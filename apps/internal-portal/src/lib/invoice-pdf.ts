@@ -7,6 +7,7 @@ import {
   INVOICE_TERMS,
   INVOICE_WEBSITE,
   amount,
+  billToLines,
   invoiceLines,
   invoiceStatus,
   invoiceTotals,
@@ -167,8 +168,10 @@ export async function downloadInvoicePdf(invoice: InvoiceDetail): Promise<void> 
   };
   rightLine('Bill To:', true);
   rightLine(invoice.clientName, true);
-  if (invoice.client?.billingCity) rightLine(invoice.client.billingCity);
-  rightLine(`GST Number: ${invoice.client?.gstin ?? '-'}`);
+  // The address may be long: it is wrapped to the block's width, each line right-aligned.
+  for (const line of billToLines(invoice)) {
+    for (const wrapped of doc.splitTextToSize(clean(line), 84) as string[]) rightLine(wrapped);
+  }
   right += 3;
   rightLine(`Invoice Date: ${isoDay(invoice.invoiceDate)}`);
   rightLine(`Due Date: ${isoDay(invoice.dueDate)}`);

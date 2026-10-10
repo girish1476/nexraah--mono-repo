@@ -82,6 +82,9 @@ export default function ClientDetailPage() {
     setDraft({
       name: client.name,
       billingCity: client.billingCity,
+      billingAddress: client.billingAddress ?? '',
+      billingState: client.billingState ?? '',
+      billingPincode: client.billingPincode ?? '',
       gstin: client.gstin,
       contact: client.contact,
       phone: client.phone,
@@ -368,7 +371,14 @@ export default function ClientDetailPage() {
             <FactList
               facts={[
                 ['Code', client.code],
-                ['GSTIN (tax number)', client.gstin ?? 'Not on file'],
+                [
+                  'Billing address',
+                  [client.billingAddress, client.billingCity, client.billingState, client.billingPincode]
+                    .map((part) => String(part ?? '').trim())
+                    .filter(Boolean)
+                    .join(', ') || 'Not on file',
+                ],
+                ['GSTIN (tax number)', client.gstin || 'Not on file'],
                 ['Contact person', client.contact],
                 ['Phone', client.phone],
                 ['Email', client.email],
@@ -536,6 +546,31 @@ export default function ClientDetailPage() {
           <input
             value={draft.billingCity ?? ''}
             onChange={(e) => setDraft({ ...draft, billingCity: e.target.value })}
+          />
+        </Field>
+        <Field label="Billing address" hint="Door number, street and area. Printed under their name on every invoice.">
+          <input
+            value={draft.billingAddress ?? ''}
+            onChange={(e) => setDraft({ ...draft, billingAddress: e.target.value })}
+          />
+        </Field>
+        <Field label="State">
+          <input
+            value={draft.billingState ?? ''}
+            onChange={(e) => setDraft({ ...draft, billingState: e.target.value })}
+          />
+        </Field>
+        <Field
+          label="PIN code"
+          error={
+            draft.billingPincode && !/^[1-9]\d{5}$/.test(draft.billingPincode) ? 'A PIN code is 6 digits' : undefined
+          }
+        >
+          <input
+            inputMode="numeric"
+            maxLength={6}
+            value={draft.billingPincode ?? ''}
+            onChange={(e) => setDraft({ ...draft, billingPincode: e.target.value.replace(/\D/g, '') })}
           />
         </Field>
         <Field label="GSTIN (tax number)">

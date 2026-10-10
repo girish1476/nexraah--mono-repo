@@ -14,6 +14,7 @@ import {
   INVOICE_TERMS,
   INVOICE_WEBSITE,
   amount,
+  billToLines,
   invoiceLines,
   invoiceStatus,
   invoiceTotals,
@@ -123,11 +124,12 @@ function Sheet({ invoice }: { invoice: InvoiceDetail }) {
           <div>{company.address}</div>
           <div>GST Number: {company.gstin}</div>
         </div>
-        <div style={{ textAlign: 'right' }}>
+        <div style={{ textAlign: 'right', maxWidth: '46%' }}>
           <div style={{ fontWeight: 700 }}>Bill To:</div>
           <div style={{ fontWeight: 700 }}>{invoice.clientName}</div>
-          {invoice.client?.billingCity && <div>{invoice.client.billingCity}</div>}
-          <div>GST Number: {invoice.client?.gstin ?? '—'}</div>
+          {billToLines(invoice).map((line) => (
+            <div key={line}>{line}</div>
+          ))}
           <div style={{ marginTop: 12 }}>Invoice Date: {isoDay(invoice.invoiceDate)}</div>
           <div>Due Date: {isoDay(invoice.dueDate)}</div>
           {/* A load that is not a full truck load carries its own SAC, set on the edit screen; otherwise the company's. */}

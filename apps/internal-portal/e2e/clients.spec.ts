@@ -193,7 +193,7 @@ test.describe('new client form', () => {
     // rewritten from terse validator-speak into instructions ("Ten digits" is
     // now "Enter a 10-digit Indian mobile number"), and pinning those words
     // here would mean the next clarity pass reds a test about *validation*.
-    for (const name of ['name', 'billingCity', 'contact', 'phone', 'email', 'agreementNo']) {
+    for (const name of ['name', 'billingCity', 'billingAddress', 'billingState', 'billingPincode', 'contact', 'phone', 'email', 'agreementNo']) {
       await expect(field(page, name).locator('span.err')).toHaveCount(1);
     }
 
@@ -219,6 +219,9 @@ test.describe('new client form', () => {
 
     await control(page, 'name').fill('Test Freight Co');
     await control(page, 'billingCity').fill('Nashik');
+    await control(page, 'billingAddress').fill('Plot 44, MIDC Ambad');
+    await control(page, 'billingState').fill('Maharashtra');
+    await control(page, 'billingPincode').fill('422010');
     await control(page, 'contact').fill('Test Contact');
     await control(page, 'phone').fill('9876543210');
     await control(page, 'email').fill('test.freight@example.com');

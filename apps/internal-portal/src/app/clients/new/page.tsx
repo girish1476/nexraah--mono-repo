@@ -31,6 +31,14 @@ const schema = z
       .string()
       .min(2, 'Enter the city we raise invoices to')
       .transform((v) => capitalizeWords(v)),
+    // Printed under the client's name on every invoice we raise them.
+    billingAddress: z.string().trim().min(5, 'Enter the address their invoices go to'),
+    billingState: z
+      .string()
+      .trim()
+      .min(2, 'Enter the state')
+      .transform((v) => capitalizeWords(v)),
+    billingPincode: z.string().regex(/^[1-9]\d{5}$/, 'Enter the 6-digit PIN code'),
     // Advisory only (checked against GSTN, never blocking) — normalized to
     // uppercase but not format-gated, so a malformed value still saves.
     gstin: z
@@ -133,6 +141,24 @@ export default function NewClientPage() {
                 {...form.register('billingCity')}
                 onBlur={(e) => form.setValue('billingCity', capitalizeWords(e.target.value))}
               />
+            </Field>
+            <Field
+              label="Billing address"
+              required
+              error={form.formState.errors.billingAddress?.message}
+              hint="Door number, street and area. Printed under their name on every invoice."
+            >
+              <input {...form.register('billingAddress')} placeholder="e.g. Plot 14, APIIC Industrial Park, Atchutapuram" />
+            </Field>
+            <Field label="State" required error={form.formState.errors.billingState?.message}>
+              <input
+                {...form.register('billingState')}
+                placeholder="e.g. Andhra Pradesh"
+                onBlur={(e) => form.setValue('billingState', capitalizeWords(e.target.value))}
+              />
+            </Field>
+            <Field label="PIN code" required error={form.formState.errors.billingPincode?.message}>
+              <input {...form.register('billingPincode')} inputMode="numeric" maxLength={6} placeholder="e.g. 531011" />
             </Field>
             <Field
               label="GSTIN (tax number)"

@@ -56,6 +56,25 @@ export function invoiceStatus(status: InvoiceStatus): { label: string; paid: boo
   return STATUS[status] ?? { label: status, paid: false };
 }
 
+/**
+ * Who the invoice is addressed to, a line at a time, under the client's name:
+ * the street address, then "City, State - PIN", then their GST number. A part
+ * the client's record does not have is left out rather than printed blank — a
+ * client with no GST number on file gets no "GST Number:" line.
+ */
+export function billToLines(invoice: InvoiceDetail): string[] {
+  const c = invoice.client;
+  const text = (v: string | null | undefined) => String(v ?? '').trim();
+  const lines: string[] = [];
+  // A long address is entered on one line; commas are where it breaks best.
+  if (text(c?.billingAddress)) lines.push(text(c?.billingAddress));
+  const place = [text(c?.billingCity), text(c?.billingState)].filter(Boolean).join(', ');
+  const pin = text(c?.billingPincode);
+  if (place || pin) lines.push([place, pin].filter(Boolean).join(' - '));
+  if (text(c?.gstin)) lines.push(`GST Number: ${text(c?.gstin)}`);
+  return lines;
+}
+
 /** The lorry receipts this invoice bills, as one line. */
 export function lrNumbers(invoice: InvoiceDetail): string {
   const codes = invoice.trips.map((t) => t.lrCode ?? t.slipLrNo ?? null).filter(Boolean);

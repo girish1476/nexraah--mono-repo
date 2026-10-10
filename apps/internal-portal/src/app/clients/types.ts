@@ -49,6 +49,15 @@ export interface Client {
   code: string;
   name: string;
   billingCity: string;
+  /**
+   * Where the client's invoices are addressed: the street address, the state
+   * and the PIN code, printed under their name on every invoice. Optional so a
+   * client added before these were asked for still loads — their invoices show
+   * the city alone until the address is filled in.
+   */
+  billingAddress?: string | null;
+  billingState?: string | null;
+  billingPincode?: string | null;
   gstin: string | null;
   contact: string | null;
   phone: string | null;
