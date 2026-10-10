@@ -135,6 +135,26 @@ export function invoiceTotals(invoice: InvoiceDetail) {
   };
 }
 
+/** The address as the lines it was written in. */
+export function addressLines(address: string | null | undefined): string[] {
+  return String(address ?? '')
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+}
+
+/** The address on one line, for the footer band. */
+export function addressOneLine(address: string | null | undefined): string {
+  return addressLines(address).join(', ');
+}
+
+/** The details the company added for itself, as "MSME Number: UDYAM-…" lines under its GST number. */
+export function companyExtraLines(company: { extra?: { label: string; value: string }[] }): string[] {
+  return (company.extra ?? [])
+    .filter((e) => e && String(e.label ?? '').trim() && String(e.value ?? '').trim())
+    .map((e) => `${String(e.label).trim()}: ${String(e.value).trim()}`);
+}
+
 /** The company's bank details, one per line — the settings keep them as one line with dots between. */
 export function bankLines(invoice: InvoiceDetail): string[] {
   const parts = String(invoice.company.bank ?? '')

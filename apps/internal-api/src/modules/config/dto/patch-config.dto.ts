@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import { TRIP_DOCUMENT_KINDS } from '../../trips/trips.constants';
 import {
+  ArrayMaxSize,
   ArrayNotEmpty,
   IsArray,
   IsBoolean,
@@ -11,10 +12,18 @@ import {
   IsString,
   Matches,
   Max,
+  MaxLength,
   Min,
+  MinLength,
   ValidateNested,
 } from 'class-validator';
 import { GSTIN_SHAPE_RE, PAN_RE } from '../../../common/validation/formats';
+
+/** A detail the company added for itself — an MSME number, a TAN — printed under its GST number. */
+class CompanyExtraDto {
+  @IsString() @MinLength(1) @MaxLength(40) label!: string;
+  @IsString() @MinLength(1) @MaxLength(120) value!: string;
+}
 
 class CompanyDto {
   @IsString() name!: string;
@@ -29,6 +38,13 @@ class CompanyDto {
   /** The name/title printed under the signature line on a printed invoice
    *  — e.g. "Authorised Signatory", or a specific person once designated. */
   @IsString() signatory!: string;
+  /** Details added from Admin → Control panel, in the order they were added. */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(12)
+  @ValidateNested({ each: true })
+  @Type(() => CompanyExtraDto)
+  extra?: CompanyExtraDto[];
 }
 
 /** `docs/api/01-foundation.md` `PATCH /config` — partial patches accepted. */

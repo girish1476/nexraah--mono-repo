@@ -6,8 +6,11 @@ import {
   INVOICE_TAGLINE,
   INVOICE_TERMS,
   INVOICE_WEBSITE,
+  addressLines,
+  addressOneLine,
   amount,
   billToLines,
+  companyExtraLines,
   invoiceLines,
   invoiceStatus,
   invoiceTotals,
@@ -26,6 +29,10 @@ import {
  * twice. jsPDF's built-in fonts have no ₹ glyph and no → glyph, so money here
  * reads "Rs." and typographic characters are swapped for plain ones
  * (`clean()`, below) — a deliberate, permanent difference, not a bug to chase.
+ *
+ * An invoice is one page. It is drawn at its normal spacing first and, where
+ * that runs over (a long note, several loads), drawn again with the gaps
+ * between its blocks closed up. Only an invoice too long for that runs on.
  */
 
 /**
@@ -86,17 +93,19 @@ function footer(doc: jsPDF, invoice: InvoiceDetail): void {
   doc.text(`${INVOICE_WEBSITE}     |     ${INVOICE_EMAIL}`, PAGE_W / 2, FOOTER_Y + 6, { align: 'center' });
   doc.setFont('times', 'normal');
   doc.setFontSize(8.5);
-  doc.text(clean(invoice.company.address), PAGE_W / 2, FOOTER_Y + 11, { align: 'center' });
+  doc.text(clean(addressOneLine(invoice.company.address)), PAGE_W / 2, FOOTER_Y + 11, { align: 'center' });
   doc.setTextColor(...INK);
   doc.setDrawColor(0, 0, 0);
 }
 
-export async function downloadInvoicePdf(invoice: InvoiceDetail): Promise<void> {
+/** Draws the whole invoice. `tight` closes up the gaps between its blocks. */
+function draw(invoice: InvoiceDetail, logo: string | null, tight: boolean): jsPDF {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const { company } = invoice;
   const status = invoiceStatus(invoice.status);
   const lines = invoiceLines(invoice);
   const totals = invoiceTotals(invoice);
+  const gap = (mm: number) => (tight ? mm * 0.45 : mm);
   let y = 0;
 
   /** Starts a new page when the next block would run into the footer band. */
@@ -106,61 +115,62 @@ export async function downloadInvoicePdf(invoice: InvoiceDetail): Promise<void> 
     y = 20;
   };
 
-  // ---- letterhead ---------------------------------------------------------
-  const logo = await loadLogo();
+  // ---- letterhead, with INVOICE, its number and whether it is paid ----------
   // 400 × 471 px, drawn 30 mm tall.
-  if (logo) doc.addImage(logo, 'PNG', MARGIN_X + 2, 12, 25.5, 30);
+  if (logo) doc.addImage(logo, 'PNG', MARGIN_X + 2, 10, 25.5, 30);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(15);
   doc.setTextColor(...NAVY);
-  doc.text(clean(company.name).toUpperCase(), RIGHT_X, 26, { align: 'right' });
+  doc.text(clean(company.name).toUpperCase(), RIGHT_X, 16.5, { align: 'right' });
 
   doc.setFont('helvetica', 'italic');
   doc.setFontSize(8);
   doc.setTextColor(60, 60, 60);
-  doc.text(INVOICE_TAGLINE, RIGHT_X, 32, { align: 'right' });
+  doc.text(INVOICE_TAGLINE, RIGHT_X, 21.5, { align: 'right' });
   const taglineWidth = doc.getTextWidth(INVOICE_TAGLINE);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(...BLUE);
-  doc.text(INVOICE_BRAND, RIGHT_X - taglineWidth - 2.5, 32, { align: 'right' });
+  doc.text(INVOICE_BRAND, RIGHT_X - taglineWidth - 2.5, 21.5, { align: 'right' });
 
-  doc.setDrawColor(...NAVY);
-  doc.setLineWidth(1.1);
-  doc.line(MARGIN_X, 48, RIGHT_X, 48);
-  doc.setDrawColor(...BLUE);
-  doc.setLineWidth(0.2);
-  doc.line(MARGIN_X, 52.5, RIGHT_X, 52.5);
-  doc.setDrawColor(0, 0, 0);
-
-  // ---- INVOICE, its number, and whether it is paid --------------------------
   doc.setTextColor(...INK);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(18);
-  doc.text('INVOICE', RIGHT_X - 3, 64, { align: 'right' });
+  doc.setFontSize(17);
+  doc.text('INVOICE', RIGHT_X, 31.5, { align: 'right' });
   doc.setFontSize(8.5);
-  doc.text(`# ${invoice.code ?? 'DRAFT'}`, RIGHT_X - 3, 68.5, { align: 'right' });
+  doc.text(`# ${invoice.code ?? 'DRAFT'}`, RIGHT_X, 36, { align: 'right' });
   doc.setFont('helvetica', 'normal');
   if (status.paid) doc.setTextColor(22, 128, 60);
   else doc.setTextColor(224, 58, 58);
-  doc.text(status.label, RIGHT_X - 3, 72.5, { align: 'right' });
+  doc.text(status.label, RIGHT_X, 40, { align: 'right' });
   doc.setTextColor(...INK);
+
+  doc.setDrawColor(...NAVY);
+  doc.setLineWidth(1.1);
+  doc.line(MARGIN_X, 45, RIGHT_X, 45);
+  doc.setDrawColor(...BLUE);
+  doc.setLineWidth(0.2);
+  doc.line(MARGIN_X, 48.5, RIGHT_X, 48.5);
+  doc.setDrawColor(0, 0, 0);
 
   // ---- who is billing whom --------------------------------------------------
   const LEAD = 4.4;
-  let left = 84;
+  const TOP = 57;
+  let left = TOP;
   doc.setFontSize(8.5);
   doc.setFont('helvetica', 'bold');
   doc.text(clean(company.name), MARGIN_X + 3, left);
   doc.setFont('helvetica', 'normal');
   left += LEAD;
-  for (const line of doc.splitTextToSize(clean(company.address), 88) as string[]) {
-    doc.text(line, MARGIN_X + 3, left);
-    left += LEAD;
+  const leftLines = [...addressLines(company.address), `GST Number: ${company.gstin}`, ...companyExtraLines(company)];
+  for (const text of leftLines) {
+    for (const line of doc.splitTextToSize(clean(text), 88) as string[]) {
+      doc.text(line, MARGIN_X + 3, left);
+      left += LEAD;
+    }
   }
-  doc.text(`GST Number: ${company.gstin}`, MARGIN_X + 3, left);
 
-  let right = 84;
+  let right = TOP;
   const rightLine = (text: string, bold = false) => {
     doc.setFont('helvetica', bold ? 'bold' : 'normal');
     doc.text(clean(text), RIGHT_X - 3, right, { align: 'right' });
@@ -172,7 +182,7 @@ export async function downloadInvoicePdf(invoice: InvoiceDetail): Promise<void> 
   for (const line of billToLines(invoice)) {
     for (const wrapped of doc.splitTextToSize(clean(line), 84) as string[]) rightLine(wrapped);
   }
-  right += 3;
+  right += gap(3);
   rightLine(`Invoice Date: ${isoDay(invoice.invoiceDate)}`);
   rightLine(`Due Date: ${isoDay(invoice.dueDate)}`);
   // The invoice's own SAC when one was set on the edit screen, else the company's.
@@ -180,7 +190,7 @@ export async function downloadInvoicePdf(invoice: InvoiceDetail): Promise<void> 
   rightLine(`LR Number: ${lrNumbers(invoice)}`);
 
   // ---- the items ------------------------------------------------------------
-  y = Math.max(left, right) + 8;
+  y = Math.max(left, right) - LEAD + gap(8);
   const COL = { no: MARGIN_X + 3, item: MARGIN_X + 12, qty: 126, rate: 153, tax: 167, amount: RIGHT_X - 3 };
   doc.setFillColor(...NAVY);
   doc.rect(MARGIN_X, y, CONTENT_W, 8, 'F');
@@ -215,11 +225,11 @@ export async function downloadInvoicePdf(invoice: InvoiceDetail): Promise<void> 
       y += 3.9;
     }
     doc.setTextColor(...INK);
-    y += 4;
+    y += gap(4);
   });
 
   // ---- totals ---------------------------------------------------------------
-  y += 8;
+  y += gap(6);
   const totalRow = (label: string, paise: number, band: boolean) => {
     room(8);
     if (band) {
@@ -257,16 +267,16 @@ export async function downloadInvoicePdf(invoice: InvoiceDetail): Promise<void> 
     }
   };
 
-  y += 8;
+  y += gap(6);
   heading('Offline Payment:');
   paragraph('Bank Transfer');
-  y += 3;
+  y += gap(3);
   heading('Note:');
   noteLines(invoice).forEach(paragraph);
-  y += 3;
+  y += gap(3);
   heading('Terms & Conditions:');
   paragraph(INVOICE_TERMS);
-  y += 10;
+  y += gap(12);
   room(8);
   doc.text('Authorized Signature _________________________', TEXT_X, y);
 
@@ -276,6 +286,17 @@ export async function downloadInvoicePdf(invoice: InvoiceDetail): Promise<void> 
     doc.setPage(p);
     footer(doc, invoice);
   }
+  return doc;
+}
 
+/** The invoice as a PDF — on one page wherever it can be made to fit. */
+export async function buildInvoicePdf(invoice: InvoiceDetail): Promise<jsPDF> {
+  const logo = await loadLogo();
+  const doc = draw(invoice, logo, false);
+  return doc.getNumberOfPages() > 1 ? draw(invoice, logo, true) : doc;
+}
+
+export async function downloadInvoicePdf(invoice: InvoiceDetail): Promise<void> {
+  const doc = await buildInvoicePdf(invoice);
   doc.save(`${invoice.code ?? 'invoice-draft'}.pdf`);
 }

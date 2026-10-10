@@ -542,6 +542,7 @@ export class InvoicingService {
       bank: string;
       sac: string;
       signatory: string;
+      extra: { label: string; value: string }[];
     }>;
     return {
       name: company.name ?? '',
@@ -556,6 +557,8 @@ export class InvoicingService {
       sac: company.sac ?? '996511',
       // Falls back only if the config row somehow predates 20260920010000.
       signatory: company.signatory ?? 'Authorised Signatory',
+      // Details the company added for itself (an MSME number, a TAN), printed under its GST number.
+      extra: Array.isArray(company.extra) ? company.extra : [],
     };
   }
 

@@ -21,7 +21,7 @@ import {
   useToast,
 } from '@/lib/ui';
 import { getConfig, getNumberSeries, patchConfig, patchNumberSeries } from './apis';
-import { Config, NumberSeries } from './types';
+import { CompanyExtra, Config, NumberSeries } from './types';
 
 /**
  * Control panel — `/admin` · `config.manage`.
@@ -248,19 +248,35 @@ export default function ControlPanelPage() {
 
           <Panel title="Company details" right={<span className="muted" style={{ fontSize: 11.5 }}>printed on every document</span>}>
             <FormGrid>
-              {(Object.keys(config.company) as (keyof Config['company'])[]).map((key) => (
-                <Field key={key} label={COMPANY_LABELS[key] ?? key.toUpperCase()}>
-                  <input
-                    defaultValue={config.company[key]}
-                    disabled={!editable}
-                    onBlur={(e) =>
-                      e.target.value !== config.company[key] &&
-                      save({ company: { ...config.company, [key]: e.target.value } })
-                    }
-                  />
-                </Field>
-              ))}
+              {(Object.keys(config.company) as (keyof Config['company'])[])
+                .filter((key): key is Exclude<keyof Config['company'], 'extra'> => key !== 'extra')
+                .map((key) => {
+                  const Box = key === 'address' ? 'textarea' : 'input';
+                  return (
+                    <Field
+                      key={key}
+                      label={COMPANY_LABELS[key] ?? key.toUpperCase()}
+                      hint={key === 'address' ? 'Each line is printed as its own line.' : undefined}
+                    >
+                      <Box
+                        name={`company-${key}`}
+                        rows={key === 'address' ? 4 : undefined}
+                        defaultValue={config.company[key]}
+                        disabled={!editable}
+                        onBlur={(e) =>
+                          e.target.value !== config.company[key] &&
+                          save({ company: { ...config.company, [key]: e.target.value } })
+                        }
+                      />
+                    </Field>
+                  );
+                })}
             </FormGrid>
+            <CompanyExtras
+              extra={config.company.extra ?? []}
+              editable={editable}
+              save={(extra) => save({ company: { ...config.company, extra } })}
+            />
           </Panel>
 
           <Panel title="Numbering series" pad={false}>
@@ -269,6 +285,91 @@ export default function ControlPanelPage() {
         </Stack>
       )}
     </ModuleGuard>
+  );
+}
+
+/**
+ * Details the company adds for itself — an MSME number, a TAN, an IEC — beyond
+ * the fixed ones above. Each is a name and a value, and is printed under the GST
+ * number on the invoice and beside it on the lorry receipt.
+ */
+function CompanyExtras({
+  extra,
+  editable,
+  save,
+}: {
+  extra: CompanyExtra[];
+  editable: boolean;
+  save: (extra: CompanyExtra[]) => void;
+}) {
+  const [label, setLabel] = useState('');
+  const [value, setValue] = useState('');
+  const name = label.trim();
+  const taken = extra.some((e) => e.label.trim().toLowerCase() === name.toLowerCase());
+  const problem = !name || !value.trim() ? null : taken ? 'There is already a detail with this name.' : null;
+
+  const add = () => {
+    save([...extra, { label: name, value: value.trim() }]);
+    setLabel('');
+    setValue('');
+  };
+
+  return (
+    <div data-company-extras style={{ marginTop: 16, borderTop: '1px solid var(--line)', paddingTop: 14 }}>
+      <div style={{ fontWeight: 600 }}>More details</div>
+      <p className="muted" style={{ fontSize: 12.5, margin: '2px 0 10px' }}>
+        Add any other number the company prints on its documents — an MSME number, a TAN, an IEC. It is printed under the GST
+        number on the invoice and on the lorry receipt.
+      </p>
+      {extra.length > 0 && (
+        <FormGrid>
+          {extra.map((e, i) => (
+            <Field key={e.label} label={e.label}>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  name={`company-extra-${i}`}
+                  defaultValue={e.value}
+                  disabled={!editable}
+                  style={{ flex: 1, minWidth: 0 }}
+                  onBlur={(ev) =>
+                    ev.target.value.trim() !== e.value &&
+                    ev.target.value.trim() &&
+                    save(extra.map((x, j) => (j === i ? { ...x, value: ev.target.value.trim() } : x)))
+                  }
+                />
+                {editable && (
+                  <button className="btn btn-ghost btn-sm" aria-label={`Remove ${e.label}`} onClick={() => save(extra.filter((_, j) => j !== i))}>
+                    Remove
+                  </button>
+                )}
+              </div>
+            </Field>
+          ))}
+        </FormGrid>
+      )}
+      {editable && (
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap', marginTop: extra.length ? 12 : 0 }}>
+          <div style={{ flex: '1 1 200px', minWidth: 0 }}>
+            <Field label="Name of the detail">
+              <input name="company-extra-label" value={label} maxLength={40} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. MSME Number" />
+            </Field>
+          </div>
+          <div style={{ flex: '1 1 200px', minWidth: 0 }}>
+            <Field label="Value">
+              <input name="company-extra-value" value={value} maxLength={120} onChange={(e) => setValue(e.target.value)} placeholder="e.g. UDYAM-AP-00-0000000" />
+            </Field>
+          </div>
+          <button className="btn" disabled={!name || !value.trim() || taken} onClick={add}>
+            + Add detail
+          </button>
+        </div>
+      )}
+      {problem && (
+        <div className="err" role="status" style={{ marginTop: 6 }}>
+          {problem}
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -73,10 +73,14 @@ function Sheet({ label, trip, config }: { label: string; trip: TripDetail; confi
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, borderBottom: '2px solid #000', paddingBottom: 10 }}>
         <div>
           <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 22 }}>{config.company.name}</div>
-          <div style={{ fontSize: 11 }}>{config.company.address}</div>
+          <div style={{ fontSize: 11, whiteSpace: 'pre-line' }}>{config.company.address}</div>
           <div style={{ fontSize: 11 }}>
             GSTIN {config.company.gstin} · PAN {config.company.pan}
             {config.company.cin ? ` · CIN ${config.company.cin}` : ''}
+            {(config.company.extra ?? [])
+              .filter((e) => e.label.trim() && e.value.trim())
+              .map((e) => ` · ${e.label.trim()} ${e.value.trim()}`)
+              .join('')}
           </div>
         </div>
         <div style={{ textAlign: 'right' }}>

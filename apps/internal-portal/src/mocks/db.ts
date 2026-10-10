@@ -9,7 +9,7 @@
  */
 
 import { RoleCode } from '@/lib/permissions';
-import { applyCleanSlate } from './clean-data';
+import { applyCleanSlate, correctSavedCompany } from './clean-data';
 import { followOtherTabs, hydrate, isDemoData } from './persist';
 
 const now = () => new Date().toISOString();
@@ -1640,5 +1640,10 @@ for (const trip of db.trips as { documents: Doc[] }[]) {
 if (!isDemoData()) {
   applyCleanSlate(db as unknown as Record<string, any>);
   hydrate(db as unknown as Record<string, any>, BRANCHES);
+  correctSavedCompany(db as unknown as Record<string, any>);
   followOtherTabs(db as unknown as Record<string, any>, BRANCHES);
+  // Another tab's save is taken in by the line above; it may be an old one too.
+  if (typeof window !== 'undefined') {
+    window.addEventListener('storage', () => correctSavedCompany(db as unknown as Record<string, any>));
+  }
 }

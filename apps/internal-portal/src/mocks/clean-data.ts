@@ -19,6 +19,47 @@
 
 const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
 
+/**
+ * The company as it is printed on every document. The address is kept as the
+ * lines it is written in; where it has to sit on one line (the footer band) the
+ * lines are joined with commas.
+ */
+export const REAL_COMPANY = {
+  name: 'NEXUS FREIGHT PRIVATE LIMITED',
+  gstin: '37AAKCN9322K1ZY',
+  pan: 'AAKCN9322K',
+  cin: '',
+  address: '9-1-128, Ganesh Nagar, Revenue Ward 64, Gajuwaka\nVisakhapatnam, Andhra Pradesh\n530026',
+  bank: 'Account No: 256303933846 · IFSC Code: INDB0000081',
+};
+
+/** The made-up company of the regression data, and earlier spellings of the real one. */
+const SEEDED_GSTIN = '27AABCN4471K1ZV';
+const EARLIER_NAME = 'Nexus Freight Private Limited';
+const EARLIER_ADDRESS = '9-1-128, Ganesh Nagar, Revenue Ward 64, Gajuwaka, Visakhapatnam, Andhra Pradesh - 530026';
+
+/**
+ * Puts the real company on data a browser saved before it was known.
+ *
+ * What a browser saved is put back over the clean start, so one that first
+ * opened the console while it still carried the made-up company kept printing
+ * that company — its name, a Nashik address, its GST number — on every invoice.
+ * Only a company nobody has edited is touched: one still carrying the made-up
+ * GST number is replaced, and the real one's earlier spellings are brought up
+ * to date. Anything typed in Admin → Control panel is left as it was typed.
+ */
+export function correctSavedCompany(db: Record<string, any>): void {
+  const company = db.config?.company;
+  if (!company) return;
+  if (company.gstin === SEEDED_GSTIN) {
+    db.config.company = { ...company, ...REAL_COMPANY };
+    return;
+  }
+  if (company.gstin !== REAL_COMPANY.gstin) return;
+  if (company.name === EARLIER_NAME) company.name = REAL_COMPANY.name;
+  if (company.address === EARLIER_ADDRESS) company.address = REAL_COMPANY.address;
+}
+
 export function applyCleanSlate(db: Record<string, any>): void {
   // ---- the one client and its one rate lane ---------------------------------
   const client = (db.clients as any[]).find((c) => c.id === 'c-0092');
@@ -78,12 +119,7 @@ export function applyCleanSlate(db: Record<string, any>): void {
   if (db.config?.company) {
     db.config.company = {
       ...db.config.company,
-      name: 'Nexus Freight Private Limited',
-      gstin: '37AAKCN9322K1ZY',
-      pan: 'AAKCN9322K',
-      cin: '',
-      address: '9-1-128, Ganesh Nagar, Revenue Ward 64, Gajuwaka, Visakhapatnam, Andhra Pradesh - 530026',
-      bank: 'Account No: 256303933846 · IFSC Code: INDB0000081',
+      ...REAL_COMPANY,
     };
   }
 

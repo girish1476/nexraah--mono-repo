@@ -1,5 +1,11 @@
 /** Control panel — part 01 §4. */
 
+/** A detail the company added for itself — an MSME number, a TAN — printed under its GST number. */
+export interface CompanyExtra {
+  label: string;
+  value: string;
+}
+
 export interface CompanyDetails {
   name: string;
   gstin: string;
@@ -13,6 +19,8 @@ export interface CompanyDetails {
   /** The name/title printed under the signature line on a printed invoice
    *  — e.g. "Authorised Signatory", or a specific person once designated. */
   signatory: string;
+  /** Details added from Admin → Control panel, in the order they were added. */
+  extra?: CompanyExtra[];
 }
 
 export interface Config {
