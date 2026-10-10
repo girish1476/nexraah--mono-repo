@@ -323,6 +323,9 @@ test.describe('one load, first indent to last rupee', () => {
     await page.goto('/clients/new');
     await page.locator('[name="name"]').fill('Sundaram Auto Components');
     await page.locator('[name="billingCity"]').fill('Hosur');
+    await page.locator('[name="billingAddress"]').fill('Plot 12, SIPCOT Phase II');
+    await page.locator('[name="billingState"]').fill('Tamil Nadu');
+    await page.locator('[name="billingPincode"]').fill('635109');
     await page.locator('[name="contact"]').fill('R. Venkat');
     await page.locator('[name="phone"]').fill('9843012345');
     await page.locator('[name="email"]').fill('logistics@sundaram.example');

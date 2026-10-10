@@ -5566,6 +5566,19 @@ const routes: [string, RegExp, Handler][] = [
       // set at all: not zero, genuinely `undefined`, which is why the
       // printed invoice's Total row rendered blank rather than ₹0. Computed
       // here the same way the form previews it, minus the discount head.
+      // One invoice goes to one client, and a load goes on one invoice. The
+      // real API makes the same refusals for a load that is unknown, has not
+      // left yet, or is billed already (`InvoicingService.create`).
+      const clientName = db.clients.find((c) => c.id === body.clientId)?.name;
+      for (const tripId of (body.tripIds ?? []) as string[]) {
+        const trip: any = db.trips.find((t) => t.id === tripId);
+        if (!trip) fail(404, 'NOT_FOUND', `Unknown trip: ${tripId}`);
+        if (clientName && trip.clientName !== clientName)
+          fail(409, 'TRIP_OTHER_CLIENT', `Trip ${trip.code} belongs to ${trip.clientName}, not ${clientName}. One invoice goes to one client.`);
+        if (!['IN_TRANSIT', 'DELIVERED', 'CLOSED'].includes(trip.stage))
+          fail(409, 'TRIP_NOT_ON_ROAD', `Trip ${trip.code} has not left the loading point yet.`);
+        if (trip.billed) fail(409, 'TRIP_ALREADY_BILLED', `Trip ${trip.code} is already on another invoice.`);
+      }
       const freightPaise = body.freightPaise ?? 0;
       const extraCharges: { label: string; amountPaise: number }[] = body.extraCharges ?? [];
       const extrasPaise =

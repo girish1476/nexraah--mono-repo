@@ -93,11 +93,24 @@ export function invoiceLines(invoice: InvoiceDetail): InvoiceLine[] {
   const trips = invoice.trips ?? [];
 
   const tripLine = (t: InvoiceDetail['trips'][number], amountPaise: number): InvoiceLine => {
-    const sub: string[] = [];
-    if (t.lane) sub.push(t.lane.replace(/\s*(→|->)\s*/g, ' to '));
-    if (t.ratePerTonnePaise) sub.push(`Freight Charges (${amount(t.ratePerTonnePaise).replace(/\.00$/, '')} per ton)`);
-    if (t.loadedWeightTn) sub.push(`Loaded Weight (${t.loadedWeightTn}MT)`);
-    return { title: `Transportation charges${t.vehicleNo ? ` (${t.vehicleNo})` : ''}`, sub, qty: '1', amountPaise };
+    const route = t.lane ? t.lane.replace(/\s*(→|->)\s*/g, ' to ') : '';
+    const rate = t.ratePerTonnePaise ? `Freight Charges (${amount(t.ratePerTonnePaise).replace(/\.00$/, '')} per ton)` : '';
+    const weight = t.loadedWeightTn ? `Loaded Weight (${t.loadedWeightTn}MT)` : '';
+    const title = `Transportation charges${t.vehicleNo ? ` (${t.vehicleNo})` : ''}`;
+    // One vehicle: a line each, as the company's invoice has always read.
+    if (trips.length <= 1) return { title, sub: [route, rate, weight].filter(Boolean), qty: '1', amountPaise };
+    // Several vehicles on one invoice: each row says which lorry receipt it is,
+    // and its details sit on one line so that many vehicles fit the page.
+    const lr = t.lrCode ?? t.slipLrNo ?? null;
+    const detail = [
+      route,
+      lr ? `LR ${lr}` : '',
+      t.loadedWeightTn ? `${t.loadedWeightTn} MT` : '',
+      t.ratePerTonnePaise ? `${amount(t.ratePerTonnePaise).replace(/\.00$/, '')} per ton` : '',
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    return { title, sub: detail ? [detail] : [], qty: '1', amountPaise };
   };
 
   if (trips.length === 1) {

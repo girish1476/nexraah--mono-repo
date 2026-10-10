@@ -36,7 +36,9 @@ import {
 /**
  * Raise an invoice — `/invoices/new` · `invoice.create` (part 08 §1).
  *
- * One invoice, many delivered unbilled trips. Loading, unloading, detention
+ * One invoice, one vehicle or many: every unbilled load of the client can be
+ * ticked — all of them at once with "Select all" — and each becomes its own row
+ * on the invoice, with its vehicle and lorry receipt number. Loading, unloading, detention
  * and other appear only where that client's arrangement provides for them
  * (D-04), and the figures are the **billed** amounts from charge capture, not
  * the cost paid to the transporter (BR-45).
@@ -80,6 +82,24 @@ export default function NewInvoicePage() {
     // Several trips, comma-separated, when re-raising a cancelled invoice.
     if (presetTrip) setSelected(Object.fromEntries(presetTrip.split(',').filter(Boolean).map((t) => [t, true])));
   }, []);
+
+  /** Picks the client, and with it the due date their credit days give. */
+  const chooseClient = (id: string) => {
+    setClientId(id);
+    const c = clients.find((x) => x.id === id);
+    if (c) setForm((f) => ({ ...f, dueDate: new Date(Date.now() + c.creditDays * 86_400_000).toISOString().slice(0, 10) }));
+  };
+
+  // Loads were ticked before any client was chosen (from the "Ready to invoice"
+  // list, or straight on this table): the client is the one those loads belong to.
+  useEffect(() => {
+    if (clientId || !trips || clients.length === 0) return;
+    const first = trips.find((t) => selected[t.id]);
+    if (!first) return;
+    const owner = clients.find((c) => c.id === first.clientId) ?? clients.find((c) => c.name === first.clientName);
+    if (owner) chooseClient(owner.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientId, trips, clients, selected]);
 
   const client = clients.find((c) => c.id === clientId);
   const billable = useMemo(
@@ -162,12 +182,16 @@ export default function NewInvoicePage() {
       render: (r) => (
         <input
           type="checkbox"
+          aria-label={`Put ${r.vehicleNo || r.code} on this invoice`}
           checked={!!selected[r.id]}
           onChange={(e) => setSelected({ ...selected, [r.id]: e.target.checked })}
         />
       ),
     },
     { key: 'trip', label: 'Trip', mono: true, render: (r) => r.code },
+    { key: 'vehicle', label: 'Vehicle', mono: true, render: (r) => r.vehicleNo || '—' },
+    // Until a client is chosen the table lists every client's loads, so it says whose each is.
+    ...(clientId ? [] : [{ key: 'client', label: 'Client', render: (r: TripListRow) => r.clientName }]),
     { key: 'lr', label: 'LR', mono: true, render: (r) => r.lrCode ?? '—' },
     { key: 'lane', label: 'Lane', render: (r) => r.lane },
     {
@@ -180,7 +204,7 @@ export default function NewInvoicePage() {
 
   return (
     <ModuleGuard module="invoices">
-      <PageHeader path="/invoices/new" title="New client bill" sub="One invoice, one or many delivered consignments" module="invoices" />
+      <PageHeader path="/invoices/new" title="New client bill" sub="One invoice for one vehicle or for many" module="invoices" />
 
       <PageIntro
         what="Build a new invoice by picking one or more delivered consignments for a client that haven't been billed yet, adding any extra charges, and saving it as a draft or generating the invoice number right away."
@@ -199,16 +223,7 @@ export default function NewInvoicePage() {
             <Field label="Client" required>
               <select
                 value={clientId}
-                onChange={(e) => {
-                  const id = e.target.value;
-                  setClientId(id);
-                  const c = clients.find((x) => x.id === id);
-                  if (c)
-                    setForm((f) => ({
-                      ...f,
-                      dueDate: new Date(Date.now() + c.creditDays * 86_400_000).toISOString().slice(0, 10),
-                    }));
-                }}
+                onChange={(e) => chooseClient(e.target.value)}
               >
                 <option value="">Select</option>
                 {clients.map((c) => (
@@ -232,6 +247,34 @@ export default function NewInvoicePage() {
         </Panel>
 
         <Panel title="Consignments" pad={false}>
+          <div
+            data-bulk-bar
+            style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', padding: '10px 14px', borderBottom: '1px solid var(--color-divider)' }}
+          >
+            <div style={{ flex: '1 1 240px', minWidth: 0 }}>
+              <strong>
+                {chosen.length === 0
+                  ? 'No vehicle on this invoice yet'
+                  : `${chosen.length} ${chosen.length === 1 ? 'vehicle' : 'vehicles'} on this invoice`}
+              </strong>
+              {chosen.length > 0 && <span className="mono"> · freight {inr(freightPaise)}</span>}
+              <div className="muted" style={{ fontSize: 12 }}>
+                {clientId
+                  ? 'Tick every load that goes on this one invoice. Each is its own row on it, with its vehicle and LR number.'
+                  : 'Choose the client above, or tick a load and its client is chosen for you.'}
+              </div>
+            </div>
+            <button
+              className="btn btn-secondary btn-sm"
+              disabled={!clientId || billable.length === 0 || chosen.length === billable.length}
+              onClick={() => setSelected(Object.fromEntries(billable.map((t) => [t.id, true])))}
+            >
+              Select all {clientId && billable.length > 0 ? billable.length : ''}
+            </button>
+            <button className="btn btn-ghost btn-sm" disabled={chosen.length === 0} onClick={() => setSelected({})}>
+              Clear
+            </button>
+          </div>
           <DataTable
             columns={columns}
             rows={billable}

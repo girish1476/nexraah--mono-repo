@@ -154,6 +154,9 @@ test.describe('real data, end to end', () => {
     await page.goto('/clients/new');
     await page.locator('[name="name"]').fill(CLIENT);
     await page.locator('[name="billingCity"]').fill('Nashik');
+    await page.locator('[name="billingAddress"]').fill('Plot 44, MIDC Ambad');
+    await page.locator('[name="billingState"]').fill('Maharashtra');
+    await page.locator('[name="billingPincode"]').fill('422010');
     await page.locator('[name="contact"]').fill('S. Patil');
     await page.locator('[name="phone"]').fill('9822011223');
     await page.locator('[name="email"]').fill('logistics@kaveri.example');

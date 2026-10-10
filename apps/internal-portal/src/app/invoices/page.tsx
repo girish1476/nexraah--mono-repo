@@ -48,6 +48,12 @@ export default function InvoicesPage() {
   // Orders on the road or delivered, not on an invoice yet — billing starts the
   // moment the truck is in transit, so these show here with a button to bill.
   const [ready, setReady] = useState<TripListRow[] | null>(null);
+  // Loads ticked to go on one invoice together. An invoice goes to one client,
+  // so once one load is ticked only that client's other loads can be.
+  const [picked, setPicked] = useState<Record<string, boolean>>({});
+  const pickedRows = (ready ?? []).filter((r) => picked[r.id]);
+  const pickedClient = pickedRows[0]?.clientName ?? null;
+  const sameClient = (ready ?? []).filter((r) => r.clientName === pickedClient);
 
   const load = () => {
     setError(null);
@@ -62,7 +68,30 @@ export default function InvoicesPage() {
   useEffect(load, [status, q]);
 
   const readyColumns: Column<TripListRow>[] = [
+    ...(can('invoice.create')
+      ? [
+          {
+            key: 'pick',
+            label: '',
+            render: (r: TripListRow) => {
+              const other = !!pickedClient && r.clientName !== pickedClient;
+              return (
+                <input
+                  type="checkbox"
+                  aria-label={`Select ${r.vehicleNo || r.code}`}
+                  title={other ? `One invoice goes to one client — ${pickedClient} is already selected.` : undefined}
+                  disabled={other}
+                  checked={!!picked[r.id]}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => setPicked({ ...picked, [r.id]: e.target.checked })}
+                />
+              );
+            },
+          },
+        ]
+      : []),
     { key: 'trip', label: 'Trip', mono: true, render: (r) => r.code },
+    { key: 'vehicle', label: 'Vehicle', mono: true, render: (r) => r.vehicleNo || '—' },
     { key: 'client', label: 'Client', render: (r) => r.clientName },
     { key: 'lane', label: 'Route', render: (r) => r.lane },
     {
@@ -178,7 +207,47 @@ export default function InvoicesPage() {
           <Panel title={`🧾 Ready to invoice · ${ready.length}`} pad={false}>
             <p className="muted" style={{ fontSize: 12.5, margin: 0, padding: '10px 14px 0' }}>
               Orders in transit or delivered that are not on a client invoice yet.
+              {can('invoice.create') && ' Tick several loads of the same client to put them all on one invoice.'}
             </p>
+            {pickedRows.length > 0 && (
+              <div
+                data-bulk-invoice
+                style={{
+                  display: 'flex',
+                  gap: 10,
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  margin: '10px 14px 0',
+                  padding: '10px 12px',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--color-accent-tint)',
+                }}
+              >
+                <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+                  <strong>
+                    {pickedRows.length} {pickedRows.length === 1 ? 'vehicle' : 'vehicles'} selected
+                  </strong>{' '}
+                  for {pickedClient} · <span className="mono">{inr(pickedRows.reduce((a, r) => a + r.sellRatePaise, 0))}</span>
+                </div>
+                {sameClient.length > pickedRows.length && (
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setPicked(Object.fromEntries(sameClient.map((r) => [r.id, true])))}
+                  >
+                    Select all {sameClient.length} of {pickedClient}
+                  </button>
+                )}
+                <button className="btn btn-ghost btn-sm" onClick={() => setPicked({})}>
+                  Clear
+                </button>
+                <Link
+                  className="btn btn-sm"
+                  href={`/invoices/new?${pickedRows[0].clientId ? `client=${encodeURIComponent(pickedRows[0].clientId)}&` : ''}trip=${pickedRows.map((r) => encodeURIComponent(r.id)).join(',')}`}
+                >
+                  {pickedRows.length === 1 ? 'Raise invoice for 1 vehicle' : `Raise one invoice for ${pickedRows.length} vehicles`}
+                </Link>
+              </div>
+            )}
             <DataTable columns={readyColumns} rows={ready} rowKey={(r) => r.id} />
           </Panel>
         )}

@@ -187,27 +187,41 @@ function draw(invoice: InvoiceDetail, logo: string | null, tight: boolean): jsPD
   rightLine(`Due Date: ${isoDay(invoice.dueDate)}`);
   // The invoice's own SAC when one was set on the edit screen, else the company's.
   rightLine(`SAC Code: ${invoice.sacCode || company.sac}`);
-  rightLine(`LR Number: ${lrNumbers(invoice)}`);
+  // An invoice for many vehicles has many LR numbers: wrapped within the block, not run across the page.
+  for (const wrapped of doc.splitTextToSize(clean(`LR Number: ${lrNumbers(invoice)}`), 84) as string[]) rightLine(wrapped);
 
   // ---- the items ------------------------------------------------------------
   y = Math.max(left, right) - LEAD + gap(8);
   const COL = { no: MARGIN_X + 3, item: MARGIN_X + 12, qty: 126, rate: 153, tax: 167, amount: RIGHT_X - 3 };
-  doc.setFillColor(...NAVY);
-  doc.rect(MARGIN_X, y, CONTENT_W, 8, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(9);
-  doc.text('#', COL.no, y + 5.4);
-  doc.text('Item', COL.item, y + 5.4);
-  doc.text('Qty', COL.qty, y + 5.4, { align: 'center' });
-  doc.text('Rate', COL.rate, y + 5.4, { align: 'right' });
-  doc.text('Tax', COL.tax, y + 5.4, { align: 'center' });
-  doc.text('Amount', COL.amount, y + 5.4, { align: 'right' });
-  doc.setTextColor(...INK);
-  y += 13.5;
+  /** The navy row of column names — drawn again at the top of a page the items run on to. */
+  const tableHead = () => {
+    doc.setFillColor(...NAVY);
+    doc.rect(MARGIN_X, y, CONTENT_W, 8, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.text('#', COL.no, y + 5.4);
+    doc.text('Item', COL.item, y + 5.4);
+    doc.text('Qty', COL.qty, y + 5.4, { align: 'center' });
+    doc.text('Rate', COL.rate, y + 5.4, { align: 'right' });
+    doc.text('Tax', COL.tax, y + 5.4, { align: 'center' });
+    doc.text('Amount', COL.amount, y + 5.4, { align: 'right' });
+    doc.setTextColor(...INK);
+    y += 13.5;
+  };
+  tableHead();
 
   lines.forEach((l, i) => {
     const title = doc.splitTextToSize(clean(l.title), 92) as string[];
-    room(title.length * 4.2 + l.sub.length * 3.9 + 4);
+    // A long route wraps under itself rather than running into the Qty column.
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    const sub = l.sub.flatMap((s) => doc.splitTextToSize(clean(s), 92) as string[]);
+    if (y + title.length * 4.2 + sub.length * 3.9 + 4 > FOOTER_Y - 6) {
+      doc.addPage();
+      y = 16;
+      tableHead();
+    }
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
     doc.text(String(i + 1), COL.no, y);
@@ -220,8 +234,8 @@ function draw(invoice: InvoiceDetail, logo: string | null, tight: boolean): jsPD
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(60, 60, 60);
-    for (const s of l.sub) {
-      doc.text(clean(s), COL.item, y);
+    for (const s of sub) {
+      doc.text(s, COL.item, y);
       y += 3.9;
     }
     doc.setTextColor(...INK);
