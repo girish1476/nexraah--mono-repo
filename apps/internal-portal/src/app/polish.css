@@ -55,3 +55,17 @@ table.table td .btn {
 .app-main {
   scroll-padding-bottom: 96px;
 }
+
+/* ---- the Tracking tab's action rows ------------------------------------------
+   A note in one of these rows ("Unloaded 24 Sept…") is given a starting width
+   of 260px so it takes the room beside the buttons. That rule also caught the
+   small caption inside a field in the same row ("Unloaded at", "Left at"),
+   and a field stacks its caption over its box — so there the 260px became a
+   height, and the row grew a tall empty block with the caption stranded at
+   the top. A field's caption is its own size. */
+.cycle-action .field .muted {
+  flex: none;
+}
+.cycle-action .field {
+  flex: none;
+}
