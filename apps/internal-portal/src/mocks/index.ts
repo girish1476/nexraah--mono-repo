@@ -1,4 +1,5 @@
 import { answerLocally } from './assistant';
+import { ReaderUnavailable, readDetails } from '../lib/free-reader';
 import { planRecovery } from './sdr-recovery';
 import { computeTransitPenalty } from './transit-penalty';
 import { bandPositionFor } from './band-position';
@@ -1482,6 +1483,22 @@ function orderEvents(row: any) {
   return events;
 }
 
+/* ---- reading a document's details, in the browser -------------------------- */
+
+async function readHere(blob: Blob, mime: string, fields: unknown) {
+  if (!Array.isArray(fields) || fields.length === 0) fail(400, 'VALIDATION_ERROR', 'Say which details to read.');
+  if (blob.size > 10 * 1024 * 1024) fail(400, 'FILE_TOO_LARGE', 'File exceeds the 10MB limit.');
+  if (mime !== 'application/pdf' && !mime.startsWith('image/'))
+    fail(422, 'OCR_UNREADABLE', 'Only a PDF or a photo can be read automatically. Type the details in by hand.');
+  try {
+    return ok(await readDetails(blob, mime, fields as never));
+  } catch (e) {
+    if (e instanceof ReaderUnavailable)
+      return fail(503, 'OCR_NOT_SET_UP', 'The document reader could not be loaded — check the internet connection, or type the details in.');
+    return fail(422, 'OCR_UNREADABLE', 'This file could not be read. Type the details in by hand.');
+  }
+}
+
 /* ---- client onboarding --------------------------------------------------
    Mirrors `client-onboarding.ts` in internal-api. Same required-document
    rule, same three unmet states, so `BlockedPanel` renders the fixture's
@@ -2371,18 +2388,43 @@ const routes: [string, RegExp, Handler][] = [
       );
     },
   ],
-  // Reading a document's details ("Fetch") is done by the real server, which
-  // sends the file to be read. The fixture has nothing to read it with, and
-  // inventing values would put made-up numbers into a form people verify from.
+  // Reading a document's details ("Fetch"). The real server sends the file to
+  // an outside model; here it is read in the browser instead, at no cost, by
+  // `lib/free-reader` — the PDF's own text, or an open-source reader for a
+  // photo — and what is found goes through the same checks. Nothing is made
+  // up: a detail that cannot be found is left for the person to type.
   [
     'POST',
     /^\/attachments\/read$/,
-    () => fail(503, 'OCR_NOT_SET_UP', 'Reading documents is not available in this demo. Type the details in by hand.'),
+    ({ body }) => {
+      const form = typeof FormData !== 'undefined' && body instanceof FormData ? body : null;
+      const file = form?.get('file');
+      if (!form || !(file instanceof Blob)) fail(400, 'FILE_REQUIRED', 'Choose the file to read.');
+      let asked: any = {};
+      try {
+        asked = JSON.parse(String(form!.get('request') ?? '{}'));
+      } catch {
+        fail(400, 'VALIDATION_ERROR', 'The details to read were not understood.');
+      }
+      return readHere(file as Blob, (file as Blob).type, asked.fields);
+    },
   ],
   [
     'POST',
     /^\/attachments\/([^/]+)\/read$/,
-    () => fail(503, 'OCR_NOT_SET_UP', 'Reading documents is not available in this demo. Type the details in by hand.'),
+    async ({ params, body }) => {
+      const kept = fileFor(params[0]);
+      // A seeded document is a drawn sample page with no real paper behind it.
+      if (kept.mime === 'image/svg+xml')
+        fail(422, 'OCR_UNREADABLE', 'This is a sample document with nothing printed on it. Upload the real one, or type the details in.');
+      let blob: Blob;
+      try {
+        blob = await (await fetch(kept.url)).blob();
+      } catch {
+        return fail(422, 'OCR_UNREADABLE', 'This file could not be opened to be read. Type the details in by hand.');
+      }
+      return readHere(blob, kept.mime, body?.fields);
+    },
   ],
   [
     'GET',
