@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { errorMessage } from '@/apis';
-import { uploadAttachment } from '@/lib/attachments';
+import { openFileInNewTab, uploadAttachment } from '@/lib/attachments';
 import { fmtDate } from '@/lib/format';
 import {
   ActionCard,
@@ -146,7 +146,7 @@ export default function ClientOnboardingPage() {
   const viewFile = async (attachmentId: string) => {
     try {
       const { url } = await getClientDocumentUrl(attachmentId);
-      window.open(url, '_blank', 'noopener,noreferrer');
+      await openFileInNewTab(url);
     } catch (e) {
       toast(errorMessage(e));
     }

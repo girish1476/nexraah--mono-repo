@@ -80,3 +80,24 @@ export async function uploadAttachment(file: File, kind: string, entityType: str
   const uploaded = await request<{ id: string }>({ url: '/attachments', method: 'POST', data: form });
   return uploaded.id;
 }
+
+/**
+ * Opens an uploaded file in a new tab.
+ *
+ * A browser will not open a `data:` address in a new tab — it shows a blank
+ * page instead — and that is how a file kept in this browser is handed back.
+ * So a `data:` address is turned into a blob of the same bytes first, which a
+ * new tab opens normally. An ordinary address (a signed link from the real
+ * server) is opened as it is.
+ */
+export async function openFileInNewTab(url: string): Promise<void> {
+  if (!url.startsWith('data:')) {
+    window.open(url, '_blank', 'noopener,noreferrer');
+    return;
+  }
+  const blob = await (await fetch(url)).blob();
+  const address = URL.createObjectURL(blob);
+  window.open(address, '_blank', 'noopener,noreferrer');
+  // The new tab has the file by now; let the browser forget the address.
+  setTimeout(() => URL.revokeObjectURL(address), 60_000);
+}

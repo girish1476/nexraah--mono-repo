@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { errorMessage } from '@/apis';
 import { Column, DataTable, ErrorState, Loading, ModuleGuard, PageHeader, Panel, Tag, useCan, useToast } from '@/lib/ui';
-import { readDocument } from '@/lib/attachments';
+import { openFileInNewTab, readDocument } from '@/lib/attachments';
 import { VENDOR_READ } from '@/lib/documents';
 import { backfillKycValue, getAttachmentUrl, getKycBackfillQueue, KycBackfillRow } from '../apis';
 
@@ -61,7 +61,7 @@ export default function KycBackfillPage() {
   const onOpenPhoto = async (attachmentId: string) => {
     try {
       const { url } = await getAttachmentUrl(attachmentId);
-      window.open(url, '_blank', 'noopener,noreferrer');
+      await openFileInNewTab(url);
     } catch (e) {
       toast(errorMessage(e));
     }
