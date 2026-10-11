@@ -170,56 +170,70 @@ async function nearestFuel(from: Pin): Promise<FuelStation[] | null> {
 }
 
 /* ---- the three looks of the map ---------------------------------------------
-   Light and Dark are CARTO's maps, drawn from OpenStreetMap's data. Satellite
-   is Esri's world imagery. Each asks to be credited on the map, which the line
-   at the bottom right does.
+   All three are Esri's maps: its street map, its dark grey map with the place
+   names laid over it, and its world imagery. Each asks to be credited on the
+   map, which the line at the bottom right does.
 
-   Light used to be OpenStreetMap's own tiles. Those are served by volunteers
-   for people browsing openstreetmap.org, not for other sites to build on, and
-   they began refusing this console: every tile came back as a picture reading
-   "403 Access blocked". The same map data from CARTO has no such block. */
+   Light used to be OpenStreetMap's own tiles and Dark CARTO's. Both stopped
+   serving this console in October 2026, and neither says so with an error: the
+   tile comes back as a picture — "403 Access blocked" from OpenStreetMap, whose
+   volunteer-run servers are not for other sites to build on, and "API KEY
+   REQUIRED" from CARTO. So a tile that answers 200 proves nothing; look at it.
+   Esri's tiles need no key and were already drawing Satellite here. */
 
 export type MapStyle = 'light' | 'dark' | 'satellite';
 
-const OSM_CREDIT = (
+const ESRI_CREDIT = (
   <>
-    © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors
-  </>
-);
-
-const CARTO_CREDIT = (
-  <>
-    {OSM_CREDIT} ©{' '}
-    <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">
-      CARTO
+    Map ©{' '}
+    <a href="https://www.esri.com" target="_blank" rel="noreferrer">
+      Esri
     </a>
+    , HERE, Garmin, ©{' '}
+    <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
+      OpenStreetMap
+    </a>{' '}
+    contributors
   </>
 );
 
-/** One of CARTO's four tile hosts, spread by tile so a screenful loads side by side. */
-const carto = (look: string) => (z: number, x: number, y: number) =>
-  `https://${'abcd'[(x + y) % 4]}.basemaps.cartocdn.com/${look}/${z}/${x}/${y}.png`;
+type Tile = (z: number, x: number, y: number) => string;
+
+/** One of Esri's map services. Its tiles are addressed row first: zoom, then y, then x. */
+const esri = (host: 'server' | 'services', service: string): Tile => (z, x, y) =>
+  `https://${host}.arcgisonline.com/ArcGIS/rest/services/${service}/MapServer/tile/${z}/${y}/${x}`;
+
+/** The closest these maps are drawn. Nearer than this Esri answers "map data not yet available" for much of India. */
+const MAX_ZOOM = 16;
 
 const STYLES: Record<
   MapStyle,
-  { label: string; tile: (z: number, x: number, y: number) => string; credit: ReactNode; ground: string }
+  {
+    label: string;
+    tile: Tile;
+    /** A see-through layer of place names, for a map whose own tiles carry none. */
+    names?: Tile;
+    credit: ReactNode;
+    ground: string;
+  }
 > = {
   light: {
     label: 'Light',
-    // "Voyager": roads, towns and place names in colour — the nearest to a road atlas.
-    tile: carto('rastertiles/voyager'),
-    credit: CARTO_CREDIT,
+    // Roads, towns and place names in colour — the nearest to a road atlas.
+    tile: esri('server', 'World_Street_Map'),
+    credit: ESRI_CREDIT,
     ground: '#e8ecef',
   },
   dark: {
     label: 'Dark',
-    tile: carto('dark_all'),
-    credit: CARTO_CREDIT,
+    tile: esri('services', 'Canvas/World_Dark_Gray_Base'),
+    names: esri('services', 'Canvas/World_Dark_Gray_Reference'),
+    credit: ESRI_CREDIT,
     ground: '#1b1f27',
   },
   satellite: {
     label: 'Satellite',
-    tile: (z, x, y) => `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`,
+    tile: esri('server', 'World_Imagery'),
     credit: <>Imagery © Esri, Maxar, Earthstar Geographics</>,
     ground: '#0d2233',
   },
@@ -366,7 +380,7 @@ export function TruckMap({
   const all: Pin[] = onFuel
     ? [pins.truck, ...fuel.stations.slice(0, 5)]
     : [pins.from, pins.truck, pins.to].filter((p): p is Pin => !!p);
-  const zoom = Math.max(3, Math.min(17, fitZoom(all, view, HEIGHT) + nudge));
+  const zoom = Math.max(3, Math.min(MAX_ZOOM, fitZoom(all, view, HEIGHT) + nudge));
   // Zoomed in by hand, the map follows the truck; otherwise it frames the whole trip.
   const centre = nudge > 0 ? [pins.truck] : all;
   const cx = (Math.min(...centre.map((p) => worldX(p.lng, zoom))) + Math.max(...centre.map((p) => worldX(p.lng, zoom)))) / 2;
@@ -537,6 +551,21 @@ export function TruckMap({
               width={TILE}
               height={TILE}
               style={{ position: 'absolute', left: t.x * TILE - left, top: t.y * TILE - top, maxWidth: 'none' }}
+            />
+          ))}
+        {/* The place names, over a map that is drawn without them. */}
+        {width > 0 &&
+          STYLES[style].names &&
+          tiles.map((t) => (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              key={`names/${style}/${zoom}/${t.x}/${t.y}`}
+              alt=""
+              draggable={false}
+              src={STYLES[style].names!(zoom, ((t.x % edge) + edge) % edge, t.y)}
+              width={TILE}
+              height={TILE}
+              style={{ position: 'absolute', left: t.x * TILE - left, top: t.y * TILE - top, maxWidth: 'none', pointerEvents: 'none' }}
             />
           ))}
 
