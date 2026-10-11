@@ -170,9 +170,14 @@ async function nearestFuel(from: Pin): Promise<FuelStation[] | null> {
 }
 
 /* ---- the three looks of the map ---------------------------------------------
-   Light is OpenStreetMap's own map. Dark is CARTO's dark map, drawn from the
-   same OpenStreetMap data. Satellite is Esri's world imagery. Each asks to be
-   credited on the map, which the line at the bottom right does. */
+   Light and Dark are CARTO's maps, drawn from OpenStreetMap's data. Satellite
+   is Esri's world imagery. Each asks to be credited on the map, which the line
+   at the bottom right does.
+
+   Light used to be OpenStreetMap's own tiles. Those are served by volunteers
+   for people browsing openstreetmap.org, not for other sites to build on, and
+   they began refusing this console: every tile came back as a picture reading
+   "403 Access blocked". The same map data from CARTO has no such block. */
 
 export type MapStyle = 'light' | 'dark' | 'satellite';
 
@@ -182,27 +187,34 @@ const OSM_CREDIT = (
   </>
 );
 
+const CARTO_CREDIT = (
+  <>
+    {OSM_CREDIT} ©{' '}
+    <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">
+      CARTO
+    </a>
+  </>
+);
+
+/** One of CARTO's four tile hosts, spread by tile so a screenful loads side by side. */
+const carto = (look: string) => (z: number, x: number, y: number) =>
+  `https://${'abcd'[(x + y) % 4]}.basemaps.cartocdn.com/${look}/${z}/${x}/${y}.png`;
+
 const STYLES: Record<
   MapStyle,
   { label: string; tile: (z: number, x: number, y: number) => string; credit: ReactNode; ground: string }
 > = {
   light: {
     label: 'Light',
-    tile: (z, x, y) => `https://tile.openstreetmap.org/${z}/${x}/${y}.png`,
-    credit: OSM_CREDIT,
+    // "Voyager": roads, towns and place names in colour — the nearest to a road atlas.
+    tile: carto('rastertiles/voyager'),
+    credit: CARTO_CREDIT,
     ground: '#e8ecef',
   },
   dark: {
     label: 'Dark',
-    tile: (z, x, y) => `https://${'abcd'[(x + y) % 4]}.basemaps.cartocdn.com/dark_all/${z}/${x}/${y}.png`,
-    credit: (
-      <>
-        {OSM_CREDIT} ©{' '}
-        <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">
-          CARTO
-        </a>
-      </>
-    ),
+    tile: carto('dark_all'),
+    credit: CARTO_CREDIT,
     ground: '#1b1f27',
   },
   satellite: {
