@@ -69,3 +69,58 @@ table.table td .btn {
 .cycle-action .field {
   flex: none;
 }
+
+/* ---- dark mode: buttons and the greeting banner --------------------------------
+   In dark mode the accent is a pale blue, chosen so links read on a dark
+   page. Filled buttons, the greeting banner and the Ask button were painted
+   in that same pale blue with white lettering on top, which washed them out.
+   Anything filled and lettered in white takes a deeper blue instead. */
+:root[data-theme='dark'] .btn:not(.btn-secondary, .btn-ghost, .btn-danger, .share-wa) {
+  background: #3b63c9;
+  border-color: #3b63c9;
+  color: #ffffff;
+}
+:root[data-theme='dark'] .btn:not(.btn-secondary, .btn-ghost, .btn-danger, .share-wa):hover:not(:disabled) {
+  background: #4a72d6;
+  border-color: #4a72d6;
+}
+:root[data-theme='dark'] .btn:not(.btn-secondary, .btn-ghost, .btn-danger, .share-wa):active:not(:disabled) {
+  background: #3357b4;
+  border-color: #3357b4;
+}
+:root[data-theme='dark'] .hero {
+  background: linear-gradient(135deg, #22408c, #2f58b8 55%, #3f77d8);
+}
+.assistant-toggle {
+  background: var(--color-accent);
+}
+:root[data-theme='dark'] .assistant-toggle {
+  background: #3b63c9;
+}
+
+/* ---- a box and the button beside it are one height ----------------------------
+   A date box standing next to a button ("Pickup from … Download") was 34px
+   against the button's 40px, so the row had a step in it. Boxes inside a
+   table row keep the smaller size, where the row is tight. */
+.app-main :where(input:not([type='checkbox'], [type='radio'], [type='file'], [type='range']), select) {
+  min-height: 40px;
+}
+.app-main table.table :where(input:not([type='checkbox'], [type='radio'], [type='file'], [type='range']), select) {
+  min-height: 34px;
+}
+
+/* ---- phone width ---------------------------------------------------------------
+   The page title's picture sat halfway down a title that had wrapped onto
+   three lines; it belongs beside the first line. In a bar chart the names
+   took more than half the row and left the bars a sliver. */
+@media (max-width: 640px) {
+  .page-head {
+    align-items: flex-start;
+  }
+  .viz-hbars .viz-hbar {
+    grid-template-columns: minmax(96px, 42%) minmax(0, 1fr);
+  }
+  .viz-hbar .viz-bar {
+    max-width: calc(100% - 40px);
+  }
+}

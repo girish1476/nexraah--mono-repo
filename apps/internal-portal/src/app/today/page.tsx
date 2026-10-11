@@ -73,9 +73,9 @@ function TargetLine({ label, unit, progress }: { label: string; unit: TargetUnit
   const done = target ? Math.round((achieved / target) * 100) : null;
   return (
     <div style={{ marginTop: 12 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12.5 }}>
-        <span className="muted">{label}</span>
-        <span>
+      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: '2px 8px', fontSize: 12.5 }}>
+        <span className="muted" style={{ whiteSpace: 'nowrap' }}>{label}</span>
+        <span style={{ whiteSpace: 'nowrap' }}>
           <strong>{show(achieved)}</strong>
           {target === null ? (
             <span className="muted"> · no target set</span>
@@ -291,7 +291,7 @@ export default function TodayPage() {
             }
           />
           <div
-            style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}
+            style={{ display: 'grid', gap: 12, marginBottom: 16, gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}
           >
             {targets.targets.map((t) => (
               <div key={t.metric} className="surface" style={{ padding: '14px 16px' }} data-testid={`target-${t.metric}`}>
