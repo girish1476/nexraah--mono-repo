@@ -55,8 +55,18 @@ async function pdfjs(): Promise<any> {
   return lib;
 }
 
-/** Reads a picture — a photo, or a page drawn to a canvas. */
-async function readPicture(picture: Blob | HTMLCanvasElement): Promise<string> {
+/**
+ * Reads a picture — a photo, or a page drawn to a canvas. `quarterTurns` turns
+ * it first: a card photographed sideways reads as noise the right way up.
+ */
+export type ReadPicture = (picture: Blob | HTMLCanvasElement, quarterTurns?: number) => Promise<string>;
+
+/**
+ * Starts the picture reader, hands it to `work`, and shuts it when `work` is
+ * done — so several pages, or one photo tried at each quarter turn, share the
+ * one start-up instead of paying for it each time.
+ */
+export async function withPictureReader<T>(work: (read: ReadPicture) => Promise<T>): Promise<T> {
   await loadScript(TESSERACT);
   const Tesseract = (window as any).Tesseract;
   if (!Tesseract) throw new ReaderUnavailable('The text reader did not start.');
@@ -67,18 +77,41 @@ async function readPicture(picture: Blob | HTMLCanvasElement): Promise<string> {
     throw new ReaderUnavailable((e as Error)?.message ?? 'The text reader could not be loaded.');
   }
   try {
-    const result = await worker.recognize(picture);
-    return String(result?.data?.text ?? '');
+    return await work(async (picture, quarterTurns = 0) => {
+      const result = await worker.recognize(quarterTurns % 4 ? await turned(picture, quarterTurns) : picture);
+      return String(result?.data?.text ?? '');
+    });
   } finally {
     await worker.terminate().catch(() => undefined);
   }
+}
+
+/**
+ * The picture turned by quarter turns, clockwise. Drawn here rather than left to
+ * the reader's own rotation: a quarter turn on a canvas moves every dot to a
+ * whole place and loses nothing, where the reader's turning blurs the print
+ * enough to change a 9 into a 3.
+ */
+async function turned(picture: Blob | HTMLCanvasElement, quarterTurns: number): Promise<HTMLCanvasElement> {
+  const source: CanvasImageSource & { width: number; height: number } =
+    picture instanceof Blob ? await createImageBitmap(picture) : picture;
+  const turns = ((quarterTurns % 4) + 4) % 4;
+  const canvas = document.createElement('canvas');
+  const sideways = turns % 2 === 1;
+  canvas.width = sideways ? source.height : source.width;
+  canvas.height = sideways ? source.width : source.height;
+  const ctx = canvas.getContext('2d')!;
+  ctx.translate(canvas.width / 2, canvas.height / 2);
+  ctx.rotate((turns * Math.PI) / 2);
+  ctx.drawImage(source, -source.width / 2, -source.height / 2);
+  return canvas;
 }
 
 async function readPdf(blob: Blob): Promise<string> {
   const lib = await pdfjs();
   const pdf = await lib.getDocument({ data: new Uint8Array(await blob.arrayBuffer()) }).promise;
   const pages: string[] = [];
-  let scanned = 0;
+  const scanned: { at: number; canvas: HTMLCanvasElement }[] = [];
   for (let n = 1; n <= Math.min(pdf.numPages, MAX_PDF_PAGES); n++) {
     const page = await pdf.getPage(n);
     const content = await page.getTextContent();
@@ -88,21 +121,24 @@ async function readPdf(blob: Blob): Promise<string> {
       continue;
     }
     // A scanned page: drawn large enough for small print to be read, then read as a picture.
-    if (scanned >= MAX_SCANNED_PAGES) continue;
-    scanned += 1;
+    pages.push('');
+    if (scanned.length >= MAX_SCANNED_PAGES) continue;
     const viewport = page.getViewport({ scale: 2 });
     const canvas = document.createElement('canvas');
     canvas.width = Math.ceil(viewport.width);
     canvas.height = Math.ceil(viewport.height);
     await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
-    pages.push(await readPicture(canvas));
+    scanned.push({ at: pages.length - 1, canvas });
   }
-  return pages.join('\n');
+  if (scanned.length > 0) {
+    await withPictureReader(async (read) => {
+      for (const page of scanned) pages[page.at] = await read(page.canvas);
+    });
+  }
+  return pages.filter(Boolean).join('\n');
 }
 
-/** The text of a PDF or a picture. Throws `ReaderUnavailable` when the reader could not be fetched. */
-export async function documentText(blob: Blob, mime: string): Promise<string> {
-  if (mime === 'application/pdf') return readPdf(blob);
-  if (mime.startsWith('image/')) return readPicture(blob);
-  throw new Error(`A ${mime || 'file of this kind'} cannot be read automatically.`);
+/** The text of a PDF. Throws `ReaderUnavailable` when the reader could not be fetched. */
+export async function pdfText(blob: Blob): Promise<string> {
+  return readPdf(blob);
 }

@@ -102,6 +102,40 @@ function close(raw: string, shape: string, allowed = 2): boolean {
 }
 const NEAR: Partial<Record<Format, string>> = { gstin: '99AAAAA9999AXXX', pan: 'AAAAA9999A' };
 
+/**
+ * A PAN or a GSTIN printed with gaps in it — "AAKCN 9322 K", or one the reader
+ * broke up. Each line is closed up and every run of the right length is tried.
+ *
+ * Closing a line up also joins words that were never one number ("Contact
+ * 1205851208" holds ten characters that pass for a PAN once an 8 is read as a
+ * B). So a run found this way must be made of whole words — it starts where a
+ * word starts and ends where one ends — and must fit the shape exactly, with no
+ * look-alike character put right.
+ */
+function spacedOut(upper: string, format: Format, shape: string): Hit[] {
+  const hits: Hit[] = [];
+  let lineStart = 0;
+  for (const line of upper.split('\n')) {
+    let closed = '';
+    const where: number[] = [];
+    for (let i = 0; i < line.length; i++) {
+      if (/[A-Z0-9]/.test(line[i])) {
+        closed += line[i];
+        where.push(lineStart + i);
+      }
+    }
+    const wordStart = (at: number) => at === lineStart || !/[A-Z0-9]/.test(upper[at - 1]);
+    const wordEnd = (at: number) => !/[A-Z0-9]/.test(upper[at + 1] ?? ' ');
+    for (let i = 0; i + shape.length <= closed.length; i++) {
+      const run = closed.slice(i, i + shape.length);
+      if (!wordStart(where[i]) || !wordEnd(where[i + shape.length - 1])) continue;
+      if (close(run, shape, 0) && checkFormat(format, run).value === run) hits.push({ raw: run, at: where[i] });
+    }
+    lineStart += line.length + 1;
+  }
+  return hits;
+}
+
 /** Whose number is asked for, where a page carries more than one of a kind. */
 function whose(label: string): RegExp[] {
   const l = label.toLowerCase();
@@ -117,7 +151,12 @@ function numberOfKind(text: string, field: ReadField, format: Format): Found {
   const near = NEAR[format];
   const hits = all(upper, shape).filter((h) => !near || close(h.raw, near));
   const good = hits.filter((h) => checkFormat(format, h.raw).value);
-  if (good.length === 0) return NOTHING;
+  if (good.length === 0) {
+    // Not standing on its own anywhere: perhaps printed with gaps. Taken only when one number is found that way.
+    const spaced = near ? spacedOut(upper, format, near) : [];
+    const values = new Set(spaced.map((h) => checkFormat(format, h.raw).value));
+    return values.size === 1 ? { value: spaced[0].raw, printed: spaced[0].raw } : NOTHING;
+  }
 
   // The one beside the words that name whose it is, then the one beside the words that name what it is.
   const party = whose(field.label);

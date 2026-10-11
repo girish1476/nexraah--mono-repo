@@ -58,12 +58,24 @@ export function useLevel(module: ModuleKey): Level {
   return levelFor(module, role);
 }
 
+/** How long a message stays up. */
+const TOAST_MS = 3600;
+/**
+ * The timer that takes the message on screen down again. There is one message
+ * at a time, so one timer: showing a new message restarts it. Each message used
+ * to start a timer of its own and none was ever cancelled, so a second message
+ * shown within a few seconds of the first was wiped by the first one's timer —
+ * "waived" flashed and was gone before it could be read.
+ */
+let toastTimer: ReturnType<typeof setTimeout> | undefined;
+
 export function useToast(): (message: string) => void {
   const setToast = useSetAtom(toastAtom);
   return useCallback(
     (message: string) => {
+      if (toastTimer) clearTimeout(toastTimer);
       setToast(message);
-      setTimeout(() => setToast(''), 3600);
+      toastTimer = setTimeout(() => setToast(''), TOAST_MS);
     },
     [setToast],
   );

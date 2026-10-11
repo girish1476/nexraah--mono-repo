@@ -40,6 +40,14 @@ describe('numbers with a shape of their own', () => {
     expect(read('Contact 1205851208 for queries', fields).values.reference).toBeUndefined();
   });
 
+  it('a PAN or a GSTIN printed with gaps in it is still found', () => {
+    expect(read('Permanent Account Number\nAAKCN 9322 K', [{ key: 'p', label: 'PAN number', format: 'pan' }]).values.p).toBe('AAKCN9322K');
+    const spaced = `${SELLER.slice(0, 2)} ${SELLER.slice(2, 7)} ${SELLER.slice(7, 11)} ${SELLER.slice(11)}`;
+    expect(read(`GSTIN : ${spaced}`, [{ key: 'g', label: 'GSTIN', format: 'gstin' }]).values.g).toBe(SELLER);
+    // Words that happen to close up into the right length are not a number.
+    expect(read('INCOME TAX DEPARTMENT GOVT OF INDIA', [{ key: 'p', label: 'PAN number', format: 'pan' }]).values.p).toBeUndefined();
+  });
+
   it('a vehicle number is read with or without its spaces', () => {
     const fields: ReadField[] = [{ key: 'v', label: 'Vehicle number on it', format: 'vehicle' }];
     expect(read('Vehicle No: AP 39 EW 3699\nDriver: Ramesh', fields).values.v).toBe('AP39EW3699');

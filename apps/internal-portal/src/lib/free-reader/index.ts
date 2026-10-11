@@ -2,7 +2,7 @@ import type { ReadField, Reading } from '@/lib/attachments';
 // The server's own checks — plain functions, so they are used here as they are.
 import { checkFormat, settleDate, settleNumber, type Checked } from '../../../../internal-api/src/modules/ocr/ocr.formats';
 import { extractFields, type Found } from './extract';
-import { documentText } from './text';
+import { pdfText, withPictureReader } from './text';
 
 export { ReaderUnavailable } from './text';
 
@@ -59,5 +59,25 @@ export function readText(text: string, fields: ReadField[], today = todayInIndia
  * verifying the document still looks at each value before saving.
  */
 export async function readDetails(blob: Blob, mime: string, fields: ReadField[]): Promise<Reading> {
-  return readText(await documentText(blob, mime), fields);
+  if (mime === 'application/pdf') return readText(await pdfText(blob), fields);
+  if (!mime.startsWith('image/')) throw new Error(`A ${mime || 'file of this kind'} cannot be read automatically.`);
+  return withPictureReader(async (read) => {
+    const found = (r: Reading) => Object.keys(r.values).length;
+    // Nearly every photo is the right way up, and one that gives anything is: that is the answer.
+    const upright = readText(await read(blob), fields);
+    if (found(upright) > 0) return upright;
+    // Nothing on it the right way up. A card held sideways or upside down reads
+    // as noise, so it is tried at each other quarter turn and the turn that
+    // gives the most is taken — a wrong turn gives stray characters at best.
+    let best = upright;
+    for (const turns of OTHER_TURNS) {
+      const reading = readText(await read(blob, turns), fields);
+      if (found(reading) > found(best)) best = reading;
+      if (reading.unread.length === 0) break;
+    }
+    return best;
+  });
 }
+
+/** The two ways a card is held sideways, then upside down. */
+const OTHER_TURNS = [1, 3, 2];
