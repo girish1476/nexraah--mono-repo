@@ -21,6 +21,12 @@ export interface CompanyDetails {
   signatory: string;
   /** Details added from Admin → Control panel, in the order they were added. */
   extra?: CompanyExtra[];
+  /** The names of the lorry receipt's copies, in the order printed. Unset prints the usual four. */
+  lrCopies?: string[];
+  /** The lorry receipt's terms and conditions, a line each. Unset prints the standard ones; empty prints none. */
+  lrTerms?: string;
+  /** The invoice's terms and conditions, by the same rule. */
+  invoiceTerms?: string;
 }
 
 export interface Config {

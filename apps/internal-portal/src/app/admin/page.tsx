@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { errorMessage } from '@/apis';
 import { DOC_LABELS } from '@/lib/documents';
 import { inr } from '@/lib/format';
+import { DEFAULT_INVOICE_TERMS, DEFAULT_LR_COPIES, DEFAULT_LR_TERMS } from '@/lib/print-settings';
 import {
   Column,
   DataTable,
@@ -250,7 +251,11 @@ export default function ControlPanelPage() {
           <Panel title="Company details" right={<span className="muted" style={{ fontSize: 11.5 }}>printed on every document</span>}>
             <FormGrid>
               {(Object.keys(config.company) as (keyof Config['company'])[])
-                .filter((key): key is Exclude<keyof Config['company'], 'extra'> => key !== 'extra')
+                // The plain one-line details. The rest have boxes of their own below.
+                .filter(
+                  (key): key is Exclude<keyof Config['company'], 'extra' | 'lrCopies' | 'lrTerms' | 'invoiceTerms'> =>
+                    !['extra', 'lrCopies', 'lrTerms', 'invoiceTerms'].includes(key),
+                )
                 .map((key) => {
                   const Box = key === 'address' ? 'textarea' : 'input';
                   return (
@@ -280,12 +285,95 @@ export default function ControlPanelPage() {
             />
           </Panel>
 
+          <PrintedDocuments
+            company={config.company}
+            editable={editable}
+            save={(changed) => save({ company: { ...config.company, ...changed } })}
+          />
+
           <Panel title="Numbering series" pad={false}>
             <DataTable columns={seriesColumns} rows={series} rowKey={(r) => r.key} />
           </Panel>
         </Stack>
       )}
     </ModuleGuard>
+  );
+}
+
+/**
+ * What the lorry receipt and the invoice say that is the company's to word:
+ * what each copy of the receipt is called, and the terms and conditions on
+ * each document. Saved when a box is left, like the settings above it.
+ */
+function PrintedDocuments({
+  company,
+  editable,
+  save,
+}: {
+  company: Config['company'];
+  editable: boolean;
+  save: (changed: Partial<Config['company']>) => void;
+}) {
+  const copies = company.lrCopies ?? DEFAULT_LR_COPIES;
+  const slots = Array.from({ length: Math.max(4, copies.length) }, (_, i) => copies[i] ?? '');
+  const lrTerms = typeof company.lrTerms === 'string' ? company.lrTerms : DEFAULT_LR_TERMS;
+  const invoiceTerms = typeof company.invoiceTerms === 'string' ? company.invoiceTerms : DEFAULT_INVOICE_TERMS;
+
+  return (
+    <Panel title="Printed documents" right={<span className="muted" style={{ fontSize: 11.5 }}>lorry receipt and invoice</span>}>
+      <div data-printed-documents>
+        <div style={{ fontWeight: 600 }}>Lorry receipt copies</div>
+        <p className="muted" style={{ fontSize: 12.5, margin: '2px 0 10px' }}>
+          The lorry receipt is printed once for each name here, in this order, with the name at its top. Leave a box empty
+          to drop that copy.
+        </p>
+        <FormGrid>
+          {slots.map((name, i) => (
+            <Field key={i} label={`Copy ${i + 1}`}>
+              <input
+                name={`lr-copy-${i}`}
+                defaultValue={name}
+                maxLength={40}
+                disabled={!editable}
+                onBlur={(e) => {
+                  const next = slots.map((s, j) => (j === i ? e.target.value.trim() : s));
+                  if (next[i] !== name) save({ lrCopies: next });
+                }}
+              />
+            </Field>
+          ))}
+        </FormGrid>
+
+        <FormGrid cols={1}>
+          <Field
+            label="Lorry receipt — terms and conditions"
+            hint="Printed at the foot of every copy. Each line here is printed as its own line. Leave it empty to print none."
+          >
+            <textarea
+              name="lr-terms"
+              rows={5}
+              defaultValue={lrTerms}
+              maxLength={4000}
+              disabled={!editable}
+              onBlur={(e) => e.target.value !== lrTerms && save({ lrTerms: e.target.value })}
+            />
+          </Field>
+          <Field
+            label="Invoice — terms and conditions"
+            hint="Printed on the invoice and its PDF, above the signature. Each line is printed as its own line. Leave it empty to print none."
+          >
+            <textarea
+              name="invoice-terms"
+              rows={4}
+              defaultValue={invoiceTerms}
+              maxLength={4000}
+              disabled={!editable}
+              onBlur={(e) => e.target.value !== invoiceTerms && save({ invoiceTerms: e.target.value })}
+            />
+          </Field>
+        </FormGrid>
+      </div>
+    </Panel>
   );
 }
 

@@ -45,6 +45,12 @@ class CompanyDto {
   @ValidateNested({ each: true })
   @Type(() => CompanyExtraDto)
   extra?: CompanyExtraDto[];
+  /** The names of the lorry receipt's copies, in the order printed. */
+  @IsOptional() @IsArray() @ArrayMaxSize(6) @IsString({ each: true }) @MaxLength(40, { each: true }) lrCopies?: string[];
+  /** The lorry receipt's terms and conditions, a line each. Empty prints none. */
+  @IsOptional() @IsString() @MaxLength(4000) lrTerms?: string;
+  /** The invoice's terms and conditions, by the same rule. */
+  @IsOptional() @IsString() @MaxLength(4000) invoiceTerms?: string;
 }
 
 /** `docs/api/01-foundation.md` `PATCH /config` — partial patches accepted. */

@@ -543,6 +543,7 @@ export class InvoicingService {
       sac: string;
       signatory: string;
       extra: { label: string; value: string }[];
+      invoiceTerms: string;
     }>;
     return {
       name: company.name ?? '',
@@ -559,6 +560,8 @@ export class InvoicingService {
       signatory: company.signatory ?? 'Authorised Signatory',
       // Details the company added for itself (an MSME number, a TAN), printed under its GST number.
       extra: Array.isArray(company.extra) ? company.extra : [],
+      // The company's own invoice terms, where it has set them. Left out otherwise, so the standard ones are printed.
+      ...(typeof company.invoiceTerms === 'string' ? { invoiceTerms: company.invoiceTerms } : {}),
     };
   }
 

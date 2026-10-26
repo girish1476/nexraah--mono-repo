@@ -1,4 +1,5 @@
 import { InvoiceDetail, InvoiceStatus } from '@/app/invoices/types';
+import { DEFAULT_INVOICE_TERMS, invoiceTermsLines } from './print-settings';
 
 /**
  * What the invoice says, worked out once for both the printed page
@@ -18,8 +19,13 @@ export const INVOICE_BRAND = 'NEXRAAH';
 export const INVOICE_TAGLINE = 'Built to move. Born to deliver.';
 export const INVOICE_WEBSITE = 'www.nexraah.com';
 export const INVOICE_EMAIL = 'info@nexraah.com';
-export const INVOICE_TERMS =
-  'Confidentiality: Both parties agree to keep all business information and materials confidential.';
+/** The terms printed until the company sets its own (Admin → Control panel → Printed documents). */
+export const INVOICE_TERMS = DEFAULT_INVOICE_TERMS;
+
+/** The invoice's terms and conditions, a line at a time — the company's own where it has set them. */
+export function termsLines(invoice: InvoiceDetail): string[] {
+  return invoiceTermsLines(invoice.company);
+}
 
 /** The letterhead's colours — navy for the rules, header row and footer; sky blue for the brand. */
 export const INVOICE_NAVY = '#0b1540';

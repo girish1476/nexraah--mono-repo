@@ -9,6 +9,7 @@ import { getTrip } from '@/app/trips/apis';
 import { TripDetail } from '@/app/trips/types';
 import { Barcode } from '@/components/barcode';
 import { fmtDate, inr } from '@/lib/format';
+import { lrCopies, lrTermsLines } from '@/lib/print-settings';
 import { ErrorState, Loading } from '@/lib/ui';
 
 /**
@@ -23,7 +24,6 @@ import { ErrorState, Loading } from '@/lib/ui';
  * of the LR number and three signature blocks. The printed copy is the
  * primary form.
  */
-const COPIES = ['Consignor copy', 'Consignee copy', 'Carrier copy', 'Office copy'];
 
 export default function PrintLrPage() {
   const { tripId } = useParams<{ tripId: string }>();
@@ -43,6 +43,9 @@ export default function PrintLrPage() {
   if (error) return <ErrorState message={error} />;
   if (!trip || !config) return <Loading what="Preparing the lorry receipt" />;
 
+  // Which copies, and what each is called, is the company's to say (Admin → Control panel).
+  const copies = lrCopies(config.company);
+
   return (
     <div style={{ background: '#fff', color: '#000', padding: 20, fontFamily: 'var(--font-body)' }}>
       <div className="no-print" style={{ marginBottom: 14, display: 'flex', gap: 8 }}>
@@ -50,11 +53,11 @@ export default function PrintLrPage() {
           Print
         </button>
         <span className="muted" style={{ fontSize: 12, alignSelf: 'center' }}>
-          Four copies · A4 · the printed copy is the primary form
+          {copies.length} {copies.length === 1 ? 'copy' : 'copies'} · A4 · the printed copy is the primary form
         </span>
       </div>
 
-      {COPIES.map((copy) => (
+      {copies.map((copy) => (
         <Sheet key={copy} label={copy} trip={trip} config={config} />
       ))}
     </div>
@@ -161,12 +164,14 @@ function Sheet({ label, trip, config }: { label: string; trip: TripDetail; confi
         </Block>
       </div>
 
-      <div style={{ borderTop: '1px solid #000', padding: '8px 4px', fontSize: 9.5, lineHeight: 1.45 }}>
-        <strong>Terms.</strong> Goods are carried at owner’s risk. The carrier is not responsible for leakage,
-        breakage or loss arising from causes beyond its control. Delivery is against production of this receipt
-        and proof of identity. Any claim must be lodged in writing within seven days of delivery. Subject to
-        the jurisdiction of the courts at the booking branch.
-      </div>
+      {lrTermsLines(config.company).length > 0 && (
+        <div data-lr-terms style={{ borderTop: '1px solid #000', padding: '8px 4px', fontSize: 9.5, lineHeight: 1.45 }}>
+          <strong>Terms &amp; Conditions.</strong>{' '}
+          {lrTermsLines(config.company).length === 1
+            ? lrTermsLines(config.company)[0]
+            : lrTermsLines(config.company).map((line, i) => <div key={i}>{line}</div>)}
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, paddingTop: 34, borderTop: '1px solid #000' }}>
         {['Consignor', 'For the carrier', 'Consignee'].map((sig) => (

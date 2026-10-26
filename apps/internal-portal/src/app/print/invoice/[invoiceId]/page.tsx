@@ -11,7 +11,6 @@ import {
   INVOICE_EMAIL,
   INVOICE_NAVY,
   INVOICE_TAGLINE,
-  INVOICE_TERMS,
   INVOICE_WEBSITE,
   addressLines,
   addressOneLine,
@@ -24,6 +23,7 @@ import {
   isoDay,
   lrNumbers,
   noteLines,
+  termsLines,
 } from '@/lib/invoice-layout';
 import { ErrorState, Loading } from '@/lib/ui';
 
@@ -203,8 +203,14 @@ function Sheet({ invoice }: { invoice: InvoiceDetail }) {
           <div key={i}>{line}</div>
         ))}
 
-        <div style={{ fontWeight: 700, marginTop: 10 }}>Terms &amp; Conditions:</div>
-        <div>{INVOICE_TERMS}</div>
+        {termsLines(invoice).length > 0 && (
+          <div data-invoice-terms>
+            <div style={{ fontWeight: 700, marginTop: 10 }}>Terms &amp; Conditions:</div>
+            {termsLines(invoice).map((line, i) => (
+              <div key={i}>{line}</div>
+            ))}
+          </div>
+        )}
 
         <div style={{ marginTop: 32 }}>Authorized Signature _________________________</div>
       </div>

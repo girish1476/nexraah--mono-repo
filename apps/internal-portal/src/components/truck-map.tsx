@@ -203,6 +203,26 @@ type Tile = (z: number, x: number, y: number) => string;
 const esri = (host: 'server' | 'services', service: string): Tile => (z, x, y) =>
   `https://${host}.arcgisonline.com/ArcGIS/rest/services/${service}/MapServer/tile/${z}/${y}/${x}`;
 
+/**
+ * A map provider of the company's own, set where the console is hosted:
+ *
+ *   NEXT_PUBLIC_MAP_LIGHT_TILES = https://…/{z}/{x}/{y}.png?key=…
+ *   NEXT_PUBLIC_MAP_DARK_TILES  = https://…/{z}/{x}/{y}.png?key=…
+ *   NEXT_PUBLIC_MAP_CREDIT      = © MapTiler © OpenStreetMap contributors
+ *
+ * Free tiles are served on sufferance — two providers shut this console out in
+ * one week. A provider the company has an account and a key with does not, and
+ * setting these needs no change to the code. Unset, the map is Esri's.
+ */
+function ownTiles(template: string | undefined): Tile | null {
+  const t = (template ?? '').trim();
+  if (!/^https:\/\//.test(t) || !['{z}', '{x}', '{y}'].every((part) => t.includes(part))) return null;
+  return (z, x, y) => t.replace('{z}', String(z)).replace('{x}', String(x)).replace('{y}', String(y));
+}
+const OWN_LIGHT = ownTiles(process.env.NEXT_PUBLIC_MAP_LIGHT_TILES);
+const OWN_DARK = ownTiles(process.env.NEXT_PUBLIC_MAP_DARK_TILES);
+const OWN_CREDIT = (process.env.NEXT_PUBLIC_MAP_CREDIT ?? '').trim() || '© OpenStreetMap contributors';
+
 /** The closest these maps are drawn. Nearer than this Esri answers "map data not yet available" for much of India. */
 const MAX_ZOOM = 16;
 
@@ -220,15 +240,16 @@ const STYLES: Record<
   light: {
     label: 'Light',
     // Roads, towns and place names in colour — the nearest to a road atlas.
-    tile: esri('server', 'World_Street_Map'),
-    credit: ESRI_CREDIT,
+    tile: OWN_LIGHT ?? esri('server', 'World_Street_Map'),
+    credit: OWN_LIGHT ? OWN_CREDIT : ESRI_CREDIT,
     ground: '#e8ecef',
   },
   dark: {
     label: 'Dark',
-    tile: esri('services', 'Canvas/World_Dark_Gray_Base'),
-    names: esri('services', 'Canvas/World_Dark_Gray_Reference'),
-    credit: ESRI_CREDIT,
+    tile: OWN_DARK ?? esri('services', 'Canvas/World_Dark_Gray_Base'),
+    // Esri's dark map is drawn without place names; a provider's own dark map carries them.
+    names: OWN_DARK ? undefined : esri('services', 'Canvas/World_Dark_Gray_Reference'),
+    credit: OWN_DARK ? OWN_CREDIT : ESRI_CREDIT,
     ground: '#1b1f27',
   },
   satellite: {

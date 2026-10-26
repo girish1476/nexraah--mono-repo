@@ -4,7 +4,6 @@ import {
   INVOICE_BRAND,
   INVOICE_EMAIL,
   INVOICE_TAGLINE,
-  INVOICE_TERMS,
   INVOICE_WEBSITE,
   addressLines,
   addressOneLine,
@@ -17,6 +16,7 @@ import {
   isoDay,
   lrNumbers,
   noteLines,
+  termsLines,
 } from './invoice-layout';
 
 /**
@@ -288,8 +288,10 @@ function draw(invoice: InvoiceDetail, logo: string | null, tight: boolean): jsPD
   heading('Note:');
   noteLines(invoice).forEach(paragraph);
   y += gap(3);
-  heading('Terms & Conditions:');
-  paragraph(INVOICE_TERMS);
+  if (termsLines(invoice).length > 0) {
+    heading('Terms & Conditions:');
+    termsLines(invoice).forEach(paragraph);
+  }
   y += gap(12);
   room(8);
   doc.text('Authorized Signature _________________________', TEXT_X, y);
