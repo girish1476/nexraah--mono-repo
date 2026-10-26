@@ -884,6 +884,13 @@ export const NAV: NavGroup[] = [
         note: 'Match what a transporter billed against what the trip earned',
       },
       {
+        label: 'Bank statement check',
+        href: '/payments/bank-check',
+        module: 'payments',
+        emoji: '🏦',
+        note: 'Find every released payment’s UTR in the bank’s own statement',
+      },
+      {
         // "Raise a client bill" used to be its own row pointing at the same
         // `/invoices/new` the page's own "New invoice" button already opens.
         // The button stays, gated the same way (`invoice.create`); this row

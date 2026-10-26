@@ -124,3 +124,14 @@ table.table td .btn {
     max-width: calc(100% - 40px);
   }
 }
+
+/* ---- a row's name keeps its line -----------------------------------------------
+   In a wide table the first column was squeezed until a client's name broke
+   in two ("Berger / Paints") while the columns of short codes beside it kept
+   their room. The name column keeps enough width for a usual company name;
+   a very long one still wraps. */
+@media (min-width: 768px) {
+  table.table td.cell-primary {
+    min-width: 160px;
+  }
+}

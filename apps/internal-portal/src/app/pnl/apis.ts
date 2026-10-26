@@ -1,4 +1,5 @@
 import { request } from '@/apis';
+import type { JournalLine } from '@/lib/accounting';
 import { Granularity, PnlException, PnlResponse } from './types';
 
 /**
@@ -22,4 +23,9 @@ export function pnlExportUrl(params: Record<string, string | undefined>): string
     Object.entries(params).filter(([, v]) => !!v) as [string, string][],
   ).toString();
   return `${base}/pnl/export.csv${query ? `?${query}` : ''}`;
+}
+
+/** GET /accounting/journal — issued invoices, receipts and released payments between two days, as journal lines. */
+export function getJournal(from: string, to: string) {
+  return request<JournalLine[]>({ url: '/accounting/journal', method: 'GET', params: { from, to } });
 }

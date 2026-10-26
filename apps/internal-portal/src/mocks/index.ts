@@ -1,6 +1,8 @@
 import { answerLocally } from './assistant';
 import { ReaderUnavailable, readDetails } from '../lib/free-reader';
 import { integrationSwitches } from '../lib/integration-switches';
+import { livePositions, type LivePosition } from '../lib/live-gps';
+import { journalLines } from '../lib/accounting';
 import { planRecovery } from './sdr-recovery';
 import { computeTransitPenalty } from './transit-penalty';
 import { bandPositionFor } from './band-position';
@@ -1046,6 +1048,69 @@ function trackingSheetFor(trip: any) {
     updates: db.tripTracking
       .filter((u: any) => u.tripId === trip.id)
       .sort((a: any, b: any) => String(a.recordedAt).localeCompare(String(b.recordedAt))),
+  };
+}
+
+/** Released payments as the books and the bank check read them, each with its transporter's name. */
+function releasedPayments() {
+  return db.payments.map((p: any) => {
+    const trip = db.trips.find((t: any) => t.id === p.tripId);
+    return {
+      id: p.id,
+      kind: p.kind,
+      tripCode: p.tripCode ?? trip?.code ?? null,
+      vendorName: trip?.vendorName ?? null,
+      utr: p.utr ?? null,
+      netPaise: p.netPaise ?? 0,
+      valueDate: p.valueDate ?? null,
+      releasedAt: p.releasedAt ?? null,
+    };
+  });
+}
+
+/* ---- live GPS -----------------------------------------------------------------
+   Positions sent in by GPS units and tracking apps (Control → Integrations →
+   GPS tracking) are kept on the console's server, not in this browser. They
+   are laid over what is saved here when a screen asks, and never saved into
+   it: the next report replaces them. */
+
+const later = (than: string | null | undefined, at: string) => !than || Date.parse(at) > Date.parse(than);
+
+/** A fleet-board row with the truck's live GPS position over it, when one has come in since it last changed. */
+function withLiveGps(row: any, live: LivePosition | undefined) {
+  if (!row || !live || !later(row.lastPingAt, live.at)) return row;
+  const speed = live.speedKmph ?? row.speedKmph;
+  // A fresh report means the truck is not dark; its speed is checked against the limit again.
+  const alerts = (row.alerts ?? []).filter((a: string) => a !== 'DARK_VEHICLE' && a !== 'OVERSPEED');
+  if (speed > db.config.overspeed_kmph) alerts.push('OVERSPEED');
+  return { ...row, lat: live.lat, lng: live.lng, speedKmph: speed, fuelPct: live.fuelPct ?? row.fuelPct, lastPingAt: live.at, lastUpdatedBy: 'GPS', alerts };
+}
+
+/** The tracking sheet, with the truck's live GPS position as its latest update while it is on the road. */
+async function trackingSheetLive(trip: any) {
+  const sheet = trackingSheetFor(trip);
+  if (!trip.vehicleNo || !trip.departedAt || trip.deliveredAt) return sheet;
+  const live = (await livePositions([trip.vehicleNo]))[trip.vehicleNo];
+  const last = sheet.updates[sheet.updates.length - 1];
+  if (!live || (last && !later(last.recordedAt, live.at))) return sheet;
+  const speed = live.speedKmph;
+  return {
+    ...sheet,
+    updates: [
+      ...sheet.updates,
+      {
+        id: 'gps-live',
+        kind: 'UPDATE',
+        location: 'Live GPS position',
+        lat: live.lat,
+        lng: live.lng,
+        note: speed === null ? null : `${speed} km/h`,
+        status: speed === null ? null : speed >= 5 ? 'MOVING' : 'HALTED',
+        recordedAt: live.at,
+        recordedByName: 'GPS',
+        recordedByPhone: null,
+      },
+    ],
   };
 }
 
@@ -3673,15 +3738,24 @@ const routes: [string, RegExp, Handler][] = [
   // Declared before `/indents/:id`, or "stale" would be read as an indent code.
   ['GET', /^\/indents\/stale$/, () => {
     const cutoff = Date.now() - 7 * 86_400_000;
+    // When the load last moved. A record with no date of its own (the demo's
+    // seed rows) is dated by its pickup; one with no date at all is left out —
+    // counting from 1970 printed "quiet for 20737 days".
+    const lastMoved = (i: any): number | null => {
+      const times = [i.updatedAt ?? i.createdAt ?? i.pickupDate, i.lastReviewedAt]
+        .map((v) => (v ? new Date(v).getTime() : NaN))
+        .filter((t) => Number.isFinite(t) && t > 0);
+      return times.length ? Math.max(...times) : null;
+    };
     return ok(
       db.indents
         .filter((i: any) => ['OPEN', 'VENDOR_ASSIGNED', 'VEHICLE_PLACED', 'TRIP_CREATED'].includes(i.stage))
         .filter((i: any) => {
-          const last = Math.max(new Date(i.updatedAt ?? i.createdAt ?? 0).getTime(), new Date(i.lastReviewedAt ?? 0).getTime());
-          return last < cutoff;
+          const last = lastMoved(i);
+          return last !== null && last < cutoff;
         })
         .map((i: any) => {
-          const last = Math.max(new Date(i.updatedAt ?? i.createdAt ?? 0).getTime(), new Date(i.lastReviewedAt ?? 0).getTime());
+          const last = lastMoved(i) as number;
           return {
             id: i.id,
             code: i.code,
@@ -4663,7 +4737,7 @@ const routes: [string, RegExp, Handler][] = [
   [
     'GET',
     /^\/trips\/([^/]+)\/tracking$/,
-    ({ params }) => ok(trackingSheetFor(findTrip(params[0]))),
+    async ({ params }) => ok(await trackingSheetLive(findTrip(params[0]))),
   ],
   /* ---- shareable tracking link — `TrackingLinksService` ------------------ */
   ['GET', /^\/trips\/([^/]+)\/tracking\/share$/, ({ params }) => ok(shareStateFor(findTrip(params[0])))],
@@ -5868,6 +5942,32 @@ const routes: [string, RegExp, Handler][] = [
     },
   ],
 
+  /* ---- the books and the bank — lib/accounting.ts ------------------------- */
+  /** `GET /accounting/journal?from=&to=` — invoices, receipts and released payments as journal lines. */
+  [
+    'GET',
+    /^\/accounting\/journal$/,
+    ({ query }) => {
+      const from = query.get('from') ?? '';
+      const to = query.get('to') ?? '';
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to)
+        fail(400, 'VALIDATION_ERROR', 'Give the first and last day, the first not after the last.');
+      return ok(
+        journalLines(
+          {
+            invoices: db.invoices as any[],
+            receipts: db.receipts as any[],
+            payments: releasedPayments(),
+          },
+          from,
+          to,
+        ),
+      );
+    },
+  ],
+  /** `GET /payments/released` — every payment released to a transporter, newest first, with its UTR. */
+  ['GET', /^\/payments\/released$/, () => ok(releasedPayments())],
+
   /* ------------------------------------------------------------- C8 ----- */
   [
     'GET',
@@ -6265,7 +6365,13 @@ const routes: [string, RegExp, Handler][] = [
   ],
 
   /* ------------------------------------------------------------ C10 ----- */
-  ['GET', /^\/telematics$/, () => ok({ config: { overspeedKmph: db.config.overspeed_kmph, haltMinutes: db.config.halt_minutes, darkVehicleIntervalMinutes: db.config.dark_vehicle_interval_minutes }, vehicles: db.telematics })],
+  ['GET', /^\/telematics$/, async () => {
+    const live = await livePositions(db.telematics.map((v: any) => v.vehicleNo));
+    return ok({
+      config: { overspeedKmph: db.config.overspeed_kmph, haltMinutes: db.config.halt_minutes, darkVehicleIntervalMinutes: db.config.dark_vehicle_interval_minutes },
+      vehicles: db.telematics.map((v: any) => withLiveGps(v, live[v.vehicleNo])),
+    });
+  }],
   /*
    * `GET /telematics/vehicles/:vehicleNo` — the trip page's tracking panel.
    *
@@ -6280,9 +6386,10 @@ const routes: [string, RegExp, Handler][] = [
   [
     'GET',
     /^\/telematics\/vehicles\/([^/]+)$/,
-    ({ params }) => {
+    async ({ params }) => {
       const vehicleNo = decodeURIComponent(params[0]);
-      return ok(db.telematics.find((v: any) => v.vehicleNo === vehicleNo) ?? null);
+      const row = db.telematics.find((v: any) => v.vehicleNo === vehicleNo) ?? null;
+      return ok(row && withLiveGps(row, (await livePositions([vehicleNo]))[vehicleNo]));
     },
   ],
   [

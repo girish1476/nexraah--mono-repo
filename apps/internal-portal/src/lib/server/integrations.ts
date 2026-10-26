@@ -8,6 +8,7 @@ import {
   type IntegrationSwitches,
 } from '../integrations';
 import { AGENT, nearest } from './fuel';
+import { gpsSummary } from './gps';
 import { envMailConfig, sendEmail, type MailConfig, type OutgoingEmail } from './mailer';
 import { command, peopleStoreConfigured } from './people-store';
 
@@ -155,6 +156,9 @@ function missingFor(def: IntegrationDef, r: Resolved): string | null {
   if (def.id === 'database') {
     return peopleStoreConfigured() ? null : 'Add Upstash Redis in Vercel → Storage, connect it to this project, then redeploy.';
   }
+  if (def.id === 'gps') {
+    return r.value.deviceKey ? null : 'Needs a device key: make one below and save it.';
+  }
   if (def.id === 'email') {
     const lacking = [
       !r.value.provider && 'a mail service',
@@ -216,6 +220,15 @@ export async function publicSwitches(): Promise<IntegrationSwitches> {
     whatsapp: on('whatsapp'),
     googleMapsKey: all.maps?.values?.googleMapsKey || null,
   };
+}
+
+/* ---- GPS tracking ----------------------------------------------------------- */
+
+/** The key a GPS device or app sends with each position; null when none is set, or GPS is switched off. */
+export async function gpsDeviceKey(): Promise<string | null> {
+  const all = await readOrNothing();
+  if (all.gps?.enabled === false) return null;
+  return resolve(integrationById('gps') as IntegrationDef, all.gps).value.deviceKey ?? null;
 }
 
 /* ---- sign-in email ---------------------------------------------------------- */
@@ -314,6 +327,9 @@ export async function saveIntegration(id: IntegrationId, change: IntegrationChan
     settingsChanged = true;
   }
 
+  // A test of the old settings says nothing about the new ones.
+  if (settingsChanged) record.lastTest = null;
+
   if (id === 'email' && settingsChanged) {
     const config = mailConfigOf(resolve(def, record));
     if (!config) throw new SettingRefused(`Not saved. ${missingFor(def, resolve(def, record)) ?? 'The email settings are not complete.'}`);
@@ -358,6 +374,12 @@ async function attempt(id: IntegrationId, admin: string): Promise<string> {
       if (pong !== 'PONG') throw new Error(`It answered "${pong}".`);
       return 'The shared database answered.';
     }
+    case 'gps': {
+      if (!(await gpsDeviceKey())) throw new Error('No device key is set, or GPS tracking is switched off.');
+      const { count, latest } = await gpsSummary();
+      if (!count) return 'Ready to receive positions. None has arrived yet — set up a phone or GPS unit as shown above.';
+      return `${count} truck${count === 1 ? ' has' : 's have'} reported. Latest: ${latest!.vehicleNo} at ${new Date(latest!.at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' })}.`;
+    }
     case 'maps': {
       const response = await get('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/5/14/22');
       const type = response.headers.get('content-type') ?? '';
@@ -397,6 +419,10 @@ async function attempt(id: IntegrationId, admin: string): Promise<string> {
       }
       return 'jsDelivr has both reader libraries ready.';
     }
+    case 'accounts':
+      return 'Nothing to connect: the journal is a file, downloaded from P&L → Export to the accounts.';
+    case 'bank':
+      return 'Nothing to connect: the statement is opened on Payments → Bank statement check.';
     case 'whatsapp':
       return 'Nothing to connect: a WhatsApp link opens WhatsApp on the phone or computer it is tapped on.';
   }

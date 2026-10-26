@@ -10,7 +10,18 @@
  * list in the same change that makes the console use it.
  */
 
-export type IntegrationId = 'email' | 'database' | 'maps' | 'geocode' | 'fuel' | 'ifsc' | 'reader' | 'whatsapp';
+export type IntegrationId =
+  | 'email'
+  | 'database'
+  | 'gps'
+  | 'maps'
+  | 'geocode'
+  | 'fuel'
+  | 'ifsc'
+  | 'reader'
+  | 'whatsapp'
+  | 'accounts'
+  | 'bank';
 
 export interface IntegrationField {
   key: string;
@@ -22,6 +33,8 @@ export interface IntegrationField {
   options?: { value: string; label: string }[];
   /** The deployment setting (Vercel → Environment Variables) used when nothing is saved here. */
   env?: string[];
+  /** A key the console makes up itself, with a button, rather than one from a provider's account. */
+  generate?: boolean;
 }
 
 export interface IntegrationDef {
@@ -43,6 +56,8 @@ export interface IntegrationDef {
   offMeans?: string;
   /** Set up in the hosting dashboard only — this screen shows whether it is working. */
   hostOnly?: boolean;
+  /** How to connect it, step by step. `{origin}` is this console's own address. */
+  setup?: string[];
   fields: IntegrationField[];
 }
 
@@ -94,6 +109,35 @@ export const INTEGRATIONS: IntegrationDef[] = [
     canSwitchOff: false,
     hostOnly: true,
     fields: [],
+  },
+  {
+    id: 'gps',
+    name: 'GPS tracking',
+    emoji: '📡',
+    provider: 'Any GPS device or tracking app that can send a web request — e.g. the free Traccar Client app',
+    what: 'Takes each truck’s live position as its GPS unit or the driver’s phone reports it, and puts it on the fleet board and the order’s truck map.',
+    where: 'Fleet board, Order → Tracking',
+    cost: 'Free. A driver’s phone with Traccar Client costs nothing; a fitted GPS unit is the transporter’s own. One report every 5 minutes per truck stays well inside the shared database’s free allowance.',
+    signUp: { label: 'Traccar Client (Android / iPhone)', href: 'https://www.traccar.org/client/' },
+    canSwitchOff: true,
+    offMeans: 'Positions sent in are refused; the maps show only what Ops types in.',
+    setup: [
+      'Make a device key below, copy it, and save.',
+      'Phone: install Traccar Client. Device identifier = the truck number (e.g. MH12QR8841). Server URL = {origin}/api/telematics/ping?key=YOUR-KEY. Frequency = 300 seconds. Switch tracking on.',
+      'GPS unit or provider: send each position to {origin}/api/telematics/ping as JSON { vehicleNo, at, lat, lng, speedKmph, fuelPct }, with the key in the "Authorization: Bearer" header — or sign the body with HMAC-SHA256 in "X-Telematics-Signature".',
+      'Positions show on the fleet board and the order’s Tracking tab while that truck is on an open trip.',
+    ],
+    fields: [
+      {
+        key: 'deviceKey',
+        label: 'Device key',
+        secret: true,
+        generate: true,
+        placeholder: 'Make one with the button below',
+        hint: 'Every device and app sends this with each position. Changing it stops the old one working.',
+        env: ['TELEMATICS_SECRET'],
+      },
+    ],
   },
   {
     id: 'maps',
@@ -173,6 +217,28 @@ export const INTEGRATIONS: IntegrationDef[] = [
     cost: 'Free — no key',
     canSwitchOff: true,
     offMeans: 'The WhatsApp button is taken off; SMS and Copy stay.',
+    fields: [],
+  },
+  {
+    id: 'accounts',
+    name: 'Accounting export',
+    emoji: '🧾',
+    provider: 'Tally, Zoho Books, Busy — any system that imports a journal file',
+    what: 'Gives the books every issued invoice, receipt and transporter payment as a double-entry journal. One way: the console is not the books of account.',
+    where: 'P&L → Export to the accounts',
+    cost: 'Free — a file, no connection',
+    canSwitchOff: false,
+    fields: [],
+  },
+  {
+    id: 'bank',
+    name: 'Bank statement check',
+    emoji: '🏛️',
+    provider: 'Your bank’s statement, downloaded as CSV',
+    what: 'Looks for every released payment’s UTR in the bank’s own statement, to catch a UTR keyed wrong.',
+    where: 'Payments → Bank statement check',
+    cost: 'Free — the statement is read in the browser and not uploaded',
+    canSwitchOff: false,
     fields: [],
   },
 ];

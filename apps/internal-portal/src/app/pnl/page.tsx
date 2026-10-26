@@ -20,6 +20,7 @@ import {
   Tag,
 } from '@/lib/ui';
 import { getPnl, getPnlExceptions, pnlExportUrl } from './apis';
+import { JournalExport } from './journal-export';
 import { Granularity, PnlException, PnlResponse, PnlRow } from './types';
 
 /** P&L — `/pnl` (part 10 §3). */
@@ -183,6 +184,7 @@ export default function PnlPage() {
             />
           </Panel>
         )}
+        <JournalExport />
       </Stack>
     </ModuleGuard>
   );

@@ -7,6 +7,7 @@ import {
   ReactNode,
   useCallback,
   useEffect,
+  useRef,
 } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
@@ -798,8 +799,21 @@ export function Journey({
   const nowIndex = done - 1;
   const nextIndex = done;
 
+  // On a narrow screen the strip scrolls sideways and opened on the first
+  // steps, so the step the load is at was out of sight. It opens centred on it.
+  const rail = useRef<HTMLOListElement>(null);
+  useEffect(() => {
+    const ol = rail.current;
+    const here = ol?.querySelector<HTMLElement>('.is-now, .is-stuck');
+    if (!ol || !here || ol.scrollWidth <= ol.clientWidth + 1) return;
+    const box = ol.getBoundingClientRect();
+    const at = here.getBoundingClientRect();
+    ol.scrollLeft += at.left + at.width / 2 - (box.left + box.width / 2);
+  }, [done, stuck]);
+
   return (
     <ol
+      ref={rail}
       className="journey"
       aria-label={
         stuck

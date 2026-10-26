@@ -16,7 +16,8 @@ let asked: Promise<IntegrationSwitches> | null = null;
 export function integrationSwitches(): Promise<IntegrationSwitches> {
   if (!asked) {
     asked =
-      typeof window === 'undefined' || typeof fetch === 'undefined'
+      // No server to ask during unit tests (VITEST is never set in a browser build).
+      typeof window === 'undefined' || typeof fetch === 'undefined' || process.env.VITEST
         ? Promise.resolve(ALL_ON)
         : fetch('/api/integrations/public', { cache: 'no-store' })
             .then((r) => (r.ok ? (r.json() as Promise<Partial<IntegrationSwitches>>) : {}))

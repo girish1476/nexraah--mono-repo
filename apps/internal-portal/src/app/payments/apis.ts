@@ -1,4 +1,5 @@
 import { idempotent, request } from '@/apis';
+import type { PaymentToCheck } from '@/lib/accounting';
 import {
   AdvanceDetail,
   AdvanceQueueRow,
@@ -103,4 +104,9 @@ export function acceptBill(
 /** POST /payments/bills/:id/query — notifies the transporter; the bill stays open. */
 export function queryBill(id: string, note: string) {
   return request<VendorBill>({ url: `/payments/bills/${id}/query`, method: 'POST', data: { note } });
+}
+
+/** GET /payments/released — every payment released to a transporter, with its UTR, for the bank-statement check. */
+export function listReleasedPayments() {
+  return request<PaymentToCheck[]>({ url: '/payments/released', method: 'GET' });
 }

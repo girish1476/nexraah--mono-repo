@@ -132,11 +132,25 @@ function IntegrationCard({
   const [busy, setBusy] = useState<'save' | 'switch' | 'test' | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [tested, setTested] = useState<IntegrationState['lastTest']>(null);
+  /** Keys made on this screen, by field, until saved. */
+  const [made, setMade] = useState<Record<string, string>>({});
+  // This console's own address, for the setup steps — known only in the browser.
+  const [origin, setOrigin] = useState('');
+  useEffect(() => setOrigin(window.location.origin), []);
+
+  const makeKey = (key: string) => {
+    const bytes = new Uint8Array(24);
+    crypto.getRandomValues(bytes);
+    const value = Array.from(bytes, (b) => 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'[b % 56]).join('');
+    setMade((m) => ({ ...m, [key]: value }));
+    setSecrets((s) => ({ ...s, [key]: value }));
+  };
 
   // A fresh copy from the server replaces whatever was typed.
   useEffect(() => {
     setValues(state?.values ?? {});
     setSecrets({});
+    setMade({});
   }, [state]);
 
   const status = statusOf(state);
@@ -248,6 +262,17 @@ function IntegrationCard({
           </div>
         )}
 
+        {def.setup && (
+          <details className="integ-setup">
+            <summary>How to connect it</summary>
+            <ol>
+              {def.setup.map((step) => (
+                <li key={step}>{step.replace(/\{origin\}/g, origin)}</li>
+              ))}
+            </ol>
+          </details>
+        )}
+
         {def.hostOnly && (
           <p className="muted integ-small">
             {state?.missing ?? 'Set up in Vercel → Storage, so there is nothing to change here. The test below checks that it answers.'}
@@ -278,7 +303,8 @@ function IntegrationCard({
                   ) : field.secret ? (
                     <input
                       id={`integ-${def.id}-${field.key}`}
-                      type="password"
+                      // A key made here is shown until it is saved, so it can be copied to the devices.
+                      type={made[field.key] && secrets[field.key] === made[field.key] ? 'text' : 'password'}
                       autoComplete="off"
                       spellCheck={false}
                       value={secrets[field.key] ?? ''}
@@ -305,6 +331,16 @@ function IntegrationCard({
                       <button type="button" className="integ-link" onClick={() => backToHost(field)} disabled={busy !== null}>
                         Use the Vercel setting instead
                       </button>
+                    )}
+                    {field.generate && canSave && (
+                      <button type="button" className="integ-link" onClick={() => makeKey(field.key)} disabled={busy !== null}>
+                        Make a key
+                      </button>
+                    )}
+                    {made[field.key] && secrets[field.key] === made[field.key] && (
+                      <span className="integ-field-hint">
+                        <strong>Copy this key now</strong> — once saved it is never shown again.
+                      </span>
                     )}
                     {field.hint && <span className="integ-field-hint">{field.hint}</span>}
                   </span>
