@@ -18,6 +18,7 @@ import { ApiError } from '@/apis';
 import { PublicTracking, getPublicTracking } from '@/app/trips/tracking-share';
 import { TRACKING_STATUS_LABEL } from '@/app/trips/types';
 import { fmtDateTime } from '@/lib/format';
+import { useIntegrationSwitches } from '@/lib/integration-switches';
 import { placeQuery, placeText, routeMapLink, routeMapSrc } from '@/lib/route-map';
 
 const REFRESH_MS = 60_000;
@@ -115,6 +116,7 @@ export default function PublicTrackingPage() {
 }
 
 function Tracking({ t }: { t: PublicTracking }) {
+  const mapsKey = useIntegrationSwitches()?.googleMapsKey ?? undefined;
   const step = stepOf(t);
   const origin = placeQuery(t.loading, t.fromCity);
   const destination = placeQuery(t.unloading, t.toCity);
@@ -167,7 +169,7 @@ function Tracking({ t }: { t: PublicTracking }) {
         <iframe
           title={`Route — ${t.fromCity ?? 'loading point'} to ${t.toCity ?? 'unloading point'}`}
           className="map-embed"
-          src={routeMapSrc(origin, destination, via)}
+          src={routeMapSrc(origin, destination, via, mapsKey)}
           loading="lazy"
           referrerPolicy="no-referrer-when-downgrade"
         />

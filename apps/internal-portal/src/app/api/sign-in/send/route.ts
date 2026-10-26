@@ -11,7 +11,7 @@ import {
 } from '@/lib/server/sign-in-code';
 import { allowedPerson } from '@/lib/server/people-store';
 import { renderSignInEmail } from '@/lib/server/sign-in-email';
-import { sendEmail } from '@/lib/server/mailer';
+import { sendMail } from '@/lib/server/integrations';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,7 +24,7 @@ function sendFailureHint(reason: string): string {
   if (r.includes('unrecognised ip') || r.includes('unrecognized ip') || r.includes('ip address'))
     return `The mail service is blocking this server's address: in Brevo, open Security → Authorized IPs and switch the blocking off. ${detail}`;
   if (r.includes('key not found') || r.includes('api key') || r.includes('unauthorized') || r.includes('(401)'))
-    return `The mail service did not accept the key: check BREVO_API_KEY, then redeploy. ${detail}`;
+    return `The mail service did not accept the key: check the key under Control → Integrations (or BREVO_API_KEY in Vercel). ${detail}`;
   if (r.includes('sender'))
     return `The sender address is not verified with the mail service: verify it in Brevo, and make EMAIL_FROM match it exactly. ${detail}`;
   if (r.includes('not yet activated') || r.includes('not activated') || r.includes('(403)'))
@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
     logoUrl: process.env.EMAIL_LOGO_URL || `${request.nextUrl.origin}/nexraah-logo.png`,
   });
   try {
-    await sendEmail({ to: email, ...message, refId: randomUUID() });
+    await sendMail({ to: email, ...message, refId: randomUUID() });
   } catch (e) {
     const reason = (e as Error).message;
     console.error('[sign-in] email failed:', reason);

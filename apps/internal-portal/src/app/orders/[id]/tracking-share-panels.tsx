@@ -4,11 +4,14 @@ import { useEffect, useState } from 'react';
 import { errorMessage } from '@/apis';
 import { RoutePoints, ShareState, createShare, saveRoutePoints, stopShare } from '@/app/trips/tracking-share';
 import { RoutePoint, coordsFrom, placeLink, placeQuery, smsLink, whatsappLink } from '@/lib/route-map';
+import { useIntegrationSwitches } from '@/lib/integration-switches';
 import { Banner, Field, FormGrid, Panel, Tag, useToast } from '@/lib/ui';
 
 /** A phone number box with the two ways to send: WhatsApp, or a normal text message. */
 function SendRow({ message, label }: { message: string; label: string }) {
   const toast = useToast();
+  /** Switched off under Control → Integrations: SMS and Copy stay. */
+  const whatsappOn = useIntegrationSwitches()?.whatsapp !== false;
   const [phone, setPhone] = useState('');
   const copy = async () => {
     try {
@@ -32,9 +35,11 @@ function SendRow({ message, label }: { message: string; label: string }) {
           aria-label={`Mobile number to send the ${label} to`}
         />
       </label>
-      <a className="btn btn-sm share-wa" href={whatsappLink(message, phone)} target="_blank" rel="noreferrer">
-        💬 WhatsApp
-      </a>
+      {whatsappOn && (
+        <a className="btn btn-sm share-wa" href={whatsappLink(message, phone)} target="_blank" rel="noreferrer">
+          💬 WhatsApp
+        </a>
+      )}
       <a className="btn btn-secondary btn-sm" href={smsLink(message, phone)}>
         ✉️ SMS
       </a>

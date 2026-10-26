@@ -7,6 +7,7 @@ import { TRACKING_STATUS_LABEL } from '@/app/trips/types';
 import type { TrackingKind, TrackingSheet, TrackingStatus, TrackingUpdate } from '@/app/trips/types';
 import { RoutePoints, ShareState, getRoutePoints, getShare } from '@/app/trips/tracking-share';
 import { fmtDate, fmtDateTime } from '@/lib/format';
+import { useIntegrationSwitches } from '@/lib/integration-switches';
 import { placeQuery, placeText, routeMapLink, routeMapSrc } from '@/lib/route-map';
 import { TruckMap } from '@/components/truck-map';
 import type { OrderStatus } from '../types';
@@ -75,6 +76,7 @@ export function OrderTrackingTab({
 }) {
   const can = useCan();
   const toast = useToast();
+  const mapsKey = useIntegrationSwitches()?.googleMapsKey ?? undefined;
   const [sheet, setSheet] = useState<TrackingSheet | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -465,7 +467,7 @@ export function OrderTrackingTab({
         <iframe
           title={`Route — ${sheet.fromCity ?? 'loading point'} to ${sheet.toCity ?? 'unloading point'}`}
           className="map-embed"
-          src={routeMapSrc(origin, destination, via)}
+          src={routeMapSrc(origin, destination, via, mapsKey)}
           style={{ width: '100%', height: 360, border: 0, display: 'block' }}
           loading="lazy"
           referrerPolicy="no-referrer-when-downgrade"

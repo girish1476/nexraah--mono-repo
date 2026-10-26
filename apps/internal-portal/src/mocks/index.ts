@@ -1,5 +1,6 @@
 import { answerLocally } from './assistant';
 import { ReaderUnavailable, readDetails } from '../lib/free-reader';
+import { integrationSwitches } from '../lib/integration-switches';
 import { planRecovery } from './sdr-recovery';
 import { computeTransitPenalty } from './transit-penalty';
 import { bandPositionFor } from './band-position';
@@ -1490,6 +1491,8 @@ async function readHere(blob: Blob, mime: string, fields: unknown) {
   if (blob.size > 10 * 1024 * 1024) fail(400, 'FILE_TOO_LARGE', 'File exceeds the 10MB limit.');
   if (mime !== 'application/pdf' && !mime.startsWith('image/'))
     fail(422, 'OCR_UNREADABLE', 'Only a PDF or a photo can be read automatically. Type the details in by hand.');
+  if (!(await integrationSwitches()).reader)
+    return fail(503, 'OCR_NOT_SET_UP', 'The document reader is switched off under Control → Integrations. Type the details in by hand.');
   try {
     return ok(await readDetails(blob, mime, fields as never));
   } catch (e) {

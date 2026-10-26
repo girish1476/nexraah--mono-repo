@@ -12,6 +12,7 @@ import { capitalizeWords } from '@/lib/format';
 import { INDIAN_STATES } from '@/lib/geo';
 import { checkGstin } from '@/lib/gstin';
 import { IfscLookupResult, lookupIfsc } from '@/lib/ifsc';
+import { integrationSwitches } from '@/lib/integration-switches';
 import { TRUCK_TYPES } from '@/lib/vehicles';
 import {
   Banner,
@@ -1040,7 +1041,9 @@ function useIfscLookup(value: string | undefined, shapeRe: RegExp): IfscLookupRe
     }
 
     const controller = new AbortController();
-    const timer = setTimeout(() => {
+    const timer = setTimeout(async () => {
+      // Switched off under Control → Integrations: the code is taken, the branch is not shown.
+      if (!(await integrationSwitches()).ifsc || controller.signal.aborted) return;
       lookupIfsc(code, controller.signal)
         .then(setResult)
         .catch((e) => {

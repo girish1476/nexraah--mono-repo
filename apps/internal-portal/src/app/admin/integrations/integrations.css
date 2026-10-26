@@ -1,0 +1,179 @@
+/* Integrations — one card per outside service, two to a row on a wide screen. */
+
+.integ-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(min(440px, 100%), 1fr));
+  align-items: start;
+  margin-top: 16px;
+}
+
+.integ-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.integ-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-divider);
+}
+.integ-title {
+  flex: 1;
+  min-width: 0;
+}
+.integ-title h2 {
+  font-size: 17px;
+  line-height: 1.25;
+}
+.integ-title .muted {
+  font-size: var(--text-sm);
+  margin-top: 2px;
+}
+
+.integ-body {
+  display: grid;
+  gap: 14px;
+  padding: 14px 16px;
+}
+.integ-what {
+  margin: 0;
+  line-height: 1.5;
+}
+.integ-small {
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.integ-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px 16px;
+  margin: 0;
+}
+.integ-facts dt {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-soft);
+}
+.integ-facts dd {
+  margin: 2px 0 0;
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+
+/* The on/off switch: the same shape as the dark-mode switch in the top bar. */
+.integ-switch-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-sunken);
+}
+.integ-switch {
+  flex: none;
+  width: 46px;
+  height: 26px;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--color-divider-strong);
+  border-radius: var(--radius-pill);
+  background: var(--color-neutral-300);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.integ-switch.is-on {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+.integ-switch:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.integ-switch:focus-visible {
+  outline: 2px solid var(--color-accent-400);
+  outline-offset: 2px;
+}
+.integ-switch-knob {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--transition-fast);
+}
+.integ-switch.is-on .integ-switch-knob {
+  transform: translateX(20px);
+}
+
+.integ-fields {
+  display: grid;
+  gap: 12px;
+}
+.integ-source {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+.integ-hint {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+  font-weight: 600;
+}
+.integ-field-hint {
+  flex-basis: 100%;
+}
+.integ-link {
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: var(--color-accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.integ-link:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.integ-result {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid;
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.integ-result.is-good {
+  background: var(--mint-tint);
+  border-color: var(--mint-edge);
+}
+.integ-result.is-bad {
+  background: var(--red-tint);
+  border-color: var(--red-edge);
+}
+
+.integ-foot {
+  margin-top: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--color-divider);
+}
+.integ-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}

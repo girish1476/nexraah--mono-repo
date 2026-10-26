@@ -43,9 +43,10 @@ export function peopleStoreConfigured(): boolean {
   return config() !== null;
 }
 
-async function command<T>(args: (string | number)[], fetchImpl: typeof fetch = fetch): Promise<T> {
+/** One Redis command over the REST API. Shared with the integration settings kept in the same database. */
+export async function command<T>(args: (string | number)[], fetchImpl: typeof fetch = fetch): Promise<T> {
   const c = config();
-  if (!c) throw new Error('The people list is not set up on this deployment.');
+  if (!c) throw new Error('The shared database is not set up on this deployment.');
   const response = await fetchImpl(c.url, {
     method: 'POST',
     headers: { Authorization: `Bearer ${c.token}`, 'Content-Type': 'application/json' },
@@ -54,7 +55,7 @@ async function command<T>(args: (string | number)[], fetchImpl: typeof fetch = f
   });
   const payload = (await response.json().catch(() => ({}))) as { result?: T; error?: string };
   if (!response.ok || payload.error) {
-    throw new Error(`The people list could not be reached (${response.status}): ${payload.error ?? 'no reason given'}`);
+    throw new Error(`The shared database could not be reached (${response.status}): ${payload.error ?? 'no reason given'}`);
   }
   return payload.result as T;
 }

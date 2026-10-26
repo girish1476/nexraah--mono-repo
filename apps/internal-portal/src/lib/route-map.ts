@@ -36,11 +36,16 @@ export function placeQuery(point: RoutePoint | null | undefined, city: string | 
  * The embedded map: the driving route from the loading point to the unloading
  * point, through the truck's last known position when there is one.
  *
- * With `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` set it uses the Maps Embed API;
- * without one, Google's plain embed — same route, no key.
+ * With a Google Maps key — saved under Control → Integrations, else
+ * `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` — it uses the Maps Embed API; without one,
+ * Google's plain embed — same route, no key.
  */
-export function routeMapSrc(origin: string, destination: string, via?: string | null): string {
-  const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+export function routeMapSrc(
+  origin: string,
+  destination: string,
+  via?: string | null,
+  key: string | undefined = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY,
+): string {
   const o = encodeURIComponent(origin);
   const d = encodeURIComponent(destination);
   if (key) {

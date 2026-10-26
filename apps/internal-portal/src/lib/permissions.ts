@@ -956,6 +956,14 @@ export const NAV: NavGroup[] = [
         note: 'Who can sign in, and as which role',
         permission: 'config.manage',
       },
+      {
+        label: 'Integrations',
+        href: '/admin/integrations',
+        module: 'admin',
+        emoji: '🔌',
+        note: 'Outside services: their keys, on or off, and a test for each',
+        permission: 'config.manage',
+      },
       { label: 'Access control', href: '/admin/roles', module: 'admin', emoji: '👥' },
       { label: 'Branches', href: '/admin/branches', module: 'admin', emoji: '🏬' },
       {

@@ -3,6 +3,7 @@
 import './truck-map.css';
 
 import { PointerEvent as ReactPointerEvent, ReactNode, useEffect, useRef, useState } from 'react';
+import { integrationSwitches, useIntegrationSwitches } from '@/lib/integration-switches';
 
 /**
  * A place to put on the map: its coordinates when they are known, else the
@@ -48,6 +49,8 @@ async function lookUp(query: string): Promise<Pin | null> {
   if (!key) return null;
   const known = cached();
   if (key in known) return known[key];
+  // Switched off under Control → Integrations: a name is not looked up.
+  if (!(await integrationSwitches()).geocode) return null;
   try {
     const res = await fetch(
       `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=in&q=${encodeURIComponent(query)}`,
@@ -147,6 +150,7 @@ async function fuelWithin(metres: number, from: Pin): Promise<FuelStation[] | nu
 
 /** The nearest fuel stations to a point, nearest first; null when the search could not be made. */
 async function nearestFuel(from: Pin): Promise<FuelStation[] | null> {
+  if (!(await integrationSwitches()).fuel) return null;
   // Asked through the console's own server first (app/api/fuel): the map
   // service answers a request that says who it is, which a browser cannot.
   try {
@@ -356,6 +360,8 @@ export function TruckMap({
   const [drag, setDrag] = useState({ x: 0, y: 0 });
   const grip = useRef<{ id: number; x: number; y: number; ox: number; oy: number } | null>(null);
   const [style, pickStyle] = useMapStyle();
+  /** Nearest fuel is offered once it is known to be switched on (Control → Integrations). */
+  const fuelOn = useIntegrationSwitches()?.fuel === true;
   /** The nearest-fuel pop-up: shut, searching, the stations found, or that the search failed. */
   const [fuel, setFuel] = useState<{ open: boolean; state: 'idle' | 'searching' | 'found' | 'failed'; stations: FuelStation[] }>({
     open: false,
@@ -472,7 +478,7 @@ export function TruckMap({
       setFuel((f) => (stations === null ? { ...f, state: 'failed', stations: [] } : { ...f, state: 'found', stations })),
     );
   };
-  const fuelButton = (
+  const fuelButton = fuelOn && (
     <button type="button" className="btn btn-secondary btn-sm truck-map-fuel-btn" onClick={findFuel}>
       <span aria-hidden>⛽</span> Nearest fuel
     </button>
@@ -545,7 +551,7 @@ export function TruckMap({
         ))}
       </dl>
       {side.note && <div className="truck-map-side-note">“{side.note}”</div>}
-      <div className="truck-map-side-actions">{fuelButton}</div>
+      {fuelButton && <div className="truck-map-side-actions">{fuelButton}</div>}
     </aside>
   );
 
@@ -670,7 +676,7 @@ export function TruckMap({
         <div className="truck-map-credit">{STYLES[style].credit}</div>
 
         {over && card}
-        {!side && <div className="truck-map-fuel-solo">{fuelButton}</div>}
+        {!side && fuelButton && <div className="truck-map-fuel-solo">{fuelButton}</div>}
         {fuelPopup}
       </div>
       {!over && card}
