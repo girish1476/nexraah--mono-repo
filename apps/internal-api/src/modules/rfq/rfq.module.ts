@@ -8,5 +8,6 @@ import { RfqRepository } from './rfq.repository';
   imports: [ControlPanelModule],
   controllers: [RfqController],
   providers: [RfqService, RfqRepository],
+  exports: [RfqService],
 })
 export class RfqModule {}

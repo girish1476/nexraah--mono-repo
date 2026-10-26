@@ -27,6 +27,7 @@ import {
   useCan,
   useToast,
 } from '@/lib/ui';
+import { VENDOR_READ } from '@/lib/documents';
 import { UnmetCondition } from '@/apis';
 import {
   activateVendor,
@@ -77,6 +78,12 @@ const KYC_NUMBER_LABEL: Record<string, string> = {
   AADHAAR: 'Aadhaar number',
   ADDRESS: 'Reference',
 };
+
+/** What Fetch reads off a paper of this kind into its one number box — nothing, for a kind with no number on it. */
+function readFor(kind: string, document: string) {
+  const read = VENDOR_READ[kind];
+  return read?.fields.some((f) => f.key === 'reference') ? { document, docType: kind, fields: read.fields } : undefined;
+}
 
 /** "FY 2026-27" for the financial year (1 April – 31 March) a `YYYY-MM-DD` date falls in. */
 function financialYearLabel(date: string): string {
@@ -416,6 +423,7 @@ export default function VendorDetailPage() {
               imageOnly={r.kind === 'SELFIE'}
               normalize={KYC_NORMALIZE[r.kind]}
               validate={KYC_VALIDATE[r.kind]}
+              read={readFor(r.kind, KYC_TITLE[r.kind] ?? r.kind)}
               onUpload={(value, file) => onUploadKyc(r.kind, value, file)}
             />
           )}
@@ -502,6 +510,7 @@ export default function VendorDetailPage() {
               <UploadCell
                 placeholder="Reference or number"
                 needsReference={!yearly}
+                read={readFor(r.kind, title)}
                 onUpload={(value, file) => onUploadDocument(r.kind, value, file)}
               />
             )}

@@ -341,38 +341,6 @@ export default function IndentDetailPage() {
             <Panel title="Indent" pad={false}>
               <FactList facts={indentFacts.filter((f): f is [string, ReactNode] => f !== null)} />
             </Panel>
-
-            <Panel
-              title="Quotes"
-              right={
-                indent.stage === 'OPEN' && canAward ? (
-                  <button className="btn btn-sm" onClick={openQuoteDialog}>
-                    Enter a quote
-                  </button>
-                ) : undefined
-              }
-              pad={false}
-            >
-              <div className="muted" style={{ fontSize: 11.5, padding: '10px 14px 0' }}>
-                {bandText ? `Band ${bandText}` : 'No bid limits on this lane'}
-              </div>
-              <DataTable
-                columns={columns}
-                rows={[...indent.quotes].sort((a, b) => a.amountPaise - b.amountPaise)}
-                rowKey={(r) => r.id}
-                empty={
-                  <EmptyState
-                    title="No quotes yet"
-                    hint="Transporters quote from their own portal, or Operations can enter a quote a transporter gave by phone with “Enter a quote”. Once quotes are in, they’re ranked cheapest first with their band position, ready to accept."
-                  />
-                }
-              />
-              <div className="muted" style={{ fontSize: 11.5, padding: '10px 14px', lineHeight: 1.45 }}>
-                A quote below the floor is accepted and tagged “Below band” — cheaper is more margin, but check the
-                transporter can really run it at that price. An above-band quote is kept and shown, because it is the
-                honest market rate on that lane; awarding it goes to approval.
-              </div>
-            </Panel>
           </>
         }
       >
@@ -392,6 +360,38 @@ export default function IndentDetailPage() {
               </Banner>
             </div>
           )}
+        </Panel>
+
+        <Panel
+          title="Quotes"
+          right={
+            indent.stage === 'OPEN' && canAward ? (
+              <button className="btn btn-sm" onClick={openQuoteDialog}>
+                Enter a quote
+              </button>
+            ) : undefined
+          }
+          pad={false}
+        >
+          <div className="muted" style={{ fontSize: 11.5, padding: '10px 14px 0' }}>
+            {bandText ? `Band ${bandText}` : 'No bid limits on this lane'}
+          </div>
+          <DataTable
+            columns={columns}
+            rows={[...indent.quotes].sort((a, b) => a.amountPaise - b.amountPaise)}
+            rowKey={(r) => r.id}
+            empty={
+              <EmptyState
+                title="No quotes yet"
+                hint="Transporters quote from their own portal, or Operations can enter a quote a transporter gave by phone with “Enter a quote”. Once quotes are in, they’re ranked cheapest first with their band position, ready to accept."
+              />
+            }
+          />
+          <div className="muted" style={{ fontSize: 11.5, padding: '10px 14px', lineHeight: 1.45 }}>
+            A quote below the floor is accepted and tagged “Below band” — cheaper is more margin, but check the
+            transporter can really run it at that price. An above-band quote is kept and shown, because it is the
+            honest market rate on that lane; awarding it goes to approval.
+          </div>
         </Panel>
 
         <Panel title="Pricing" pad={false}>

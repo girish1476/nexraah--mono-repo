@@ -12,9 +12,17 @@
  * with its name on it, never a broken image.
  */
 
-const STORE_KEY = 'nexraah.mockfiles.v1';
+export const FILES_STORE_KEY = 'nexraah.mockfiles.v1';
+const STORE_KEY = FILES_STORE_KEY;
 const MAX_IMAGE_EDGE = 1400;
 const MAX_STORED_CHARS = 1_800_000;
+/*
+ * Every kept file together. The working data (`persist.ts`) lives in the same
+ * browser storage, and a few scans used to fill it — after which nothing the
+ * person did was saved any more, and a client added one visit was gone the
+ * next. The oldest files give way first; they fall back to the sample page.
+ */
+const MAX_TOTAL_CHARS = 2_400_000;
 
 export interface KeptFile {
   url: string;
@@ -38,7 +46,15 @@ function store(id: string, file: KeptFile) {
   if (file.url.length > MAX_STORED_CHARS) return;
   try {
     const all = stored();
+    delete all[id];
     all[id] = file;
+    // Keys come back in the order they were added, so the first is the oldest.
+    let total = Object.values(all).reduce((sum, f) => sum + f.url.length, 0);
+    for (const old of Object.keys(all)) {
+      if (total <= MAX_TOTAL_CHARS || old === id) break;
+      total -= all[old].url.length;
+      delete all[old];
+    }
     window.localStorage.setItem(STORE_KEY, JSON.stringify(all));
   } catch {
     // Out of room: it stays in memory for this session.

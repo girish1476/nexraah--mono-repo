@@ -1,6 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import { errorMessage } from '@/apis';
+import { readFile, type ReadField } from '@/lib/attachments';
+import { useToast } from '@/lib/ui';
 
 /**
  * A compact upload control for a table row — the vendor detail page's way to
@@ -11,6 +14,10 @@ import { useState } from 'react';
  * file never needs to touch `new/page.tsx`). A re-uploaded yard photo is held
  * to the same standard as the original: a photo from a GPS camera app with the
  * time and place printed on it, which Compliance checks.
+ *
+ * With `read`, a "Fetch" button appears once a file is picked: it reads the
+ * number off that file into the box, for the operator to check before
+ * uploading. Nothing is stored by fetching.
  */
 export function UploadCell({
   placeholder,
@@ -18,6 +25,7 @@ export function UploadCell({
   imageOnly = false,
   normalize,
   validate,
+  read,
   onUpload,
 }: {
   placeholder: string;
@@ -26,17 +34,24 @@ export function UploadCell({
   imageOnly?: boolean;
   normalize?: (value: string) => string;
   validate?: (value: string) => string | undefined;
+  /** What Fetch reads off the file: what the paper is called, its kind, and the `reference` box. */
+  read?: { document: string; docType: string; fields: ReadField[] };
   onUpload: (value: string, file: File) => void | Promise<void>;
 }) {
+  const toast = useToast();
   const [value, setValue] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
+  const [fetching, setFetching] = useState(false);
+  /** Shown under the box while it still holds what Fetch put there. */
+  const [fetchNote, setFetchNote] = useState<string | undefined>();
 
   const handleValueChange = (raw: string) => {
     const next = normalize ? normalize(raw) : raw;
     setValue(next);
     setError(validate ? validate(next) : undefined);
+    setFetchNote(undefined);
   };
 
   const canUpload = needsReference ? !!value.trim() && !error && !!file : !!file;
@@ -48,8 +63,28 @@ export function UploadCell({
       await onUpload(needsReference ? value.trim() : '', file);
       setValue('');
       setFile(null);
+      setFetchNote(undefined);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleFetch = async () => {
+    if (!read || !file || fetching) return;
+    setFetching(true);
+    try {
+      const reading = await readFile(file, read.document, read.fields, read.docType);
+      const found = reading.values.reference;
+      if (!found) {
+        toast(reading.notes.reference ?? 'That could not be read off this file — type it in.');
+        return;
+      }
+      handleValueChange(found);
+      setFetchNote(reading.notes.reference ?? 'Fetched from the file — check it');
+    } catch (e) {
+      toast(errorMessage(e));
+    } finally {
+      setFetching(false);
     }
   };
 
@@ -79,6 +114,16 @@ export function UploadCell({
         disabled={busy}
       />
       {error && needsReference && <span style={{ fontSize: 11, color: 'var(--red)' }}>{error}</span>}
+      {fetchNote && !error && (
+        <span className="muted" style={{ fontSize: 11 }}>
+          {fetchNote}
+        </span>
+      )}
+      {read && needsReference && (
+        <button className="btn btn-secondary btn-sm" disabled={!file || fetching || busy} onClick={handleFetch}>
+          {fetching ? 'Fetching…' : '✨ Fetch'}
+        </button>
+      )}
       <button className="btn btn-secondary btn-sm" disabled={!canUpload || busy} onClick={handleUpload}>
         {busy ? 'Uploading…' : 'Upload'}
       </button>

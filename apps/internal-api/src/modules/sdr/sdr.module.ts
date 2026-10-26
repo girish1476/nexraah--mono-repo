@@ -6,6 +6,6 @@ import { SdrRepository } from './sdr.repository';
 @Module({
   controllers: [SdrController],
   providers: [SdrService, SdrRepository],
-  exports: [SdrRepository],
+  exports: [SdrRepository, SdrService],
 })
 export class SdrModule {}

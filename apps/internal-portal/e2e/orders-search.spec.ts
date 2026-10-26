@@ -19,8 +19,6 @@ test.describe('orders search', () => {
   test.beforeEach(async ({ page }) => {
     await setRole(page, 'OPS');
     await page.goto('/orders');
-    // The default tab is "Action required"; search across every shipment.
-    await page.getByRole('tab', { name: /All shipments/ }).click();
     await expect(filter(page, 'vendor')).toBeVisible();
   });
 
@@ -48,7 +46,7 @@ test.describe('orders search', () => {
 
   test('Clear empties every box and brings the list back', async ({ page }) => {
     // Seven orders in the fixtures; waited for rather than counted, because the
-    // list still shows the "Action required" rows for a moment after the tab click.
+    // list takes a moment to load.
     const total = 7;
     await expect(rows(page)).toHaveCount(total);
     await filter(page, 'vendor').fill('rathod');

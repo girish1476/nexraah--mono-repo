@@ -11,6 +11,8 @@
  * the same rows.
  */
 
+import { FILES_STORE_KEY } from './files';
+
 // v4 (2 Oct 2026): records saved by earlier versions predate the order cycle
 // (tracking sheet, loading marks, E-POD/H-POD, rate basis) and behaved oddly on
 // the new screens, so every browser starts again from clean data.
@@ -83,10 +85,20 @@ export function persist(db: Record<string, any>, branches: any[]): void {
   pending = true;
   queueMicrotask(() => {
     pending = false;
+    const data = JSON.stringify({ ...db, __branches: branches });
     try {
-      window.localStorage.setItem(STORE_KEY, JSON.stringify({ ...db, __branches: branches }));
+      window.localStorage.setItem(STORE_KEY, data);
     } catch {
-      // Storage full or blocked: the console keeps working, it just will not survive a reload.
+      // Storage full. The uploaded files share it and matter less than the
+      // records — a file falls back to a sample page, a lost record has to be
+      // typed in again — so they are let go and the save is tried once more.
+      try {
+        window.localStorage.removeItem(FILES_STORE_KEY);
+        window.localStorage.setItem(STORE_KEY, data);
+      } catch {
+        // Still full, or blocked: the console keeps working, it just will not survive a reload.
+        console.warn('Nexraah: this browser has no room to save your work — it will be lost on reload.');
+      }
     }
   });
 }

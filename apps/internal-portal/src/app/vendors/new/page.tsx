@@ -6,7 +6,8 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { ApiError, errorMessage, request } from '@/apis';
-import { GOVERNMENT_CERTIFICATE_KINDS, VENDOR_DOC_KINDS, VENDOR_KYC_KINDS, docLabel } from '@/lib/documents';
+import { readFile, type ReadField, type Reading } from '@/lib/attachments';
+import { GOVERNMENT_CERTIFICATE_KINDS, VENDOR_DOC_KINDS, VENDOR_KYC_KINDS, VENDOR_READ, docLabel } from '@/lib/documents';
 import { capitalizeWords } from '@/lib/format';
 import { INDIAN_STATES } from '@/lib/geo';
 import { checkGstin } from '@/lib/gstin';
@@ -140,6 +141,8 @@ export default function VendorWizardPage() {
   const [lead, setLead] = useState<Lead | null>(null);
   /** Anything about that lead the operator has to know and act on by hand. */
   const [leadNote, setLeadNote] = useState<string | null>(null);
+  /** The Payment boxes Fetch filled from the cancelled cheque, and what it had to say about each. */
+  const [bankFetched, setBankFetched] = useState<Record<string, string>>({});
 
   useEffect(() => {
     listBranches()
@@ -380,6 +383,34 @@ export default function VendorWizardPage() {
     }
   };
 
+  /**
+   * The cancelled cheque is uploaded on this step and the bank details are
+   * asked for two steps on. Fetch reads them off the cheque once and carries
+   * them forward — into boxes still empty only, and marked there for checking.
+   */
+  const BANK_KEYS = ['bankAccount', 'ifsc', 'accountHolder'] as const;
+  const onBankRead = (reading: Reading) => {
+    const filled: Record<string, string> = {};
+    for (const key of BANK_KEYS) {
+      const found = reading.values[key];
+      if (!found || String(payment.getValues(key) ?? '').trim()) continue;
+      payment.setValue(key, found, { shouldValidate: true });
+      filled[key] = reading.notes[key] ?? 'Fetched from the cheque — check it';
+    }
+    setBankFetched((current) => ({ ...current, ...filled }));
+    const count = Object.keys(filled).length;
+    toast(
+      count === 0
+        ? 'The bank details could not be read off this file — type them in on the Payment step.'
+        : `Read ${count} of ${BANK_KEYS.length} bank details — check them on the Payment step.`,
+    );
+  };
+  const bankField = (key: (typeof BANK_KEYS)[number]) =>
+    payment.register(key, {
+      // Once a person has changed it, it is theirs, not the reader's.
+      onChange: () => setBankFetched(({ [key]: _gone, ...rest }) => rest),
+    });
+
   const onSubmitFile = async () => {
     if (!vendorId) return;
     setBusy(true);
@@ -545,6 +576,7 @@ export default function VendorWizardPage() {
                   normalize={KYC_NORMALIZE[k.kind]}
                   validate={KYC_VALIDATE[k.kind]}
                   imageOnly={k.kind === 'SELFIE'}
+                  read={VENDOR_READ[k.kind] && { document: k.label, docType: k.kind, fields: VENDOR_READ[k.kind].fields }}
                   onCapture={(value, file) => captureKyc(k.kind, value, file)}
                 />
               ))}
@@ -565,6 +597,8 @@ export default function VendorWizardPage() {
                   done={!!docsDone[d.kind]}
                   placeholder="Reference or number"
                   needsReference={d.needsReference !== false}
+                  read={VENDOR_READ[d.kind] && { document: d.label, docType: d.kind, fields: VENDOR_READ[d.kind].fields }}
+                  onRead={d.kind === 'BANK_STATEMENT' ? onBankRead : undefined}
                   onCapture={(value, file) => captureDoc(d.kind, value, file)}
                 />
               ))}
@@ -632,19 +666,29 @@ export default function VendorWizardPage() {
         {step === 3 && (
           <Panel title="4 · Payment">
             <FormGrid>
-              <Field label="Account number" required error={payment.formState.errors.bankAccount?.message}>
-                <input {...payment.register('bankAccount')} />
+              <Field
+                label="Account number"
+                required
+                error={payment.formState.errors.bankAccount?.message}
+                hint={bankFetched.bankAccount}
+              >
+                <input {...bankField('bankAccount')} />
               </Field>
-              <Field label="IFSC" required error={payment.formState.errors.ifsc?.message}>
+              <Field label="IFSC" required error={payment.formState.errors.ifsc?.message} hint={bankFetched.ifsc}>
                 <input
-                  {...payment.register('ifsc')}
+                  {...bankField('ifsc')}
                   onBlur={(e) => payment.setValue('ifsc', e.target.value.toUpperCase())}
                 />
                 <IfscLookupHint result={ifscLookup} />
               </Field>
-              <Field label="Account holder" required error={payment.formState.errors.accountHolder?.message}>
+              <Field
+                label="Account holder"
+                required
+                error={payment.formState.errors.accountHolder?.message}
+                hint={bankFetched.accountHolder}
+              >
                 <input
-                  {...payment.register('accountHolder')}
+                  {...bankField('accountHolder')}
                   onBlur={(e) => payment.setValue('accountHolder', capitalizeWords(e.target.value))}
                 />
               </Field>
@@ -718,7 +762,12 @@ function CaptureRow({
   validate,
   imageOnly = false,
   needsReference = true,
+  read,
+  onRead,
 }: {
+  /** What Fetch reads off the picked file. `reference` goes into the number box; anything else is handed to `onRead`. */
+  read?: { document: string; docType: string; fields: ReadField[] };
+  onRead?: (reading: Reading) => void;
   label: string;
   note?: string;
   placeholder: string;
@@ -735,11 +784,41 @@ function CaptureRow({
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
+  const [fetching, setFetching] = useState(false);
+  /** Shown beside the box while it still holds what Fetch put there. */
+  const [fetchNote, setFetchNote] = useState<string | undefined>();
+  const toast = useToast();
 
   const handleValueChange = (raw: string) => {
     const next = normalize ? normalize(raw) : raw;
     setValue(next);
     setError(validate ? validate(next) : undefined);
+    setFetchNote(undefined);
+  };
+
+  /**
+   * "Fetch" — reads the number off the picked file into the box, for the
+   * operator to check before capturing. The file is read, not stored.
+   */
+  const handleFetch = async () => {
+    if (!read || !file || fetching) return;
+    setFetching(true);
+    try {
+      const reading = await readFile(file, read.document, read.fields, read.docType);
+      onRead?.(reading);
+      if (!needsReference) return;
+      const found = reading.values.reference;
+      if (!found) {
+        toast(reading.notes.reference ?? 'That could not be read off this file — type it in.');
+        return;
+      }
+      handleValueChange(found);
+      setFetchNote(reading.notes.reference ?? 'Fetched from the file — check it');
+    } catch (e) {
+      toast(errorMessage(e));
+    } finally {
+      setFetching(false);
+    }
   };
 
   const canCapture = needsReference ? !!value.trim() && !error && !!file : !!file;
@@ -792,6 +871,16 @@ function CaptureRow({
         />
       )}
       {error && needsReference && <span style={{ fontSize: 11.5, color: 'var(--red)' }}>{error}</span>}
+      {fetchNote && !error && !done && (
+        <span className="muted" style={{ fontSize: 11.5 }}>
+          {fetchNote}
+        </span>
+      )}
+      {read && !done && (needsReference || onRead) && (
+        <button className="btn btn-secondary btn-sm" disabled={!file || fetching || busy} onClick={handleFetch}>
+          {fetching ? 'Fetching…' : '✨ Fetch'}
+        </button>
+      )}
       {done ? (
         <Tag tone="flag">Uploaded · waiting for Compliance</Tag>
       ) : (

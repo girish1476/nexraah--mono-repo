@@ -6,5 +6,6 @@ import { TargetsRepository } from './targets.repository';
 @Module({
   controllers: [TargetsController],
   providers: [TargetsService, TargetsRepository],
+  exports: [TargetsService],
 })
 export class TargetsModule {}

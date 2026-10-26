@@ -77,8 +77,6 @@ test.describe('fleet board — manual update', () => {
     // The row shows the order and indent code, not the trip code, so the
     // search narrowing the table to one match is what's being relied on
     // here, not filtering rows by visible text afterward.
-    // The trip is delivered, so it is not under the default "Action required" tab.
-    await page.getByRole('tab', { name: /All shipments/ }).click();
     await page.locator('[data-filter="q"]').fill('120881');
     const orderRows = page.locator('table.table tbody tr');
     await expect(orderRows).toHaveCount(1);

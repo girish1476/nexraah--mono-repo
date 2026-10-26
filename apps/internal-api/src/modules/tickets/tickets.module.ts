@@ -10,5 +10,6 @@ import { TicketsRepository } from './tickets.repository';
 @Module({
   controllers: [TicketsController],
   providers: [TicketsService, TicketsRepository],
+  exports: [TicketsService],
 })
 export class TicketsModule {}

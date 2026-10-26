@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { errorMessage } from '@/apis';
 import { Column, DataTable, ErrorState, Loading, ModuleGuard, PageHeader, Panel, Tag, useCan, useToast } from '@/lib/ui';
+import { readDocument } from '@/lib/attachments';
+import { VENDOR_READ } from '@/lib/documents';
 import { backfillKycValue, getAttachmentUrl, getKycBackfillQueue, KycBackfillRow } from '../apis';
 
 const PAN_RE = /^[A-Z]{5}\d{4}[A-Z]$/;
@@ -28,6 +30,10 @@ const KYC_LABEL: Record<string, string> = { PAN: 'PAN card', AADHAAR: 'Aadhaar c
  * `lib/documents.ts`). The photo is the source of truth; this screen exists
  * so Compliance can open it and key in what it already says, without
  * disturbing whatever verification already happened.
+ *
+ * "Fetch" reads the number off the photo into the box, where reading identity
+ * papers has been switched on. It fills the box and nothing more — Compliance
+ * still looks at the photo and presses Save.
  */
 export default function KycBackfillPage() {
   const can = useCan();
@@ -38,6 +44,9 @@ export default function KycBackfillPage() {
   const [values, setValues] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [fetchingKey, setFetchingKey] = useState<string | null>(null);
+  /** Rows whose box still holds what Fetch put there, and what to say beside it. */
+  const [fetchNotes, setFetchNotes] = useState<Record<string, string>>({});
 
   const rowKey = (r: KycBackfillRow) => `${r.vendorId}:${r.kind}`;
 
@@ -62,6 +71,28 @@ export default function KycBackfillPage() {
     const next = KYC_NORMALIZE[kind] ? KYC_NORMALIZE[kind](raw) : raw;
     setValues((v) => ({ ...v, [key]: next }));
     setErrors((e) => ({ ...e, [key]: KYC_VALIDATE[kind]?.(next) }));
+    setFetchNotes(({ [key]: _gone, ...rest }) => rest);
+  };
+
+  const onFetch = async (r: KycBackfillRow) => {
+    const key = rowKey(r);
+    const read = VENDOR_READ[r.kind];
+    if (!read) return;
+    setFetchingKey(key);
+    try {
+      const reading = await readDocument(r.attachmentId, KYC_LABEL[r.kind], read.fields, r.kind);
+      const found = reading.values.reference;
+      if (!found) {
+        toast(reading.notes.reference ?? 'That could not be read off the photo — open it and type the value in.');
+        return;
+      }
+      onValueChange(key, r.kind, found);
+      setFetchNotes((n) => ({ ...n, [key]: reading.notes.reference ?? 'Fetched from the photo — check it' }));
+    } catch (e) {
+      toast(errorMessage(e));
+    } finally {
+      setFetchingKey(null);
+    }
   };
 
   const onSubmit = async (r: KycBackfillRow) => {
@@ -130,6 +161,18 @@ export default function KycBackfillPage() {
               disabled={busyKey === key}
             />
             {fieldError && <span style={{ fontSize: 11, color: 'var(--red)' }}>{fieldError}</span>}
+            {fetchNotes[key] && !fieldError && (
+              <span className="muted" style={{ fontSize: 11 }}>
+                {fetchNotes[key]}
+              </span>
+            )}
+            <button
+              className="btn btn-secondary btn-sm"
+              disabled={fetchingKey !== null || busyKey === key}
+              onClick={() => onFetch(r)}
+            >
+              {fetchingKey === key ? 'Fetching…' : '✨ Fetch'}
+            </button>
             <button
               className="btn btn-secondary btn-sm"
               disabled={!value.trim() || !!fieldError || busyKey === key}

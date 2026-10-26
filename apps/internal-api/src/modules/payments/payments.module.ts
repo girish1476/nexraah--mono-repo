@@ -11,5 +11,7 @@ import { PaymentsRepository } from './payments.repository';
   imports: [ControlPanelModule, OrdersModule, SdrModule, TripsModule],
   controllers: [PaymentsController],
   providers: [PaymentsService, PaymentsRepository],
+  // Read by the console's assistant, which answers from the same queues these screens show.
+  exports: [PaymentsService],
 })
 export class PaymentsModule {}
