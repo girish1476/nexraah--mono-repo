@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Patch, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Patch, Query, UseGuards } from '@nestjs/common';
 import { SupabaseJwtGuard } from '../../common/guards/supabase-jwt.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
@@ -12,6 +12,8 @@ import { CorrectVehicleDto } from './dto/correct-vehicle.dto';
 import { AdvancePctDto } from './dto/advance-pct.dto';
 import { RecordQuoteDto } from './dto/record-quote.dto';
 import { CancelIndentDto } from './dto/cancel-indent.dto';
+import { CorrectIndentDetailsDto, CorrectQuoteDto, RemoveQuoteDto } from './dto/correct-details.dto';
+import { assertAnyPermission } from '../../common/guards/assert-any-permission';
 
 @Controller('indents')
 @UseGuards(SupabaseJwtGuard, PermissionsGuard)
@@ -47,6 +49,40 @@ export class IndentsController {
   @RequirePermission('indent.manage')
   recordQuote(@Param('id') id: string, @Body() dto: RecordQuoteDto, @CurrentUser() user: AuthenticatedUser) {
     return this.indentsService.recordQuote(id, dto, user);
+  }
+
+  /**
+   * A load request put right — whoever can raise one or run one may correct it,
+   * so the check is "either", which the decorator cannot say.
+   */
+  @Patch(':id/details')
+  correctDetails(@Param('id') id: string, @Body() dto: CorrectIndentDetailsDto, @CurrentUser() user: AuthenticatedUser) {
+    assertAnyPermission(user, ['indent.manage', 'indent.create']);
+    return this.indentsService.correctDetails(id, dto, user);
+  }
+
+  /** A quote's amount put right, before or after the award. */
+  @Patch(':id/quotes/:quoteId')
+  @RequirePermission('indent.manage')
+  correctQuote(
+    @Param('id') id: string,
+    @Param('quoteId') quoteId: string,
+    @Body() dto: CorrectQuoteDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.indentsService.correctQuote(id, quoteId, dto, user);
+  }
+
+  /** A quote entered by mistake, removed — only before it is awarded. */
+  @Delete(':id/quotes/:quoteId')
+  @RequirePermission('indent.manage')
+  removeQuote(
+    @Param('id') id: string,
+    @Param('quoteId') quoteId: string,
+    @Body() dto: RemoveQuoteDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.indentsService.removeQuote(id, quoteId, dto, user);
   }
 
   @Post(':id/cancel')

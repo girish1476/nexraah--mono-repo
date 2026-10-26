@@ -132,6 +132,17 @@ export class ClientsRepository {
    * A duplicate taken off the rate card. The row stays — loads already raised
    * point at it — but every read of the rate card skips it from now on.
    */
+  /** A mistyped figure on a lane put right in place — who, when, why and what it said, kept on the lane. */
+  correctLane(db: DbExecutor, laneId: string, patch: Record<string, unknown>) {
+    return db
+      .updateTable('rate_card_lanes')
+      .set({ ...patch, updated_at: new Date().toISOString() })
+      .where('id', '=', laneId)
+      .where('deleted_at', 'is', null)
+      .returningAll()
+      .executeTakeFirst();
+  }
+
   markLaneDeleted(db: DbExecutor, laneId: string, by: { deleted_by: string; delete_reason: string }) {
     return db
       .updateTable('rate_card_lanes')

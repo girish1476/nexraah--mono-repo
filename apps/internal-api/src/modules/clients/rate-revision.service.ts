@@ -10,7 +10,8 @@ import { ProposeRateRevisionDto } from './dto/propose-rate-revision.dto';
 import { SetLaneBandDto } from './dto/set-lane-band.dto';
 import { checkRevision, revisionRows, type LaneForRevision } from './rate-revision';
 import { AddRateLaneDto } from './dto/add-rate-lane.dto';
-import { checkNewLane, routePart } from './rate-lane';
+import { checkNewLane, periodsOverlap, routePart } from './rate-lane';
+import type { CorrectRateLaneDto, EditPendingRateLaneDto, EditPendingRateRevisionDto } from './dto/correct-rate.dto';
 
 /** Replayed verbatim on approval. Only the id — everything else is re-read under lock. */
 interface RateRevisionAction {
@@ -44,6 +45,29 @@ export const RATE_DELETE_ROLES: readonly string[] = ['LEADERSHIP', 'ADMIN'];
 function assertCanDeleteRates(actor: AuthenticatedUser): void {
   if (!RATE_DELETE_ROLES.includes(actor.role)) {
     throw new DomainException(403, 'PERMISSION_DENIED', 'Only Leadership or an administrator can delete a rate.');
+  }
+}
+
+/**
+ * Who may put a rate right: whoever proposes rates (`rate.revise`), and
+ * Leadership or an administrator, who already delete them.
+ */
+function assertCanCorrectRates(actor: AuthenticatedUser): void {
+  if (actor.permissions.get('rate.revise') !== 'EDIT' && !RATE_DELETE_ROLES.includes(actor.role)) {
+    throw new DomainException(403, 'PERMISSION_DENIED', 'You cannot change a rate.');
+  }
+}
+
+/** The figures a lane or a proposal must still hold once corrected. */
+function assertLaneFigures(lane: { ratePaise: number; transitDays: number; validFrom: string; validTo: string | null }): void {
+  if (!Number.isInteger(lane.ratePaise) || lane.ratePaise < 1) {
+    throw new DomainException(400, 'VALIDATION_ERROR', 'The lane rate must be above zero.');
+  }
+  if (!Number.isInteger(lane.transitDays) || lane.transitDays < 0 || lane.transitDays > 60) {
+    throw new DomainException(400, 'VALIDATION_ERROR', 'Transit days should be a whole number of days.');
+  }
+  if (!lane.validFrom || (lane.validTo && lane.validTo < lane.validFrom)) {
+    throw new DomainException(400, 'RATE_LANE_BAD_DATES', 'The rate cannot end before it starts.');
   }
 }
 
@@ -447,6 +471,252 @@ export class RateRevisionService implements OnModuleInit {
       validFrom: r.action.validFrom,
       validTo: r.action.validTo,
     }));
+  }
+
+  // ---- Put a mistake right ----------------------------------------------
+  // A rate typed wrongly used to be fixable only by deleting it (Leadership or
+  // an administrator) and entering it again, and a rejected proposal was
+  // simply gone. These correct an agreed rate in place, a proposal where it
+  // waits, and keep a rejected proposal to be corrected and sent again.
+
+  /**
+   * An agreed rate put right at once — a mistyped figure, not a re-agreement,
+   * so the lane keeps its id and the loads raised on it. Loads already raised
+   * keep the freight they were raised at. The reason stays on the lane.
+   */
+  async correctLane(clientId: string, laneId: string, dto: CorrectRateLaneDto, actor: AuthenticatedUser) {
+    assertCanCorrectRates(actor);
+    const reason = (dto.reason ?? '').trim();
+    if (reason.length < 10) {
+      throw new DomainException(400, 'REASON_TOO_SHORT', 'Say why this rate is being corrected (at least 10 characters).');
+    }
+    const row = await this.clientsRepository.transaction().execute(async (trx) => {
+      const lane = await this.clientsRepository.findLaneForUpdate(trx, laneId);
+      if (!lane || lane.client_id !== clientId || lane.deleted_at) {
+        throw new DomainException(404, 'NOT_FOUND', 'That rate is not on this client’s rate card.');
+      }
+      const next = {
+        ratePaise: dto.ratePaise ?? Number(lane.rate),
+        rateBasis: dto.rateBasis ?? (lane.rate_basis as RateBasis),
+        transitDays: dto.transitDays ?? Number(lane.transit_days ?? 0),
+        validFrom: dto.validFrom ?? lane.valid_from,
+        validTo: dto.validTo !== undefined ? dto.validTo : lane.valid_to,
+      };
+      assertLaneFigures(next);
+      const was = {
+        ratePaise: Number(lane.rate),
+        rateBasis: lane.rate_basis,
+        transitDays: lane.transit_days,
+        validFrom: lane.valid_from,
+        validTo: lane.valid_to,
+      };
+      if (
+        next.ratePaise === was.ratePaise &&
+        next.rateBasis === was.rateBasis &&
+        next.transitDays === Number(was.transitDays ?? 0) &&
+        next.validFrom === was.validFrom &&
+        (next.validTo ?? null) === (was.validTo ?? null)
+      ) {
+        throw new DomainException(409, 'NOTHING_CHANGED', 'Nothing was changed.');
+      }
+      const sameRoute = await this.clientsRepository.findRouteLanes(clientId, lane.origin, lane.destination, lane.truck_type, trx);
+      const clash = sameRoute.find(
+        (l) => l.id !== lane.id && periodsOverlap({ from: next.validFrom, to: next.validTo ?? null }, { from: l.valid_from, to: l.valid_to }),
+      );
+      if (clash) {
+        throw new DomainException(400, 'RATE_LANE_LANE_EXISTS', 'Those dates overlap another agreed rate for the same route and truck type.');
+      }
+      const updated = await this.clientsRepository.correctLane(trx, lane.id, {
+        rate: next.ratePaise,
+        rate_basis: next.rateBasis,
+        transit_days: next.transitDays,
+        valid_from: next.validFrom,
+        valid_to: next.validTo ?? null,
+        corrected_at: new Date().toISOString(),
+        corrected_by: actor.userId,
+        correction_reason: reason,
+        corrected_from: JSON.stringify(was),
+      });
+      if (!updated) throw new DomainException(409, 'ALREADY_DELETED', 'That rate has been deleted.');
+      await this.auditService.record(trx, actor, {
+        action: 'RATE_LANE_CORRECTED',
+        entityType: 'rate_card_lanes',
+        entityId: lane.id,
+        before: was,
+        after: { ...next, reason },
+      });
+      return updated;
+    });
+    return {
+      id: row.id,
+      origin: row.origin,
+      destination: row.destination,
+      truckType: row.truck_type,
+      ratePaise: Number(row.rate),
+      rateBasis: row.rate_basis,
+      transitDays: row.transit_days,
+      validFrom: row.valid_from,
+      validTo: row.valid_to,
+      correctedAt: row.corrected_at,
+      correctionReason: row.correction_reason,
+      correctedFrom: row.corrected_from,
+    };
+  }
+
+  /** A proposed lane still waiting for sign-off, corrected where it waits. It stays waiting, with the new figures. */
+  async editPendingLane(clientId: string, approvalId: string, dto: EditPendingRateLaneDto, actor: AuthenticatedUser) {
+    assertCanCorrectRates(actor);
+    const client = await this.clientsRepository.findById(clientId);
+    if (!client) throw new DomainException(404, 'NOT_FOUND', `Unknown client: ${clientId}`);
+    const payload = await this.approvalsService.amend<RateCardLaneAction>(
+      approvalId,
+      actor,
+      { kind: 'RATE_CARD_LANE', entityType: 'clients', entityId: clientId },
+      async (stored) => {
+        const lane: RateCardLaneAction = {
+          ...stored.action,
+          ...(dto.origin !== undefined ? { origin: routePart(dto.origin) } : {}),
+          ...(dto.destination !== undefined ? { destination: routePart(dto.destination) } : {}),
+          ...(dto.truckType !== undefined ? { truckType: routePart(dto.truckType) } : {}),
+          ...(dto.ratePaise !== undefined ? { ratePaise: dto.ratePaise } : {}),
+          ...(dto.rateBasis !== undefined ? { rateBasis: dto.rateBasis } : {}),
+          ...(dto.transitDays !== undefined ? { transitDays: dto.transitDays } : {}),
+          ...(dto.validFrom !== undefined ? { validFrom: dto.validFrom } : {}),
+          ...(dto.validTo !== undefined ? { validTo: dto.validTo ?? null } : {}),
+        };
+        if (lane.origin.length < 2 || lane.destination.length < 2 || lane.truckType.length < 2) {
+          throw new DomainException(400, 'VALIDATION_ERROR', 'Truck type, from and to are all required.');
+        }
+        assertLaneFigures(lane);
+        const sameRoute = await this.clientsRepository.findRouteLanes(clientId, lane.origin, lane.destination, lane.truckType);
+        if (sameRoute.some((l) => periodsOverlap({ from: lane.validFrom, to: lane.validTo }, { from: l.valid_from, to: l.valid_to }))) {
+          throw new DomainException(
+            400,
+            'RATE_LANE_LANE_EXISTS',
+            'This client already has an agreed rate for that route and truck type over those dates.',
+          );
+        }
+        return {
+          payload: {
+            ...stored,
+            action: lane,
+            amountPaise: lane.ratePaise,
+            title: `New agreed rate · ${client.name} · ${lane.origin} → ${lane.destination}`,
+            detail:
+              `${rateLabel(lane.ratePaise, lane.rateBasis)} · ${lane.truckType} · ${lane.transitDays} days · from ${lane.validFrom}` +
+              (lane.transitPenaltyApplies ? ` · late penalty ${rupees(lane.transitPenaltyPerDayPaise)}/day` : ' · no late penalty') +
+              ` · mail: ${lane.approvalMailSubject} · corrected by ${actor.name}`,
+          },
+        };
+      },
+    );
+    const lane = payload.action;
+    return {
+      approvalId,
+      origin: lane.origin,
+      destination: lane.destination,
+      truckType: lane.truckType,
+      ratePaise: lane.ratePaise,
+      rateBasis: lane.rateBasis ?? 'FTL',
+      transitDays: lane.transitDays,
+      validFrom: lane.validFrom,
+      validTo: lane.validTo,
+    };
+  }
+
+  /** Proposed lanes that were turned down — kept, with what the approver wrote, to be corrected and sent again. */
+  async rejectedLanes(clientId: string) {
+    const rows = await this.approvalsService.rejectedFor<RateCardLaneAction>('RATE_CARD_LANE', 'clients', clientId);
+    return rows.map((r) => ({
+      approvalId: r.approvalId,
+      requesterName: r.requesterName,
+      rejectedAt: r.rejectedAt,
+      note: r.note,
+      reason: r.reason,
+      origin: r.action.origin,
+      destination: r.action.destination,
+      truckType: r.action.truckType,
+      ratePaise: r.action.ratePaise,
+      rateBasis: r.action.rateBasis ?? 'FTL',
+      transitDays: r.action.transitDays,
+      validFrom: r.action.validFrom,
+      validTo: r.action.validTo,
+      transitPenaltyApplies: r.action.transitPenaltyApplies,
+      transitPenaltyPerDayPaise: r.action.transitPenaltyPerDayPaise,
+      approvalMailSubject: r.action.approvalMailSubject,
+    }));
+  }
+
+  /** The corrected proposal went in; the turned-down one stops being offered. */
+  async dismissRejectedLane(clientId: string, approvalId: string, actor: AuthenticatedUser) {
+    assertCanCorrectRates(actor);
+    return this.approvalsService.markResubmitted(approvalId, actor, {
+      kind: 'RATE_CARD_LANE',
+      entityType: 'clients',
+      entityId: clientId,
+    });
+  }
+
+  /** A rate change still waiting for sign-off, corrected in place — the approver sees the corrected figures. */
+  async editPendingRevision(clientId: string, revisionId: string, dto: EditPendingRateRevisionDto, actor: AuthenticatedUser) {
+    assertCanCorrectRates(actor);
+    const revision = await this.clientsRepository.findRevision(revisionId);
+    if (!revision || revision.client_id !== clientId) {
+      throw new DomainException(404, 'NOT_FOUND', 'That rate change is not on this client.');
+    }
+    if (revision.status !== 'PENDING') {
+      throw new DomainException(409, 'ALREADY_DECIDED', 'Only a rate change still waiting for sign-off can be edited. Propose it again instead.');
+    }
+    const lane = await this.clientsRepository.findLane(revision.from_lane_id);
+    if (!lane || lane.deleted_at) {
+      throw new DomainException(404, 'NOT_FOUND', 'The lane this change was for is no longer on the rate card.');
+    }
+    const draft = {
+      newRatePaise: dto.newRatePaise ?? Number(revision.new_rate),
+      effectiveFrom: dto.effectiveFrom ?? String(revision.effective_from).slice(0, 10),
+      reason: dto.reason ?? revision.reason,
+    };
+    const check = checkRevision(toLane(lane), draft, new Date());
+    if (!check.ok) {
+      throw new DomainException(400, `RATE_REVISION_${check.refusal}`, check.reason ?? 'That revision is not valid.');
+    }
+    await this.clientsRepository.transaction().execute(async (trx) => {
+      await this.clientsRepository.updateRevision(trx, revisionId, {
+        new_rate: draft.newRatePaise,
+        effective_from: draft.effectiveFrom,
+        reason: draft.reason,
+      });
+      await this.auditService.record(trx, actor, {
+        action: 'RATE_REVISION_EDITED',
+        entityType: 'rate_revisions',
+        entityId: revisionId,
+        before: { newRatePaise: Number(revision.new_rate), effectiveFrom: revision.effective_from, reason: revision.reason },
+        after: draft,
+      });
+    });
+    if (revision.approval_id) {
+      await this.approvalsService.amend<RateRevisionAction>(
+        revision.approval_id,
+        actor,
+        { kind: 'RATE_REVISION', entityType: 'clients', entityId: clientId },
+        async (stored) => ({
+          payload: {
+            ...stored,
+            amountPaise: draft.newRatePaise,
+            detail: `${rupees(Number(lane.rate))} → ${rupees(draft.newRatePaise)} from ${draft.effectiveFrom} (${lane.truck_type}) · corrected by ${actor.name}`,
+          },
+          reason: draft.reason,
+        }),
+      );
+    }
+    return {
+      id: revisionId,
+      status: 'PENDING',
+      oldRatePaise: Number(revision.old_rate),
+      newRatePaise: draft.newRatePaise,
+      effectiveFrom: draft.effectiveFrom,
+      reason: draft.reason,
+    };
   }
 
   // ---- Delete a duplicate ---------------------------------------------

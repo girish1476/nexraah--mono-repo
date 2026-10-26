@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, UseGuards } from '@nestjs/common';
 import { IsString, MinLength } from 'class-validator';
 import { SupabaseJwtGuard } from '../../common/guards/supabase-jwt.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
@@ -10,6 +10,7 @@ import { RateRevisionService } from './rate-revision.service';
 import { ProposeRateRevisionDto } from './dto/propose-rate-revision.dto';
 import { AddRateLaneDto } from './dto/add-rate-lane.dto';
 import { SetLaneBandDto } from './dto/set-lane-band.dto';
+import { CorrectRateLaneDto, EditPendingRateLaneDto, EditPendingRateRevisionDto } from './dto/correct-rate.dto';
 
 /** Why a duplicate rate is being removed — kept with the deleted row and in the audit trail. */
 class DeleteRateDto {
@@ -61,6 +62,56 @@ export class RateRevisionController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.revisions.deleteLane(id, laneId, dto.reason, user);
+  }
+
+  /**
+   * Proposed lanes that were turned down, to be corrected and sent again.
+   * Declared before `:id/rate-card/pending/:approvalId` and the lane routes so
+   * "rejected" is never read as a lane id.
+   */
+  @Get(':id/rate-card/rejected')
+  rejectedLanes(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    assertAnyPermission(user, ['rate.revise', 'approve.contract', 'client.manage']);
+    return this.revisions.rejectedLanes(id);
+  }
+
+  /** A turned-down proposal put aside, once its corrected one has been sent. */
+  @Post(':id/rate-card/rejected/:approvalId/dismiss')
+  dismissRejectedLane(@Param('id') id: string, @Param('approvalId') approvalId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.revisions.dismissRejectedLane(id, approvalId, user);
+  }
+
+  /** A proposed lane still waiting for sign-off, corrected where it waits. Permission checked in the service. */
+  @Patch(':id/rate-card/pending/:approvalId')
+  editPendingLane(
+    @Param('id') id: string,
+    @Param('approvalId') approvalId: string,
+    @Body() dto: EditPendingRateLaneDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.revisions.editPendingLane(id, approvalId, dto, user);
+  }
+
+  /** An agreed rate typed wrongly, put right at once with a reason. Permission checked in the service. */
+  @Patch(':id/rate-card/:laneId')
+  correctLane(
+    @Param('id') id: string,
+    @Param('laneId') laneId: string,
+    @Body() dto: CorrectRateLaneDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.revisions.correctLane(id, laneId, dto, user);
+  }
+
+  /** A rate change still waiting for sign-off, corrected in place. Permission checked in the service. */
+  @Patch(':id/rate-revisions/:revisionId')
+  editPendingRevision(
+    @Param('id') id: string,
+    @Param('revisionId') revisionId: string,
+    @Body() dto: EditPendingRateRevisionDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.revisions.editPendingRevision(id, revisionId, dto, user);
   }
 
   /** Deletes a lane still waiting for sign-off. Leadership or an administrator only. */

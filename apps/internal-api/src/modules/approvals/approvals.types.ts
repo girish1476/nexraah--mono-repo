@@ -83,6 +83,11 @@ export interface ApprovalPayload<TAction = unknown> {
   detail: string;
   amountPaise: number | null;
   action: TAction;
+  /**
+   * Set on a turned-down request once a corrected one has been sent in its
+   * place, so it stops being offered to correct. Never fed back into a handler.
+   */
+  resubmittedAt?: string;
 }
 
 /**

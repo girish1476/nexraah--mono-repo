@@ -125,6 +125,10 @@ export class ClientsService {
       transitPenaltyApplies: r.transit_penalty_applies,
       transitPenaltyPerDayPaise: Number(r.transit_penalty_per_day),
       approvalMailSubject: r.approval_mail_subject,
+      // The last correction of a mistyped figure, where there was one.
+      correctedAt: r.corrected_at,
+      correctionReason: r.correction_reason,
+      correctedFrom: r.corrected_from,
     }));
   }
 

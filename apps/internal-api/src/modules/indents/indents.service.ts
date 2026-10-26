@@ -19,6 +19,8 @@ import type { PlacementDto } from './dto/placement.dto';
 import type { CorrectVehicleDto } from './dto/correct-vehicle.dto';
 import type { RecordQuoteDto } from './dto/record-quote.dto';
 import type { CancelIndentDto } from './dto/cancel-indent.dto';
+import type { CorrectIndentDetailsDto, CorrectQuoteDto, RemoveQuoteDto } from './dto/correct-details.dto';
+import { checkQuoteCorrection, checkQuoteRemoval, planLoadCorrection, rupees } from './corrections';
 
 /** An indent untouched this long is put in front of Operations and Leadership to cancel or keep. */
 export const STALE_INDENT_DAYS = 7;
@@ -170,6 +172,9 @@ export class IndentsService implements OnModuleInit {
       remarks: indent.remarks,
       vendorId: indent.vendor_id,
       vehicleNo: indent.vehicle_no,
+      // Shown, and corrected, on the load request ("Edit the load request").
+      pickupAddress: indent.pickup_address,
+      dropAddress: indent.drop_address,
       driverName: indent.driver_name,
       driverLicence: indent.driver_licence,
       driverPhone: indent.driver_phone,
@@ -763,6 +768,166 @@ export class IndentsService implements OnModuleInit {
         entityId: indentId,
         before: { vehicleNo: indent.vehicle_no },
         after: { vehicleNo, reason: dto.reason.trim() },
+      });
+    });
+    return this.getById(indentId);
+  }
+
+  // ---- Corrections ---------------------------------------------------
+  // A mistake put right at any point in the flow. The rules are in
+  // `corrections.ts`; each correction takes effect at once, is written to the
+  // order's comments with its reason, and is audited with what it used to say.
+
+  /** The note a correction leaves on the order, in the same transaction as the correction. */
+  private async noteOnOrder(
+    trx: Parameters<IndentsRepository['findByIdForUpdate']>[0],
+    indentId: string,
+    actor: AuthenticatedUser,
+    body: string,
+  ) {
+    const order = await trx.selectFrom('orders').select(['id']).where('indent_id', '=', indentId).executeTakeFirst();
+    // An indent whose order row has not been written yet (see `openOrder`) has nowhere to put the note; the audit below still has it.
+    if (!order) return;
+    await trx.insertInto('order_comments').values({ order_id: order.id, author_user_id: actor.userId, body }).execute();
+  }
+
+  /** The load's trip, locked, where it has one that was not cancelled. */
+  private liveTrip(trx: Parameters<IndentsRepository['findByIdForUpdate']>[0], indentId: string) {
+    return trx
+      .selectFrom('trips')
+      .select(['id', 'advance_paid', 'balance_paid'])
+      .where('indent_id', '=', indentId)
+      .where('stage', '!=', 'CANCELLED')
+      .forUpdate()
+      .executeTakeFirst();
+  }
+
+  /** `PATCH /indents/:id/details` — material, weight, truck type, pickup date, freight and the two addresses. */
+  async correctDetails(indentId: string, dto: CorrectIndentDetailsDto, actor: AuthenticatedUser) {
+    const reason = dto.reason.trim();
+    await this.indentsRepository.transaction().execute(async (trx) => {
+      const indent = await this.indentsRepository.findByIdForUpdate(trx, indentId);
+      if (!indent) throw new DomainException(404, 'NOT_FOUND', `Unknown indent: ${indentId}`);
+
+      const trip = await this.liveTrip(trx, indentId);
+      const invoiced = trip
+        ? !!(await trx
+            .selectFrom('invoice_trips')
+            .innerJoin('invoices', 'invoices.id', 'invoice_trips.invoice_id')
+            .select(['invoices.id'])
+            .where('invoice_trips.trip_id', '=', trip.id)
+            .where('invoices.status', '!=', 'CANCELLED')
+            .executeTakeFirst())
+        : false;
+
+      const plan = planLoadCorrection(
+        {
+          stage: indent.stage,
+          material: indent.material,
+          weightKg: Number(indent.weight_kg),
+          truckType: indent.truck_type,
+          pickupDate: String(indent.pickup_date),
+          sellRatePaise: Number(indent.sell_rate),
+          pickupAddress: indent.pickup_address,
+          dropAddress: indent.drop_address,
+        },
+        dto,
+        invoiced,
+      );
+      if (!plan.ok) throw new DomainException(plan.refusal.status, plan.refusal.code, plan.refusal.message);
+
+      await this.indentsRepository.update(trx, indentId, plan.indent);
+      if (trip && Object.keys(plan.trip).length > 0) {
+        await trx.updateTable('trips').set(plan.trip).where('id', '=', trip.id).execute();
+      }
+      await this.noteOnOrder(trx, indentId, actor, `✏️ Load request corrected — ${plan.lines.join('; ')}. Reason: ${reason}`);
+      await this.auditService.record(trx, actor, {
+        action: 'INDENT_CORRECTED',
+        entityType: 'indents',
+        entityId: indentId,
+        before: plan.before,
+        after: { ...plan.after, reason },
+      });
+    });
+    await this.syncOrder(indentId, actor);
+    return this.getById(indentId);
+  }
+
+  /**
+   * `PATCH /indents/:id/quotes/:quoteId` — a quote's amount put right. On an
+   * awarded quote that is the transporter's rate, so the load and its trip move
+   * with it; an advance already paid stays as paid.
+   */
+  async correctQuote(indentId: string, quoteId: string, dto: CorrectQuoteDto, actor: AuthenticatedUser) {
+    const reason = dto.reason.trim();
+    await this.indentsRepository.transaction().execute(async (trx) => {
+      const indent = await this.indentsRepository.findByIdForUpdate(trx, indentId);
+      if (!indent) throw new DomainException(404, 'NOT_FOUND', `Unknown indent: ${indentId}`);
+      const quote = await this.indentsRepository.findQuoteForUpdate(trx, quoteId);
+      if (!quote || quote.indent_id !== indentId) throw new DomainException(404, 'NOT_FOUND', 'Quote not found');
+
+      const trip = await this.liveTrip(trx, indentId);
+      const was = Number(quote.amount);
+      const check = checkQuoteCorrection(
+        { status: quote.status, amountPaise: was },
+        dto.amountPaise,
+        trip ? { advancePaidPaise: Number(trip.advance_paid), balancePaidPaise: Number(trip.balance_paid) } : null,
+      );
+      if (!check.ok) throw new DomainException(check.refusal.status, check.refusal.code, check.refusal.message);
+
+      // Below the floor is kept and flagged, not refused — the same as when it was entered.
+      const bandPosition = bandPositionFor(dto.amountPaise, indent.bid_min, indent.bid_max);
+      await trx.updateTable('quotes').set({ amount: dto.amountPaise, band_position: bandPosition }).where('id', '=', quoteId).execute();
+      if (quote.status === 'ACCEPTED') {
+        await this.indentsRepository.update(trx, indentId, { buy_rate: dto.amountPaise });
+        if (trip) await trx.updateTable('trips').set({ buy_rate: dto.amountPaise }).where('id', '=', trip.id).execute();
+      }
+
+      const vendor = await this.vendorsRepository.findById(quote.vendor_id);
+      await this.noteOnOrder(
+        trx,
+        indentId,
+        actor,
+        `✏️ Quote corrected — ${vendor?.legal_name ?? 'transporter'}: ${rupees(was)} → ${rupees(dto.amountPaise)}. Reason: ${reason}`,
+      );
+      await this.auditService.record(trx, actor, {
+        action: 'QUOTE_CORRECTED',
+        entityType: 'indents',
+        entityId: indentId,
+        before: { quoteId, amountPaise: was, awarded: quote.status === 'ACCEPTED' },
+        after: { quoteId, amountPaise: dto.amountPaise, bandPosition, reason },
+      });
+    });
+    await this.syncOrder(indentId, actor);
+    return this.getById(indentId);
+  }
+
+  /** `DELETE /indents/:id/quotes/:quoteId` — a quote entered by mistake, before any award. */
+  async removeQuote(indentId: string, quoteId: string, dto: RemoveQuoteDto, actor: AuthenticatedUser) {
+    const reason = dto.reason.trim();
+    await this.indentsRepository.transaction().execute(async (trx) => {
+      const indent = await this.indentsRepository.findByIdForUpdate(trx, indentId);
+      if (!indent) throw new DomainException(404, 'NOT_FOUND', `Unknown indent: ${indentId}`);
+      const quote = await this.indentsRepository.findQuoteForUpdate(trx, quoteId);
+      if (!quote || quote.indent_id !== indentId) throw new DomainException(404, 'NOT_FOUND', 'Quote not found');
+
+      const check = checkQuoteRemoval(quote.status, indent.stage);
+      if (!check.ok) throw new DomainException(check.refusal.status, check.refusal.code, check.refusal.message);
+
+      await trx.deleteFrom('quotes').where('id', '=', quoteId).execute();
+      const vendor = await this.vendorsRepository.findById(quote.vendor_id);
+      await this.noteOnOrder(
+        trx,
+        indentId,
+        actor,
+        `🗑️ Quote removed — ${vendor?.legal_name ?? 'transporter'} at ${rupees(Number(quote.amount))}. Reason: ${reason}`,
+      );
+      await this.auditService.record(trx, actor, {
+        action: 'QUOTE_REMOVED',
+        entityType: 'indents',
+        entityId: indentId,
+        before: { quoteId, vendorId: quote.vendor_id, amountPaise: Number(quote.amount) },
+        after: { removed: true, reason },
       });
     });
     return this.getById(indentId);

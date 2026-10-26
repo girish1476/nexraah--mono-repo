@@ -471,6 +471,11 @@ export interface RateCardLanesTable {
   deleted_at: string | null;
   deleted_by: string | null;
   delete_reason: string | null;
+  /** The last time a mistyped figure on this lane was put right — 20261011010000. */
+  corrected_at: string | null;
+  corrected_by: string | null;
+  correction_reason: string | null;
+  corrected_from: Json | null;
   created_at: Generated<string>;
   updated_at: Generated<string>;
 }

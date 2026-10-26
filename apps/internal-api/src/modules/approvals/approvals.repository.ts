@@ -65,6 +65,37 @@ export class ApprovalsRepository {
     return query.execute();
   }
 
+  /** A request's payload rewritten — only ever while it is still waiting (`ApprovalsService.amend`). */
+  async updatePayload(db: DbExecutor, id: string, payload: unknown, reason?: string) {
+    return db
+      .updateTable('approvals')
+      .set({ payload: JSON.stringify(payload), ...(reason !== undefined ? { reason } : {}), updated_at: new Date().toISOString() })
+      .where('id', '=', id)
+      .returningAll()
+      .executeTakeFirstOrThrow();
+  }
+
+  /** Turned-down requests about one thing, newest first, with what the approver wrote. */
+  async listRejectedFor(kind: string, entityType: string, entityId: string) {
+    return this.db
+      .selectFrom('approvals')
+      .innerJoin('users', 'users.id', 'approvals.requester_id')
+      .select([
+        'approvals.id as id',
+        'approvals.payload as payload',
+        'approvals.reason as reason',
+        'approvals.note as note',
+        'approvals.decided_at as decidedAt',
+        'users.name as requesterName',
+      ])
+      .where('approvals.kind', '=', kind)
+      .where('approvals.status', '=', 'REJECTED')
+      .where('approvals.entity_type', '=', entityType)
+      .where('approvals.entity_id', '=', entityId)
+      .orderBy('approvals.decided_at', 'desc')
+      .execute();
+  }
+
   async decide(
     db: DbExecutor,
     id: string,

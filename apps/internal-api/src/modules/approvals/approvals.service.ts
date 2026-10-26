@@ -228,6 +228,78 @@ export class ApprovalsService {
   }
 
   /**
+   * Corrects a request still waiting for its decision — a figure typed wrongly
+   * in a proposal. The approver then decides on the corrected request; nothing
+   * that was already decided can be amended. `change` gets the stored payload
+   * and returns the new one; it may refuse by throwing.
+   */
+  async amend<TAction>(
+    id: string,
+    actor: AuthenticatedUser,
+    expect: { kind: ApprovalKind; entityType: string; entityId: string },
+    change: (payload: ApprovalPayload<TAction>) => Promise<{ payload: ApprovalPayload<TAction>; reason?: string }>,
+  ): Promise<ApprovalPayload<TAction>> {
+    return this.approvalsRepository.transaction().execute(async (trx) => {
+      const row = await this.approvalsRepository.findById(trx, id);
+      if (!row || row.kind !== expect.kind || row.entity_type !== expect.entityType || row.entity_id !== expect.entityId) {
+        throw new DomainException(404, 'NOT_FOUND', `Unknown request: ${id}`);
+      }
+      if (row.status !== 'PENDING') {
+        throw new DomainException(409, 'ALREADY_DECIDED', `That request is already ${row.status.toLowerCase()}.`);
+      }
+      const before = row.payload as unknown as ApprovalPayload<TAction>;
+      const next = await change(before);
+      await this.approvalsRepository.updatePayload(trx, id, next.payload, next.reason);
+      await this.auditService.record(trx, actor, {
+        action: 'APPROVAL_AMENDED',
+        entityType: 'approvals',
+        entityId: id,
+        before: { amountPaise: before.amountPaise, detail: before.detail },
+        after: { amountPaise: next.payload.amountPaise, detail: next.payload.detail },
+      });
+      return next.payload;
+    });
+  }
+
+  /** Requests of one kind about one thing that were turned down and not yet sent again. */
+  async rejectedFor<TAction>(kind: ApprovalKind, entityType: string, entityId: string) {
+    const rows = await this.approvalsRepository.listRejectedFor(kind, entityType, entityId);
+    return rows
+      .map((r) => ({ ...r, payload: r.payload as unknown as ApprovalPayload<TAction> }))
+      .filter((r) => !r.payload.resubmittedAt)
+      .map((r) => ({
+        approvalId: r.id,
+        requesterName: r.requesterName,
+        rejectedAt: r.decidedAt,
+        note: r.note,
+        reason: r.reason,
+        action: r.payload.action,
+      }));
+  }
+
+  /** Marks a turned-down request as sent again, corrected — it stops being offered. */
+  async markResubmitted(id: string, actor: AuthenticatedUser, expect: { kind: ApprovalKind; entityType: string; entityId: string }) {
+    return this.approvalsRepository.transaction().execute(async (trx) => {
+      const row = await this.approvalsRepository.findById(trx, id);
+      if (!row || row.kind !== expect.kind || row.entity_type !== expect.entityType || row.entity_id !== expect.entityId) {
+        throw new DomainException(404, 'NOT_FOUND', `Unknown request: ${id}`);
+      }
+      if (row.status !== 'REJECTED') {
+        throw new DomainException(409, 'NOT_REJECTED', 'Only a request that was turned down can be put aside this way.');
+      }
+      const payload = { ...(row.payload as unknown as ApprovalPayload), resubmittedAt: new Date().toISOString() };
+      await this.approvalsRepository.updatePayload(trx, id, payload);
+      await this.auditService.record(trx, actor, {
+        action: 'APPROVAL_RESUBMITTED',
+        entityType: 'approvals',
+        entityId: id,
+        after: { resubmittedAt: payload.resubmittedAt },
+      });
+      return { approvalId: id };
+    });
+  }
+
+  /**
    * `requiredPermission` varies per kind (`REQUIRED_PERMISSION_BY_KIND`), so
    * a static `@RequirePermission(...)` on the controller route can't express
    * it — the check has to happen here, once the row's `kind` is known.
