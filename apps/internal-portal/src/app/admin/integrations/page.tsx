@@ -3,6 +3,7 @@
 import './integrations.css';
 
 import { useEffect, useState } from 'react';
+import { getToken } from '@/lib/auth';
 import { forgetIntegrationSwitches } from '@/lib/integration-switches';
 import { INTEGRATIONS, type IntegrationDef, type IntegrationField, type IntegrationState } from '@/lib/integrations';
 import { fmtDateTime } from '@/lib/format';
@@ -23,11 +24,16 @@ interface Loaded {
 }
 
 async function call<T>(url: string, init?: RequestInit): Promise<T> {
+  // With the real backend this server checks who you are from your sign-in token (lib/server/admin-session.ts).
+  const token = getToken();
   const response = await fetch(url, {
     credentials: 'same-origin',
     cache: 'no-store',
     ...init,
-    headers: init?.body ? { 'Content-Type': 'application/json' } : undefined,
+    headers: {
+      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
   });
   const payload = (await response.json().catch(() => ({}))) as T & { error?: string };
   if (!response.ok) throw new Error(payload.error ?? `The server answered ${response.status}.`);

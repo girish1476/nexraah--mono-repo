@@ -1,4 +1,5 @@
-import { request } from '@/apis';
+import { ApiError, request } from '@/apis';
+import { integrationSwitches } from './integration-switches';
 
 /**
  * Uploads a file through `/attachments` and returns its id — for the places that
@@ -51,12 +52,51 @@ export interface Reading {
  * 503 OCR_NOT_SET_UP when the server has no reader set up; 403 OCR_NOT_ALLOWED
  * for an identity paper where reading those has not been switched on.
  */
-export function readDocument(attachmentId: string, document: string, fields: ReadField[], docType?: string) {
-  return request<Reading>({
-    url: `/attachments/${attachmentId}/read`,
-    method: 'POST',
-    data: { document, fields, ...(docType ? { docType } : {}) },
-  });
+export async function readDocument(attachmentId: string, document: string, fields: ReadField[], docType?: string) {
+  try {
+    return await request<Reading>({
+      url: `/attachments/${attachmentId}/read`,
+      method: 'POST',
+      data: { document, fields, ...(docType ? { docType } : {}) },
+    });
+  } catch (e) {
+    if (!(await readHereInstead(e))) throw e;
+    // The file on its signed address, read here.
+    const { url, mime } = await request<{ url: string; mime?: string }>({ url: `/attachments/${attachmentId}/url`, method: 'GET' });
+    const blob = await (await fetch(url)).blob();
+    return readInBrowser(blob, mime || blob.type, fields, e);
+  }
+}
+
+/**
+ * Without the server's paid reader (no Anthropic key — the company runs on free
+ * services), "Fetch" reads the file here in the browser instead: the PDF's own
+ * text, or the open-source reader for a photo (`free-reader`). The same answer
+ * comes back either way, so the screens cannot tell which read it.
+ *
+ * Only when the server says it has no reader (`503 OCR_NOT_SET_UP`) — never
+ * when it refused for a reason that still holds here (an identity paper the
+ * company has not allowed to be read, a file that is not a document) — and only
+ * while the reader is switched on under Control → Integrations.
+ */
+async function readHereInstead(e: unknown): Promise<boolean> {
+  if (!(e instanceof ApiError) || e.code !== 'OCR_NOT_SET_UP') return false;
+  return (await integrationSwitches()).reader;
+}
+
+async function readInBrowser(blob: Blob, mime: string, fields: ReadField[], serverError: unknown): Promise<Reading> {
+  const { readDetails, ReaderUnavailable } = await import('./free-reader');
+  try {
+    return await readDetails(blob, mime, fields);
+  } catch (e) {
+    if (e instanceof ReaderUnavailable) {
+      throw new ApiError(503, 'OCR_NOT_SET_UP', 'The document reader could not be loaded — check the internet connection, or type the details in.');
+    }
+    if (e instanceof Error && /cannot be read automatically/.test(e.message)) {
+      throw new ApiError(422, 'OCR_UNREADABLE', 'Only a PDF or a photo can be read automatically. Type the details in by hand.');
+    }
+    throw serverError;
+  }
 }
 
 /**
@@ -64,11 +104,16 @@ export function readDocument(attachmentId: string, document: string, fields: Rea
  * so its number can be filled in beside the file picker. The file is read and
  * not kept; uploading it is still its own step.
  */
-export function readFile(file: File, document: string, fields: ReadField[], docType?: string) {
+export async function readFile(file: File, document: string, fields: ReadField[], docType?: string) {
   const form = new FormData();
   form.append('file', file);
   form.append('request', JSON.stringify({ document, fields, ...(docType ? { docType } : {}) }));
-  return request<Reading>({ url: '/attachments/read', method: 'POST', data: form });
+  try {
+    return await request<Reading>({ url: '/attachments/read', method: 'POST', data: form });
+  } catch (e) {
+    if (!(await readHereInstead(e))) throw e;
+    return readInBrowser(file, file.type, fields, e);
+  }
 }
 
 export async function uploadAttachment(file: File, kind: string, entityType: string, entityId: string): Promise<string> {
