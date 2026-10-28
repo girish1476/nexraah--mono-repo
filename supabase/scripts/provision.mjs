@@ -9,13 +9,20 @@
  *   3. real staff sign-ins: one Supabase Auth account per person, linked
  *      to a `users` row by `auth_user_id` — part 14 §4.1 (the seed does
  *      the same for fixtures; this does it for people)
- *   4. a check that the grants the whole design rests on actually held
+ *   4. transporter sign-ins: one Supabase Auth account per transporter login
+ *      (mobile number + password, kept as `<digits>@vendor.nexraah.in` — the
+ *      address the transporter portal signs in with), linked to its vendor
+ *      by `vendor_users`. Nothing else creates these: activating a
+ *      transporter does not (FLOWS.md §12), so without this step no
+ *      transporter can sign in to the portal.
+ *   5. a check that the grants the whole design rests on actually held
  *
  * Usage (from the repo root, with `pg` resolved from apps/internal-api):
  *
  *   node supabase/scripts/provision.mjs \
  *     --db-url "postgresql://postgres.<ref>:<db-password>@aws-0-<region>.pooler.supabase.com:5432/postgres" \
- *     --staff supabase/scripts/staff.json
+ *     --staff supabase/scripts/staff.json \
+ *     --transporters supabase/scripts/transporters.json
  *
  * Env: INTERNAL_API_DB_PASSWORD, VENDOR_API_DB_PASSWORD (step 1; skipped
  * with a warning if absent). Never pass the service-role key to anything.
@@ -38,6 +45,7 @@ const opt = (name) => {
 };
 const DB_URL = opt('--db-url') ?? process.env.SUPABASE_DB_URL;
 const STAFF_FILE = opt('--staff');
+const TRANSPORTERS_FILE = opt('--transporters');
 const DRY = args.includes('--dry-run');
 if (!DB_URL) {
   console.error('provision: --db-url (or SUPABASE_DB_URL) is required — the session-pooler URL as the postgres user.');
@@ -57,7 +65,7 @@ async function main() {
   const client = new Client({ connectionString: DB_URL, ssl: { rejectUnauthorized: false } });
   await client.connect();
   await client.query("set search_path to public, extensions");
-  const out = { rolesPasswordSet: [], bucket: null, staff: [], checks: {} };
+  const out = { rolesPasswordSet: [], bucket: null, staff: [], transporters: [], checks: {} };
 
   // ---- 0. sanity: were the migrations applied? ---------------------------
   const tables = (await client.query(
@@ -154,14 +162,14 @@ async function main() {
           if (hasProviderId) {
             await client.query(
               `insert into auth.identities (id, user_id, provider_id, identity_data, provider, created_at, updated_at)
-               values (gen_random_uuid(), $1, $1::text, jsonb_build_object('sub', $1::text, 'email', $2::text), 'email', now(), now())`,
-              [authId, email],
+               values (gen_random_uuid(), $1::uuid, $3::text, jsonb_build_object('sub', $3::text, 'email', $2::text), 'email', now(), now())`,
+              [authId, email, String(authId)],
             );
           } else {
             await client.query(
               `insert into auth.identities (id, user_id, identity_data, provider, created_at, updated_at)
-               values (gen_random_uuid(), $1, jsonb_build_object('sub', $1::text, 'email', $2::text), 'email', now(), now())`,
-              [authId, email],
+               values (gen_random_uuid(), $1::uuid, jsonb_build_object('sub', $3::text, 'email', $2::text), 'email', now(), now())`,
+              [authId, email, String(authId)],
             );
           }
           created = true;
@@ -177,7 +185,70 @@ async function main() {
     }
   }
 
-  // ---- 4. verify the grants that make the design hold ----------------------
+  // ---- 4. transporter sign-ins -----------------------------------------------
+  if (TRANSPORTERS_FILE) {
+    const list = JSON.parse(readFileSync(TRANSPORTERS_FILE, 'utf8'));
+    if (!Array.isArray(list)) throw new Error('--transporters must be a JSON array');
+    const hasProviderId = (await client.query(
+      "select 1 from information_schema.columns where table_schema='auth' and table_name='identities' and column_name='provider_id'",
+    )).rowCount === 1;
+
+    for (const t of list) {
+      const digits = String(t.mobile ?? '').replace(/\D/g, '').slice(-10);
+      const code = String(t.vendorCode ?? '').trim().toUpperCase();
+      if (!/^[6-9]\d{9}$/.test(digits) || !code) {
+        throw new Error(`transporter entry needs a 10-digit mobile and a vendorCode (VND-…): ${JSON.stringify(t)}`);
+      }
+      const email = `${digits}@vendor.nexraah.in`;
+      const vendor = (await client.query('select id, legal_name, status from vendors where code=$1', [code])).rows[0];
+      if (!vendor) throw new Error(`vendor ${code} does not exist — add the transporter in the console first`);
+      if (vendor.status !== 'ACTIVE') {
+        console.warn(`! ${code} (${vendor.legal_name}) is ${vendor.status} — the login is made, but the portal shows them nothing to quote on until they are cleared`);
+      }
+      if (DRY) { out.transporters.push({ mobile: digits, vendor: code, status: 'dry-run' }); continue; }
+
+      await client.query('begin');
+      try {
+        let authId = (await client.query('select id from auth.users where lower(email)=$1', [email])).rows[0]?.id ?? null;
+        let password = null;
+        if (!authId) {
+          password = t.password ?? randomBytes(9).toString('base64url');
+          authId = (await client.query('select gen_random_uuid() as id')).rows[0].id;
+          await client.query(
+            `insert into auth.users (instance_id, id, aud, role, email, encrypted_password,
+               email_confirmed_at, created_at, updated_at, raw_app_meta_data, raw_user_meta_data,
+               confirmation_token, recovery_token, email_change, email_change_token_new)
+             values ('00000000-0000-0000-0000-000000000000', $1, 'authenticated', 'authenticated', $2,
+               crypt($3, gen_salt('bf')), now(), now(), now(),
+               '{"provider":"email","providers":["email"]}'::jsonb, jsonb_build_object('name', $4::text, 'phone', $5::text), '', '', '', '')`,
+            [authId, email, password, vendor.legal_name, digits],
+          );
+          await client.query(
+            hasProviderId
+              ? `insert into auth.identities (id, user_id, provider_id, identity_data, provider, created_at, updated_at)
+                 values (gen_random_uuid(), $1::uuid, $3::text, jsonb_build_object('sub', $3::text, 'email', $2::text), 'email', now(), now())`
+              : `insert into auth.identities (id, user_id, identity_data, provider, created_at, updated_at)
+                 values (gen_random_uuid(), $1::uuid, jsonb_build_object('sub', $3::text, 'email', $2::text), 'email', now(), now())`,
+            [authId, email, String(authId)],
+          );
+        }
+        // One login is one transporter: `vendor_users.auth_user_id` is the primary key.
+        await client.query(
+          `insert into vendor_users (auth_user_id, vendor_id) values ($1, $2)
+           on conflict (auth_user_id) do update set vendor_id = excluded.vendor_id, updated_at = now()`,
+          [authId, vendor.id],
+        );
+        await client.query('commit');
+        out.transporters.push({ mobile: digits, vendor: code, status: password ? 'created' : 'linked-existing', password });
+        console.log(`✓ transporter ${code.padEnd(9)} ${digits}${password ? '  (new sign-in)' : '  (linked existing sign-in)'}`);
+      } catch (e) {
+        await client.query('rollback');
+        throw e;
+      }
+    }
+  }
+
+  // ---- 5. verify the grants that make the design hold ----------------------
   const q = async (sql) => (await client.query(sql)).rows[0].ok;
   out.checks.anonCannotReadVendors = !(await q("select has_table_privilege('anon','public.vendors','select') as ok"));
   out.checks.authenticatedCannotReadIndents = !(await q("select has_table_privilege('authenticated','public.indents','select') as ok"));
@@ -192,6 +263,11 @@ async function main() {
   if (newPw.length) {
     console.log('\nTemporary passwords (share privately, ask each person to change it after first sign-in):');
     for (const s of newPw) console.log(`  ${s.email}  ${s.password}`);
+  }
+  const newTransporters = out.transporters.filter((t) => t.password);
+  if (newTransporters.length) {
+    console.log('\nTransporter portal sign-ins — mobile number and password (share each privately with that transporter):');
+    for (const t of newTransporters) console.log(`  ${t.vendor}  ${t.mobile}  ${t.password}`);
   }
   if (bad.length) {
     console.error(`\n✗ grant checks failed: ${bad.join(', ')} — do not point a portal at this database until fixed.`);

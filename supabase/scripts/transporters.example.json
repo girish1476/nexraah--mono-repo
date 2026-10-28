@@ -1,0 +1,11 @@
+[
+  {
+    "mobile": "9880000001",
+    "vendorCode": "VND-0001"
+  },
+  {
+    "mobile": "9880000002",
+    "vendorCode": "VND-0002",
+    "password": "optional — left out, one is made up and printed"
+  }
+]

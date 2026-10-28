@@ -1,4 +1,11 @@
 # Render Blueprint — the two NestJS services behind the hosted portals.
+# Step-by-step: DEPLOY.md → "Going live".
+#
+# Free plan: a service sleeps after ~15 idle minutes and takes ~1 minute to
+# wake. Supabase's email hook gives up long before that, so keep
+# nexraah-internal-api awake (a free pinger on /api/v1/health every 10 minutes)
+# or put it on a paid plan. The free allowance (750 hours a month) keeps one
+# service awake all month, not two — let nexraah-vendor-api sleep.
 #
 # New → Blueprint → pick this repo. Render creates both services and asks
 # for every `sync: false` value below; paste them from the staging env sheet.
@@ -36,6 +43,24 @@ services:
       - key: SUPABASE_JWT_ISSUER
         sync: false
       - key: PORTAL_SERVICE_KEY
+        sync: false
+      # Sign-in codes by email: Supabase Auth's "Send Email" hook calls
+      # POST /api/v1/auth/email-hook here, and the code goes out through Resend.
+      # SEND_EMAIL_HOOK_SECRET is the secret Supabase shows when the hook is made.
+      - key: SEND_EMAIL_HOOK_SECRET
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: EMAIL_REPLY_TO
+        sync: false
+      - key: EMAIL_LOGO_URL
+        value: https://nexraah-mono-repo.vercel.app/nexraah-logo.png
+      # Optional, and paid: Anthropic's reader for "Fetch" and the assistant.
+      # Left empty, Fetch reads documents in the browser for free and the
+      # assistant says it is not set up.
+      - key: ANTHROPIC_API_KEY
         sync: false
 
   - type: web
