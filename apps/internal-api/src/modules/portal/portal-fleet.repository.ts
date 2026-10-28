@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
-import { DB } from '../../db/tokens';
+import { PORTAL_DB } from '../../db/tokens';
 import type { DbExecutor, PortalDb } from '../../db/kysely';
 
 /**
@@ -24,7 +24,7 @@ export function normaliseRegistration(value: string): string {
  */
 @Injectable()
 export class PortalFleetRepository {
-  constructor(@Inject(DB) private readonly db: PortalDb) {}
+  constructor(@Inject(PORTAL_DB) private readonly db: PortalDb) {}
 
   list(vendorId: string, status?: string) {
     let query = this.db

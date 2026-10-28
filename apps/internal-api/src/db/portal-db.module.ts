@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { Kysely, PostgresDialect } from 'kysely';
 import { portalPool } from './pools';
-import { DB } from './tokens';
+import { PORTAL_DB } from './tokens';
 import type { Database } from './types';
 
 const portalDb = new Kysely<Database>({
@@ -9,15 +9,16 @@ const portalDb = new Kysely<Database>({
 });
 
 /**
- * ADR-02 §3.1. Bound to the SAME `DB` token as `InternalDbModule`, but to
- * `portalPool` (role `vendor_api`) instead. Imported ONLY by `PortalModule`
- * — never made `@Global()`, and never imported by any other feature module.
- * A portal repository that ends up with `internalPool` is a lint-catchable
- * import mistake, not a silent one: this module is the one and only place
- * that binding can come from.
+ * ADR-02 §3.1. The transporter side's database: `portalPool` (role
+ * `vendor_api`), under a token of its own, `PORTAL_DB`. Imported ONLY by
+ * `PortalModule` — never made `@Global()`, and never imported by any other
+ * feature module.
+ *
+ * It used to bind the same `DB` token as the global `InternalDbModule`, which
+ * Nest resolved to the internal pool — see `tokens.ts`.
  */
 @Module({
-  providers: [{ provide: DB, useValue: portalDb }],
-  exports: [DB],
+  providers: [{ provide: PORTAL_DB, useValue: portalDb }],
+  exports: [PORTAL_DB],
 })
 export class PortalDbModule {}

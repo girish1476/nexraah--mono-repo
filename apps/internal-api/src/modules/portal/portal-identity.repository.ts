@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { sql } from 'kysely';
-import { DB } from '../../db/tokens';
+import { PORTAL_DB } from '../../db/tokens';
 import type { PortalDb } from '../../db/kysely';
 import { PORTAL_SYSTEM_USER_EMAIL, PORTAL_SYSTEM_USER_ID_ENV } from './portal.constants';
 import { portalError } from './portal.errors';
@@ -11,14 +11,14 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * `ADR-02` §4: `vendorId` is resolved here, from the JWT subject against
  * `vendor_users`. No header names the vendor.
  *
- * `DB` on this side of the wiring is `portalPool` (role `vendor_api`) — see
+ * `PORTAL_DB` is `portalPool` (role `vendor_api`) — see
  * `db/portal-db.module.ts`. `vendor_users` and `vendors` both carry a plain
  * `select` grant for that role (`20260814090200` §2), so this join is one of
  * the few portal queries that needs no column list.
  */
 @Injectable()
 export class PortalIdentityRepository {
-  constructor(@Inject(DB) private readonly db: PortalDb) {}
+  constructor(@Inject(PORTAL_DB) private readonly db: PortalDb) {}
 
   /**
    * `20260814090100` §vendor_users makes `auth_user_id` the primary key, so

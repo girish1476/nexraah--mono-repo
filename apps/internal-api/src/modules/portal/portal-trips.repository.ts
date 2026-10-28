@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
-import { DB } from '../../db/tokens';
+import { PORTAL_DB } from '../../db/tokens';
 import type { DbExecutor, PortalDb } from '../../db/kysely';
 import { PORTAL_POD_CODE_PREFIX } from './portal.constants';
 
@@ -19,7 +19,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  */
 @Injectable()
 export class PortalTripsRepository {
-  constructor(@Inject(DB) private readonly db: PortalDb) {}
+  constructor(@Inject(PORTAL_DB) private readonly db: PortalDb) {}
 
   transaction() {
     return this.db.transaction();

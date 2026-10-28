@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
-import { DB } from '../../db/tokens';
+import { PORTAL_DB } from '../../db/tokens';
 import type { DbExecutor, PortalDb } from '../../db/kysely';
 
 export interface PortalBusinessRow {
@@ -20,7 +20,7 @@ export interface PortalBusinessRow {
  */
 @Injectable()
 export class PortalProfileRepository {
-  constructor(@Inject(DB) private readonly db: PortalDb) {}
+  constructor(@Inject(PORTAL_DB) private readonly db: PortalDb) {}
 
   transaction() {
     return this.db.transaction();

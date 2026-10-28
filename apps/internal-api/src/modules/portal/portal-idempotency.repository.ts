@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { DB } from '../../db/tokens';
+import { PORTAL_DB } from '../../db/tokens';
 import type { DbExecutor, PortalDb } from '../../db/kysely';
 import { portalError } from './portal.errors';
 import { expose } from './portal.dto';
@@ -22,7 +22,7 @@ import { PortalWriteResult } from './portal.types';
  */
 @Injectable()
 export class PortalIdempotencyRepository {
-  constructor(@Inject(DB) private readonly db: PortalDb) {}
+  constructor(@Inject(PORTAL_DB) private readonly db: PortalDb) {}
 
   transaction() {
     return this.db.transaction();
