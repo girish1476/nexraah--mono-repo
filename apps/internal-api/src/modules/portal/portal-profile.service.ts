@@ -239,7 +239,7 @@ export class PortalProfileService {
       label: DOCUMENT_LABEL[kind] ?? kind,
       status,
       // `08-P7` §1 calls the rejection reason "the whole point of this screen".
-      // `20260830000000_c2_vendor_document_reject_reason.sql` added the column
+      // `20260830000001_c2_vendor_document_reject_reason.sql` added the column
       // that `vendor_kyc` and `vendor_documents` were the only document tables
       // to lack, so this is a real sentence now rather than an honest blank.
       //

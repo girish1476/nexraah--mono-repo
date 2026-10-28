@@ -10,7 +10,7 @@ export const APPROVAL_KINDS = [
   'BRANCH_OVERRIDE',
   // Added 2026-08-26 with the rate-card write path. The list is mirrored by a
   // check constraint on `approvals.kind` — widened in
-  // `20260826000000_rate_revision.sql`, because a kind this file knows about
+  // `20260826000001_rate_revision.sql`, because a kind this file knows about
   // and the database does not fails on insert at runtime, not at build.
   'RATE_REVISION',
   // `20260926010000_lane_band_and_advance_override.sql` — same rule as above:
