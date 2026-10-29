@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { createHash, randomUUID } from 'crypto';
 import { createSupabaseClient } from '../../lib/supabase';
+import { fileLink, putObject, s3Config } from '../../lib/object-store';
 import { validateEnv } from '../../config/env';
 import { portalError } from './portal.errors';
 import { ALLOWED_UPLOAD_MIME, ATTACHMENT_RETENTION_YEARS, MAX_UPLOAD_BYTES } from './portal.constants';
@@ -40,6 +41,8 @@ export class PortalStorageService {
   private readonly env = validateEnv(process.env as Record<string, unknown>);
   private readonly client = createSupabaseClient(this.env);
   private readonly bucket = this.env.STORAGE_BUCKET;
+  /** Storage's S3 keys — see lib/object-store.ts for why the anon client cannot write a private bucket. */
+  private readonly s3 = s3Config();
 
   /**
    * Size, sniffed MIME and hash, before a single byte reaches storage and
@@ -92,9 +95,16 @@ export class PortalStorageService {
     const id = randomUUID();
     const storagePath = `${category}/${scopeId}/${id}.${prepared.extension}`;
 
-    const { error } = await this.client.storage
-      .from(this.bucket)
-      .upload(storagePath, prepared.buffer, { contentType: prepared.mime, upsert: false });
+    const error = this.s3
+      ? await putObject(this.s3, storagePath, prepared.buffer, prepared.mime).then(
+          () => null,
+          (e: Error) => e,
+        )
+      : (
+          await this.client.storage
+            .from(this.bucket)
+            .upload(storagePath, prepared.buffer, { contentType: prepared.mime, upsert: false })
+        ).error;
 
     if (error) {
       // The provider's message can name the bucket and the object key; neither
@@ -119,6 +129,7 @@ export class PortalStorageService {
 
   /** 15 minutes, §4. Null rather than a throw — a missing link is not a failed read. */
   async signedUrl(storagePath: string): Promise<string | null> {
+    if (this.s3) return fileLink(this.s3, storagePath).url;
     try {
       const { data, error } = await this.client.storage
         .from(this.bucket)

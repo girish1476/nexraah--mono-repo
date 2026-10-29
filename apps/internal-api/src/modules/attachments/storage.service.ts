@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { createSupabaseClient } from '../../lib/supabase';
 import { validateEnv } from '../../config/env';
 import { DomainException } from '../../common/domain-exception';
+import { deleteObject, fileLink, getObject, putObject, s3Config } from '../../lib/object-store';
 
 const SIGNED_URL_TTL_SECONDS = 15 * 60; // 15 minutes — part 01 §7, 00-conventions §10
 
@@ -21,13 +22,26 @@ const SIGNED_URL_TTL_SECONDS = 15 * 60; // 15 minutes — part 01 §7, 00-conven
  * blanket ban, since Storage write is unavoidably a server-side privileged
  * operation). Flagging this rather than silently assuming: nothing in the
  * spec set names which route is intended.
+ *
+ * Resolved (29 Oct 2026): neither. With STORAGE_S3_* set — Storage's own S3
+ * access keys, which reach the bucket and not Postgres — every call below goes
+ * over S3 and reads are links this API signs (lib/object-store.ts). The anon
+ * client remains only for a setup without those keys, such as a local
+ * Supabase whose bucket policy admits it.
  */
 @Injectable()
 export class StorageService {
   private readonly client = createSupabaseClient(validateEnv(process.env as Record<string, unknown>));
   private readonly bucket = validateEnv(process.env as Record<string, unknown>).STORAGE_BUCKET;
+  private readonly s3 = s3Config();
 
   async upload(path: string, buffer: Buffer, mime: string): Promise<void> {
+    if (this.s3) {
+      await putObject(this.s3, path, buffer, mime).catch((e: Error) => {
+        throw new DomainException(502, 'STORAGE_UPLOAD_FAILED', e.message);
+      });
+      return;
+    }
     const { error } = await this.client.storage
       .from(this.bucket)
       .upload(path, buffer, { contentType: mime, upsert: false });
@@ -38,6 +52,12 @@ export class StorageService {
 
   /** The file's bytes, for the one server-side reader of a document — `modules/ocr`. Never sent to a browser from here. */
   async download(path: string): Promise<Buffer> {
+    if (this.s3) {
+      const object = await getObject(this.s3, path).catch((e: Error) => {
+        throw new DomainException(502, 'STORAGE_DOWNLOAD_FAILED', e.message);
+      });
+      return object.body;
+    }
     const { data, error } = await this.client.storage.from(this.bucket).download(path);
     if (error || !data) {
       throw new DomainException(502, 'STORAGE_DOWNLOAD_FAILED', error?.message ?? 'Unable to read the file.');
@@ -47,6 +67,12 @@ export class StorageService {
 
   /** `attachment-retention` (modules/jobs) is the one caller — everywhere else only ever uploads or signs. */
   async remove(path: string): Promise<void> {
+    if (this.s3) {
+      await deleteObject(this.s3, path).catch((e: Error) => {
+        throw new DomainException(502, 'STORAGE_DELETE_FAILED', e.message);
+      });
+      return;
+    }
     const { error } = await this.client.storage.from(this.bucket).remove([path]);
     if (error) {
       throw new DomainException(502, 'STORAGE_DELETE_FAILED', error.message);
@@ -54,6 +80,7 @@ export class StorageService {
   }
 
   async createSignedUrl(path: string): Promise<{ url: string; expiresAt: string }> {
+    if (this.s3) return fileLink(this.s3, path);
     const { data, error } = await this.client.storage
       .from(this.bucket)
       .createSignedUrl(path, SIGNED_URL_TTL_SECONDS);

@@ -70,9 +70,11 @@ begin
     from information_schema.columns
    where table_schema = 'public'
      and data_type in ('numeric','double precision','real','money')
-     -- The four known exceptions. A coordinate is not money; see the foot of
-     -- the schema migration. Anything else appearing here is a real finding.
-     and not (table_name in ('branches','telematics_pings') and column_name in ('lat','lng'));
+     -- Coordinates are the exception. A coordinate is not money (see the foot of
+     -- the schema migration); later migrations added them to attachments,
+     -- route points and tracking updates as well, named lat/lng or *_lat/*_lng.
+     -- Anything else appearing here is a real finding.
+     and column_name !~ '(^|_)(lat|lng)$';
   if bad is not null then
     raise exception 'NFR-09 FAILURE: approximate types on %', bad;
   end if;
