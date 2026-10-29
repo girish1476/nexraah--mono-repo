@@ -37,6 +37,34 @@ async function administratorFromBackend(authorization: string): Promise<{ email:
   return { email: String(body.data.email ?? '') };
 }
 
+/**
+ * Anyone signed in to the console, in either way the console runs: the
+ * `nx_session` cookie (browser-only console), or a Supabase token the backend
+ * recognises (real backend). Null for anyone else. For reads every desk may
+ * make — the live GPS positions.
+ */
+export async function signedInPerson(request: NextRequest): Promise<{ email: string } | null> {
+  const authorization = request.headers.get('authorization');
+  const base = process.env.NEXT_PUBLIC_API_BASE_URL;
+  if (process.env.NEXT_PUBLIC_USE_MOCKS === '0' && base && authorization?.startsWith('Bearer ')) {
+    try {
+      const response = await fetch(`${base.replace(/\/$/, '')}/auth/session`, {
+        headers: { Authorization: authorization },
+        cache: 'no-store',
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!response.ok) return null;
+      const body = (await response.json().catch(() => ({}))) as { data?: { email?: string } };
+      return body.data?.email ? { email: body.data.email } : null;
+    } catch {
+      return null;
+    }
+  }
+  const secret = process.env.SIGNIN_SECRET;
+  const email = secret ? openSession(secret, request.cookies.get(SESSION_COOKIE)?.value) : null;
+  return email ? { email } : null;
+}
+
 export async function administrator(request: NextRequest): Promise<{ email: string } | { refused: NextResponse }> {
   const authorization = request.headers.get('authorization');
   if (process.env.NEXT_PUBLIC_USE_MOCKS === '0' && authorization?.startsWith('Bearer ')) {

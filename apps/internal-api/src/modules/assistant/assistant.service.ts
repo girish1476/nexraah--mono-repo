@@ -4,6 +4,7 @@ import { DomainException } from '../../common/domain-exception';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
 import type { AssistantAnswer, AssistantChatDto, AssistantSource } from './assistant.dto';
 import { ASSISTANT_SYSTEM, callerContext } from './assistant.prompt';
+import { answerWithoutModel } from './assistant.local';
 import { AssistantTools } from './assistant.tools';
 
 /** How many rounds of lookups one question may take before the assistant has to answer with what it has. */
@@ -35,7 +36,7 @@ const ROLE_LABEL: Record<string, string> = {
  * recollection.
  *
  * Nothing is stored between questions; the console sends the conversation each
- * time. Off until `ANTHROPIC_API_KEY` is set.
+ * time. Without `ANTHROPIC_API_KEY` it answers by rule instead (assistant.local.ts).
  */
 @Injectable()
 export class AssistantService {
@@ -45,11 +46,13 @@ export class AssistantService {
   constructor(private readonly tools: AssistantTools) {}
 
   async chat(dto: AssistantChatDto, user: AuthenticatedUser): Promise<AssistantAnswer> {
-    if (!process.env.ANTHROPIC_API_KEY) {
-      throw new DomainException(503, 'ASSISTANT_NOT_SET_UP', 'The assistant is not set up yet.');
-    }
     if (dto.messages[dto.messages.length - 1].role !== 'user') {
       throw new DomainException(400, 'VALIDATION_ERROR', 'The conversation has to end with a question.');
+    }
+    // Without the paid model the same lookups answer by rule (assistant.local.ts): the
+    // company runs on free services, and Ask should still say something useful.
+    if (!process.env.ANTHROPIC_API_KEY) {
+      return answerWithoutModel(dto.messages[dto.messages.length - 1].content, user, this.tools);
     }
 
     const messages: Anthropic.MessageParam[] = dto.messages.map((m) => ({ role: m.role, content: m.content }));

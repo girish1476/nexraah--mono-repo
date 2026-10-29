@@ -28,9 +28,14 @@ export async function livePositions(vehicleNos: (string | null | undefined)[]): 
   const key = list.join('|');
   if (memo && memo.key === key && Date.now() - memo.at < MEMO_MS) return memo.value;
   try {
+    // The sign-in token, for a deployment on the real API (lib/server/admin-session.ts); the
+    // browser-only one signs in with a cookie and ignores it. Read here rather than through
+    // lib/auth, which imports the fixture adapter that imports this file.
+    const token = window.localStorage.getItem('token');
     const response = await fetch(`/api/telematics/positions?vehicles=${encodeURIComponent(list.join(','))}`, {
       cache: 'no-store',
       credentials: 'same-origin',
+      ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
     });
     if (!response.ok) return {};
     const body = (await response.json()) as { positions?: Record<string, LivePosition> };
@@ -40,4 +45,59 @@ export async function livePositions(vehicleNos: (string | null | undefined)[]): 
   } catch {
     return {};
   }
+}
+
+/* ---- laying a live position over a record ---------------------------------------
+   Used by the browser-only adapter (src/mocks) and, on the real API, by the
+   fleet board's and the tracking sheet's own calls (app/telematics/apis.ts,
+   app/trips/apis.ts). Never saved: the next report replaces it. */
+
+const later = (than: string | null | undefined, at: string) => !than || Date.parse(at) > Date.parse(than);
+
+interface BoardRow {
+  lastPingAt?: string | null;
+  speedKmph?: number | null;
+  fuelPct?: number | null;
+  alerts?: string[];
+}
+
+/**
+ * A fleet-board row with the truck's live GPS position over it, when one has
+ * come in since the row last changed. A fresh report means the truck is not
+ * dark; with the board's limit given, its speed is checked against it again.
+ */
+export function withLiveGps<T extends BoardRow>(row: T, live: LivePosition | undefined, overspeedKmph?: number | null): T {
+  if (!row || !live || !later(row.lastPingAt, live.at)) return row;
+  const speed = live.speedKmph ?? row.speedKmph ?? 0;
+  const alerts = (row.alerts ?? []).filter((a) => a !== 'DARK_VEHICLE' && (overspeedKmph == null || a !== 'OVERSPEED'));
+  if (overspeedKmph != null && speed > overspeedKmph) alerts.push('OVERSPEED');
+  return { ...row, lat: live.lat, lng: live.lng, speedKmph: speed, fuelPct: live.fuelPct ?? row.fuelPct, lastPingAt: live.at, lastUpdatedBy: 'GPS', alerts };
+}
+
+interface SheetLike {
+  vehicleNo: string | null;
+  departedAt: string | null;
+  deliveredAt: string | null;
+  updates: { recordedAt: string }[];
+}
+
+/** A tracking sheet with the truck's live GPS position as its newest update, while the truck is on the road. */
+export function withLiveUpdate<T extends SheetLike>(sheet: T, live: LivePosition | undefined): T {
+  if (!sheet.vehicleNo || !sheet.departedAt || sheet.deliveredAt || !live) return sheet;
+  const last = sheet.updates[sheet.updates.length - 1];
+  if (last && !later(last.recordedAt, live.at)) return sheet;
+  const speed = live.speedKmph;
+  const update = {
+    id: 'gps-live',
+    kind: 'UPDATE',
+    location: 'Live GPS position',
+    lat: live.lat,
+    lng: live.lng,
+    note: speed === null ? null : `${speed} km/h`,
+    status: speed === null ? null : speed >= 5 ? 'MOVING' : 'HALTED',
+    recordedAt: live.at,
+    recordedByName: 'GPS',
+    recordedByPhone: null,
+  };
+  return { ...sheet, updates: [...sheet.updates, update] };
 }

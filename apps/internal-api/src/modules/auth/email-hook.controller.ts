@@ -2,7 +2,7 @@ import { Body, Controller, Headers, HttpCode, HttpException, Post, Req } from '@
 import type { Request } from 'express';
 import { HookSignatureError, readHookPayload, SendEmailHookPayload, verifyHookSignature } from './send-email-hook';
 import { renderSignInEmail } from './sign-in-email';
-import { EmailNotConfiguredError, sendWithResend } from './resend';
+import { EmailNotConfiguredError, sendSignInEmail } from './resend';
 
 /**
  * `POST /api/v1/auth/email-hook` — Supabase Auth's "Send Email" hook.
@@ -44,7 +44,7 @@ export class EmailHookController {
 
     const email = renderSignInEmail({ code: to.code, email: to.email, logoUrl: process.env.EMAIL_LOGO_URL ?? null });
     try {
-      await sendWithResend({ to: to.email, ...email, idempotencyKey: id });
+      await sendSignInEmail({ to: to.email, ...email, idempotencyKey: id });
     } catch (e) {
       if (e instanceof EmailNotConfiguredError) throw hookError(503, e.message);
       throw hookError(502, (e as Error).message);

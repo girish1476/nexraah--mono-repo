@@ -2,7 +2,7 @@ import { createHmac } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HookSignatureError, readHookPayload, verifyHookSignature } from './send-email-hook';
 import { CODE_TTL_MINUTES, renderSignInEmail } from './sign-in-email';
-import { EmailNotConfiguredError, sendWithResend } from './resend';
+import { EmailNotConfiguredError, sendSignInEmail, sendWithBrevo, sendWithResend } from './resend';
 
 const SECRET_BYTES = Buffer.from('a-test-secret-of-some-length-1234');
 const SECRET = `v1,whsec_${SECRET_BYTES.toString('base64')}`;
@@ -117,5 +117,54 @@ describe('sending through Resend', () => {
     await expect(
       sendWithResend({ to: 'a@b.in', subject: 's', html: 'h', text: 't' }, fetchImpl as unknown as typeof fetch),
     ).rejects.toThrow(/403.*domain not verified/);
+  });
+});
+
+describe('sending through Brevo', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('posts the email from the verified sender, split into name and address', async () => {
+    vi.stubEnv('BREVO_API_KEY', 'xkeysib-test');
+    vi.stubEnv('EMAIL_FROM', 'Nexraah <no-reply-nexraah@gmail.com>');
+    vi.stubEnv('EMAIL_REPLY_TO', '');
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ messageId: '<m1>' }), { status: 201 }));
+    const result = await sendWithBrevo(
+      { to: 'anil@nexraah.in', subject: 'subj', html: '<p>h</p>', text: 't', idempotencyKey: 'msg_1' },
+      fetchImpl as unknown as typeof fetch,
+    );
+    expect(result.id).toBe('<m1>');
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('https://api.brevo.com/v3/smtp/email');
+    expect((init.headers as Record<string, string>)['api-key']).toBe('xkeysib-test');
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      sender: { name: 'Nexraah', email: 'no-reply-nexraah@gmail.com' },
+      to: [{ email: 'anil@nexraah.in' }],
+      textContent: 't',
+    });
+  });
+
+  it('is the one used when its key is set, and Resend otherwise', async () => {
+    vi.stubEnv('EMAIL_FROM', 'Nexraah <no-reply@nexraah.in>');
+    vi.stubEnv('RESEND_API_KEY', 're_test');
+    const fetchImpl = vi.fn(async () => new Response('{}', { status: 200 }));
+    vi.stubEnv('BREVO_API_KEY', 'xkeysib-test');
+    await sendSignInEmail({ to: 'a@b.in', subject: 's', html: 'h', text: 't' }, fetchImpl as unknown as typeof fetch);
+    vi.stubEnv('BREVO_API_KEY', '');
+    await sendSignInEmail({ to: 'a@b.in', subject: 's', html: 'h', text: 't' }, fetchImpl as unknown as typeof fetch);
+    expect(fetchImpl.mock.calls.map((c) => String((c as unknown[])[0]))).toEqual([
+      'https://api.brevo.com/v3/smtp/email',
+      'https://api.resend.com/emails',
+    ]);
+  });
+
+  it('reports Brevo refusing the email', async () => {
+    vi.stubEnv('BREVO_API_KEY', 'xkeysib-test');
+    vi.stubEnv('EMAIL_FROM', 'Nexraah <no-reply@nexraah.in>');
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ message: 'Key not found' }), { status: 401 }));
+    await expect(
+      sendWithBrevo({ to: 'a@b.in', subject: 's', html: 'h', text: 't' }, fetchImpl as unknown as typeof fetch),
+    ).rejects.toThrow(/401.*Key not found/);
   });
 });

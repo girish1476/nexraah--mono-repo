@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { positionsOf } from '@/lib/server/gps';
 import { integrationOn } from '@/lib/server/integrations';
 import { peopleStoreConfigured } from '@/lib/server/people-store';
-import { SESSION_COOKIE, openSession } from '@/lib/server/sign-in-code';
+import { signedInPerson } from '@/lib/server/admin-session';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,8 +17,7 @@ const json = (body: unknown, status = 200) =>
  * truck that has not reported is simply absent.
  */
 export async function GET(request: NextRequest) {
-  const secret = process.env.SIGNIN_SECRET;
-  if (!secret || !openSession(secret, request.cookies.get(SESSION_COOKIE)?.value)) {
+  if (!(await signedInPerson(request))) {
     return json({ error: 'Sign in to see where the trucks are.' }, 401);
   }
   if (!peopleStoreConfigured() || !(await integrationOn('gps'))) return json({ positions: {} });

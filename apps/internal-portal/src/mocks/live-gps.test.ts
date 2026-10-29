@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // What the console's server would answer: one live report for MH 04 TT 2019.
 const live = vi.hoisted(() => ({ positions: {} as Record<string, unknown> }));
-vi.mock('../lib/live-gps', () => ({
+vi.mock('../lib/live-gps', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/live-gps')>()),
   livePositions: vi.fn(async (vehicles: string[]) =>
     Object.fromEntries(vehicles.filter((v) => v in live.positions).map((v) => [v, live.positions[v]])),
   ),

@@ -1,4 +1,6 @@
 import { request } from '@/apis';
+import { MOCKS_ENABLED } from '@/mocks';
+import { livePositions, withLiveUpdate } from '@/lib/live-gps';
 import {
   CrossCheckResult,
   LorryReceipt,
@@ -210,8 +212,11 @@ export function deliverTrip(id: string, deliveredAt?: string) {
 /* ---- tracking sheet ------------------------------------------------------ */
 
 /** GET /trips/:id/tracking — the milestones and position updates, oldest first. */
-export function getTracking(id: string) {
-  return request<TrackingSheet>({ url: `/trips/${id}/tracking`, method: 'GET' });
+export async function getTracking(id: string) {
+  const sheet = await request<TrackingSheet>({ url: `/trips/${id}/tracking`, method: 'GET' });
+  // The truck's live GPS report as its newest update (the browser-only adapter does this itself).
+  if (MOCKS_ENABLED || !sheet.vehicleNo) return sheet;
+  return withLiveUpdate(sheet, (await livePositions([sheet.vehicleNo]))[sheet.vehicleNo]);
 }
 
 /**

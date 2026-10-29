@@ -1,7 +1,7 @@
 import { answerLocally } from './assistant';
 import { ReaderUnavailable, readDetails } from '../lib/free-reader';
 import { integrationSwitches } from '../lib/integration-switches';
-import { livePositions, type LivePosition } from '../lib/live-gps';
+import { livePositions, withLiveGps, withLiveUpdate } from '../lib/live-gps';
 import { journalLines } from '../lib/accounting';
 import { planRecovery } from './sdr-recovery';
 import { computeTransitPenalty } from './transit-penalty';
@@ -1074,44 +1074,11 @@ function releasedPayments() {
    are laid over what is saved here when a screen asks, and never saved into
    it: the next report replaces them. */
 
-const later = (than: string | null | undefined, at: string) => !than || Date.parse(at) > Date.parse(than);
-
-/** A fleet-board row with the truck's live GPS position over it, when one has come in since it last changed. */
-function withLiveGps(row: any, live: LivePosition | undefined) {
-  if (!row || !live || !later(row.lastPingAt, live.at)) return row;
-  const speed = live.speedKmph ?? row.speedKmph;
-  // A fresh report means the truck is not dark; its speed is checked against the limit again.
-  const alerts = (row.alerts ?? []).filter((a: string) => a !== 'DARK_VEHICLE' && a !== 'OVERSPEED');
-  if (speed > db.config.overspeed_kmph) alerts.push('OVERSPEED');
-  return { ...row, lat: live.lat, lng: live.lng, speedKmph: speed, fuelPct: live.fuelPct ?? row.fuelPct, lastPingAt: live.at, lastUpdatedBy: 'GPS', alerts };
-}
-
 /** The tracking sheet, with the truck's live GPS position as its latest update while it is on the road. */
 async function trackingSheetLive(trip: any) {
   const sheet = trackingSheetFor(trip);
   if (!trip.vehicleNo || !trip.departedAt || trip.deliveredAt) return sheet;
-  const live = (await livePositions([trip.vehicleNo]))[trip.vehicleNo];
-  const last = sheet.updates[sheet.updates.length - 1];
-  if (!live || (last && !later(last.recordedAt, live.at))) return sheet;
-  const speed = live.speedKmph;
-  return {
-    ...sheet,
-    updates: [
-      ...sheet.updates,
-      {
-        id: 'gps-live',
-        kind: 'UPDATE',
-        location: 'Live GPS position',
-        lat: live.lat,
-        lng: live.lng,
-        note: speed === null ? null : `${speed} km/h`,
-        status: speed === null ? null : speed >= 5 ? 'MOVING' : 'HALTED',
-        recordedAt: live.at,
-        recordedByName: 'GPS',
-        recordedByPhone: null,
-      },
-    ],
-  };
+  return withLiveUpdate(sheet as any, (await livePositions([trip.vehicleNo]))[trip.vehicleNo]);
 }
 
 /**
@@ -6375,7 +6342,7 @@ const routes: [string, RegExp, Handler][] = [
     const live = await livePositions(db.telematics.map((v: any) => v.vehicleNo));
     return ok({
       config: { overspeedKmph: db.config.overspeed_kmph, haltMinutes: db.config.halt_minutes, darkVehicleIntervalMinutes: db.config.dark_vehicle_interval_minutes },
-      vehicles: db.telematics.map((v: any) => withLiveGps(v, live[v.vehicleNo])),
+      vehicles: db.telematics.map((v: any) => withLiveGps(v, live[v.vehicleNo], db.config.overspeed_kmph)),
     });
   }],
   /*
@@ -6395,7 +6362,7 @@ const routes: [string, RegExp, Handler][] = [
     async ({ params }) => {
       const vehicleNo = decodeURIComponent(params[0]);
       const row = db.telematics.find((v: any) => v.vehicleNo === vehicleNo) ?? null;
-      return ok(row && withLiveGps(row, (await livePositions([vehicleNo]))[vehicleNo]));
+      return ok(row && withLiveGps(row, (await livePositions([vehicleNo]))[vehicleNo], db.config.overspeed_kmph));
     },
   ],
   [

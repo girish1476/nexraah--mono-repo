@@ -1,4 +1,6 @@
 import { request } from '@/apis';
+import { livePositions, withLiveGps } from '@/lib/live-gps';
+import { MOCKS_ENABLED } from '@/mocks';
 import { TelematicsResponse, VehicleRow } from './types';
 
 /**
@@ -7,8 +9,13 @@ import { TelematicsResponse, VehicleRow } from './types';
  * Ingest is a provider webhook, `POST /telematics/ping`, HMAC-signed over the
  * raw body. It is not called from this application and carries no JWT.
  */
-export function getTelematics() {
-  return request<TelematicsResponse>({ url: '/telematics', method: 'GET' });
+export async function getTelematics() {
+  const board = await request<TelematicsResponse>({ url: '/telematics', method: 'GET' });
+  // Live GPS reports (Control → Integrations → GPS tracking) laid over the API's rows.
+  // The browser-only adapter does this itself.
+  if (MOCKS_ENABLED) return board;
+  const live = await livePositions(board.vehicles.map((v) => v.vehicleNo));
+  return { ...board, vehicles: board.vehicles.map((v) => withLiveGps(v, live[v.vehicleNo], board.config.overspeedKmph)) };
 }
 
 /**
@@ -16,8 +23,10 @@ export function getTelematics() {
  * detail screen. `null` means not on an open trip, or no signal ever
  * received — the trip page renders that as "not tracked yet", not an error.
  */
-export function getVehicleTracking(vehicleNo: string) {
-  return request<VehicleRow | null>({ url: `/telematics/vehicles/${encodeURIComponent(vehicleNo)}`, method: 'GET' });
+export async function getVehicleTracking(vehicleNo: string) {
+  const row = await request<VehicleRow | null>({ url: `/telematics/vehicles/${encodeURIComponent(vehicleNo)}`, method: 'GET' });
+  if (MOCKS_ENABLED || !row) return row;
+  return withLiveGps(row, (await livePositions([vehicleNo]))[vehicleNo]);
 }
 
 /**

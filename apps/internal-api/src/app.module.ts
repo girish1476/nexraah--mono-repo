@@ -35,6 +35,7 @@ import { ReportsModule } from './modules/reports/reports.module';
 import { TargetsModule } from './modules/targets/targets.module';
 import { TelematicsModule } from './modules/telematics/telematics.module';
 import { PnlModule } from './modules/pnl/pnl.module';
+import { AccountingModule } from './modules/accounting/accounting.module';
 import { InvoicingModule } from './modules/invoicing/invoicing.module';
 import { RfqModule } from './modules/rfq/rfq.module';
 import { PortalModule } from './modules/portal/portal.module';
@@ -72,6 +73,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     TargetsModule,
     TelematicsModule,
     PnlModule,
+    AccountingModule,
     InvoicingModule,
     RfqModule,
     PortalModule,
