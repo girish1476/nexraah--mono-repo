@@ -1,4 +1,4 @@
-import { IsArray, IsIn, IsInt, IsOptional, IsString, Max, Min, MinLength } from 'class-validator';
+import { IsArray, IsEmail, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength, ValidateIf } from 'class-validator';
 
 /** `PATCH /vendors/:id` — per-step draft save (internal-spec/03-C2 §1). */
 export class UpdateVendorDto {
@@ -8,6 +8,8 @@ export class UpdateVendorDto {
   @IsOptional() @IsString() phone?: string;
   @IsOptional() @IsString() gstin?: string;
   @IsOptional() @IsString() altPhone?: string;
+  /** Optional — an empty string clears it. */
+  @IsOptional() @ValidateIf((_, v) => v !== '') @IsEmail({}, { message: 'Enter a valid email, e.g. accounts@transporter.in' }) @MaxLength(200) email?: string;
 
   @IsOptional() @IsInt() @Min(0) fleetBase?: number;
   @IsOptional() @IsArray() @IsString({ each: true }) operatingStates?: string[];

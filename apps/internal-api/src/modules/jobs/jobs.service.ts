@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { AuditService } from '../audit/audit.service';
 import { ConfigRepository } from '../config/config.repository';
@@ -13,6 +13,8 @@ import { StorageService } from '../attachments/storage.service';
 import { IDENTITY_KINDS } from '../attachments/attachments.service';
 import { JobsRepository } from './jobs.repository';
 import { VendorsService } from '../vendors/vendors.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { podRemindersDue } from '../notifications/pod-reminders';
 
 /**
  * Every job here has no human behind it — `AuditService.recordSystemEvent`
@@ -38,6 +40,7 @@ export const JOB_NAMES = [
   'charge-capture-exception',
   'forfeiture-report',
   'notification-dispatch',
+  'pod-reminders',
   'attachment-retention',
   'identity-image-purge',
   'bank-reconciliation',
@@ -62,6 +65,7 @@ export class JobsService {
     private readonly configRepository: ConfigRepository,
     private readonly auditService: AuditService,
     private readonly vendorsService: VendorsService,
+    @Optional() private readonly notificationsService?: NotificationsService,
   ) {}
 
   run(name: JobName): Promise<unknown> {
@@ -82,6 +86,8 @@ export class JobsService {
         return this.forfeitureReport();
       case 'notification-dispatch':
         return this.notificationDispatch();
+      case 'pod-reminders':
+        return this.podReminders();
       case 'attachment-retention':
         return this.attachmentRetention();
       case 'identity-image-purge':
@@ -352,14 +358,47 @@ export class JobsService {
 
   // ---- notification-dispatch — every minute --------------------------------
 
-  /** Stub — no SMS/WhatsApp/push/email provider exists anywhere in this system yet (documented, human-gated). Flips the queue without calling anything. */
+  /**
+   * Sends what is queued — email, browser push, and SMS once a gateway is set
+   * up (`NotificationsService.dispatch`). It used to mark the queue SENT
+   * without sending anything.
+   */
   @Cron('* * * * *', { name: 'notification-dispatch' })
   async notificationDispatch() {
     return this.runOnce('notification-dispatch', async () => {
-      return this.jobsRepository.transaction().execute(async (trx) => {
-        const sent = await this.jobsRepository.dispatchPending(trx);
-        return { dispatched: sent.length };
-      });
+      if (!this.notificationsService) return { skipped: true, reason: 'notifications are not wired' };
+      return this.notificationsService.dispatch();
+    });
+  }
+
+  // ---- pod-reminders — daily, 09:00 IST (03:30 UTC) -------------------------
+
+  /**
+   * Tells a transporter their proof of delivery is due, overdue, or about to
+   * cost them the balance (`pod-reminders.ts` has the days). Each reminder has
+   * its own key, so a re-run adds nothing and a missed day catches up.
+   */
+  @Cron('30 3 * * *', { name: 'pod-reminders' })
+  async podReminders() {
+    return this.runOnce('pod-reminders', async () => {
+      if (!this.notificationsService) return { skipped: true, reason: 'notifications are not wired' };
+      const config = await this.penaltyConfig();
+      const trips = await this.jobsRepository.tripsAwaitingPod();
+      const today = new Date();
+      let queued = 0;
+      for (const trip of trips) {
+        if (!trip.deliveredAt) continue;
+        for (const r of podRemindersDue({ id: trip.id, deliveredAt: trip.deliveredAt }, today, config)) {
+          queued += await this.notificationsService.raiseSafely(
+            this.jobsRepository.executor(),
+            r.event,
+            { vendorId: trip.vendorId },
+            { tripId: trip.id, tripCode: trip.code, route: trip.lane, deliveredOn: trip.deliveredAt, dueOn: r.dueOn, forfeitOn: r.forfeitOn, daysLate: r.daysLate },
+            r.key,
+          );
+        }
+      }
+      return { trips: trips.length, queued };
     });
   }
 

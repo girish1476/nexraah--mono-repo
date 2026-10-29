@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { NotificationsService } from '../notifications/notifications.service';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { DomainException, type UnmetItem } from '../../common/domain-exception';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
 import type { DbExecutor } from '../../db/kysely';
@@ -35,6 +36,7 @@ export class PaymentsService {
     private readonly ordersService: OrdersService,
     private readonly sdrRepository: SdrRepository,
     private readonly tripsService: TripsService,
+    @Optional() private readonly notifications?: NotificationsService,
   ) {}
 
   private readonly logger = new Logger('PaymentsService');
@@ -165,6 +167,13 @@ export class PaymentsService {
         entityId: payment.id,
         after: { kind: 'ADVANCE', tripId: lockedTrip.id, grossPaise },
       });
+      await this.notifications?.raiseSafely(
+        trx,
+        'payment.released',
+        { vendorId: lockedTrip.vendor_id },
+        { kind: 'ADVANCE', amountPaise: grossPaise, utr: dto.utr, valueDate: dto.valueDate, tripId: lockedTrip.id, tripCode: lockedTrip.code },
+        `payment.released:${payment.id}`,
+      );
 
       return this.paymentDto(payment);
     });
@@ -428,6 +437,16 @@ export class PaymentsService {
         carriedForward: sdr.carriedForwardPaise,
       },
     });
+    if (sdr.netPaise > 0) {
+      const code = (await trx.selectFrom('trips').select('code').where('id', '=', trip.id).executeTakeFirst())?.code;
+      await this.notifications?.raiseSafely(
+        trx,
+        'payment.released',
+        { vendorId: trip.vendor_id },
+        { kind: 'BALANCE', amountPaise: sdr.netPaise, utr: dto.utr, valueDate: dto.valueDate, tripId: trip.id, tripCode: code },
+        `payment.released:${payment.id}`,
+      );
+    }
 
     return { payment: this.paymentDto(payment), indentId: trip.indent_id };
   }
@@ -578,6 +597,14 @@ export class PaymentsService {
         entityId: id,
         after: { status: 'QUERIED', note },
       });
+      const code = (await trx.selectFrom('trips').select('code').where('id', '=', bill.trip_id).executeTakeFirst())?.code;
+      await this.notifications?.raiseSafely(
+        trx,
+        'bill.queried',
+        { vendorId: bill.vendor_id },
+        { note, tripId: bill.trip_id, tripCode: code },
+        `bill.queried:${id}:${Date.now()}`,
+      );
       return { id: row.id, status: row.status };
     });
   }

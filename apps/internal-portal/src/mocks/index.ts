@@ -1968,6 +1968,12 @@ function clientOnboardingDetail(client: any) {
 /* ---- routes ------------------------------------------------------------- */
 
 const routes: [string, RegExp, Handler][] = [
+  /* ------------------------------------------ browser notifications --- */
+  // No push key in the demo — there is no server to send from — so the bell
+  // in the user bar stays hidden. Saving and forgetting are accepted anyway.
+  ['GET', /^\/notifications\/push-key$/, () => ok({ publicKey: null })],
+  ['POST', /^\/notifications\/push-subscriptions$/, () => ok({ saved: true, confirmation: { ok: false, message: 'Demo — nothing is sent.' } })],
+  ['DELETE', /^\/notifications\/push-subscriptions$/, () => ok({ removed: true })],
   /* --------------------------------------------------- allowed emails --- */
   [
     'GET',

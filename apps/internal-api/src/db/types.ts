@@ -197,6 +197,8 @@ export interface VendorsTable {
   pan: string | null;
   phone: string;
   alt_phone: string | null;
+  /** 20261029010000 — optional, for notifications. */
+  email: string | null;
   fleet_base: Generated<number>;
   operating_states: Generated<string[]>;
   // Self-reported at onboarding (part 03 §1 step 3), distinct from
@@ -960,6 +962,26 @@ export interface NotificationsTable {
   status: Generated<string>;
   sent_at: string | null;
   provider_ref: string | null;
+  /** 20261029010000 — delivery: tries, the last failure, when to retry, and the key that stops a duplicate. */
+  attempts: Generated<number>;
+  last_error: string | null;
+  next_attempt_at: string | null;
+  claimed_at: string | null;
+  dedupe_key: string | null;
+  created_at: Generated<string>;
+  updated_at: Generated<string>;
+}
+
+/** 20261029010000 — one browser that said yes to push notifications. Exactly one of user_id / vendor_id. */
+export interface PushSubscriptionsTable {
+  id: Generated<string>;
+  user_id: string | null;
+  vendor_id: string | null;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  user_agent: string | null;
+  last_sent_at: string | null;
   created_at: Generated<string>;
   updated_at: Generated<string>;
 }
@@ -1059,6 +1081,7 @@ export interface Database {
   telematics_pings: TelematicsPingsTable;
   telematics_alerts: TelematicsAlertsTable;
   notifications: NotificationsTable;
+  push_subscriptions: PushSubscriptionsTable;
   issues: IssuesTable;
   portal_idempotency_keys: PortalIdempotencyKeysTable;
   orders: OrdersTable;

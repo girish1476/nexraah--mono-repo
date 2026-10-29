@@ -57,6 +57,19 @@ services:
         sync: false
       - key: EMAIL_LOGO_URL
         value: https://nexraah-mono-repo.vercel.app/nexraah-logo.png
+      # Notifications (awards, payments, POD deadlines, approvals) by email
+      # through Resend above, and as free browser notifications once the VAPID
+      # pair is set — `node supabase/scripts/push-keys.mjs` makes it.
+      - key: PORTAL_PUBLIC_URL
+        sync: false
+      - key: CONSOLE_PUBLIC_URL
+        sync: false
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        sync: false
       # Optional, and paid: Anthropic's reader for "Fetch" and the assistant.
       # Left empty, Fetch reads documents in the browser for free and the
       # assistant says it is not set up.

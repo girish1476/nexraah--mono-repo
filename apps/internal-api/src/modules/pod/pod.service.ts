@@ -1,4 +1,5 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
+import { NotificationsService } from '../notifications/notifications.service';
 import { DomainException } from '../../common/domain-exception';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
 import type { ApprovalRequiredResponse } from '../../common/approval-required.response';
@@ -49,6 +50,7 @@ export class PodService implements OnModuleInit {
     private readonly approvalsRegistry: ApprovalsRegistry,
     private readonly ordersService: OrdersService,
     private readonly sdrRepository: SdrRepository,
+    @Optional() private readonly notifications?: NotificationsService,
   ) {}
 
   private readonly logger = new Logger('PodService');
@@ -699,6 +701,13 @@ export class PodService implements OnModuleInit {
         before: { podStatus: trip.pod_status },
         after: { podStatus: nextStatus, reason },
       });
+      await this.notifications?.raiseSafely(
+        trx,
+        'pod.rejected',
+        { vendorId: trip.vendor_id },
+        { reason, tripId: trip.id, tripCode: trip.code },
+        `pod.rejected:${trip.id}:${Date.now()}`,
+      );
 
       return { tripId, podStatus: nextStatus };
     });

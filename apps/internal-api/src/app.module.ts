@@ -39,6 +39,7 @@ import { InvoicingModule } from './modules/invoicing/invoicing.module';
 import { RfqModule } from './modules/rfq/rfq.module';
 import { PortalModule } from './modules/portal/portal.module';
 import { JobsModule } from './modules/jobs/jobs.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 @Module({
   imports: [
@@ -75,6 +76,7 @@ import { JobsModule } from './modules/jobs/jobs.module';
     RfqModule,
     PortalModule,
     JobsModule,
+    NotificationsModule,
     ImportModule,
     AssistantModule,
   ],

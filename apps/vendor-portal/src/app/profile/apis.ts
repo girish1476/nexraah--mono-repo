@@ -1,5 +1,6 @@
 import { ApiResponse, idempotent, request } from '@/apis';
 import { USE_MOCK, mock } from '@/lib/mock';
+import type { BrowserSubscription } from '@/lib/push';
 import { Profile } from './types';
 
 const FIXTURE: Profile = {
@@ -51,6 +52,34 @@ export function getProfile() {
   return request<ApiResponse<Profile>>({ url: '/portal/profile', method: 'GET' }).then(
     (r) => r.data,
   );
+}
+
+/**
+ * The server's key for browser notifications — `null` until Nexraah sets
+ * one up (and always in the demo, which has no server to send from).
+ */
+export function getPushKey() {
+  if (USE_MOCK) return mock<{ publicKey: string | null }>({ publicKey: null });
+  return request<ApiResponse<{ publicKey: string | null }>>({ url: '/portal/push-key', method: 'GET' }).then(
+    (r) => r.data,
+  );
+}
+
+/** This phone, saved as a place to send notifications. The server sends a test one straight back. */
+export function savePushSubscription(subscription: BrowserSubscription) {
+  return request<ApiResponse<{ saved: boolean }>>({
+    url: '/portal/push-subscriptions',
+    method: 'POST',
+    data: subscription,
+  }).then((r) => r.data);
+}
+
+export function forgetPushSubscription(endpoint: string) {
+  return request<ApiResponse<{ removed: boolean }>>({
+    url: '/portal/push-subscriptions',
+    method: 'DELETE',
+    data: { endpoint },
+  }).then((r) => r.data);
 }
 
 /** Retry-safety contract as `attachPod` — `idempotencyKey` is the caller's. */

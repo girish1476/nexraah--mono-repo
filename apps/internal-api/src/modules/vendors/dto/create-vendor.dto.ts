@@ -1,3 +1,4 @@
+import { IsEmail, ValidateIf } from 'class-validator';
 import {
   IsIn,
   IsInt,
@@ -31,6 +32,9 @@ export class CreateVendorDto {
   @IsOptional() @Matches(GSTIN_SHAPE_RE, { message: FORMAT_MESSAGE.gstin }) gstin?: string;
 
   @IsOptional() @Matches(PHONE_RE, { message: FORMAT_MESSAGE.phone }) altPhone?: string;
+
+  /** Optional — where notifications go by email (awards, payments, POD deadlines). */
+  @IsOptional() @ValidateIf((_, v) => v !== '') @IsEmail({}, { message: 'Enter a valid email, e.g. accounts@transporter.in' }) @MaxLength(200) email?: string;
 
   // BR-30: the standing default set at onboarding, not yet a "change" (BR-57
   // governs anything after this). Defaults to 0 (config.advance_default_pct

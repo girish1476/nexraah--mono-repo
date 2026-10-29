@@ -94,6 +94,12 @@ const companySchema = z.object({
     .string()
     .optional()
     .refine((v) => !v || PHONE_RE.test(v), 'Ten digits, Indian mobile'),
+  // Optional — where awards, payments and POD deadlines are emailed. The API
+  // treats a blank box as no email, and trims and lowercases the rest.
+  email: z
+    .string()
+    .optional()
+    .refine((v) => !v?.trim() || z.string().email().safeParse(v.trim()).success, 'Enter a valid email, e.g. accounts@transporter.in'),
   branchId: z.string().min(1, 'Required'),
 });
 
@@ -545,6 +551,13 @@ export default function VendorWizardPage() {
               </Field>
               <Field label="Alternate phone" error={company.formState.errors.altPhone?.message}>
                 <input {...company.register('altPhone')} />
+              </Field>
+              <Field
+                label="Email for notices"
+                error={company.formState.errors.email?.message}
+                hint="Optional. Load awards, payments and proof-of-delivery reminders are emailed here — free, unlike SMS."
+              >
+                <input type="email" inputMode="email" autoComplete="off" {...company.register('email')} />
               </Field>
             </FormGrid>
             <div style={{ marginTop: 16 }}>

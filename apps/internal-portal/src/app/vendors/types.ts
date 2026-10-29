@@ -90,6 +90,8 @@ export interface VendorDetail {
   pan: string;
   phone: string;
   altPhone: string | null;
+  /** Where awards, payments and POD deadlines are emailed. Optional. */
+  email?: string | null;
   truckTypes: string[];
   operatingStates: string[];
   advancePct: number;
@@ -203,6 +205,7 @@ export interface VendorDraft {
   gstin?: string;
   phone: string;
   altPhone?: string;
+  email?: string;
   branchId: string;
   pan?: string;
   truckTypes?: string[];

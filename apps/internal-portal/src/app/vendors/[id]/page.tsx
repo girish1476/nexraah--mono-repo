@@ -34,6 +34,7 @@ import {
   submitVendor,
   changeAdvancePolicy,
   getVendor,
+  patchVendor,
   reinstateVendor,
   rejectDocument,
   rejectKyc,
@@ -117,6 +118,8 @@ export default function VendorDetailPage() {
   const [confirmActivate, setConfirmActivate] = useState(false);
   const [holdOpen, setHoldOpen] = useState(false);
   const [holdReason, setHoldReason] = useState('');
+  const [emailOpen, setEmailOpen] = useState(false);
+  const [emailDraft, setEmailDraft] = useState('');
   const [policyOpen, setPolicyOpen] = useState(false);
   const [policyPct, setPolicyPct] = useState('40');
   const [policyReason, setPolicyReason] = useState('');
@@ -310,6 +313,22 @@ export default function VendorDetailPage() {
       toast(`${kind.replace(/_/g, ' ')} uploaded · queued for compliance`);
     } catch (e) {
       toast(errorMessage(e));
+    }
+  };
+
+  const emailProblem =
+    emailDraft.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(emailDraft.trim()) ? 'Enter a valid email, e.g. accounts@transporter.in' : undefined;
+  const onEmailSave = async () => {
+    setBusy(true);
+    try {
+      await patchVendor(id, { email: emailDraft.trim().toLowerCase() });
+      setEmailOpen(false);
+      load();
+      toast(emailDraft.trim() ? 'Email saved · notices will go there' : 'Email removed');
+    } catch (e) {
+      toast(errorMessage(e));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -567,6 +586,25 @@ export default function VendorDetailPage() {
               <FactList
                 facts={[
                   ['Code', vendor.code],
+                  ['Phone', vendor.altPhone ? `${vendor.phone} · ${vendor.altPhone}` : vendor.phone],
+                  [
+                    'Email for notices',
+                    <span key="email" style={{ display: 'inline-flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <span style={{ overflowWrap: 'anywhere' }}>{vendor.email || 'Not given'}</span>
+                      {can('vendor.edit') && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => {
+                            setEmailDraft(vendor.email ?? '');
+                            setEmailOpen(true);
+                          }}
+                        >
+                          {vendor.email ? 'Change' : 'Add'}
+                        </button>
+                      )}
+                    </span>,
+                  ],
                   ['GSTIN', vendor.gstin ?? '—'],
                   ['PAN', vendor.pan],
                   ['Party type', vendor.partyType],
@@ -797,6 +835,28 @@ export default function VendorDetailPage() {
       >
         <Field label="Reason" required hint="At least 20 characters — it is written to the audit trail.">
           <textarea rows={3} value={holdReason} onChange={(e) => setHoldReason(e.target.value)} />
+        </Field>
+      </Dialog>
+
+      <Dialog
+        open={emailOpen}
+        title="Email for notices"
+        body="Load awards, payments sent, proof-of-delivery reminders and bill queries are emailed to this address. Leave it empty to stop the emails; the portal and phone notifications carry on."
+        confirmLabel="Save"
+        confirmDisabled={!!emailProblem}
+        busy={busy}
+        onConfirm={onEmailSave}
+        onClose={() => setEmailOpen(false)}
+      >
+        <Field label="Email" error={emailProblem}>
+          <input
+            type="email"
+            inputMode="email"
+            autoComplete="off"
+            placeholder="accounts@transporter.in"
+            value={emailDraft}
+            onChange={(e) => setEmailDraft(e.target.value)}
+          />
         </Field>
       </Dialog>
 

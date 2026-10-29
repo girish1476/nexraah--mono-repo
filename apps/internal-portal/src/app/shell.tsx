@@ -10,6 +10,7 @@ import { signOut } from '@/lib/auth';
 import { Glyph, areaVars } from '@/lib/ui';
 import { useTheme } from '@/lib/theme';
 import { Assistant } from '@/components/assistant';
+import { PushSwitch } from '@/components/push-switch';
 import { ReportProblemButton } from './tickets/report-button';
 
 /**
@@ -528,6 +529,8 @@ function UserBar({ role, session, compact = false }: { role: RoleCode; session: 
           </div>
         )}
       </div>
+
+      <PushSwitch />
 
       <button
         type="button"

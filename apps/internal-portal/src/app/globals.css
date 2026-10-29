@@ -1356,6 +1356,10 @@ table.table tbody tr:nth-child(even):hover {
   background: var(--color-accent-tint);
   color: var(--color-accent-700);
 }
+.userbar-bell.is-on {
+  background: var(--color-accent-tint);
+  color: var(--color-accent-700);
+}
 @media (max-width: 900px) {
   .userbar {
     display: none;

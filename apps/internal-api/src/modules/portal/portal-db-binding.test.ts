@@ -10,6 +10,7 @@ import { PortalIdentityRepository } from './portal-identity.repository';
 import { PortalLoadsRepository } from './portal-loads.repository';
 import { PortalProfileRepository } from './portal-profile.repository';
 import { PortalTripsRepository } from './portal-trips.repository';
+import { PortalPushRepository } from './portal-push.repository';
 
 /**
  * ADR-02 §3.1 — the transporter side reads and writes only as `vendor_api`.
@@ -28,6 +29,7 @@ const injected = (cls: object) =>
 
 describe('the transporter side’s database binding', () => {
   const repositories = [
+    PortalPushRepository,
     PortalFleetRepository,
     PortalIdempotencyRepository,
     PortalIdentityRepository,

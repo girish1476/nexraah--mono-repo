@@ -10,13 +10,24 @@ export class JobsRepository {
     return this.db.transaction();
   }
 
-  /** `notification-dispatch` — no real provider exists yet (documented, human-gated); this just clears the queue. */
-  dispatchPending(db: DbExecutor) {
-    return db
-      .updateTable('notifications')
-      .set({ status: 'SENT', sent_at: new Date().toISOString() })
-      .where('status', '=', 'PENDING')
-      .returning('id')
+  /** The plain connection, for work that needs no transaction of its own. */
+  executor(): DbExecutor {
+    return this.db;
+  }
+
+  /**
+   * `pod-reminders` — delivered trips whose proof of delivery has not come in
+   * and whose balance has not been closed some other way.
+   */
+  tripsAwaitingPod() {
+    return this.db
+      .selectFrom('trips')
+      .select(['id', 'code', 'vendor_id as vendorId', 'lane', 'delivered_at as deliveredAt'])
+      .where('delivered_at', 'is not', null)
+      .where('pod_received_at', 'is', null)
+      .where('pod_closure_basis', 'is', null)
+      .where('pod_status', 'in', ['PENDING', 'ATTACHED', 'REJECTED'])
+      .where('stage', '!=', 'CANCELLED')
       .execute();
   }
 

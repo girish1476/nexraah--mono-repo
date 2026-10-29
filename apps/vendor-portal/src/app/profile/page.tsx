@@ -18,7 +18,8 @@ import { DOCUMENT_TONE } from '@/lib/status';
 import { attentionItems, attentionSummary, type AttentionItem } from '@/lib/attention';
 import { invalidateAccount, profileAtom } from '@/lib/account';
 import { newIdempotencyKey } from '@/apis';
-import { getProfile, uploadDocument } from './apis';
+import { forgetPushSubscription, getProfile, getPushKey, savePushSubscription, uploadDocument } from './apis';
+import { pushState, turnOff, turnOn, type PushState } from '@/lib/push';
 import { DOCUMENT_STATUS_LABEL, DocumentStatus, Profile, VendorDocument } from './types';
 
 /** What each document status means for the transporter, in one sentence. */
@@ -257,6 +258,104 @@ function DocumentRow({
   );
 }
 
+/**
+ * "Notifications on this phone" — awards, payments and POD deadlines arrive
+ * as phone notifications, free, even with the portal closed.
+ *
+ * Shows nothing at all when this browser cannot do it or the server has no
+ * key yet: a switch that cannot work is worse than no switch.
+ */
+function NotificationsCard() {
+  const [publicKey, setPublicKey] = useState<string | null>(null);
+  const [state, setState] = useState<PushState | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    getPushKey()
+      .then(async ({ publicKey: key }) => {
+        const now = await pushState(key);
+        if (live) {
+          setPublicKey(key);
+          setState(now);
+        }
+      })
+      .catch(() => live && setState('unavailable'));
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  if (!state || state === 'unsupported' || state === 'unavailable' || !publicKey) return null;
+
+  const flip = async () => {
+    setBusy(true);
+    setNote(null);
+    try {
+      if (state === 'on') {
+        setState(await turnOff(forgetPushSubscription));
+        setNote('Turned off on this phone. Other phones you turned it on for still get them.');
+      } else {
+        const next = await turnOn(publicKey, savePushSubscription);
+        setState(next);
+        if (next === 'on') setNote('Done — a test notification is on its way to this phone.');
+      }
+    } catch (e) {
+      setNote((e as Error).message || 'That did not work. Try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="card" aria-label="Notifications on this phone">
+      <div className="row-between" style={{ gap: 12, alignItems: 'flex-start' }}>
+        <div style={{ minWidth: 0 }}>
+          <p className="card-title" style={{ marginBottom: 4 }}>
+            Notifications on this phone
+          </p>
+          <p className="muted">
+            Be told when a load is awarded to you, when money is sent, and before a proof of
+            delivery falls due — even when the portal is closed. Free, no SMS.
+          </p>
+        </div>
+        {state === 'on' && <Pill tone="mint">On</Pill>}
+      </div>
+      {state === 'blocked' ? (
+        <p style={{ marginTop: 8, fontSize: 15, lineHeight: 1.45 }}>
+          This browser has blocked notifications from the portal. Allow them in the browser&apos;s
+          site settings (the lock beside the address), then open this page again.
+        </p>
+      ) : (
+        <button
+          type="button"
+          onClick={flip}
+          disabled={busy}
+          className="tap"
+          style={{
+            marginTop: 10,
+            border: state === 'on' ? '1px solid var(--color-accent)' : 'none',
+            background: state === 'on' ? 'var(--color-surface)' : 'var(--color-accent)',
+            color: state === 'on' ? 'var(--color-accent-700)' : '#fff',
+            borderRadius: 999,
+            padding: '11px 20px',
+            fontSize: 15,
+            fontWeight: 700,
+          }}
+        >
+          {busy ? 'One moment…' : state === 'on' ? 'Turn off on this phone' : 'Turn on notifications'}
+        </button>
+      )}
+      {note && (
+        <p className="muted" role="status" style={{ marginTop: 8 }}>
+          {note}
+        </p>
+      )}
+    </section>
+  );
+}
+
 export default function ProfilePage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [, setShared] = useAtom(profileAtom);
@@ -383,6 +482,8 @@ export default function ProfilePage() {
           ['Advance policy', `${profile.advancePolicyPct}% of freight`],
         ]}
       />
+
+      <NotificationsCard />
 
       <div className="card">
         <p className="card-title" style={{ marginBottom: 4 }}>

@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
+import { NotificationsService } from '../notifications/notifications.service';
 import { assertReason, DomainException } from '../../common/domain-exception';
 import type { ApprovalDto } from '../../common/approval-required.response';
 import { ApprovalRequiredResponse } from '../../common/approval-required.response';
@@ -31,6 +32,7 @@ export class ApprovalsService {
     private readonly approvalsRepository: ApprovalsRepository,
     private readonly registry: ApprovalsRegistry,
     private readonly auditService: AuditService,
+    @Optional() private readonly notifications?: NotificationsService,
   ) {}
 
   /**
@@ -67,6 +69,14 @@ export class ApprovalsService {
         entityId: inserted.id,
         after: { kind: input.kind, entityType: input.entityType, entityId: input.entityId },
       });
+      // Everyone who can decide it hears it is waiting.
+      await this.notifications?.raiseSafely(
+        trx,
+        'approval.raised',
+        { permission: REQUIRED_PERMISSION_BY_KIND[input.kind] },
+        { title: input.title, detail: input.detail, requesterName: actor.name },
+        `approval.raised:${inserted.id}`,
+      );
       return inserted;
     });
 
@@ -159,6 +169,13 @@ export class ApprovalsService {
         entityType: 'approvals',
         entityId: id,
       });
+      await this.notifications?.raiseSafely(
+        trx,
+        'approval.decided',
+        { userIds: [row.requester_id] },
+        { title: payload.title, decision: 'APPROVED', deciderName: actor.name },
+        `approval.decided:${id}`,
+      );
 
       return this.toDto(decided, actor.name);
     });
@@ -189,6 +206,13 @@ export class ApprovalsService {
         entityId: id,
         after: { note },
       });
+      await this.notifications?.raiseSafely(
+        trx,
+        'approval.decided',
+        { userIds: [row.requester_id] },
+        { title: (row.payload as unknown as ApprovalPayload).title, decision: 'REJECTED', note, deciderName: actor.name },
+        `approval.decided:${id}`,
+      );
 
       return this.toDto(decided, actor.name);
     });

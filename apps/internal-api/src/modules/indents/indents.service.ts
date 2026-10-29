@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
 import { DomainException, assertReason } from '../../common/domain-exception';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
 import type { ApprovalRequiredResponse } from '../../common/approval-required.response';
@@ -21,6 +21,7 @@ import type { RecordQuoteDto } from './dto/record-quote.dto';
 import type { CancelIndentDto } from './dto/cancel-indent.dto';
 import type { CorrectIndentDetailsDto, CorrectQuoteDto, RemoveQuoteDto } from './dto/correct-details.dto';
 import { checkQuoteCorrection, checkQuoteRemoval, planLoadCorrection, rupees } from './corrections';
+import { NotificationsService } from '../notifications/notifications.service';
 
 /** An indent untouched this long is put in front of Operations and Leadership to cancel or keep. */
 export const STALE_INDENT_DAYS = 7;
@@ -45,6 +46,7 @@ export class IndentsService implements OnModuleInit {
     private readonly approvalsService: ApprovalsService,
     private readonly approvalsRegistry: ApprovalsRegistry,
     private readonly ordersService: OrdersService,
+    @Optional() private readonly notifications?: NotificationsService,
   ) {}
 
   private readonly logger = new Logger('IndentsService');
@@ -567,6 +569,20 @@ export class IndentsService implements OnModuleInit {
       before,
       after: { buyRatePaise: quote.amount, vendorId: quote.vendor_id, quoteId, tripId: trip.id },
     });
+    await this.notifications?.raiseSafely(
+      trx,
+      'quote.awarded',
+      { vendorId: quote.vendor_id },
+      {
+        loadCode: indent.code,
+        route: `${indent.from_city} → ${indent.to_city}`,
+        amountPaise: Number(quote.amount),
+        pickupDate: indent.pickup_date,
+        tripId: trip.id,
+        tripCode: trip.code,
+      },
+      `quote.awarded:${quoteId}`,
+    );
   }
 
   /**

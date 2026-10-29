@@ -233,6 +233,9 @@ It must end with four ✓ checks and `Done.` It prints a temporary password for 
 | `PORTAL_SERVICE_KEY` | 64 random characters — `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` — **the same value in both services** |
 | `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_REPLY_TO` | from step 4 |
 | `SEND_EMAIL_HOOK_SECRET` | leave empty for now — step 6 gives it |
+| `PORTAL_PUBLIC_URL`, `CONSOLE_PUBLIC_URL` | the two websites' addresses — links in notification emails open these |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | run `node supabase/scripts/push-keys.mjs` once and paste its two lines — free browser notifications. Make the pair once: a new pair means everyone turns notifications on again |
+| `VAPID_SUBJECT` | `mailto:` and an address of yours, e.g. `mailto:ops@yourdomain.in` — push services contact it if something is wrong |
 | `ANTHROPIC_API_KEY` | leave empty (paid; without it, Fetch reads documents free in the browser) |
 | `CORS_ORIGIN` (vendor-api) | the transporter portal's address, e.g. `https://nexraah-vendor-portal.vercel.app` |
 
@@ -270,6 +273,25 @@ Then **redeploy both** — `NEXT_PUBLIC_*` values are built into the site, so a 
 1. Console: sign in with an `ADMIN` email from `staff.json` — the code should arrive within a minute. Control panel → Company details should read NEXUS FREIGHT PRIVATE LIMITED.
 2. Add a client, raise a load request, enter a quote — then sign in as another desk on another device and see the same load.
 3. Transporter portal: sign in with a transporter's mobile number and printed password.
+
+### Notifications — email and browser, free
+
+Once `RESEND_API_KEY` and the `VAPID_*` values are set, the server tells people about what needs them, every minute:
+
+| What happened | Who hears |
+|---|---|
+| A load is awarded | the transporter |
+| Advance or balance paid | the transporter |
+| Proof of delivery due in 5 days, overdue (weekly), close to forfeiting the balance — 09:00 each morning | the transporter |
+| POD rejected, bill queried | the transporter |
+| Transporter cleared | the transporter |
+| An approval is waiting | everyone who can decide it |
+| An approval is decided | the person who asked for it |
+
+- **Email** goes to the transporter's *Email for notices* (transporter page → Add) and to staff sign-in emails.
+- **Browser notifications**: transporters turn them on in the portal under **Profile → Notifications on this phone**; staff with the **bell** beside the dark-mode switch. Each phone or computer is turned on separately. On iPhone, the portal must first be added to the Home Screen (Share → Add to Home Screen) — Apple allows notifications only there.
+- The demo shows neither: it has no server to send from.
+- **SMS** is not connected — it costs per message and needs DLT-registered templates. Tell us the gateway (MSG91, Kaleyra, Gupshup…) and it can be added beside these.
 
 ### What changes when you switch
 

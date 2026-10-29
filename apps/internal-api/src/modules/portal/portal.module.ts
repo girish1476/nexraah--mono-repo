@@ -21,6 +21,8 @@ import { PortalFleetService } from './portal-fleet.service';
 import { PortalProfileController } from './portal-profile.controller';
 import { PortalProfileRepository } from './portal-profile.repository';
 import { PortalProfileService } from './portal-profile.service';
+import { PortalPushController } from './portal-push.controller';
+import { PortalPushRepository } from './portal-push.repository';
 
 /**
  * The transporter surface, `docs/api/11-portal.md`.
@@ -56,6 +58,7 @@ import { PortalProfileService } from './portal-profile.service';
     PortalTripsController,
     PortalFleetController,
     PortalProfileController,
+    PortalPushController,
   ],
   providers: [
     PortalIdentityRepository,
@@ -77,6 +80,7 @@ import { PortalProfileService } from './portal-profile.service';
     PortalFleetService,
     PortalProfileRepository,
     PortalProfileService,
+    PortalPushRepository,
     // The outward half of `ADR-02` §4's two-way lock. `APP_GUARD` is global
     // wherever it is declared, and it is declared here so that the guard and
     // the surface it protects arrive together — a deployment that ships

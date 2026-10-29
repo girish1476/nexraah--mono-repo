@@ -1,4 +1,5 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleInit, Optional } from '@nestjs/common';
+import { NotificationsService } from '../notifications/notifications.service';
 import { DomainException, assertReason, type UnmetItem } from '../../common/domain-exception';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
 import type { ApprovalRequiredResponse } from '../../common/approval-required.response';
@@ -53,6 +54,7 @@ export class VendorsService implements OnModuleInit {
     private readonly portalAccountService: VendorPortalAccountService,
     private readonly leadsRepository: LeadsRepository,
     private readonly sdrRepository: SdrRepository,
+    @Optional() private readonly notifications?: NotificationsService,
   ) {}
 
   onModuleInit() {
@@ -240,6 +242,7 @@ export class VendorsService implements OnModuleInit {
       pan: vendor.pan,
       phone: vendor.phone,
       altPhone: vendor.alt_phone,
+      email: vendor.email,
       baseCity: vendor.base_city,
       branchId: vendor.branch_id,
       branchName: vendor.branchName,
@@ -333,6 +336,7 @@ export class VendorsService implements OnModuleInit {
           phone: dto.phone,
           gstin: dto.gstin ?? null,
           altPhone: dto.altPhone ?? null,
+          email: dto.email?.trim().toLowerCase() || null,
           advancePct: dto.advancePct ?? 0,
           source: lead?.source ?? null,
         },
@@ -448,6 +452,7 @@ export class VendorsService implements OnModuleInit {
       if (dto.phone !== undefined) patch.phone = dto.phone;
       if (dto.gstin !== undefined) patch.gstin = dto.gstin;
       if (dto.altPhone !== undefined) patch.alt_phone = dto.altPhone;
+      if (dto.email !== undefined) patch.email = dto.email.trim().toLowerCase() || null;
       if (dto.fleetBase !== undefined) patch.fleet_base = dto.fleetBase;
       if (dto.fleetCount !== undefined) patch.declared_fleet_count = dto.fleetCount;
       if (dto.truckTypes !== undefined) patch.truck_types = dto.truckTypes;
@@ -704,6 +709,13 @@ export class VendorsService implements OnModuleInit {
         before: { status: vendor.status },
         after: { status: row.status },
       });
+      await this.notifications?.raiseSafely(
+        trx,
+        'vendor.activated',
+        { vendorId },
+        { vendorName: vendor.legal_name },
+        `vendor.activated:${vendorId}:${new Date().toISOString().slice(0, 10)}`,
+      );
       return row;
     });
 

@@ -99,6 +99,7 @@ export class VendorsRepository {
       phone: string;
       gstin: string | null;
       altPhone: string | null;
+      email: string | null;
       advancePct: number;
       source: string | null;
     },
@@ -115,6 +116,7 @@ export class VendorsRepository {
         phone: row.phone,
         gstin: row.gstin,
         alt_phone: row.altPhone,
+        email: row.email,
         advance_pct: row.advancePct,
         source: row.source,
       })
