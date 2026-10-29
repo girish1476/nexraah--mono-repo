@@ -44,10 +44,26 @@ services:
         sync: false
       - key: PORTAL_SERVICE_KEY
         sync: false
+      # Uploaded files (PODs, bills, KYC papers): Supabase Storage's own S3
+      # access keys — Storage → S3 Connection. They reach the bucket and not the
+      # database, which is why they are used rather than the service_role key
+      # (apps/internal-api/src/lib/object-store.ts).
+      - key: STORAGE_S3_ENDPOINT
+        sync: false
+      - key: STORAGE_S3_REGION
+        value: ap-south-1
+      - key: STORAGE_S3_ACCESS_KEY_ID
+        sync: false
+      - key: STORAGE_S3_SECRET_ACCESS_KEY
+        sync: false
       # Sign-in codes by email: Supabase Auth's "Send Email" hook calls
-      # POST /api/v1/auth/email-hook here, and the code goes out through Resend.
+      # POST /api/v1/auth/email-hook here, and the code goes out through Brevo
+      # when BREVO_API_KEY is set (no domain needed — a verified sender address
+      # is enough), otherwise through Resend.
       # SEND_EMAIL_HOOK_SECRET is the secret Supabase shows when the hook is made.
       - key: SEND_EMAIL_HOOK_SECRET
+        sync: false
+      - key: BREVO_API_KEY
         sync: false
       - key: RESEND_API_KEY
         sync: false
@@ -58,7 +74,7 @@ services:
       - key: EMAIL_LOGO_URL
         value: https://nexraah-mono-repo.vercel.app/nexraah-logo.png
       # Notifications (awards, payments, POD deadlines, approvals) by email
-      # through Resend above, and as free browser notifications once the VAPID
+      # through Brevo or Resend above, and as free browser notifications once the VAPID
       # pair is set — `node supabase/scripts/push-keys.mjs` makes it.
       - key: PORTAL_PUBLIC_URL
         sync: false
@@ -72,7 +88,7 @@ services:
         sync: false
       # Optional, and paid: Anthropic's reader for "Fetch" and the assistant.
       # Left empty, Fetch reads documents in the browser for free and the
-      # assistant says it is not set up.
+      # assistant answers from the records by rule (assistant.local.ts).
       - key: ANTHROPIC_API_KEY
         sync: false
 

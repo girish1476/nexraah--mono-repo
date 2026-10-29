@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { sql } from 'kysely';
 import { DB } from '../../db/tokens';
 import type { DbExecutor, InternalDb } from '../../db/kysely';
-import { EmailNotConfiguredError, sendWithResend } from '../auth/resend';
+import { EmailNotConfiguredError, sendConfiguredEmail } from '../auth/resend';
 import { renderEvent, type NotificationEvent, type Rendered } from './notification-events';
 import { renderNotificationEmail } from './notification-email';
 import { smsGatewayFromEnv, smsTemplates, type SmsGateway } from './sms';
@@ -63,7 +63,8 @@ async function sendEmail(message: { to: string; subject: string; html: string; t
     writeFileSync(join(outbox, `${message.idempotencyKey}.json`), JSON.stringify(message, null, 2));
     return { id: `outbox:${message.idempotencyKey}` };
   }
-  return sendWithResend({ ...message });
+  // Brevo or Resend, whichever is set up — the same service as the sign-in codes.
+  return sendConfiguredEmail({ ...message, tag: 'notification' });
 }
 
 export function sendersFromEnv(env: NodeJS.ProcessEnv = process.env): Senders {

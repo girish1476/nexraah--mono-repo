@@ -14,6 +14,8 @@ export interface OutgoingEmail {
   text: string;
   /** Same key → Resend sends once, so a retried hook call never mails the code twice. */
   idempotencyKey?: string;
+  /** What the email is, for the mail service's reports. Sign-in code unless said. */
+  tag?: string;
 }
 
 export class EmailNotConfiguredError extends Error {}
@@ -41,7 +43,7 @@ export async function sendWithResend(email: OutgoingEmail, fetchImpl: typeof fet
       ...(replyTo ? { reply_to: replyTo } : {}),
       // A unique id per email stops Gmail from threading every code into one conversation.
       headers: email.idempotencyKey ? { 'X-Entity-Ref-ID': email.idempotencyKey } : undefined,
-      tags: [{ name: 'category', value: 'sign_in_code' }],
+      tags: [{ name: 'category', value: (email.tag ?? 'sign-in-code').replace(/-/g, '_') }],
     }),
   });
   const payload = (await response.json().catch(() => ({}))) as { id?: string; message?: string };
@@ -83,7 +85,7 @@ export async function sendWithBrevo(email: OutgoingEmail, fetchImpl: typeof fetc
       textContent: email.text,
       ...(replyTo ? { replyTo: parseSender(replyTo) } : {}),
       ...(email.idempotencyKey ? { headers: { 'X-Entity-Ref-ID': email.idempotencyKey } } : {}),
-      tags: ['sign-in-code'],
+      tags: [email.tag ?? 'sign-in-code'],
     }),
   });
   const payload = (await response.json().catch(() => ({}))) as { messageId?: string; message?: string };
@@ -93,7 +95,10 @@ export async function sendWithBrevo(email: OutgoingEmail, fetchImpl: typeof fetc
   return { id: payload.messageId ?? '' };
 }
 
-/** Whichever service has a key: Brevo when BREVO_API_KEY is set, else Resend. */
-export function sendSignInEmail(email: OutgoingEmail, fetchImpl: typeof fetch = fetch): Promise<{ id: string }> {
+/** Whichever service has a key: Brevo when BREVO_API_KEY is set, else Resend. For every email the API sends. */
+export function sendConfiguredEmail(email: OutgoingEmail, fetchImpl: typeof fetch = fetch): Promise<{ id: string }> {
   return process.env.BREVO_API_KEY ? sendWithBrevo(email, fetchImpl) : sendWithResend(email, fetchImpl);
 }
+
+/** A sign-in code, through whichever service is set up. */
+export const sendSignInEmail = sendConfiguredEmail;

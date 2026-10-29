@@ -165,13 +165,25 @@ the transporter portal answers as a transporter, through the restricted
 `vendor_api` login. What has **not** been tried is Supabase itself, Render and
 Resend: the steps below are where those are first used.
 
+**Also checked, 29 Oct 2026, with the website itself in real mode against that
+database** (signed in through a stand-in for Supabase Auth): all 37 screens open
+for an administrator; `supabase/tests/grants.sql` passes in full and a
+transporter login reading client data is refused; a file uploads, opens through
+its 15-minute link and refuses a link that was altered. That run found and fixed
+three things the steps below depend on — an administrator was refused My desk,
+All orders and the payment screens (`indent.view` and fifteen other permissions
+were never granted in the database); three tables lacked `created_at`, so
+`grants.sql` failed; and **no upload could have worked** on a hosted project,
+because a private bucket refuses the anon key. Files now go through Storage's
+S3 keys (step 3b).
+
 ### What you will create
 
 | Service | What for | Free tier — and its catch |
 |---|---|---|
 | **Supabase** | The database, staff and transporter sign-in, file storage | 500 MB database, 1 GB files. A free project is paused after about a week with no use — daily use keeps it awake. |
 | **Render** | The two backend servers (`render.yaml`) | Free, but a server sleeps after ~15 idle minutes. See step 7. |
-| **Resend** | Sending the sign-in code emails | 3,000 emails a month, 100 a day. Needs a domain you can add DNS records to. |
+| **Brevo** *(or Resend)* | Sending the sign-in code emails | Brevo: 300 a day, no domain needed — the sender address is verified by a link (the console already uses one). Resend: 3,000 a month, needs a domain you can add DNS records to. |
 | **Vercel** | The two websites (already running) | Unchanged. |
 
 Keep every key and password below in the services' own settings screens or a
@@ -194,7 +206,15 @@ From the repository root, with the session pooler string (as the `postgres` user
 npx supabase db push --db-url "postgresql://postgres.<ref>:<db-password>@aws-0-ap-south-1.pooler.supabase.com:5432/postgres"
 ```
 
-It applies the 65 migrations in `supabase/migrations`. **Do not run `supabase/seed.sql`** — that is made-up test data. Your company's details (NEXUS FREIGHT PRIVATE LIMITED, GST 37AAKCN9322K1ZY, the Gajuwaka address) are set by the migrations; correct anything else in Control panel → Company details once signed in.
+It applies the 67 migrations in `supabase/migrations`. **Do not run `supabase/seed.sql`** — that is made-up test data.
+
+Then check the database's security — the transporter login, the money columns, and each role's permissions against the API's role table:
+
+```powershell
+node supabase/scripts/check-grants.mjs --db-url "<the same session pooler string>"
+```
+
+Every line must be ✓. If one is ✗, stop: it says which grant is wrong. Your company's details (NEXUS FREIGHT PRIVATE LIMITED, GST 37AAKCN9322K1ZY, the Gajuwaka address) are set by the migrations; correct anything else in Control panel → Company details once signed in.
 
 ### 3 · Supabase — logins, storage and people
 
@@ -212,11 +232,23 @@ node supabase/scripts/provision.mjs --db-url "<the same session pooler string>" 
 
 It must end with four ✓ checks and `Done.` It prints a temporary password for each new login: staff sign in with an emailed code (the password is not used); each **transporter** signs in to the portal with their mobile number and the password printed beside it — give it to them privately. Delete `staff.json` and `transporters.json` afterwards, or keep them out of the repository.
 
-### 4 · Resend — the sign-in emails
+### 3b · Supabase — the key for uploaded files
 
-1. Sign up at resend.com, add your sending domain, and add the DNS records it shows at your domain's registrar. Wait until it says *Verified*.
-2. Create an API key.
-3. Decide the sender, e.g. `Nexus Freight <no-reply@yourdomain.in>`.
+Storage → **S3 Connection**: switch *Enable connection via S3 protocol* on, then **New access key**. Note:
+
+- the **Endpoint** shown there — `https://<ref>.storage.supabase.co/storage/v1/s3`
+- the **Region** — `ap-south-1` for Mumbai
+- the **Access key ID** and **Secret access key** (the secret is shown once)
+
+These keys open the file bucket and nothing else. Do not use the `service_role` key instead — it opens the whole database.
+
+### 4 · The sign-in emails — Brevo (or Resend)
+
+**Brevo** (no domain needed): the API key and verified sender the console already uses work here — Brevo → SMTP & API → API keys, and the sender verified under Senders, e.g. `Nexraah <no-reply-nexraah@gmail.com>`. In Brevo → Security → Authorized IPs, leave IP blocking **off**: Render's servers send from addresses that change.
+
+**Resend**, if you have a domain: sign up at resend.com, add the domain and the DNS records it shows, wait until *Verified*, create an API key, and decide the sender, e.g. `Nexus Freight <no-reply@yourdomain.in>`.
+
+With `BREVO_API_KEY` set the sign-in codes and the notification emails go through Brevo; otherwise through Resend.
 
 ### 5 · Render — the two backend servers
 
@@ -231,12 +263,13 @@ It must end with four ✓ checks and `Done.` It prints a temporary password for 
 | `SUPABASE_ANON_KEY` | the anon key |
 | `SUPABASE_JWT_ISSUER` | `https://<ref>.supabase.co/auth/v1` |
 | `PORTAL_SERVICE_KEY` | 64 random characters — `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` — **the same value in both services** |
-| `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_REPLY_TO` | from step 4 |
+| `STORAGE_S3_ENDPOINT`, `STORAGE_S3_ACCESS_KEY_ID`, `STORAGE_S3_SECRET_ACCESS_KEY` | from step 3b (`STORAGE_S3_REGION` is preset to `ap-south-1`) |
+| `BREVO_API_KEY` *or* `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_REPLY_TO` | from step 4 — fill one key, leave the other empty |
 | `SEND_EMAIL_HOOK_SECRET` | leave empty for now — step 6 gives it |
 | `PORTAL_PUBLIC_URL`, `CONSOLE_PUBLIC_URL` | the two websites' addresses — links in notification emails open these |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | run `node supabase/scripts/push-keys.mjs` once and paste its two lines — free browser notifications. Make the pair once: a new pair means everyone turns notifications on again |
 | `VAPID_SUBJECT` | `mailto:` and an address of yours, e.g. `mailto:ops@yourdomain.in` — push services contact it if something is wrong |
-| `ANTHROPIC_API_KEY` | leave empty (paid; without it, Fetch reads documents free in the browser) |
+| `ANTHROPIC_API_KEY` | leave empty (paid; without it, Fetch reads documents free in the browser and Ask answers from the records by rule) |
 | `CORS_ORIGIN` (vendor-api) | the transporter portal's address, e.g. `https://nexraah-vendor-portal.vercel.app` |
 
 3. When `nexraah-internal-api` is live, open `https://nexraah-internal-api.onrender.com/api/v1/health` — it should answer `ok`. In its **Logs**, find the line **`portal pool authenticated as vendor_api`**. If it says anything else, stop: the transporter side would be reading with full access.
@@ -297,7 +330,8 @@ Once `RESEND_API_KEY` and the `VAPID_*` values are set, the server tells people 
 
 - **One set of data for everyone.** The demo records and anything typed into a browser while on demo data are not carried over — start from your real clients and transporters.
 - **Fetch** still reads documents free, in the browser.
-- **The Ask assistant** answers from records only on the demo data; on the real backend it says it is not set up unless `ANTHROPIC_API_KEY` is given (paid).
+- **The Ask assistant** answers from the shared records by rule — a truck or order number, what is waiting today, what clients owe, approvals and the like. With `ANTHROPIC_API_KEY` (paid) it answers anything the records can.
+- **GPS tracking, the accounting export and the bank statement check** work on the real backend as on the demo: set the GPS device key under Control → Integrations again after switching.
 - **To go back** to demo data at any time: `NEXT_PUBLIC_USE_MOCKS=1` on the console and redeploy.
 
 ### Known limits
