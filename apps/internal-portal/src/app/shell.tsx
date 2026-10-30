@@ -12,6 +12,7 @@ import { useTheme } from '@/lib/theme';
 import { Assistant } from '@/components/assistant';
 import { PushSwitch } from '@/components/push-switch';
 import { ReportProblemButton } from './tickets/report-button';
+import { integrationSwitches } from '@/lib/integration-switches';
 
 /**
  * A nav href without its query string.
@@ -158,6 +159,12 @@ export function Shell({ session, children }: { session: Session | null; children
    * is idle — so it never competes with the screen being opened — every screen
    * this person may open is fetched ahead. Not on a connection asking to save data.
    */
+  // The integration switches (Control → Integrations) are asked once per page load; asking as the
+  // console opens means a screen that needs them — the fleet board, the Tracking tab — finds them ready.
+  useEffect(() => {
+    void integrationSwitches();
+  }, []);
+
   const prefetchRouter = useRouter();
   const prefetchKey = groups.flatMap((g) => g.items.map((i) => i.href.split('?')[0])).join('|');
   useEffect(() => {
