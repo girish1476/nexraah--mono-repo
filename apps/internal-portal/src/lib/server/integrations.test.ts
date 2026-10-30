@@ -124,6 +124,7 @@ describe('switches', () => {
       ifsc: true,
       reader: true,
       whatsapp: true,
+      gps: false,
       googleMapsKey: null,
     });
     await saveIntegration('fuel', { enabled: false }, 'me@co.in');

@@ -218,6 +218,7 @@ export async function publicSwitches(): Promise<IntegrationSwitches> {
     ifsc: on('ifsc'),
     reader: on('reader'),
     whatsapp: on('whatsapp'),
+    gps: on('gps') && !!resolve(integrationById('gps') as IntegrationDef, all.gps).value.deviceKey,
     googleMapsKey: all.maps?.values?.googleMapsKey || null,
   };
 }

@@ -133,14 +133,49 @@ export function Shell({ session, children }: { session: Session | null; children
   // The grants the server issued, with the same fallback `permissionsAtom`
   // uses — so a row gated on a permission shows exactly when the page's own
   // button would.
-  const groups = navFor(
-    role,
-    session?.customRole
-      ? (session.permissions ?? [])
-      : session?.permissions?.length
-        ? session.permissions
-        : SEED_GRANTS[role],
-  );
+  /*
+   * No rows until the session says who this is. `role` falls back to OPS for
+   * the moment before it arrives, and drawing OPS's menu then swapping in the
+   * real one made the menu jump on every page load (the groups moved 50–100px
+   * as rows came and went). Rows appearing into an empty menu move nothing.
+   */
+  const groups = !session
+    ? []
+    : navFor(
+        role,
+        session.customRole
+          ? (session.permissions ?? [])
+          : session.permissions?.length
+            ? session.permissions
+            : SEED_GRANTS[role],
+      );
+
+  /*
+   * A menu group's rows are not on screen until the group is opened, so Next
+   * never pre-loaded those screens and every first click waited for the
+   * screen's code to download — 0.3–0.5 s on the live site, against 0.15–0.25 s
+   * once loaded. A few seconds after the page opens, and only when the browser
+   * is idle — so it never competes with the screen being opened — every screen
+   * this person may open is fetched ahead. Not on a connection asking to save data.
+   */
+  const prefetchRouter = useRouter();
+  const prefetchKey = groups.flatMap((g) => g.items.map((i) => i.href.split('?')[0])).join('|');
+  useEffect(() => {
+    if (!session || !prefetchKey) return;
+    const connection = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection;
+    if (connection?.saveData) return;
+    const hrefs = [...new Set(prefetchKey.split('|'))];
+    const run = () => hrefs.forEach((href) => prefetchRouter.prefetch(href));
+    let idle: number | null = null;
+    const timer = setTimeout(() => {
+      if ('requestIdleCallback' in window) idle = window.requestIdleCallback(run, { timeout: 4000 });
+      else run();
+    }, 3000);
+    return () => {
+      clearTimeout(timer);
+      if (idle !== null) window.cancelIdleCallback(idle);
+    };
+  }, [prefetchKey, session, prefetchRouter]);
 
   /**
    * True when a preset row (one carrying a query string) matches the URL we

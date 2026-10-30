@@ -201,6 +201,14 @@ test.describe('approvals inbox', () => {
     await page.goto('/admin/approvals');
 
     const decidable = page.locator('div.surface').filter({ has: page.getByRole('button', { name: 'Approve' }) });
+    // Wait for the list to load, as the test above does: counting the instant the page opens read an
+    // empty list still loading as "nothing left to decide" and skipped the test.
+    await expect
+      .poll(async () => (await decidable.count()) > 0 || (await page.getByText('Nothing is waiting on a decision.').isVisible()), {
+        timeout: 15_000,
+      })
+      .toBe(true)
+      .catch(() => undefined);
     const before = await decidable.count();
     test.skip(
       before === 0,

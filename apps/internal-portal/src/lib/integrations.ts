@@ -252,6 +252,8 @@ export interface IntegrationSwitches {
   ifsc: boolean;
   reader: boolean;
   whatsapp: boolean;
+  /** GPS tracking is on and has a device key — so there can be live positions worth asking for. */
+  gps: boolean;
   /** Null: no key saved here — the deployment's own setting, if any, is used. */
   googleMapsKey: string | null;
 }
@@ -262,6 +264,8 @@ export const ALL_ON: IntegrationSwitches = {
   ifsc: true,
   reader: true,
   whatsapp: true,
+  // Off when the switches cannot be read: asking for positions nobody can send costs every map a round trip.
+  gps: false,
   googleMapsKey: null,
 };
 

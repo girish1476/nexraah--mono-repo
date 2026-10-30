@@ -74,26 +74,28 @@ interface Everything {
   orders: OrderListRow[] | null;
   receivables: ReceivablesResponse | null;
   vendors: VendorListRow[] | null;
-  people: AllowedEmail[] | null;
   tickets: TicketQueue | null;
   approvals: ApprovalRow[] | null;
   targets: DeskTargets | null;
 }
 
-/** Every figure comes from a screen that already exists; one of them failing must not blank the rest. */
+/**
+ * Every figure comes from a screen that already exists; one of them failing must not blank the rest.
+ * The people list is not in here: it is the one answer that comes from the server (the shared sign-in
+ * list), and waiting for it held every chart back by that round trip. It is read beside, and fills in.
+ */
 async function loadEverything(): Promise<Everything> {
   const safe = <T,>(p: Promise<T>): Promise<T | null> => p.catch(() => null);
-  const [home, orders, receivables, vendors, people, tickets, approvals, targets] = await Promise.all([
+  const [home, orders, receivables, vendors, tickets, approvals, targets] = await Promise.all([
     safe(getHome()),
     safe(listAllOrders({}).then((r) => r.rows)),
     safe(getReceivables()),
     safe(listVendors()),
-    safe(listAllowedEmails()),
     safe(listTickets()),
     safe(listApprovals({ status: 'PENDING' })),
     safe(getDeskTargets()),
   ]);
-  return { home, orders, receivables, vendors, people, tickets, approvals, targets };
+  return { home, orders, receivables, vendors, tickets, approvals, targets };
 }
 
 /** The last thirty days, oldest first, as `YYYY-MM-DD`. */
@@ -129,10 +131,14 @@ const tally = <T extends string>(values: T[]): Map<T, number> => {
  */
 export default function AdminDashboardPage() {
   const [data, setData] = useState<Everything | null>(null);
+  /** Undefined while it is still being read; null when it could not be. */
+  const [people, setPeople] = useState<AllowedEmail[] | null | undefined>(undefined);
+  const loadPeople = () => listAllowedEmails().then(setPeople, () => setPeople(null));
   useEffect(() => {
     void loadEverything().then(setData);
+    void loadPeople();
   }, []);
-  const updatedAt = useLiveRefresh(() => loadEverything().then(setData), 60_000);
+  const updatedAt = useLiveRefresh(() => Promise.all([loadEverything().then(setData), loadPeople()]), 60_000);
 
   if (!data) {
     return (
@@ -142,7 +148,7 @@ export default function AdminDashboardPage() {
     );
   }
 
-  const { home, orders, receivables, vendors, people, tickets, approvals, targets } = data;
+  const { home, orders, receivables, vendors, tickets, approvals, targets } = data;
 
   // ---- orders ---------------------------------------------------------------
   const byStatus = tally((orders ?? []).map((o) => o.status));
@@ -226,7 +232,7 @@ export default function AdminDashboardPage() {
         <StatTile emoji="📥" label="Owed to us" value={home ? money(home.standing.receivablesPaise) : '—'} note={home ? `${count(home.standing.unbilledTrips)} delivered trips not billed yet` : undefined} tone={home && home.standing.unbilledTrips > 0 ? 'warn' : undefined} />
         <StatTile emoji="✋" label="Approvals waiting" value={approvals ? count(approvals.length) : '—'} note="across every desk" tone={approvals && approvals.length > 0 ? 'warn' : undefined} />
         <StatTile emoji="🎫" label="Open tickets" value={tickets ? count(tickets.summary.open + tickets.summary.inProgress) : '—'} note={tickets && tickets.summary.blocking > 0 ? `${count(tickets.summary.blocking)} blocking somebody` : 'none blocking'} tone={tickets && tickets.summary.blocking > 0 ? 'bad' : undefined} />
-        <StatTile emoji="👥" label="People who can sign in" value={people ? count(activePeople.length) : '—'} note={people ? `${count(people.length - activePeople.length)} switched off` : undefined} />
+        <StatTile emoji="👥" label="People who can sign in" value={people ? count(activePeople.length) : people === undefined ? '…' : '—'} note={people ? `${count(people.length - activePeople.length)} switched off` : undefined} />
       </div>
 
       <div className="viz-grid">
@@ -320,7 +326,11 @@ export default function AdminDashboardPage() {
         </ChartCard>
 
         <ChartCard title="People by role" note="Everyone who can sign in today">
-          {people ? <HBars rows={roleRows} format={count} empty="Nobody is allowed to sign in yet." /> : <ChartEmpty>The list of people could not be read.</ChartEmpty>}
+          {people ? (
+            <HBars rows={roleRows} format={count} empty="Nobody is allowed to sign in yet." />
+          ) : (
+            <ChartEmpty>{people === undefined ? 'Reading the list of people…' : 'The list of people could not be read.'}</ChartEmpty>
+          )}
           <CardLink href="/admin/users">Open Allowed emails</CardLink>
         </ChartCard>
 

@@ -8,6 +8,8 @@
  * positions", and those screens show what Ops typed in, as before.
  */
 
+import { integrationSwitches } from './integration-switches';
+
 export interface LivePosition {
   vehicleNo: string;
   lat: number;
@@ -25,6 +27,9 @@ export async function livePositions(vehicleNos: (string | null | undefined)[]): 
   const list = [...new Set(vehicleNos.filter((v): v is string => !!v && !!v.trim()))].slice(0, 50);
   // No server to ask during unit tests (VITEST is never set in a browser build).
   if (!list.length || typeof window === 'undefined' || typeof fetch === 'undefined' || process.env.VITEST) return {};
+  // No GPS device key set up (Control → Integrations): no position can exist, so no round trip —
+  // it held up the fleet board and the Tracking tab by a server call each time.
+  if (!(await integrationSwitches()).gps) return {};
   const key = list.join('|');
   if (memo && memo.key === key && Date.now() - memo.at < MEMO_MS) return memo.value;
   try {
