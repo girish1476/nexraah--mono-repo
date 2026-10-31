@@ -111,6 +111,6 @@ services:
           name: nexraah-internal-api
           envVarKey: RENDER_EXTERNAL_URL
       - key: CORS_ORIGIN
-        value: https://nexraah-vendor-portal.vercel.app
+        value: https://nexraah-mono-repo-vendor-portal.vercel.app
       - key: PORTAL_SERVICE_KEY
         sync: false

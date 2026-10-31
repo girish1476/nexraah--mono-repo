@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  reportingLabel,
   inr,
   inrExact,
   inrCompact,
@@ -12,6 +13,17 @@ import {
   capitalizeWords,
   titleCase,
 } from './format';
+
+describe('reportingLabel', () => {
+  it('reads a rule in plain words', () => {
+    expect(reportingLabel('SAME_DAY')).toBe('same day');
+  });
+
+  it('says "not set" for an empty rule — it is optional on the server, and this crashed two pages', () => {
+    expect(reportingLabel(null)).toBe('not set');
+    expect(reportingLabel(undefined)).toBe('not set');
+  });
+});
 
 describe('inr', () => {
   it('formats whole rupees with Indian grouping', () => {

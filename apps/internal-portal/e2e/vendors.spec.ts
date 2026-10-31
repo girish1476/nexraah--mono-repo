@@ -138,6 +138,25 @@ test.describe('Vendors — role gating on the list', () => {
 });
 
 test.describe('Vendor onboarding wizard — /vendors/new', () => {
+  test('the branch is automatic unless chosen, and choosing one asks why', async ({ page }) => {
+    // A preset demo branch id here was refused by the real server, so no
+    // transporter could be saved; and it wants a reason for a hand-picked one.
+    await setRole(page, 'OPS');
+    await page.goto('/vendors/new');
+    const main = page.locator('main');
+    const branch = field(main, 'Branch').locator('select');
+    await expect(branch).toHaveValue('');
+    await expect(main.getByText('Why this branch', { exact: true })).toHaveCount(0);
+
+    await field(main, 'Legal name').locator('input').fill('Godavari Road Carriers');
+    await field(main, 'Base city').locator('input').fill('Nashik');
+    await field(main, 'Phone').locator('input').fill('9848012345');
+    await branch.selectOption({ index: 1 });
+    await expect(main.getByText('Why this branch', { exact: true })).toBeVisible();
+    await main.getByRole('button', { name: 'Save and continue' }).click();
+    await expect(main.getByText('Say why this branch, in at least 20 characters')).toBeVisible();
+  });
+
   test('COMPLIANCE cannot onboard — gets the blocked message, not the wizard', async ({ page }) => {
     await setRole(page, 'COMPLIANCE');
     await page.goto('/vendors/new');

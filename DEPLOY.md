@@ -270,7 +270,7 @@ With `BREVO_API_KEY` set the sign-in codes and the notification emails go throug
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | run `node supabase/scripts/push-keys.mjs` once and paste its two lines — free browser notifications. Make the pair once: a new pair means everyone turns notifications on again |
 | `VAPID_SUBJECT` | `mailto:` and an address of yours, e.g. `mailto:ops@yourdomain.in` — push services contact it if something is wrong |
 | `ANTHROPIC_API_KEY` | leave empty (paid; without it, Fetch reads documents free in the browser and Ask answers from the records by rule) |
-| `CORS_ORIGIN` (vendor-api) | the transporter portal's address, e.g. `https://nexraah-vendor-portal.vercel.app` |
+| `CORS_ORIGIN` (vendor-api) | the transporter portal's address, e.g. `https://nexraah-mono-repo-vendor-portal.vercel.app` |
 
 3. When `nexraah-internal-api` is live, open `https://nexraah-internal-api.onrender.com/api/v1/health` — it should answer `ok`. In its **Logs**, find the line **`portal pool authenticated as vendor_api`**. If it says anything else, stop: the transporter side would be reading with full access.
 
