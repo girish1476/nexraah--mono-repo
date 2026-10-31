@@ -12,7 +12,8 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
-import { BlankAsAbsent, FORMAT_MESSAGE, GSTIN_SHAPE_RE, PHONE_RE } from '../../../common/validation/formats';
+import { BlankAsAbsent } from '../../../common/validation/blank-as-absent';
+import { FORMAT_MESSAGE, GSTIN_SHAPE_RE, PHONE_RE } from '../../../common/validation/formats';
 
 /**
  * `POST /clients`.

@@ -8,7 +8,8 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
-import { BlankAsAbsent, FORMAT_MESSAGE, GSTIN_SHAPE_RE, PHONE_RE, VEHICLE_RE } from '../../../common/validation/formats';
+import { BlankAsAbsent } from '../../../common/validation/blank-as-absent';
+import { FORMAT_MESSAGE, GSTIN_SHAPE_RE, PHONE_RE, VEHICLE_RE } from '../../../common/validation/formats';
 
 /**
  * The sections of a lorry receipt, validated.

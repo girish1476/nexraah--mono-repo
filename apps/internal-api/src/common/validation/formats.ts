@@ -18,8 +18,6 @@
  */
 
 /** Indian mobile: ten digits starting 6-9. Mirrors the portal's `PHONE_RE`. */
-import { Transform } from 'class-transformer';
-
 export const PHONE_RE = /^[6-9]\d{9}$/;
 
 /** `AAKCR2148L` — five letters, four digits, one letter. */
@@ -65,15 +63,3 @@ export const FORMAT_MESSAGE = {
   gstin: 'GSTIN should be 15 characters: state code, PAN, entity code, Z, check digit.',
   vehicle: 'Vehicle number looks wrong — e.g. MH 15 GT 4482.',
 } as const;
-
-/**
- * An optional box left empty on a form arrives as `""`. `@IsOptional()` skips
- * only null and undefined, so the shape check under it refused the empty
- * string as a malformed GSTIN, date or phone — and the whole save with it.
- * This makes an empty (or all-space) value mean "not given".
- *
- * For create bodies and whole-section saves only: on a PATCH, `""` can mean
- * "clear this", and those keep their own handling.
- */
-export const BlankAsAbsent = () =>
-  Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value));
