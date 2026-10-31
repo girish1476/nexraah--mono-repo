@@ -211,11 +211,11 @@ export default function QuotesPage() {
               {confirming === q.id ? (
                 <div style={{ marginTop: 10 }}>
                   <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--red)' }}>
-                    Withdraw this price for good?
+                    Withdraw this price?
                   </p>
                   <p className="muted" style={{ marginTop: 2 }}>
-                    You will not be able to quote on this load again, even if your truck frees up
-                    later. Only withdraw if you are sure you cannot carry it.
+                    Nexraah stops considering it. If your truck frees up while the load is still open, you can
+                    quote on it again from Loads.
                   </p>
                   <div style={{ display: 'flex', gap: 16, marginTop: 10 }}>
                     <button
@@ -230,7 +230,7 @@ export default function QuotesPage() {
                         fontWeight: 700,
                       }}
                     >
-                      Yes, withdraw for good
+                      Yes, withdraw
                     </button>
                     <button
                       onClick={() => setConfirming(null)}
@@ -259,8 +259,8 @@ export default function QuotesPage() {
                     Withdraw quote
                   </button>
                   <p className="muted" style={{ marginTop: 2 }}>
-                    Takes your price out of the running for this load. This cannot be undone — you
-                    will not be able to quote on it again.
+                    Takes your price out of the running for this load. While the load is still open you
+                    can send a new price for it from Loads.
                   </p>
                 </>
               )}

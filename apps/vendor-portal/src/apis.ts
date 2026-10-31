@@ -55,6 +55,18 @@ api.interceptors.response.use(
         window.location.replace('/signin');
       }
     }
+    /*
+     * Screens show `e.message`. Axios fills it with "Request failed with
+     * status code 409", which tells a transporter nothing; the server's own
+     * sentence ("You have already quoted on this load.") is in the body.
+     * `error.response` is untouched, so anything branching on the code still can.
+     */
+    const serverMessage = (error.response?.data as { error?: { message?: unknown } } | undefined)?.error?.message;
+    if (typeof serverMessage === 'string' && serverMessage.trim()) {
+      error.message = serverMessage;
+    } else if (!error.response) {
+      error.message = 'Could not reach Nexraah. Check your signal and try again.';
+    }
     return Promise.reject(error);
   },
 );
