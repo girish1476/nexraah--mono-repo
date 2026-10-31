@@ -9,10 +9,8 @@
  * auth — against a real `vendor-api` every request is a 401 with nowhere to go.
  *
  * Written for the person actually holding the phone: a fleet owner or driver,
- * often at a loading dock, frequently in a second language. So the field is a
- * **mobile number**, which is what they gave us and what is on their vendor
- * record — not an email, which many will not have. `lib/auth.ts` turns the
- * number into the address the Auth account was created with.
+ * often at a loading dock, frequently in a second language. They sign in with
+ * the email and password Nexraah gave them (`provision.mjs` makes the login).
  */
 import { FormEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -21,7 +19,7 @@ import { USE_MOCK } from '@/lib/mock';
 
 export default function SignInPage() {
   const router = useRouter();
-  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [reveal, setReveal] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +36,7 @@ export default function SignInPage() {
     setBusy(true);
     setError(null);
     try {
-      await signIn(phone, password);
+      await signIn(email, password);
       router.replace('/loads');
     } catch (err) {
       setError(err instanceof AuthError ? err.message : 'Could not sign you in. Try again.');
@@ -80,24 +78,25 @@ export default function SignInPage() {
         </div>
 
         <form onSubmit={submit} noValidate>
-          <label className="signin-label" htmlFor="phone">
-            Your mobile number
+          <label className="signin-label" htmlFor="email">
+            Your email
           </label>
           <input
-            id="phone"
-            name="phone"
+            id="email"
+            name="email"
             className="field"
-            type="tel"
-            inputMode="numeric"
+            type="email"
+            inputMode="email"
             autoComplete="username"
+            autoCapitalize="none"
             autoFocus
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            placeholder="10 digits"
-            aria-describedby="phone-hint"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="accounts@transporter.in"
+            aria-describedby="email-hint"
           />
-          <p id="phone-hint" className="signin-hint">
-            The number Nexraah has on file for you.
+          <p id="email-hint" className="signin-hint">
+            The address Nexraah set up your login with.
           </p>
 
           <label className="signin-label" htmlFor="password">
@@ -143,14 +142,14 @@ export default function SignInPage() {
           <div className="signin-demo">
             <p className="signin-demo-title">Demo login</p>
             <p>
-              Mobile <strong>{DEMO_LOGIN.phone}</strong> · password{' '}
+              Email <strong>{DEMO_LOGIN.email}</strong> · password{' '}
               <strong>{DEMO_LOGIN.password}</strong>
             </p>
             <button
               type="button"
               className="tap signin-demo-fill"
               onClick={() => {
-                setPhone(DEMO_LOGIN.phone);
+                setEmail(DEMO_LOGIN.email);
                 setPassword(DEMO_LOGIN.password);
               }}
             >

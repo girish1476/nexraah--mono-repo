@@ -220,7 +220,7 @@ Every line must be ✓. If one is ✗, stop: it says which grant is wrong. Your 
 
 1. `pnpm install` once at the repository root.
 2. Copy `supabase/scripts/staff.example.json` to `staff.json` and list your staff: name, work email, role (`ADMIN`, `OPS`, `COMPLIANCE`, `FINANCE`, `BD`, `LEADERSHIP`). At least one `ADMIN`.
-3. Copy `supabase/scripts/transporters.example.json` to `transporters.json` for transporters who will use the portal: their 10-digit mobile and their transporter code (`VND-…`). Transporters added later in the console can be added here and the script run again.
+3. Copy `supabase/scripts/transporters.example.json` to `transporters.json` for transporters who will use the portal: their email and their transporter code (`VND-…`). One email per transporter, and not a staff member's. Transporters added later in the console can be added here and the script run again.
 4. Make two strong passwords for the database logins and run:
 
 ```powershell
@@ -230,7 +230,7 @@ node supabase/scripts/provision.mjs --db-url "<the same session pooler string>" 
   --staff supabase/scripts/staff.json --transporters supabase/scripts/transporters.json
 ```
 
-It must end with four ✓ checks and `Done.` It prints a temporary password for each new login: staff sign in with an emailed code (the password is not used); each **transporter** signs in to the portal with their mobile number and the password printed beside it — give it to them privately. Delete `staff.json` and `transporters.json` afterwards, or keep them out of the repository.
+It must end with four ✓ checks and `Done.` It prints a temporary password for each new login: staff sign in with an emailed code (the password is not used); each **transporter** signs in to the portal with their email and the password printed beside it — give it to them privately. Delete `staff.json` and `transporters.json` afterwards, or keep them out of the repository.
 
 ### 3b · Supabase — the key for uploaded files
 
@@ -305,7 +305,7 @@ Then **redeploy both** — `NEXT_PUBLIC_*` values are built into the site, so a 
 
 1. Console: sign in with an `ADMIN` email from `staff.json` — the code should arrive within a minute. Control panel → Company details should read NEXUS FREIGHT PRIVATE LIMITED.
 2. Add a client, raise a load request, enter a quote — then sign in as another desk on another device and see the same load.
-3. Transporter portal: sign in with a transporter's mobile number and printed password.
+3. Transporter portal: sign in with a transporter's email and printed password.
 
 ### Notifications — email and browser, free
 

@@ -159,7 +159,7 @@ function signInMessage(
 ): string {
   if (status === 429) return 'Too many tries. Wait a minute and try again.';
   if (code === 'email_not_confirmed') return 'This login has not been activated yet. Call your Nexraah contact.';
-  if (status === 400 || status === 401) return 'That mobile number and password do not match a login.';
+  if (status === 400 || status === 401) return 'That email and password do not match a login.';
   return payload?.error_description ?? payload?.msg ?? 'Could not sign you in. Try again.';
 }
 
@@ -171,54 +171,40 @@ function signInMessage(
  * only this app reads — the fixture adapter never inspects it, and a real
  * `vendor-api` would reject it outright, which is the point.
  */
-export const DEMO_LOGIN = { phone: '9876543210', password: 'nexraah' };
+export const DEMO_LOGIN = { email: 'transporter@demo.nexraah.in', password: 'nexraah' };
 
-async function mockGrant(identifier: string, password: string): Promise<AuthTokens> {
-  const digits = identifier.replace(/\D/g, '');
-  const ok = digits === DEMO_LOGIN.phone && password === DEMO_LOGIN.password;
+async function mockGrant(email: string, password: string): Promise<AuthTokens> {
+  const ok = email === DEMO_LOGIN.email && password === DEMO_LOGIN.password;
   const tokens = await mock(
     ok
       ? {
-          accessToken: `mock.${digits}.${Date.now()}`,
-          refreshToken: `mock-refresh.${digits}`,
+          accessToken: `mock.demo.${Date.now()}`,
+          refreshToken: 'mock-refresh.demo',
           expiresAt: Date.now() + 3600_000,
         }
       : null,
     260,
   );
-  if (!tokens) throw new AuthError('That mobile number and password do not match a login.');
+  if (!tokens) throw new AuthError('That email and password do not match a login.');
   return tokens;
 }
 
 /* ---- the operations this app performs ------------------------------------ */
 
 /**
- * Exchanges a login and password for a token pair and stores it.
- *
- * Transporters are identified by mobile number, not email — it is what they
- * give us and what is already on their vendor record. Supabase Auth's password
- * grant is an email grant, so a number is carried as `<digits>@vendor.nexraah.in`,
- * the same address `provision.mjs` creates the Auth account with. Someone who
- * was set up with a real email address can still type it and it passes through
- * untouched.
+ * Exchanges an email and password for a token pair and stores it. The account
+ * is the one `provision.mjs` makes with that address.
  */
-export async function signIn(identifier: string, password: string): Promise<void> {
-  const trimmed = identifier.trim();
-  if (!trimmed || !password) throw new AuthError('Enter your mobile number and password.');
+export async function signIn(emailAddress: string, password: string): Promise<void> {
+  const email = emailAddress.trim().toLowerCase();
+  if (!email || !password) throw new AuthError('Enter your email and password.');
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    throw new AuthError('Enter your email address, e.g. accounts@transporter.in');
+  }
 
-  const tokens = USE_MOCK
-    ? await mockGrant(trimmed, password)
-    : await grant({ email: toLoginEmail(trimmed), password }, 'password');
+  const tokens = USE_MOCK ? await mockGrant(email, password) : await grant({ email, password }, 'password');
 
   store(tokens);
-}
-
-/** A 10-digit Indian mobile becomes the address the Auth account was made with. */
-export function toLoginEmail(identifier: string): string {
-  const value = identifier.trim().toLowerCase();
-  if (value.includes('@')) return value;
-  const digits = value.replace(/\D/g, '');
-  return `${digits}@vendor.nexraah.in`;
 }
 
 /**

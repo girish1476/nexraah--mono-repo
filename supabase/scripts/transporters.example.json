@@ -1,10 +1,10 @@
 [
   {
-    "mobile": "9880000001",
+    "email": "accounts@first-transporter.example",
     "vendorCode": "VND-0001"
   },
   {
-    "mobile": "9880000002",
+    "email": "accounts@second-transporter.example",
     "vendorCode": "VND-0002",
     "password": "optional — left out, one is made up and printed"
   }

@@ -10,9 +10,8 @@
  *      to a `users` row by `auth_user_id` — part 14 §4.1 (the seed does
  *      the same for fixtures; this does it for people)
  *   4. transporter sign-ins: one Supabase Auth account per transporter login
- *      (mobile number + password, kept as `<digits>@vendor.nexraah.in` — the
- *      address the transporter portal signs in with), linked to its vendor
- *      by `vendor_users`. Nothing else creates these: activating a
+ *      (their email + a password, what the transporter portal signs in with),
+ *      linked to its vendor by `vendor_users`. Nothing else creates these: activating a
  *      transporter does not (FLOWS.md §12), so without this step no
  *      transporter can sign in to the portal.
  *   5. a check that the grants the whole design rests on actually held
@@ -194,18 +193,27 @@ async function main() {
     )).rowCount === 1;
 
     for (const t of list) {
-      const digits = String(t.mobile ?? '').replace(/\D/g, '').slice(-10);
+      const email = String(t.email ?? '').trim().toLowerCase();
       const code = String(t.vendorCode ?? '').trim().toUpperCase();
-      if (!/^[6-9]\d{9}$/.test(digits) || !code) {
-        throw new Error(`transporter entry needs a 10-digit mobile and a vendorCode (VND-…): ${JSON.stringify(t)}`);
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || !code) {
+        throw new Error(`transporter entry needs an email and a vendorCode (VND-…): ${JSON.stringify({ email: t.email, vendorCode: t.vendorCode })}`);
       }
-      const email = `${digits}@vendor.nexraah.in`;
       const vendor = (await client.query('select id, legal_name, status from vendors where code=$1', [code])).rows[0];
       if (!vendor) throw new Error(`vendor ${code} does not exist — add the transporter in the console first`);
       if (vendor.status !== 'ACTIVE') {
         console.warn(`! ${code} (${vendor.legal_name}) is ${vendor.status} — the login is made, but the portal shows them nothing to quote on until they are cleared`);
       }
-      if (DRY) { out.transporters.push({ mobile: digits, vendor: code, status: 'dry-run' }); continue; }
+      // One address, one account: a staff member's, or another transporter's,
+      // would quietly hand that person's login this transporter's portal.
+      const staffUser = (await client.query('select 1 from users where lower(email)=$1', [email])).rowCount > 0;
+      if (staffUser) throw new Error(`${email} is a staff sign-in — give ${code} its own address`);
+      const taken = (await client.query(
+        `select v.code from vendor_users vu join auth.users au on au.id = vu.auth_user_id join vendors v on v.id = vu.vendor_id
+          where lower(au.email)=$1 and v.code <> $2`,
+        [email, code],
+      )).rows[0];
+      if (taken) throw new Error(`${email} is already the login for ${taken.code} — give ${code} its own address`);
+      if (DRY) { out.transporters.push({ email, vendor: code, status: 'dry-run' }); continue; }
 
       await client.query('begin');
       try {
@@ -220,8 +228,8 @@ async function main() {
                confirmation_token, recovery_token, email_change, email_change_token_new)
              values ('00000000-0000-0000-0000-000000000000', $1, 'authenticated', 'authenticated', $2,
                crypt($3, gen_salt('bf')), now(), now(), now(),
-               '{"provider":"email","providers":["email"]}'::jsonb, jsonb_build_object('name', $4::text, 'phone', $5::text), '', '', '', '')`,
-            [authId, email, password, vendor.legal_name, digits],
+               '{"provider":"email","providers":["email"]}'::jsonb, jsonb_build_object('name', $4::text), '', '', '', '')`,
+            [authId, email, password, vendor.legal_name],
           );
           await client.query(
             hasProviderId
@@ -238,9 +246,12 @@ async function main() {
            on conflict (auth_user_id) do update set vendor_id = excluded.vendor_id, updated_at = now()`,
           [authId, vendor.id],
         );
+        // Notifications go to "Email for notices". Until someone sets one, the
+        // address they sign in with is the one we know works.
+        await client.query('update vendors set email = $1 where id = $2 and email is null', [email, vendor.id]);
         await client.query('commit');
-        out.transporters.push({ mobile: digits, vendor: code, status: password ? 'created' : 'linked-existing', password });
-        console.log(`✓ transporter ${code.padEnd(9)} ${digits}${password ? '  (new sign-in)' : '  (linked existing sign-in)'}`);
+        out.transporters.push({ email, vendor: code, status: password ? 'created' : 'linked-existing', password });
+        console.log(`✓ transporter ${code.padEnd(9)} ${email}${password ? '  (new sign-in)' : '  (linked existing sign-in)'}`);
       } catch (e) {
         await client.query('rollback');
         throw e;
@@ -266,8 +277,8 @@ async function main() {
   }
   const newTransporters = out.transporters.filter((t) => t.password);
   if (newTransporters.length) {
-    console.log('\nTransporter portal sign-ins — mobile number and password (share each privately with that transporter):');
-    for (const t of newTransporters) console.log(`  ${t.vendor}  ${t.mobile}  ${t.password}`);
+    console.log('\nTransporter portal sign-ins — email and password (share each privately with that transporter):');
+    for (const t of newTransporters) console.log(`  ${t.vendor}  ${t.email}  ${t.password}`);
   }
   if (bad.length) {
     console.error(`\n✗ grant checks failed: ${bad.join(', ')} — do not point a portal at this database until fixed.`);

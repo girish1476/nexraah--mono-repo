@@ -34,8 +34,8 @@ export const STATE_PATH = join(__dirname, '.auth', 'state.json');
 function fixtureSession() {
   const expiresAt = Date.now() + 3600_000;
   return [
-    { name: 'token', value: `mock.9876543210.${Date.now()}` },
-    { name: 'refreshToken', value: 'mock-refresh.9876543210' },
+    { name: 'token', value: `mock.demo.${Date.now()}` },
+    { name: 'refreshToken', value: 'mock-refresh.demo' },
     { name: 'tokenExpiresAt', value: String(expiresAt) },
   ];
 }

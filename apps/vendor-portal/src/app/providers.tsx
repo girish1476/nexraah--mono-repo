@@ -43,11 +43,11 @@ function AuthGate({ children }: { children: ReactNode }) {
   const [checked, setChecked] = useState(false);
 
   useEffect(() => {
+    // Once passed, the check stays passed: signing out reloads the page.
+    if (checked) return;
     let cancelled = false;
 
     (async () => {
-      // Read at mount rather than from a hook, so this effect can have an
-      // empty dependency list and never re-run on navigation.
       const path = window.location.pathname;
       if (PUBLIC_ROUTES.some((r) => path.startsWith(r))) {
         if (!cancelled) setChecked(true);
@@ -70,8 +70,12 @@ function AuthGate({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
+    // On navigation too, until it has passed. It used to run only on mount, so
+    // someone who arrived signed out was sent to /signin with `checked` still
+    // false, signed in, and came back to a screen rendering nothing until they
+    // reloaded — a blank page straight after every first sign-in.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [pathname, checked]);
 
   // The sign-in screen must render even while `checked` is false — it is the
   // one place a signed-out person is supposed to be, and gating it behind its
