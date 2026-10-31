@@ -606,14 +606,17 @@ export default function VendorDetailPage() {
                     </span>,
                   ],
                   ['GSTIN', vendor.gstin ?? '—'],
-                  ['PAN', vendor.pan],
+                  // A transporter saved after the first onboarding step has none of the later
+                  // steps' answers yet — operating states, fleet, bank. Each reads "—" until
+                  // given; `operatingStates.join` on the missing list crashed the whole page.
+                  ['PAN', vendor.pan || '—'],
                   ['Party type', vendor.partyType],
-                  ['Branch', vendor.branchName],
-                  ['Fleet', `${vendor.fleetCount} trucks`],
+                  ['Branch', vendor.branchName || '—'],
+                  ['Fleet', vendor.fleetCount != null ? `${vendor.fleetCount} trucks` : '—'],
                   ['Truck types', vendor.truckTypes?.length ? vendor.truckTypes.join(', ') : '—'],
-                  ['Operating', vendor.operatingStates.join(', ')],
+                  ['Operating', vendor.operatingStates?.length ? vendor.operatingStates.join(', ') : '—'],
                   ['On panel since', fmtDate(vendor.panelDate)],
-                  ['Bank', `${vendor.bankAccount} · ${vendor.ifsc}`],
+                  ['Bank', vendor.bankAccount ? `${vendor.bankAccount} · ${vendor.ifsc ?? '—'}` : '—'],
                 ]}
               />
             </Panel>
@@ -621,7 +624,7 @@ export default function VendorDetailPage() {
             <Panel title="Advance policy">
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <span className="mono" style={{ fontSize: 23 }}>
-                  {vendor.advancePct}%
+                  {vendor.advancePct != null ? `${vendor.advancePct}%` : '—'}
                 </span>
                 {can('vendor.advance_policy') && !awaitingApproval && (
                   <button
@@ -808,7 +811,7 @@ export default function VendorDetailPage() {
           ['Vendor', vendor.legalName],
           ['GSTIN', vendor.gstin ?? '—'],
           ['Documents', `${vendor.documents.filter((d) => d.status === 'VERIFIED').length} of ${vendor.documents.length} verified`],
-          ['Advance policy', `${vendor.advancePct}%`],
+          ['Advance policy', vendor.advancePct != null ? `${vendor.advancePct}%` : 'not set yet'],
         ]}
         confirmLabel="Activate"
         busy={busy}

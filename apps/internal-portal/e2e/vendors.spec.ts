@@ -175,6 +175,32 @@ test.describe('Vendor onboarding wizard — /vendors/new', () => {
     await expect(field(main, 'Legal name').locator('input')).toHaveValue('Nexraah Test Transport');
   });
 
+  test('a transporter saved after step 1 only opens on its own page, with the later answers blank', async ({ page }) => {
+    // Its page used to crash ("Application error") — the operating states it does
+    // not have yet were joined as if they were there. On the company's own saved
+    // data, as the live console runs — the demo set is not saved, so it would be
+    // gone when the page is opened.
+    await setRole(page, 'OPS');
+    await page.addInitScript(() => window.localStorage.removeItem('nexraah.demo'));
+    await page.goto('/vendors/new');
+    const main = page.locator('main');
+    await field(main, 'Legal name').locator('input').fill('Halfway Roadways');
+    await field(main, 'Base city').locator('input').fill('Nashik');
+    await field(main, 'Phone').locator('input').fill('9876501234');
+    await main.getByRole('button', { name: 'Save and continue' }).click();
+    await expect(main.getByText('2 · Identity and legal file')).toBeVisible();
+
+    const id = await page.evaluate(
+      () => (JSON.parse(localStorage.getItem('nexraah.mockdb.v4') ?? '{}').vendors ?? []).find((v: { legalName?: string }) => v.legalName === 'Halfway Roadways')?.id,
+    );
+    expect(id).toBeTruthy();
+    await page.goto(`/vendors/${id}`);
+    await expect(main.getByRole('heading', { name: 'Halfway Roadways' })).toBeVisible();
+    await expect(page.getByText('Application error')).toHaveCount(0);
+    const operating = main.locator('dt, .fact-label, span').filter({ hasText: /^Operating$/ }).first();
+    await expect(operating).toBeVisible();
+  });
+
   test('step 3 (Fleet) rejects an empty submit and does not advance', async ({ page }) => {
     await setRole(page, 'OPS');
     await page.goto('/vendors/new');
