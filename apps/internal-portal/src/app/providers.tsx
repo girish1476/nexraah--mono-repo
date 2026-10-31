@@ -5,7 +5,7 @@ import { ReactNode, useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { sessionAtom, Session } from '@/store/atoms';
 import { request, errorMessage } from '@/apis';
-import { ensureFreshToken, isSignedIn, signOut } from '@/lib/auth';
+import { ensureFreshToken, isSignedIn, serverSessionAlive, signOut } from '@/lib/auth';
 import { ROLES } from '@/lib/permissions';
 import { Toast, ErrorState } from '@/lib/ui';
 import { Shell } from './shell';
@@ -83,6 +83,18 @@ function SessionBootstrap({ children }: { children: ReactNode }) {
     };
     // Re-runs on navigation, and when the retry button below bumps `attempt`.
   }, [pathname, router, setSession, attempt]);
+
+  // The page's token must not outlive the server's session, or the console
+  // looks signed in while Integrations and the shared people list are refused.
+  // Not waited for: the screen opens meanwhile, and nearly always this says yes.
+  useEffect(() => {
+    if (isPublic(pathname) || !isSignedIn()) return;
+    void serverSessionAlive().then((alive) => {
+      if (alive) return;
+      signOut();
+      router.replace('/signin');
+    });
+  }, [pathname, router]);
 
   /**
    * `/` is a signpost, not a screen: which desk you land on depends on the

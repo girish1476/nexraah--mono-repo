@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   clearSession,
   ensureFreshToken,
@@ -64,6 +64,50 @@ describe('email one-time code sign-in', () => {
 
   it('asks for the code before checking anything', async () => {
     await expect(verifySignInCode(OPS_EMAIL, '')).rejects.toThrow(/enter the code/i);
+  });
+});
+
+describe("the server's own session", () => {
+  /** A fresh copy of this file for each: what it remembers about the server lasts as long as the page. */
+  async function withServer(session: number | Error, realEmail = true) {
+    vi.resetModules();
+    const calls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      calls.push(url);
+      if (url === '/api/sign-in/status') return new Response(JSON.stringify({ realEmail }));
+      if (session instanceof Error) throw session;
+      return new Response('{}', { status: session });
+    }));
+    const { serverSessionAlive } = await import('./auth');
+    return { serverSessionAlive, asked: () => calls.filter((c) => c === '/api/sign-in/session').length };
+  }
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('is over when the server answers 401', async () => {
+    const { serverSessionAlive } = await withServer(401);
+    expect(await serverSessionAlive()).toBe(false);
+  });
+
+  it('is not called over by a server that cannot answer', async () => {
+    expect(await (await withServer(502)).serverSessionAlive()).toBe(true);
+    expect(await (await withServer(new Error('offline'))).serverSessionAlive()).toBe(true);
+  });
+
+  it('is asked about once an hour however many screens are opened', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const { serverSessionAlive, asked } = await withServer(200);
+    await Promise.all([serverSessionAlive(), serverSessionAlive()]);
+    await serverSessionAlive();
+    expect(asked()).toBe(1);
+    vi.advanceTimersByTime(3_600_001);
+    await serverSessionAlive();
+    expect(asked()).toBe(2);
+  });
+
+  it('is not asked about where codes are not emailed', async () => {
+    const { serverSessionAlive, asked } = await withServer(401, false);
+    expect(await serverSessionAlive()).toBe(true);
+    expect(asked()).toBe(0);
   });
 });
 

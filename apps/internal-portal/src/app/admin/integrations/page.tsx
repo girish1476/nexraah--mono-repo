@@ -3,7 +3,8 @@
 import './integrations.css';
 
 import { useEffect, useState } from 'react';
-import { getToken } from '@/lib/auth';
+import { useRouter } from 'next/navigation';
+import { getToken, signOut } from '@/lib/auth';
 import { forgetIntegrationSwitches } from '@/lib/integration-switches';
 import { INTEGRATIONS, type IntegrationDef, type IntegrationField, type IntegrationState } from '@/lib/integrations';
 import { fmtDateTime } from '@/lib/format';
@@ -23,6 +24,9 @@ interface Loaded {
   canSave: boolean;
 }
 
+/** The server does not know who this is, so asking again cannot help: only a new sign-in can. */
+class SessionEnded extends Error {}
+
 async function call<T>(url: string, init?: RequestInit): Promise<T> {
   // With the real backend this server checks who you are from your sign-in token (lib/server/admin-session.ts).
   const token = getToken();
@@ -36,23 +40,35 @@ async function call<T>(url: string, init?: RequestInit): Promise<T> {
     },
   });
   const payload = (await response.json().catch(() => ({}))) as T & { error?: string };
+  if (response.status === 401) throw new SessionEnded(payload.error ?? 'Sign in again, then repeat this.');
   if (!response.ok) throw new Error(payload.error ?? `The server answered ${response.status}.`);
   return payload;
 }
 
 export default function IntegrationsPage() {
   const can = useCan();
+  const router = useRouter();
   const editable = can('config.manage');
   const [data, setData] = useState<Loaded | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
+  const [sessionEnded, setSessionEnded] = useState(false);
 
   const load = () => {
     setRefusal(null);
+    setSessionEnded(false);
     call<Loaded>('/api/integrations')
       .then(setData)
-      .catch((e) => setRefusal((e as Error).message));
+      .catch((e) => {
+        setRefusal((e as Error).message);
+        setSessionEnded(e instanceof SessionEnded);
+      });
   };
   useEffect(load, []);
+
+  const signInAgain = () => {
+    signOut();
+    router.replace('/signin');
+  };
 
   const replace = (next: IntegrationState) =>
     setData((d) => (d ? { ...d, integrations: d.integrations.map((i) => (i.id === next.id ? next : i)) } : d));
@@ -85,8 +101,20 @@ export default function IntegrationsPage() {
       </PageIntro>
 
       {refusal && (
-        <Banner tone="flag" title="The settings could not be loaded" right={<button className="btn btn-secondary btn-sm" onClick={load}>Try again</button>}>
-          {refusal} The services below are shown as the console uses them; nothing can be changed until this is sorted.
+        <Banner
+          tone="flag"
+          title={sessionEnded ? 'Your sign-in has ended' : 'The settings could not be loaded'}
+          right={
+            sessionEnded ? (
+              <button className="btn btn-sm" onClick={signInAgain}>Sign in again</button>
+            ) : (
+              <button className="btn btn-secondary btn-sm" onClick={load}>Try again</button>
+            )
+          }
+        >
+          {sessionEnded
+            ? 'Sign in again to see and change these settings. Nothing you saved is lost.'
+            : `${refusal} The services below are shown as the console uses them; nothing can be changed until this is sorted.`}
         </Banner>
       )}
       {!data && !refusal && <Loading what="Loading integrations" />}

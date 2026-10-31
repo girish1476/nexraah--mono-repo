@@ -343,6 +343,27 @@ export async function ensureFreshToken(): Promise<void> {
   await refreshSession();
 }
 
+/** An open console asks the server this often; each answer renews a week of session. */
+const SERVER_SESSION_CHECK_MS = 3_600_000;
+let serverSessionCheckDue = 0;
+
+/**
+ * With emailed codes the server keeps its own session (a cookie the page cannot
+ * read), which the screens that go to this console's server rely on. False only
+ * when the server says that session is over, so the page's token must end with
+ * it; a server that cannot answer proves nothing, and that is taken as true.
+ */
+export async function serverSessionAlive(): Promise<boolean> {
+  if (!MOCKS_ENABLED || !(await realEmailEnabled()) || Date.now() < serverSessionCheckDue) return true;
+  serverSessionCheckDue = Date.now() + SERVER_SESSION_CHECK_MS;
+  try {
+    const response = await fetch('/api/sign-in/session', { method: 'POST', credentials: 'same-origin', cache: 'no-store' });
+    return response.status !== 401;
+  } catch {
+    return true;
+  }
+}
+
 /**
  * Ends the session locally, then tells Supabase to revoke the refresh token.
  * Local clearing happens first and unconditionally: a network failure on the
