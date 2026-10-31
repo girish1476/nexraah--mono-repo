@@ -336,7 +336,6 @@ Once `RESEND_API_KEY` and the `VAPID_*` values are set, the server tells people 
 
 ### Known limits
 
-- A transporter who withdraws a quote cannot quote again on the same load (`portal-loads.service.ts` — one quote per transporter per load, a withdrawn one included).
 - Transporter logins are made by `provision.mjs`, not when a transporter is cleared in the console (FLOWS.md §12).
 
 See [`docs/specs/internal-spec/14-supabase-setup.md`](docs/specs/internal-spec/14-supabase-setup.md) for why the database is set up this way.

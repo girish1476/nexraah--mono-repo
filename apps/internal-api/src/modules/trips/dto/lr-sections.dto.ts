@@ -8,7 +8,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
-import { FORMAT_MESSAGE, GSTIN_SHAPE_RE, PHONE_RE, VEHICLE_RE } from '../../../common/validation/formats';
+import { BlankAsAbsent, FORMAT_MESSAGE, GSTIN_SHAPE_RE, PHONE_RE, VEHICLE_RE } from '../../../common/validation/formats';
 
 /**
  * The sections of a lorry receipt, validated.
@@ -40,6 +40,7 @@ export class LrPartyDto {
 
   @IsOptional() @IsString() @MaxLength(400) address?: string;
 
+  @BlankAsAbsent()
   @IsOptional()
   @Matches(GSTIN_SHAPE_RE, { message: FORMAT_MESSAGE.gstin })
   gstin?: string;
@@ -59,21 +60,23 @@ export class LrGoodsDto {
 export class LrInvoiceDto {
   @IsOptional() @IsString() @MaxLength(60) number?: string;
 
-  @IsOptional() @IsDateString() datedOn?: string;
+  @BlankAsAbsent() @IsOptional() @IsDateString() datedOn?: string;
 
   @IsOptional() @IsInt() @Min(0) valuePaise?: number;
 }
 
 export class LrEwayDto {
   /** An e-way bill number is twelve digits. */
+  @BlankAsAbsent()
   @IsOptional()
   @Matches(/^\d{12}$/, { message: 'An e-way bill number is twelve digits.' })
   number?: string;
 
-  @IsOptional() @IsDateString() validTill?: string;
+  @BlankAsAbsent() @IsOptional() @IsDateString() validTill?: string;
 }
 
 export class LrVehicleDto {
+  @BlankAsAbsent()
   @IsOptional()
   @Matches(VEHICLE_RE, { message: FORMAT_MESSAGE.vehicle })
   registration?: string;
@@ -86,6 +89,7 @@ export class LrDriverDto {
 
   @IsOptional() @IsString() @MaxLength(40) licence?: string;
 
+  @BlankAsAbsent()
   @IsOptional()
   @Matches(PHONE_RE, { message: FORMAT_MESSAGE.phone })
   phone?: string;

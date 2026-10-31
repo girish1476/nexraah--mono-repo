@@ -68,7 +68,8 @@ export interface IndentDetail {
   truckType: string;
   pickupDate: string;
   transitDays: number;
-  reportingRule: ReportingRule;
+  /** Optional on the load — null when nobody set one. */
+  reportingRule: ReportingRule | null;
   remarks: string;
   /** Internal only. Never present on any transporter-facing response (BR-55). */
   sellRatePaise: number;
@@ -132,7 +133,8 @@ export interface IndentDraft {
   truckType: string;
   pickupDate: string;
   transitDays: number;
-  reportingRule: ReportingRule;
+  /** Optional on the load — null when nobody set one. */
+  reportingRule: ReportingRule | null;
   remarks?: string;
   /** Where the goods are loaded and delivered — shown on the order page. */
   pickupAddress?: string;

@@ -19,7 +19,8 @@ export interface RfqLane {
   truckType: string;
   /** Client requirements that must reach the indent and the LR (BR-27, D-21). */
   transitDays: number;
-  reportingRule: 'SAME_DAY' | 'NEXT_DAY' | 'SCHEDULED';
+  /** Optional — null when the lane was saved without one. */
+  reportingRule: 'SAME_DAY' | 'NEXT_DAY' | 'SCHEDULED' | null;
   sourcingMode: SourcingMode;
   sourcingRows: SourcingRow[];
   sourcingAvgPaise: number;

@@ -37,6 +37,9 @@ export class ClientsService {
       const inserted = await this.clientsRepository.insert(trx, code, {
         name: dto.name,
         billing_city: dto.billingCity,
+        billing_address: dto.billingAddress?.trim() || null,
+        billing_state: dto.billingState?.trim() || null,
+        billing_pincode: dto.billingPincode ?? null,
         engagement: dto.engagement,
         gstin: dto.gstin ?? null,
         contact: dto.contact ?? null,
@@ -66,6 +69,9 @@ export class ClientsService {
       const patch: Record<string, unknown> = {};
       if (dto.name !== undefined) patch.name = dto.name;
       if (dto.billingCity !== undefined) patch.billing_city = dto.billingCity;
+      if (dto.billingAddress !== undefined) patch.billing_address = dto.billingAddress.trim() || null;
+      if (dto.billingState !== undefined) patch.billing_state = dto.billingState.trim() || null;
+      if (dto.billingPincode !== undefined) patch.billing_pincode = dto.billingPincode || null;
       if (dto.engagement !== undefined) patch.engagement = dto.engagement;
       if (dto.gstin !== undefined) patch.gstin = dto.gstin;
       if (dto.contact !== undefined) patch.contact = dto.contact;
@@ -137,6 +143,9 @@ export class ClientsService {
     code: string;
     name: string;
     billing_city: string;
+    billing_address?: string | null;
+    billing_state?: string | null;
+    billing_pincode?: string | null;
     gstin: string | null;
     contact: string | null;
     phone: string | null;
@@ -157,6 +166,9 @@ export class ClientsService {
       code: row.code,
       name: row.name,
       billingCity: row.billing_city,
+      billingAddress: row.billing_address ?? null,
+      billingState: row.billing_state ?? null,
+      billingPincode: row.billing_pincode ?? null,
       gstin: row.gstin,
       contact: row.contact,
       phone: row.phone,

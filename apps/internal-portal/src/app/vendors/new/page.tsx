@@ -100,8 +100,31 @@ const companySchema = z.object({
     .string()
     .optional()
     .refine((v) => !v?.trim() || z.string().email().safeParse(v.trim()).success, 'Enter a valid email, e.g. accounts@transporter.in'),
-  branchId: z.string().min(1, 'Required'),
+  // Empty = automatic: the server picks the branch from the base city. A
+  // branch chosen by hand is an override, and the server wants a reason.
+  branchId: z.string().optional(),
+  branchOverrideReason: z.string().optional(),
+}).refine((v) => !v.branchId || (v.branchOverrideReason?.trim().length ?? 0) >= 20, {
+  message: 'Say why this branch, in at least 20 characters',
+  path: ['branchOverrideReason'],
 });
+
+/**
+ * What the company step sends. A box left empty is left out — the server
+ * checks the shape of anything it is given, so an empty GSTIN or alternate
+ * phone was refused as malformed and no new transporter could be saved.
+ */
+function companyPayload(values: CompanyForm) {
+  const blank = (v: string | undefined) => (v?.trim() ? v.trim() : undefined);
+  return {
+    ...values,
+    gstin: blank(values.gstin),
+    altPhone: blank(values.altPhone),
+    email: blank(values.email)?.toLowerCase(),
+    branchId: blank(values.branchId),
+    branchOverrideReason: values.branchId ? blank(values.branchOverrideReason) : undefined,
+  };
+}
 
 const fleetSchema = z.object({
   fleetCount: z.number().min(1, 'At least one truck'),
@@ -159,7 +182,7 @@ export default function VendorWizardPage() {
 
   const company = useForm<CompanyForm>({
     resolver: zodResolver(companySchema),
-    defaultValues: { partyType: 'VENDOR', branchId: 'br-nsk' },
+    defaultValues: { partyType: 'VENDOR', branchId: '' },
   });
   const fleet = useForm<FleetForm>({
     resolver: zodResolver(fleetSchema),
@@ -282,9 +305,10 @@ export default function VendorWizardPage() {
     setBusy(true);
     try {
       setPartyType(values.partyType);
-      if (vendorId) await patchVendor(vendorId, values);
+      const payload = companyPayload(values);
+      if (vendorId) await patchVendor(vendorId, payload);
       else {
-        const created = await createDraftFromLead(values);
+        const created = await createDraftFromLead(payload);
         setVendorId(created.id);
       }
       toast('Draft saved · branch worked out from the base city');
@@ -292,7 +316,9 @@ export default function VendorWizardPage() {
     } catch (e) {
       // An already-converted lead has just said so, at length, in a banner —
       // a toast repeating the server's one-liner would only talk over it.
-      if (!(e instanceof ApiError && e.code === 'LEAD_ALREADY_CONVERTED')) toast(errorMessage(e));
+      if (e instanceof ApiError && e.code === 'BRANCH_REQUIRED') {
+        toast(`No single branch covers ${values.baseCity} — choose the branch below and say why.`);
+      } else if (!(e instanceof ApiError && e.code === 'LEAD_ALREADY_CONVERTED')) toast(errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -522,10 +548,10 @@ export default function VendorWizardPage() {
               </Field>
               <Field
                 label="Branch"
-                required
-                hint="Picked automatically: the branch within 150 km of the base city. If two branches are in range, leadership decides which one."
+                hint="Leave it on Automatic: the branch within 150 km of the base city is picked for you. Choose one yourself only to override that."
               >
                 <select {...company.register('branchId')}>
+                  <option value="">Automatic — from the base city</option>
                   {branches.map((b) => (
                     <option key={b.id} value={b.id}>
                       {b.name}
@@ -533,6 +559,16 @@ export default function VendorWizardPage() {
                   ))}
                 </select>
               </Field>
+              {company.watch('branchId') && (
+                <Field
+                  label="Why this branch"
+                  required
+                  error={company.formState.errors.branchOverrideReason?.message}
+                  hint="Choosing the branch yourself overrides the automatic one, so it is recorded with a reason."
+                >
+                  <input {...company.register('branchOverrideReason')} />
+                </Field>
+              )}
               <Field
                 label="GSTIN"
                 hint={

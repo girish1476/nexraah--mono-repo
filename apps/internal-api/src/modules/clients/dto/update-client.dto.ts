@@ -1,9 +1,12 @@
-import { IsBoolean, IsDateString, IsEmail, IsIn, IsInt, IsOptional, IsString, Matches, Min } from 'class-validator';
+import { IsBoolean, IsDateString, IsEmail, IsIn, IsInt, IsOptional, IsString, Matches, MaxLength, Min } from 'class-validator';
 import { FORMAT_MESSAGE, GSTIN_SHAPE_RE, PHONE_RE } from '../../../common/validation/formats';
 
 export class UpdateClientDto {
   @IsOptional() @IsString() name?: string;
   @IsOptional() @IsString() billingCity?: string;
+  @IsOptional() @IsString() @MaxLength(300) billingAddress?: string;
+  @IsOptional() @IsString() @MaxLength(80) billingState?: string;
+  @IsOptional() @Matches(/^[1-9]\d{5}$/, { message: 'Enter the 6-digit PIN code.' }) billingPincode?: string;
   @IsOptional() @IsIn(['SPOT', 'CONTRACT']) engagement?: 'SPOT' | 'CONTRACT';
 
   /** Shape only — the GSTN check stays advisory (see `formats.ts`). */

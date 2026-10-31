@@ -1,4 +1,4 @@
-import { IsEmail, ValidateIf } from 'class-validator';
+import { IsEmail } from 'class-validator';
 import {
   IsIn,
   IsInt,
@@ -11,7 +11,7 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
-import { FORMAT_MESSAGE, GSTIN_SHAPE_RE, PHONE_RE } from '../../../common/validation/formats';
+import { BlankAsAbsent, FORMAT_MESSAGE, GSTIN_SHAPE_RE, PHONE_RE } from '../../../common/validation/formats';
 
 /**
  * `POST /vendors` — internal-spec/03-C2 §1 step 1. Creates the `DRAFT`.
@@ -29,12 +29,12 @@ export class CreateVendorDto {
   @Matches(PHONE_RE, { message: FORMAT_MESSAGE.phone }) phone!: string;
 
   /** Shape only — the GSTN check stays advisory (see `formats.ts`). */
-  @IsOptional() @Matches(GSTIN_SHAPE_RE, { message: FORMAT_MESSAGE.gstin }) gstin?: string;
+  @BlankAsAbsent() @IsOptional() @Matches(GSTIN_SHAPE_RE, { message: FORMAT_MESSAGE.gstin }) gstin?: string;
 
-  @IsOptional() @Matches(PHONE_RE, { message: FORMAT_MESSAGE.phone }) altPhone?: string;
+  @BlankAsAbsent() @IsOptional() @Matches(PHONE_RE, { message: FORMAT_MESSAGE.phone }) altPhone?: string;
 
   /** Optional — where notifications go by email (awards, payments, POD deadlines). */
-  @IsOptional() @ValidateIf((_, v) => v !== '') @IsEmail({}, { message: 'Enter a valid email, e.g. accounts@transporter.in' }) @MaxLength(200) email?: string;
+  @BlankAsAbsent() @IsOptional() @IsEmail({}, { message: 'Enter a valid email, e.g. accounts@transporter.in' }) @MaxLength(200) email?: string;
 
   // BR-30: the standing default set at onboarding, not yet a "change" (BR-57
   // governs anything after this). Defaults to 0 (config.advance_default_pct
@@ -43,8 +43,8 @@ export class CreateVendorDto {
 
   // BR-34/BR-47: omit to auto-derive from `baseCity`; supply to override, which
   // then requires `branchOverrideReason` if it disagrees with the derivation.
-  @IsOptional() @IsUUID() branchId?: string;
-  @IsOptional() @IsString() @MinLength(20) @MaxLength(500) branchOverrideReason?: string;
+  @BlankAsAbsent() @IsOptional() @IsUUID() branchId?: string;
+  @BlankAsAbsent() @IsOptional() @IsString() @MinLength(20) @MaxLength(500) branchOverrideReason?: string;
 
   // When set, this vendor is created from that lead: the lead's `source`
   // carries over and the lead flips to CONVERTED, linked to this vendor, in

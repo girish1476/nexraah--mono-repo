@@ -74,6 +74,11 @@ export function dateInput(iso: string | null | undefined): string {
 }
 
 /** "rathod  roadlines" → "Rathod Roadlines" — free-text names typed in any case. */
+/** `SAME_DAY` → "same day". The rule is optional on loads and lanes, so an empty one reads "not set" rather than crashing the page. */
+export function reportingLabel(rule: string | null | undefined): string {
+  return rule ? rule.replace(/_/g, ' ').toLowerCase() : 'not set';
+}
+
 export function capitalizeWords(value: string): string {
   return value
     .trim()

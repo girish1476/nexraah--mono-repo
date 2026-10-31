@@ -12,7 +12,7 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
-import { FORMAT_MESSAGE, GSTIN_SHAPE_RE, PHONE_RE } from '../../../common/validation/formats';
+import { BlankAsAbsent, FORMAT_MESSAGE, GSTIN_SHAPE_RE, PHONE_RE } from '../../../common/validation/formats';
 
 /**
  * `POST /clients`.
@@ -29,12 +29,17 @@ export class CreateClientDto {
   @IsString() @MinLength(2) @MaxLength(80) billingCity!: string;
   @IsIn(['SPOT', 'CONTRACT']) engagement!: 'SPOT' | 'CONTRACT';
 
+  /** Printed on the tax invoice under the client's name (`20261030020000`). */
+  @IsOptional() @IsString() @MaxLength(300) billingAddress?: string;
+  @IsOptional() @IsString() @MaxLength(80) billingState?: string;
+  @BlankAsAbsent() @IsOptional() @Matches(/^[1-9]\d{5}$/, { message: 'Enter the 6-digit PIN code.' }) billingPincode?: string;
+
   /** Shape only — the GSTN check stays advisory (see `formats.ts`). */
-  @IsOptional() @Matches(GSTIN_SHAPE_RE, { message: FORMAT_MESSAGE.gstin }) gstin?: string;
+  @BlankAsAbsent() @IsOptional() @Matches(GSTIN_SHAPE_RE, { message: FORMAT_MESSAGE.gstin }) gstin?: string;
 
   @IsOptional() @IsString() @MaxLength(120) contact?: string;
-  @IsOptional() @Matches(PHONE_RE, { message: FORMAT_MESSAGE.phone }) phone?: string;
-  @IsOptional() @IsEmail({}, { message: 'That does not look like an email address.' }) email?: string;
+  @BlankAsAbsent() @IsOptional() @Matches(PHONE_RE, { message: FORMAT_MESSAGE.phone }) phone?: string;
+  @BlankAsAbsent() @IsOptional() @IsEmail({}, { message: 'That does not look like an email address.' }) email?: string;
   @IsOptional() @IsString() @MaxLength(80) agreementNo?: string;
 
   /*
@@ -42,8 +47,8 @@ export class CreateClientDto {
    * malformed value here becomes a database error at the very end of a
    * request instead of a field-level message at the start of one.
    */
-  @IsOptional() @IsDateString() validFrom?: string;
-  @IsOptional() @IsDateString() validTo?: string;
+  @BlankAsAbsent() @IsOptional() @IsDateString() validFrom?: string;
+  @BlankAsAbsent() @IsOptional() @IsDateString() validTo?: string;
 
   @IsOptional() @IsUUID() agreementAttachmentId?: string;
 

@@ -206,7 +206,10 @@ export interface VendorDraft {
   phone: string;
   altPhone?: string;
   email?: string;
-  branchId: string;
+  /** Omitted: the server works it out from the base city. */
+  branchId?: string;
+  /** Required by the server when the branch is chosen by hand (BR-47). */
+  branchOverrideReason?: string;
   pan?: string;
   truckTypes?: string[];
   operatingStates?: string[];

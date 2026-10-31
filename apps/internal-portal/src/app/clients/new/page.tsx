@@ -113,7 +113,16 @@ export default function NewClientPage() {
 
   const submit = form.handleSubmit(async (values) => {
     try {
-      const client = await createClient(values);
+      // An empty optional box is left out: the server checks the shape of
+      // whatever it is given, and an empty GSTIN or date is not a valid one.
+      const blank = (v: string | undefined) => (v?.trim() ? v.trim() : undefined);
+      const client = await createClient({
+        ...values,
+        gstin: blank(values.gstin),
+        agreementNo: blank(values.agreementNo),
+        validFrom: blank(values.validFrom),
+        validTo: blank(values.validTo),
+      });
       // Each paper goes up against the new client and waits for Compliance to
       // check it. One that fails to send does not undo the client: it is named,
       // and can be uploaded again from Client verification.

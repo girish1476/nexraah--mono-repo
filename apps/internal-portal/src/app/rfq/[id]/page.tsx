@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { errorMessage } from '@/apis';
-import { capitalizeWords, fmtDate, inr } from '@/lib/format';
+import { capitalizeWords, fmtDate, inr, reportingLabel } from '@/lib/format';
 import {
   CityField,
   Column,
@@ -83,7 +83,7 @@ export default function RfqDetailPage() {
     { key: 'lane', label: 'Lane', render: (r) => `${r.origin} → ${r.destination}` },
     { key: 'truck', label: 'Truck type', render: (r) => r.truckType },
     { key: 'transit', label: 'Transit', align: 'right', render: (r) => `${r.transitDays}d` },
-    { key: 'report', label: 'Reporting', render: (r) => r.reportingRule.replace(/_/g, ' ').toLowerCase() },
+    { key: 'report', label: 'Reporting', render: (r) => reportingLabel(r.reportingRule) },
     { key: 'mode', label: 'Sourcing', render: (r) => <Tag tone="grey">{r.sourcingMode.replace('_', '/')}</Tag> },
     { key: 'avg', label: 'Sourcing avg', align: 'right', render: (r) => inr(r.sourcingAvgPaise) },
     { key: 'oh', label: 'Overhead', align: 'right', render: (r) => inr(r.overheadPaise) },

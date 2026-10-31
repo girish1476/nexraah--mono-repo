@@ -6,7 +6,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { ApiError, ApprovalRequiredError, errorMessage } from '@/apis';
 import { AdvancePanel } from '@/components/advance-panel';
 import { AllocateVehicleDialog } from '@/components/allocate-vehicle-dialog';
-import { fmtDate, fmtDateTime, inr } from '@/lib/format';
+import { fmtDate, fmtDateTime, inr, reportingLabel } from '@/lib/format';
 import { ROLES } from '@/lib/permissions';
 import {
   Banner,
@@ -190,7 +190,7 @@ export default function IndentDetailPage() {
     indent.distanceKm != null ? ['Distance', `${indent.distanceKm} km`] : null,
     ['Pickup', fmtDate(indent.pickupDate)],
     ['Transit days', indent.transitDays],
-    ['Reporting', indent.reportingRule.replace(/_/g, ' ').toLowerCase()],
+    ['Reporting', reportingLabel(indent.reportingRule)],
     [
       'Advance %',
       indent.advancePctOverridden

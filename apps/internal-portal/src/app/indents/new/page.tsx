@@ -90,7 +90,7 @@ type Form = z.infer<typeof schema>;
 const optionalNumber = (v: unknown) =>
   v === '' || v === null || v === undefined || Number.isNaN(Number(v)) ? undefined : Number(v);
 
-const REPORTING_LABEL: Record<RateCardLane['reportingRule'], string> = {
+const REPORTING_LABEL: Record<NonNullable<RateCardLane['reportingRule']>, string> = {
   SAME_DAY: 'Same day',
   NEXT_DAY: 'Next day',
   SCHEDULED: 'Scheduled',

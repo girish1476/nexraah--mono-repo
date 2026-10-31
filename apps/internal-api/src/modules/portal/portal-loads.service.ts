@@ -257,10 +257,9 @@ export class PortalLoadsService {
         }
       }
 
-      // `quotes` is `unique (indent_id, vendor_id)`. Checked here rather than
-      // caught as a duplicate-key error so the transporter gets the code the
-      // screen branches on. A WITHDRAWN row still occupies the pair — see the
-      // note on `withdrawQuote`.
+      // One live quote per vendor per load. Checked here rather than caught
+      // as a duplicate-key error so the transporter gets the code the screen
+      // branches on. A withdrawn quote does not count — they may quote again.
       const existing = await this.repository.findQuoteForIndent(trx, vendor.vendorId, indent.id);
       if (existing) {
         throw portalError('QUOTE_EXISTS', 'You have already quoted on this load.');
@@ -311,13 +310,9 @@ export class PortalLoadsService {
    * withdrawal cannot become a price edit after the band check has passed
    * (`20260814090200` §2).
    *
-   * KNOWN LIMITATION, flagged rather than hidden: `quotes` is
-   * `unique (indent_id, vendor_id)` and a withdrawn row keeps that pair, so a
-   * vendor who withdraws cannot quote again on the same load — the second
-   * attempt is `409 QUOTE_EXISTS`. Fixing it means either a partial unique
-   * index (a migration) or an `UPDATE(amount, band_position)` grant, which
-   * would reopen exactly the price-edit hole the column-scoped grant closes.
-   * Neither is this module's to decide.
+   * The withdrawn row stays as history and no longer blocks a fresh quote:
+   * uniqueness is on live quotes only (`20261030010000`), so quoting again is
+   * a new row through the same band check — never a price edit.
    */
   async withdrawQuote(
     vendor: PortalVendor,

@@ -195,9 +195,10 @@ export class PortalLoadsRepository {
   }
 
   /**
-   * `quotes` is `unique (indent_id, vendor_id)` — one row per vendor per load,
-   * whatever its status. `409 QUOTE_EXISTS` is that constraint surfacing before
-   * the insert rather than as a duplicate-key error after it.
+   * The vendor's live quote on a load — one at most (`quotes_one_live_per_vendor`,
+   * `20261030010000`). A withdrawn one does not count: they may quote again.
+   * `409 QUOTE_EXISTS` is that index surfacing before the insert rather than
+   * as a duplicate-key error after it.
    */
   findQuoteForIndent(db: DbExecutor, vendorId: string, indentId: string) {
     return db
@@ -205,6 +206,7 @@ export class PortalLoadsRepository {
       .select(['id', 'status', 'amount as amountPaise', 'band_position as bandPosition'])
       .where('vendor_id', '=', vendorId)
       .where('indent_id', '=', indentId)
+      .where('status', '!=', 'WITHDRAWN')
       .executeTakeFirst();
   }
 

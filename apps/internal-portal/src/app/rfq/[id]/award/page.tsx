@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { errorMessage } from '@/apis';
-import { fmtDate, inr } from '@/lib/format';
+import { fmtDate, inr, reportingLabel } from '@/lib/format';
 import {
   Banner,
   Column,
@@ -159,7 +159,7 @@ export default function RfqAwardPage() {
                     render: (r: RfqLane) => inr(Math.round((decisions[r.id]?.awardedRupees ?? 0) * 100)),
                   },
                   { key: 'transit', label: 'Transit', align: 'right', render: (r: RfqLane) => `${r.transitDays}d` },
-                  { key: 'report', label: 'Reporting', render: (r: RfqLane) => r.reportingRule.replace(/_/g, ' ').toLowerCase() },
+                  { key: 'report', label: 'Reporting', render: (r: RfqLane) => reportingLabel(r.reportingRule) },
                   { key: 'valid', label: 'Valid', render: () => `${fmtDate(rfq.periodFrom)} – ${fmtDate(rfq.periodTo)}` },
                   { key: 'prov', label: 'RFQ lane', mono: true, render: (r: RfqLane) => r.id },
                 ]}

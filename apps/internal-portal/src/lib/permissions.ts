@@ -889,6 +889,10 @@ export const NAV: NavGroup[] = [
         module: 'payments',
         emoji: '🏦',
         note: 'Find every released payment’s UTR in the bank’s own statement',
+        // The list it checks against is `GET /payments/released`, which the API
+        // gives only to those who release payments — offering it to the rest
+        // of the Payments area was a page that could only fail for them.
+        permission: 'payment.release',
       },
       {
         // "Raise a client bill" used to be its own row pointing at the same

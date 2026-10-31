@@ -274,12 +274,14 @@ export class IndentsRepository {
     return this.db.selectFrom('trips').select(['id', 'code']).where('indent_id', '=', indentId).executeTakeFirst();
   }
 
+  /** The transporter's live quote on this load — a withdrawn one does not count. */
   findQuoteByVendor(db: DbExecutor, indentId: string, vendorId: string) {
     return db
       .selectFrom('quotes')
       .select(['id', 'status'])
       .where('indent_id', '=', indentId)
       .where('vendor_id', '=', vendorId)
+      .where('status', '!=', 'WITHDRAWN')
       .executeTakeFirst();
   }
 

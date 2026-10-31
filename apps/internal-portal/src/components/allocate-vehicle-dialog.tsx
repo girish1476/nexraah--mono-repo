@@ -7,6 +7,7 @@ import type { IndentDetail } from '@/app/indents/types';
 import { getVendor } from '@/app/vendors/apis';
 import type { FleetRow } from '@/app/vendors/types';
 import { Dialog, Field, FormGrid, useToast } from '@/lib/ui';
+import { reportingLabel } from '@/lib/format';
 
 const MOBILE_RE = /^(\+91|0)?[6-9]\d{9}$/;
 
@@ -147,7 +148,7 @@ export function AllocateVehicleDialog({
         <Field label="Driver licence" hint="Optional — checked with the advance documents">
           <input value={form.driverLicence} onChange={(e) => setForm({ ...form, driverLicence: e.target.value })} />
         </Field>
-        <Field label="Reported at" required hint={`Client requirement: ${indent.reportingRule.replace(/_/g, ' ').toLowerCase()}`}>
+        <Field label="Reported at" required hint={`Client requirement: ${reportingLabel(indent.reportingRule)}`}>
           <input
             type="datetime-local"
             value={form.reportedAt}

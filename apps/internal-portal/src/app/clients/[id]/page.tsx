@@ -57,7 +57,7 @@ import {
  */
 
 /** The raw enum lower-cased reads like a bug ("same day"); name the rules. */
-const REPORTING_LABEL: Record<RateCardLane['reportingRule'], string> = {
+const REPORTING_LABEL: Record<NonNullable<RateCardLane['reportingRule']>, string> = {
   SAME_DAY: 'Same day',
   NEXT_DAY: 'Next day',
   SCHEDULED: 'Scheduled slot',
@@ -265,7 +265,7 @@ export default function ClientDetailPage() {
     {
       key: 'report',
       label: 'Vehicle reporting',
-      render: ({ lane: r }) => REPORTING_LABEL[r.reportingRule] ?? r.reportingRule,
+      render: ({ lane: r }) => (r.reportingRule ? REPORTING_LABEL[r.reportingRule] ?? r.reportingRule : 'Not set'),
     },
     // Read-only text, not a dropdown: nobody can key this sheet. The value is
     // written by RFQ award and corrected on the quote lane it came from.

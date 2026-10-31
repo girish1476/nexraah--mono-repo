@@ -373,3 +373,45 @@ describe('putting a transporter on hold', () => {
     ).resolves.toBeTruthy();
   });
 });
+
+describe('an optional box left empty on a form', () => {
+  // Forms send an untouched box as "". Every one of these used to be refused
+  // as malformed, so no transporter, client or lorry receipt with a blank
+  // optional field could be saved on the real server.
+  it('a new transporter with no GSTIN, alternate phone, email or chosen branch saves', async () => {
+    const dto = await run<CreateVendorDto>(CreateVendorDto, {
+      legalName: 'Godavari Road Carriers', partyType: 'VENDOR', baseCity: 'Visakhapatnam', phone: '9848012345',
+      gstin: '', altPhone: '', email: '  ', branchId: '', branchOverrideReason: '',
+    });
+    expect(dto.gstin).toBeUndefined();
+    expect(dto.altPhone).toBeUndefined();
+    expect(dto.branchId).toBeUndefined();
+  });
+
+  it('a new client with no GSTIN or agreement dates saves, with its billing address', async () => {
+    const dto = await run<CreateClientDto>(CreateClientDto, {
+      name: 'Vizag Steel Traders', billingCity: 'Visakhapatnam', engagement: 'SPOT',
+      billingAddress: 'Plot 12, Autonagar', billingState: 'Andhra Pradesh', billingPincode: '530012',
+      gstin: '', validFrom: '', validTo: '',
+    });
+    expect(dto.billingPincode).toBe('530012');
+    expect(dto.gstin).toBeUndefined();
+  });
+
+  it('a lorry receipt with blank GSTINs, dates and e-way number saves', async () => {
+    await expect(
+      run(PatchLrDto, {
+        consignor: { name: 'Berger Paints', address: '', gstin: '' },
+        consignee: { name: '', address: '', gstin: '' },
+        invoice: { number: '', datedOn: '', valuePaise: 0 },
+        eway: { number: '', validTill: '' },
+      }),
+    ).resolves.toBeTruthy();
+  });
+
+  it('still refuses a value that is there but malformed', async () => {
+    expect(await rejectedFields(CreateVendorDto, { legalName: 'Godavari Road Carriers', partyType: 'VENDOR', baseCity: 'Vizag', phone: '9848012345', gstin: '37ABC' })).toEqual([
+      expect.stringContaining('GSTIN'),
+    ]);
+  });
+});

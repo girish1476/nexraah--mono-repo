@@ -94,7 +94,8 @@ export interface RateCardLane {
   transitPenaltyPerDayPaise: number;
   /** The subject of the BD/Leadership mail this rate was approved against. */
   approvalMailSubject?: string | null;
-  reportingRule: 'SAME_DAY' | 'NEXT_DAY' | 'SCHEDULED';
+  /** Optional on a lane — null when the rate card did not set one. */
+  reportingRule: 'SAME_DAY' | 'NEXT_DAY' | 'SCHEDULED' | null;
   validFrom: string;
   validTo: string;
   /**

@@ -45,6 +45,9 @@ export class ClientsRepository {
     row: {
       name: string;
       billing_city: string;
+      billing_address: string | null;
+      billing_state: string | null;
+      billing_pincode: string | null;
       engagement: string;
       gstin: string | null;
       contact: string | null;
