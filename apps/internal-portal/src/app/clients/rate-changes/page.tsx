@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { ApprovalRequiredError, errorMessage } from '@/apis';
 import { inr, fmtDate } from '@/lib/format';
@@ -78,6 +79,9 @@ export default function RateChangesPage() {
   const [error, setError] = useState<string | null>(null);
   const [clientId, setClientId] = useState<string>('');
   const [lanes, setLanes] = useState<LiveLane[] | null>(null);
+  // A rate card that failed to load is said so, with a retry — it used to be a
+  // passing toast over a "Loading" that never ended.
+  const [lanesError, setLanesError] = useState<string | null>(null);
   const [history, setHistory] = useState<RateRevision[] | null>(null);
 
   const [editing, setEditing] = useState<RateCardLane | null>(null);
@@ -119,8 +123,9 @@ export default function RateChangesPage() {
   const loadClient = (id: string) => {
     if (!id) return;
     setLanes(null);
+    setLanesError(null);
     setHistory(null);
-    getRateCard(id).then((rows) => setLanes(liveLanes(rows))).catch((e) => toast(errorMessage(e)));
+    getRateCard(id).then((rows) => setLanes(liveLanes(rows))).catch((e) => setLanesError(errorMessage(e)));
     listRateRevisions(id).then(setHistory).catch(() => setHistory([]));
     getPendingRateLanes(id).then(setPendingLanes).catch(() => setPendingLanes([]));
   };
@@ -166,6 +171,37 @@ export default function RateChangesPage() {
 
   if (error) return <ErrorState message={error} retry={loadClients} />;
   if (!clients) return <Loading what="Loading clients" />;
+
+  /*
+   * No clients at all — a new database. Nothing is ever selected, so the rate
+   * card and history below would wait on "Loading" for good. The demo data
+   * always had clients, which is why this only showed on the real backend.
+   */
+  if (clients.length === 0) {
+    return (
+      <ModuleGuard module="clients">
+        <PageHeader
+          title="Rate revision"
+          sub="Move the price on a lane we have already agreed, with a reason and a sign-off"
+          module="clients"
+        />
+        <Panel pad={false}>
+          <EmptyState
+            emoji="🏢"
+            title="No clients yet"
+            hint="Rates belong to a client. Add the client first; their rate card and its changes appear here once they exist."
+            action={
+              can('client.manage') ? (
+                <Link href="/clients/new" className="btn">
+                  Add a client
+                </Link>
+              ) : undefined
+            }
+          />
+        </Panel>
+      </ModuleGuard>
+    );
+  }
 
   const selected = clients.find((c) => c.id === clientId);
   const canAddLane = can('rate.revise') && selected?.engagement === 'CONTRACT';
@@ -452,7 +488,9 @@ export default function RateChangesPage() {
       />
 
       <Panel pad={false}>
-        {!lanes ? (
+        {lanesError ? (
+          <ErrorState message={lanesError} retry={() => loadClient(clientId)} />
+        ) : !lanes ? (
           <Loading what="Loading the rate card" />
         ) : (
           <DataTable
