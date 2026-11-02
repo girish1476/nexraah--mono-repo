@@ -261,14 +261,36 @@ export async function sendSignInCode(email: string): Promise<void> {
   }
   const { response, payload, code } = await callAuth('otp', { email: trimmed, create_user: false });
   if (response.ok) return;
-  if (response.status === 429 || code === 'over_email_send_rate_limit' || code === 'over_request_rate_limit') {
-    throw new AuthError('A code was sent very recently. Wait a minute, then ask for another.');
+  throw new AuthError(codeRequestMessage(response.status, code, payload));
+}
+
+/**
+ * Why a code could not be sent, in words that point at the real cause.
+ *
+ * Every 400 and 422 used to read "not allowed to sign in", so an allowed person
+ * whose email failed for another reason — the project's hourly email limit, or
+ * the email hook timing out while the free server woke — was told to ask an
+ * administrator, who could do nothing. Only the codes that do mean "no login
+ * for this email" say so now.
+ */
+export function codeRequestMessage(
+  status: number,
+  code: string | undefined,
+  payload: { msg?: string; error_description?: string } | null,
+): string {
+  if (code === 'otp_disabled' || code === 'signup_disabled' || code === 'user_not_found') return NOT_ALLOWED;
+  if (code === 'user_banned') return 'This sign-in has been switched off. Ask an administrator.';
+  if (status === 429 || code === 'over_email_send_rate_limit' || code === 'over_request_rate_limit') {
+    // Supabase says how long to wait ("…after 42 seconds") when it is the one-a-minute rule.
+    const wait = /after (\d+) seconds?/.exec(payload?.msg ?? '')?.[1];
+    return wait
+      ? `A code was sent very recently. Wait ${wait} seconds, then ask for another.`
+      : 'Too many sign-in codes have been asked for. Wait a few minutes, then try again.';
   }
-  if (code === 'otp_disabled' || code === 'signup_disabled' || code === 'user_not_found' || code === 'user_banned') {
-    throw new AuthError(NOT_ALLOWED);
+  if (code?.startsWith('hook') || status >= 500) {
+    return 'The sign-in email could not be sent just now. Wait a minute and try again.';
   }
-  if (response.status === 400 || response.status === 422) throw new AuthError(NOT_ALLOWED);
-  throw new AuthError(payload?.msg ?? payload?.error_description ?? 'The code could not be sent. Try again.');
+  return payload?.msg ?? payload?.error_description ?? 'The code could not be sent. Try again.';
 }
 
 /** Step 2: trade the emailed code for a session and store it. */
