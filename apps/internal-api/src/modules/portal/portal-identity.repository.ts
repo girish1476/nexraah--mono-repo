@@ -57,11 +57,11 @@ export class PortalIdentityRepository {
    *
    * 1. `PORTAL_SYSTEM_USER_ID` from the environment — the supported answer on a
    *    correctly granted database, and the only one that costs nothing;
-   * 2. failing that, a best-effort `select` that is EXPECTED to raise
-   *    `permission denied for table users`. It is attempted so that a local
-   *    developer running the portal against a permissive database is not
-   *    blocked by a variable they have not heard of, and it is swallowed
-   *    because the failure is the correct state of a production grant.
+   * 2. failing that, `portal_system_user_id()` (20261104010000) — a definer
+   *    function that hands `vendor_api` this one id and nothing else from
+   *    `users`. Before it, step 2 was a `select` on `users` that a correctly
+   *    granted database refuses, so every portal upload failed wherever the
+   *    setting had not been made — and no setup step mentioned it.
    *
    * Cached either way: it never changes within a process, and the fallback must
    * not re-raise a permission error once per upload. Deliberately run OUTSIDE
@@ -80,26 +80,22 @@ export class PortalIdentityRepository {
     if (!this.uploaderLookupTried) {
       this.uploaderLookupTried = true;
       try {
-        const row = await this.db
-          .selectFrom('users')
-          .select('id')
-          .where('email', '=', PORTAL_SYSTEM_USER_EMAIL)
-          .executeTakeFirst();
-        if (row?.id) {
-          this.uploaderId = row.id;
+        const result = await sql<{ id: string | null }>`select public.portal_system_user_id() as id`.execute(this.db);
+        const id = result.rows[0]?.id;
+        if (id) {
+          this.uploaderId = id;
           return this.uploaderId;
         }
       } catch {
-        // Expected on a correctly granted database. Not logged at error level
-        // for that reason — the actionable line is the one below.
+        // The function is missing (20261104010000 not applied yet) — the
+        // actionable line is the one below.
       }
     }
 
     this.logger.error(
-      `${PORTAL_SYSTEM_USER_ID_ENV} is not set and "${PORTAL_SYSTEM_USER_EMAIL}" is not readable ` +
-        "from the portal pool (users is in vendor_api's REVOKE list, by design). " +
-        'Portal uploads cannot attribute attachments.uploaded_by until it is set — ' +
-        'select id from users where email = \'' + PORTAL_SYSTEM_USER_EMAIL + "'.",
+      `Cannot find the "${PORTAL_SYSTEM_USER_EMAIL}" user, so portal uploads cannot be recorded. ` +
+        'Apply the migrations (supabase db push — 20261104010000 adds portal_system_user_id()), ' +
+        `or set ${PORTAL_SYSTEM_USER_ID_ENV} to: select id from users where email = '${PORTAL_SYSTEM_USER_EMAIL}'.`,
     );
     // The transporter is told nothing about any of that.
     throw portalError('REQUEST_FAILED');

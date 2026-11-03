@@ -21,7 +21,10 @@ import { CurrentRequestId, CurrentVendor } from './portal.decorators';
 import { assertIdempotencyKey } from './portal-idempotency.repository';
 import { MAX_UPLOAD_BYTES } from './portal.constants';
 import { PortalProfileService } from './portal-profile.service';
-import type { UploadDocumentDto } from './portal-write.dto';
+// A value import, not `import type`: the validator reads the class from the
+// parameter's emitted type. Erased, it saw `Function` and refused every field
+// ("property billNo should not exist"), so no POD, bill or selfie could be sent.
+import { UploadDocumentDto } from './portal-write.dto';
 import type { PortalUploadFile } from './portal-storage.service';
 import type { PortalVendor } from './portal.types';
 
