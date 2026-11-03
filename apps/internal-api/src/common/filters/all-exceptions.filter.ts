@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { DomainException } from '../domain-exception';
+import { databaseErrorAnswer } from './database-errors';
 
 interface ErrorBody {
   code: string;
@@ -31,6 +32,23 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
+
+    // A rule the database enforces — answered as that rule, and still logged,
+    // since one our own code trips is a bug (see database-errors.ts).
+    const refused = databaseErrorAnswer(exception);
+    if (refused) {
+      this.logger.warn(
+        `${request.method} ${request.url} → ${refused.status} ${refused.code} ${refused.details.constraint ?? refused.details.sqlstate}`,
+      );
+      response.status(refused.status).json({
+        success: false,
+        statusCode: refused.status,
+        path: request.url,
+        timestamp: new Date().toISOString(),
+        error: { code: refused.code, message: refused.message, details: refused.details },
+      });
+      return;
+    }
 
     const status = this.resolveStatus(exception);
     const error = this.resolveError(exception);
