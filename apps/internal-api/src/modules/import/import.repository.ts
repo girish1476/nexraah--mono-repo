@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { DB } from '../../db/tokens';
 import type { DbExecutor, InternalDb } from '../../db/kysely';
 import type { ImportSet } from './import.rules';
+import { syntheticRfqPeriod } from '../clients/clients.repository';
 
 export interface BatchRow {
   id: string;
@@ -108,8 +109,7 @@ export class ImportRepository {
           .values({
             client_id: clientId,
             cycle_months: 12,
-            period_from: new Date().toISOString().slice(0, 10),
-            period_to: new Date().toISOString().slice(0, 10),
+            ...syntheticRfqPeriod(),
             reference,
             status: 'CLOSED',
           } as never)

@@ -32,6 +32,29 @@ export const IDENTITY_KINDS = new Set(['PAN', 'AADHAAR', 'ADDRESS', 'SELFIE']);
 export const IDENTITY_ROLES: ReadonlySet<string> = new Set(['COMPLIANCE', 'ADMIN']);
 export const IDENTITY_REFUSAL = 'Only Compliance and administrators can open identity documents.';
 
+/**
+ * The owner recorded for a file uploaded before its record exists — a spot
+ * load's client confirmation is attached while the load request is still being
+ * filled in, and the request then points at the file by its id.
+ *
+ * `attachments.entity_id` is a uuid, so this used to be the word "unassigned",
+ * which PostgreSQL refused: every such upload failed with a 500 on the real
+ * backend while the in-browser demo, which checks nothing, accepted it.
+ */
+export const UNLINKED_ENTITY_ID = '00000000-0000-0000-0000-000000000000';
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The `entity_id` to store: the record's id, or {@link UNLINKED_ENTITY_ID} when there is none yet. */
+export function attachmentOwnerId(entityId: string | undefined): string {
+  const id = entityId?.trim();
+  if (!id) return UNLINKED_ENTITY_ID;
+  if (!UUID.test(id)) {
+    throw new DomainException(400, 'VALIDATION_ERROR', 'entityId must be the id of the record this file belongs to.');
+  }
+  return id;
+}
+
 export interface UploadInput {
   buffer: Buffer;
   mime: string;
@@ -69,7 +92,7 @@ export class AttachmentsService {
 
     const sha256 = createHash('sha256').update(input.buffer).digest('hex');
     const entityType = input.entityType ?? 'misc';
-    const entityId = input.entityId ?? 'unassigned';
+    const entityId = attachmentOwnerId(input.entityId);
     const id = randomUUID();
     // Part 14 §7 names four category prefixes (pod/, bills/, kyc/, documents/)
     // keyed by domain context this generic endpoint doesn't have. entityType

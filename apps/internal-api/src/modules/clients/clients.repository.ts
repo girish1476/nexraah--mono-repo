@@ -4,6 +4,20 @@ import { DB } from '../../db/tokens';
 import type { DbExecutor, InternalDb } from '../../db/kysely';
 import type { RateCardLanesTable } from '../../db/types';
 
+/**
+ * The period of the one synthetic, already-CLOSED RFQ a client's directly
+ * agreed lanes hang from: today to a year on, matching its 12-month cycle.
+ *
+ * It was today to today, which `rfqs_period` (period_to > period_from)
+ * refuses — so approving the first lane added outside an RFQ failed with a 500
+ * on the real database, and so did the go-live import. The demo never ran it.
+ */
+export function syntheticRfqPeriod(now = new Date()): { period_from: string; period_to: string } {
+  const end = new Date(now);
+  end.setUTCFullYear(end.getUTCFullYear() + 1);
+  return { period_from: now.toISOString().slice(0, 10), period_to: end.toISOString().slice(0, 10) };
+}
+
 @Injectable()
 export class ClientsRepository {
   constructor(@Inject(DB) private readonly db: InternalDb) {}
@@ -246,7 +260,6 @@ export class ClientsRepository {
     lane: { origin: string; destination: string; truckType: string; ratePaise: number },
     reference: string,
   ) {
-    const today = new Date().toISOString().slice(0, 10);
     const existing = await db
       .selectFrom('rfqs')
       .select(['id'])
@@ -262,8 +275,7 @@ export class ClientsRepository {
           .values({
             client_id: clientId,
             cycle_months: 12,
-            period_from: today,
-            period_to: today,
+            ...syntheticRfqPeriod(),
             reference,
             status: 'CLOSED',
           } as never)
