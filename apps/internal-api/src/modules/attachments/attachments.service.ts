@@ -22,6 +22,16 @@ const MIME_EXTENSIONS: Record<string, string> = {
 // re-declaring a second copy that could quietly drift from this one.
 export const IDENTITY_KINDS = new Set(['PAN', 'AADHAAR', 'ADDRESS', 'SELFIE']);
 
+/**
+ * Who may open an identity paper (NFR-04): the desks that verify them. That is
+ * Compliance and, since an administrator holds every permission (2026-09-26),
+ * the administrator too — who is shown Verify and Reject on these very papers,
+ * and was refused the file they were asked to judge (found in pre-prod,
+ * 3 Nov 2026). Every other desk is still refused.
+ */
+export const IDENTITY_ROLES: ReadonlySet<string> = new Set(['COMPLIANCE', 'ADMIN']);
+export const IDENTITY_REFUSAL = 'Only Compliance and administrators can open identity documents.';
+
 export interface UploadInput {
   buffer: Buffer;
   mime: string;
@@ -93,12 +103,8 @@ export class AttachmentsService {
     }
     // NFR-04. The message reaches an operator's screen verbatim, so it says
     // who can open the file rather than citing the rule that says so.
-    if (IDENTITY_KINDS.has(row.kind) && actor.role !== 'COMPLIANCE') {
-      throw new DomainException(
-        403,
-        'PERMISSION_DENIED',
-        'Only Compliance can open identity documents.',
-      );
+    if (IDENTITY_KINDS.has(row.kind) && !IDENTITY_ROLES.has(actor.role)) {
+      throw new DomainException(403, 'PERMISSION_DENIED', IDENTITY_REFUSAL);
     }
 
     // The file's type rides along so a screen can show a photo as a photo and a

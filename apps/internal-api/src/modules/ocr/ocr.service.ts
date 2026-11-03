@@ -6,7 +6,7 @@ import { DomainException } from '../../common/domain-exception';
 import { assertAnyPermission } from '../../common/guards/assert-any-permission';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
 import { AttachmentsRepository } from '../attachments/attachments.repository';
-import { IDENTITY_KINDS } from '../attachments/attachments.service';
+import { IDENTITY_KINDS, IDENTITY_ROLES } from '../attachments/attachments.service';
 import { StorageService } from '../attachments/storage.service';
 import type { OcrFieldDto, OcrReading, ReadDocumentDto } from './ocr.dto';
 import { DOC_NOTES, FORMAT_GUIDE, IDENTITY_DOC_TYPES, OCR_DOC_TYPES, type OcrDocType } from './ocr.profiles';
@@ -87,8 +87,8 @@ export class OcrService {
     if (IDENTITY_KINDS.has(row.kind)) {
       this.assertIdentityAllowed();
       // NFR-04, as `AttachmentsService.getSignedUrl`: who may not open the file may not have it read out either.
-      if (actor.role !== 'COMPLIANCE') {
-        throw new DomainException(403, 'PERMISSION_DENIED', 'Only Compliance can read identity documents.');
+      if (!IDENTITY_ROLES.has(actor.role)) {
+        throw new DomainException(403, 'PERMISSION_DENIED', 'Only Compliance and administrators can read identity documents.');
       }
     } else if (docType && IDENTITY_DOC_TYPES.has(docType)) {
       this.assertIdentityAllowed();

@@ -115,7 +115,7 @@ export default function KycBackfillPage() {
     return (
       <ModuleGuard module="vendors">
         <PageHeader path="/vendors/kyc-backfill" title="Missing PAN and Aadhaar values" module="vendors" />
-        <Panel>Only Compliance can open identity photos and record these values.</Panel>
+        <Panel>Only Compliance and administrators can open identity photos and record these values.</Panel>
       </ModuleGuard>
     );
   }

@@ -1,7 +1,7 @@
 'use client';
 
 import { type MouseEvent, useEffect, useState } from 'react';
-import { request } from '@/apis';
+import { ApiError, request } from '@/apis';
 
 interface SignedFile {
   url: string;
@@ -28,16 +28,20 @@ export function DocPreview({
   height?: number;
 }) {
   const [file, setFile] = useState<SignedFile | null>(null);
-  const [failed, setFailed] = useState(false);
+  /** Why the file could not be shown — the server's own words when it refused, so a refusal is not mistaken for a broken file. */
+  const [failed, setFailed] = useState<string | null>(null);
 
   useEffect(() => {
     setFile(null);
-    setFailed(false);
+    setFailed(null);
     if (!attachmentId) return;
     let cancelled = false;
     request<SignedFile>({ url: `/attachments/${attachmentId}/url`, method: 'GET' })
       .then((f) => !cancelled && setFile(f))
-      .catch(() => !cancelled && setFailed(true));
+      .catch((e) => {
+        if (cancelled) return;
+        setFailed(e instanceof ApiError && e.status === 403 ? e.message : 'Could not load the file');
+      });
     return () => {
       cancelled = true;
     };
@@ -74,7 +78,7 @@ export function DocPreview({
   if (failed) {
     return (
       <div style={box} className="muted">
-        <span style={{ padding: 10 }}>Could not load the file</span>
+        <span style={{ padding: 10 }}>{failed}</span>
       </div>
     );
   }

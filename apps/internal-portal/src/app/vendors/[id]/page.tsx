@@ -790,7 +790,7 @@ export default function VendorDetailPage() {
           <div style={{ display: 'grid', gap: 12 }}>{vendor.kyc.map(kycCard)}</div>
           <div className="muted" style={{ fontSize: 11.5, marginTop: 12 }}>
             Only the last 4 digits of Aadhaar are stored, to protect the transporter&apos;s privacy. Photos are
-            stored securely and only Compliance staff can open them.
+            stored securely and only Compliance and administrators can open them.
           </div>
         </Panel>
 
