@@ -10,6 +10,7 @@ import { isDemoData, loadPeople, persist, savePeople } from './persist';
 import { fileFor, filesReady, keepFile } from './files';
 import { AxiosAdapter, AxiosError, AxiosRequestConfig, AxiosResponse } from 'axios';
 import { RoleCode, SEED_GRANTS } from '@/lib/permissions';
+import { LEGAL_DOCUMENT_KINDS, vendorFileGaps } from '@/lib/vendor-file';
 import {
   ACCOUNTS,
   ADVANCE_DOCUMENT_SET,
@@ -2834,8 +2835,13 @@ const routes: [string, RegExp, Handler][] = [
         missing.push({ key: 'TDS_DECLARATION', label: 'TDS declaration not on file', state: 'MISSING' });
       if (!hasDoc('BANK_STATEMENT'))
         missing.push({ key: 'BANK_STATEMENT', label: 'Bank statement or cancelled cheque not on file', state: 'MISSING' });
-      if (!['TRADE_LICENCE', 'LABOUR_LICENCE', 'UDYAM'].some(hasDoc))
-        missing.push({ key: 'GOVERNMENT_CERTIFICATE', label: 'Government certificate not on file', state: 'MISSING' });
+      // BR-02: an Owner's RC is checked below; anyone else needs any one licence or registration.
+      if (vendor.partyType !== 'OWNER' && !LEGAL_DOCUMENT_KINDS.some((l) => hasDoc(l.kind)))
+        missing.push({
+          key: 'GOVERNMENT_CERTIFICATE',
+          label: 'No licence or registration on file — any one of trade licence, labour licence, RC or Udyam',
+          state: 'MISSING',
+        });
       if (!hasKyc('PAN')) missing.push({ key: 'PAN', label: 'PAN not captured', state: 'MISSING' });
       if (!hasKyc('AADHAAR')) missing.push({ key: 'AADHAAR', label: 'Aadhaar not captured', state: 'MISSING' });
       if (!hasKyc('SELFIE')) missing.push({ key: 'SELFIE', label: 'Time and location stamped yard photo not uploaded', state: 'MISSING' });
@@ -2851,18 +2857,11 @@ const routes: [string, RegExp, Handler][] = [
     /^\/vendors\/([^/]+)\/activate$/,
     ({ params, role }) => {
       const vendor = findVendor(params[0]);
-      const unmet = [
-        ...vendor.kyc
-          .filter((k: any) => k.status !== 'VERIFIED')
-          .map((k: any) => ({ key: k.kind, label: `${k.kind} not verified`, state: 'UNVERIFIED' })),
-        ...vendor.documents
-          .filter((d: any) => d.status !== 'VERIFIED')
-          .map((d: any) => ({
-            key: d.kind,
-            label: `${DOC_LABEL[d.kind] ?? d.kind} ${d.status === 'MISSING' ? 'not on file' : d.status.toLowerCase()}`,
-            state: d.status === 'MISSING' ? 'MISSING' : 'UNVERIFIED',
-          })),
-      ];
+      // The same list the vendor page shows: one licence or registration is enough (BR-02).
+      const unmet = vendorFileGaps(
+        { partyType: vendor.partyType, kyc: vendor.kyc, documents: vendor.documents },
+        (kind) => DOC_LABEL[kind] ?? kind,
+      );
       if (unmet.length)
         fail(409, 'VENDOR_INCOMPLETE', 'An incomplete file cannot be activated (BR-01).', { unmet });
       vendor.status = 'ACTIVE';

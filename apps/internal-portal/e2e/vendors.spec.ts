@@ -423,6 +423,75 @@ test.describe('Vendor detail page', () => {
     await expect(activateBtn).toBeDisabled();
   });
 
+  test('the legal file asks for one licence or registration, not all four', async ({ page }) => {
+    await setRole(page, 'COMPLIANCE');
+    await page.goto('/vendors/v-2214');
+    const main = page.locator('main');
+    const legal = panel(main, 'Legal file');
+
+    // RC verified and Udyam waiting: those two are shown; the licences never uploaded are not.
+    await expect(legal.locator('[data-doc="RC"]')).toBeVisible();
+    await expect(legal.locator('[data-doc="UDYAM"]')).toBeVisible();
+    await expect(legal.locator('[data-doc="TRADE_LICENCE"]')).toHaveCount(0);
+    await expect(legal.locator('[data-doc="LABOUR_LICENCE"]')).toHaveCount(0);
+    await expect(legal.locator('[data-doc="LEGAL_DOCUMENT"]')).toHaveCount(0);
+    await expect(main.getByText('TRADE LICENCE not on file')).toHaveCount(0);
+  });
+
+  test('with none on file, one card uploads whichever paper the transporter has', async ({ page }) => {
+    await setRole(page, 'ADMIN');
+    await page.goto('/vendors/v-2214');
+    const main = page.locator('main');
+    const legal = panel(main, 'Legal file');
+    const reject = async (kind: string, button: string) => {
+      await legal.locator(`[data-doc="${kind}"]`).getByRole('button', { name: button }).click();
+      const dialog = page.locator('div.surface').filter({ has: page.getByRole('heading', { name: `Reject · ${kind}` }) });
+      await dialog.locator('textarea').fill('Not this transporter’s paper — wrong name on it.');
+      await dialog.getByRole('button', { name: 'Reject', exact: true }).click();
+      await expect(legal.locator(`[data-doc="${kind}"]`)).toContainText('Rejected');
+    };
+    await reject('RC', 'Wrong document — reject');
+    await reject('UDYAM', 'Reject');
+
+    // One card to upload, starting on a paper that was rejected; the rejected cards offer no upload of their own.
+    const card = legal.locator('[data-doc="LEGAL_DOCUMENT"]');
+    await expect(card).toHaveCount(1);
+    await expect(legal.locator('[data-doc="RC"] input[type="file"], [data-doc="UDYAM"] input[type="file"]')).toHaveCount(0);
+    const which = card.getByLabel('Which document');
+    await expect(which).toHaveValue('RC');
+    await expect(which.locator('option')).toHaveText([
+      'Trade licence',
+      'Labour licence',
+      'Registration certificate (RC)',
+      'Udyam / MSME certificate',
+    ]);
+    await expect(main.getByText(/No licence or registration on file/)).toBeVisible();
+
+    await which.selectOption('LABOUR_LICENCE');
+    await card.getByPlaceholder('Reference or number').fill('LL/2026/0457');
+    await card.locator('input[type="file"]').setInputFiles({
+      name: 'labour-licence.pdf',
+      mimeType: 'application/pdf',
+      buffer: Buffer.from('%PDF-1.4 labour licence'),
+    });
+    await card.getByRole('button', { name: 'Upload', exact: true }).click();
+
+    await expect(legal.locator('[data-doc="LABOUR_LICENCE"]')).toContainText('LL/2026/0457');
+    await expect(legal.locator('[data-doc="LABOUR_LICENCE"]')).toContainText('Waiting for Compliance');
+    await expect(legal.locator('[data-doc="LEGAL_DOCUMENT"]')).toHaveCount(0);
+    await expect(main.getByText('LABOUR LICENCE pending')).toBeVisible();
+    await expect(main.getByText(/No licence or registration on file/)).toHaveCount(0);
+  });
+
+  test('an Owner is asked for the RC itself', async ({ page }) => {
+    await setRole(page, 'COMPLIANCE');
+    await page.goto('/vendors/v-2287');
+    const legal = panel(page.locator('main'), 'Legal file');
+    await expect(legal.getByText('An owner needs the RC.', { exact: false })).toBeVisible();
+    await expect(legal.locator('[data-doc="RC"]')).toBeVisible();
+    await expect(legal.locator('[data-doc="LEGAL_DOCUMENT"]')).toHaveCount(0);
+  });
+
   test('OPS (no vendor.activate) never sees Clear and activate', async ({ page }) => {
     await setRole(page, 'OPS');
     await page.goto('/vendors/v-2214');

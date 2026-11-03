@@ -28,6 +28,7 @@ import {
   useToast,
 } from '@/lib/ui';
 import { VENDOR_READ } from '@/lib/documents';
+import { LEGAL_DOCUMENT_KINDS, isLegalDocument, vendorFileGaps } from '@/lib/vendor-file';
 import { UnmetCondition } from '@/apis';
 import {
   activateVendor,
@@ -453,7 +454,8 @@ export default function VendorDetailPage() {
 
   const today = new Date().toLocaleDateString('en-CA');
 
-  const docCard = (r: VendorDocument) => {
+  /** `upload: false` when the licence card below is where a replacement goes. */
+  const docCard = (r: VendorDocument, upload = true) => {
     const title = r.kind.replace(/_/g, ' ');
     /*
      * A TDS declaration covers one financial year (1 April – 31 March) and is
@@ -525,7 +527,7 @@ export default function VendorDetailPage() {
                 Wrong document — reject
               </button>
             )}
-            {can('vendor.edit') && (r.status === 'MISSING' || r.status === 'REJECTED' || due) && (
+            {upload && can('vendor.edit') && (r.status === 'MISSING' || r.status === 'REJECTED' || due) && (
               <UploadCell
                 placeholder="Reference or number"
                 needsReference={!yearly}
@@ -538,6 +540,21 @@ export default function VendorDetailPage() {
       </div>
     );
   };
+
+  /*
+   * The licence or registration (BR-02): one is enough, so the four kinds are
+   * not four uploads. An Owner's RC is required in its own right and keeps its
+   * card; anyone else gets one card to upload whichever paper they hold, until
+   * one is on file. Papers already uploaded keep their own cards to be checked.
+   */
+  const owner = vendor.partyType === 'OWNER';
+  const legalOnFile = vendor.documents.filter((d) => isLegalDocument(d.kind) && (d.status !== 'MISSING' || (owner && d.kind === 'RC')));
+  if (owner && !legalOnFile.some((d) => d.kind === 'RC')) {
+    legalOnFile.unshift({ kind: 'RC', reference: null, status: 'MISSING', validTo: null, attachmentId: null, rejectReason: null });
+  }
+  const needsLegal = !owner && !legalOnFile.some((d) => d.status === 'VERIFIED' || d.status === 'PENDING');
+  const otherDocuments = vendor.documents.filter((d) => !isLegalDocument(d.kind));
+  const documentsOnFile = vendor.documents.filter((d) => d.status !== 'MISSING');
 
   const fleetColumns: Column<FleetRow>[] = [
     { key: 'reg', label: 'Registration', mono: true, render: (r) => r.registration },
@@ -795,7 +812,22 @@ export default function VendorDetailPage() {
         </Panel>
 
         <Panel title="Legal file">
-          <div style={{ display: 'grid', gap: 12 }}>{vendor.documents.map(docCard)}</div>
+          <div style={{ display: 'grid', gap: 12 }}>
+            <div className="muted" style={{ fontSize: 12 }}>
+              {owner
+                ? 'An owner needs the RC. A trade licence, labour licence or Udyam certificate is not needed as well.'
+                : 'One licence or registration is enough: a trade licence, labour licence, RC or Udyam certificate.'}
+            </div>
+            {needsLegal && (
+              <LegalDocumentCard
+                canUpload={can('vendor.edit')}
+                preferred={legalOnFile.find((d) => d.status === 'REJECTED')?.kind}
+                onUpload={onUploadDocument}
+              />
+            )}
+            {legalOnFile.map((d) => docCard(d, !needsLegal))}
+            {otherDocuments.map((d) => docCard(d))}
+          </div>
         </Panel>
 
         <Panel title="Fleet" pad={false}>
@@ -810,7 +842,7 @@ export default function VendorDetailPage() {
         facts={[
           ['Vendor', vendor.legalName],
           ['GSTIN', vendor.gstin ?? '—'],
-          ['Documents', `${vendor.documents.filter((d) => d.status === 'VERIFIED').length} of ${vendor.documents.length} verified`],
+          ['Documents', `${documentsOnFile.filter((d) => d.status === 'VERIFIED').length} of ${documentsOnFile.length} on file verified`],
           ['Advance policy', vendor.advancePct != null ? `${vendor.advancePct}%` : 'not set yet'],
         ]}
         confirmLabel="Activate"
@@ -912,20 +944,60 @@ export default function VendorDetailPage() {
 /** Presentation-side mirror of the server's activation gate, for first paint. */
 function pendingItems(v: VendorDetail): UnmetCondition[] {
   if (v.status === 'ACTIVE') return [];
-  return [
-    ...v.kyc
-      .filter((k) => k.status !== 'VERIFIED')
-      .map((k) => ({
-        key: k.kind,
-        label: `${k.kind} not verified`,
-        state: (k.status === 'MISSING' ? 'MISSING' : 'UNVERIFIED') as UnmetCondition['state'],
-      })),
-    ...v.documents
-      .filter((d) => d.status !== 'VERIFIED')
-      .map((d) => ({
-        key: d.kind,
-        label: `${d.kind.replace(/_/g, ' ')} ${d.status === 'MISSING' ? 'not on file' : d.status.toLowerCase()}`,
-        state: (d.status === 'MISSING' ? 'MISSING' : 'UNVERIFIED') as UnmetCondition['state'],
-      })),
-  ];
+  return vendorFileGaps(v, (kind) => kind.replace(/_/g, ' '));
+}
+
+/**
+ * One card for the licence or registration: which paper it is, then the file —
+ * the transporter holds one of the four, and that one is enough.
+ */
+function LegalDocumentCard({
+  canUpload,
+  preferred,
+  onUpload,
+}: {
+  canUpload: boolean;
+  /** A kind that was rejected, so its replacement starts on the same kind. */
+  preferred?: string;
+  onUpload: (kind: string, reference: string, file: File) => Promise<void>;
+}) {
+  const [kind, setKind] = useState(preferred ?? LEGAL_DOCUMENT_KINDS[0].kind);
+  const label = LEGAL_DOCUMENT_KINDS.find((l) => l.kind === kind)?.label ?? kind;
+  return (
+    <div data-doc="LEGAL_DOCUMENT" className="doc-card">
+      <DocPreview attachmentId={null} label="Licence or registration" />
+      <div style={{ minWidth: 0 }}>
+        <div className="doc-card-head">
+          <strong>LICENCE OR REGISTRATION</strong>
+          <Tag tone="grey">Not uploaded</Tag>
+        </div>
+        <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+          Choose the paper the transporter has, then upload it.
+        </div>
+        {canUpload && (
+          <div className="doc-actions" style={{ alignItems: 'center' }}>
+            <select
+              aria-label="Which document"
+              value={kind}
+              onChange={(e) => setKind(e.target.value)}
+              style={{ width: 'auto', padding: '5px 7px', fontSize: 12 }}
+            >
+              {LEGAL_DOCUMENT_KINDS.map((l) => (
+                <option key={l.kind} value={l.kind}>
+                  {l.label}
+                </option>
+              ))}
+            </select>
+            {/* Keyed by kind: a number typed for one paper is not carried over to another. */}
+            <UploadCell
+              key={kind}
+              placeholder="Reference or number"
+              read={readFor(kind, label)}
+              onUpload={(value, file) => onUpload(kind, value, file)}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
