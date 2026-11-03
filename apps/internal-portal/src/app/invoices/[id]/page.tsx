@@ -253,12 +253,15 @@ export default function InvoiceDetailPage() {
         title="Cancel this invoice"
         body="A cancelled invoice keeps its number and its reason. Nothing is deleted."
         confirmLabel="Cancel invoice"
-        confirmDisabled={!reason.trim()}
+        // The server keeps the reason on the record and wants at least 20
+        // characters (assertReason); a shorter one used to be refused only after
+        // the button was pressed.
+        confirmDisabled={reason.trim().length < 20}
         busy={busy}
         onConfirm={cancel}
         onClose={() => setCancelOpen(false)}
       >
-        <Field label="Reason" required>
+        <Field label="Reason" required hint="At least 20 characters — it is kept with the cancelled invoice.">
           <textarea rows={3} value={reason} onChange={(e) => setReason(e.target.value)} />
         </Field>
       </Dialog>

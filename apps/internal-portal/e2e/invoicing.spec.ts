@@ -231,6 +231,9 @@ test.describe('invoice detail', () => {
     await expect(dialog).toBeVisible();
     const confirm = dialog.getByRole('button', { name: 'Cancel invoice' });
     await expect(confirm).toBeDisabled();
+    // The server wants 20 characters; a shorter reason must not get as far as asking.
+    await dialog.locator('textarea').fill('duplicate');
+    await expect(confirm).toBeDisabled();
     await dialog.locator('textarea').fill('e2e check only — not a real cancellation');
     await expect(confirm).toBeEnabled();
 
