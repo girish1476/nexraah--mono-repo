@@ -1,4 +1,4 @@
-import { IsIn, IsInt, IsOptional, IsPositive, IsString, Max, MaxLength, Min } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsPositive, IsString, Max, MaxLength, Min, IsUUID } from 'class-validator';
 
 /** `POST /indents` — docs/api/03-clients-indents.md. */
 export class CreateIndentDto {
@@ -28,7 +28,7 @@ export class CreateIndentDto {
 
   // SPOT only — BR-26, BR-38.
   @IsOptional() @IsPositive() sourcingRatePaise?: number;
-  @IsOptional() @IsString() spotConfirmationAttachmentId?: string;
+  @IsOptional() @IsUUID() spotConfirmationAttachmentId?: string;
   // CONTRACT only — which won rate-card lane this indent draws from.
   @IsOptional() @IsString() rateCardLaneId?: string;
 

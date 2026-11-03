@@ -17,6 +17,7 @@ import {
   Stack,
   Tag,
   Tone,
+  useCan,
 } from '@/lib/ui';
 import { getComplianceQueues } from '../vendors/apis';
 import { ComplianceQueue } from '../vendors/types';
@@ -24,12 +25,14 @@ import { ComplianceQueue } from '../vendors/types';
 type Row = ComplianceQueue['rows'][number];
 
 /**
- * Compliance desk — `/compliance` (part 03 §4).
+ * Compliance desk — `/compliance` (part 03 §4), under Supply.
  *
- * One queue in three segments. The trip-documents segment operates on part
- * 05's data and gates part 07's advance; it lives here because the queue is
- * one screen.
+ * The transporter side of the queue: new transporter files, and trip
+ * documents (part 05's data, gating part 07's advance). The server's queue
+ * also carries client contracts; those are a client matter and are shown under
+ * Clients → Client verification instead (`CLIENT_CONTRACTS_KEY`).
  */
+const CLIENT_CONTRACTS_KEY = 'CLIENT_CONTRACTS';
 
 /**
  * Why a state pill says what it says. Keyed on the server's `flag` string and
@@ -48,8 +51,6 @@ const FLAG_REASON: Record<string, string> = {
 const QUEUE_BLURB: Record<string, string> = {
   VENDOR_FILES:
     'New transporters whose papers you have not passed yet. Until a file is activated they cannot be given loads.',
-  CLIENT_CONTRACTS:
-    'Signed client rate contracts. Check that the lane prices on file match what was agreed before approving.',
   TRIP_DOCUMENTS:
     "Papers uploaded against a running trip. Verifying them releases the transporter's advance — the part-payment they get before the trip.",
 };
@@ -61,13 +62,6 @@ function queueEmpty(queue: ComplianceQueue) {
         <EmptyState
           title="No vendor files waiting"
           hint="A transporter's file lands here once ops finish onboarding them. You check their identity checks (KYC) and documents, then activate the file so they can be given loads."
-        />
-      );
-    case 'CLIENT_CONTRACTS':
-      return (
-        <EmptyState
-          title="No client contracts waiting"
-          hint="A rate contract appears here when a client is signed on agreed lane prices, so you can confirm the prices on file match what was signed."
         />
       );
     case 'TRIP_DOCUMENTS':
@@ -87,16 +81,22 @@ function queueEmpty(queue: ComplianceQueue) {
   }
 }
 
+/** Supply's share of the queue — everything but the client contracts. */
+const supplySide = (all: ComplianceQueue[]) => all.filter((q) => q.key !== CLIENT_CONTRACTS_KEY);
+
 export default function CompliancePage() {
+  const can = useCan();
   const [queues, setQueues] = useState<ComplianceQueue[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = () => {
     setError(null);
-    getComplianceQueues().then(setQueues).catch((e) => setError(errorMessage(e)));
+    getComplianceQueues()
+      .then((all) => setQueues(supplySide(all)))
+      .catch((e) => setError(errorMessage(e)));
   };
   useEffect(load, []);
-  useLiveRefresh(() => getComplianceQueues().then(setQueues));
+  useLiveRefresh(() => getComplianceQueues().then((all) => setQueues(supplySide(all))));
 
   const columns: Column<Row>[] = [
     { key: 'ref', label: 'Reference', mono: true, render: (r) => r.ref },
@@ -133,11 +133,18 @@ export default function CompliancePage() {
     <ModuleGuard module="compliance">
       <PageHeader path="/compliance" title="Document verification" module="compliance" />
       <PageIntro
-        what="Check the vendor papers and client contracts sitting here and decide whether each one passes — a transporter cannot be given loads, and their advance cannot be paid, until you do."
+        what="Check the transporter papers and trip documents sitting here and decide whether each one passes — a transporter cannot be given loads, and their advance cannot be paid, until you do."
         who="The compliance desk works this queue; finance can watch it."
       >
         Everything below is waiting on a verification decision. Each row opens the file where the actual
         verify or approve button lives.
+        {can('client.onboard') && (
+          <>
+            {' '}
+            Client papers and client contracts are checked under{' '}
+            <Link href="/clients/onboarding">Clients → Client verification</Link>.
+          </>
+        )}
       </PageIntro>
 
       <Stack gap={18}>
@@ -147,7 +154,7 @@ export default function CompliancePage() {
           <Panel pad={false}>
             <EmptyState
               title="The compliance desk is clear"
-              hint="Nothing is waiting on a verification decision right now. Vendor files, client contracts and trip documents land here the moment they need checking."
+              hint="Nothing is waiting on a verification decision right now. Transporter files and trip documents land here the moment they need checking."
             />
           </Panel>
         )}

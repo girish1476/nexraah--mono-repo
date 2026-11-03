@@ -22,6 +22,7 @@ import type { CancelIndentDto } from './dto/cancel-indent.dto';
 import type { CorrectIndentDetailsDto, CorrectQuoteDto, RemoveQuoteDto } from './dto/correct-details.dto';
 import { checkQuoteCorrection, checkQuoteRemoval, planLoadCorrection, rupees } from './corrections';
 import { NotificationsService } from '../notifications/notifications.service';
+import { UNLINKED_ENTITY_ID } from '../attachments/attachments.service';
 
 /** An indent untouched this long is put in front of Operations and Leadership to cancel or keep. */
 export const STALE_INDENT_DAYS = 7;
@@ -303,6 +304,18 @@ export class IndentsService implements OnModuleInit {
     const bidMax = band?.bidMax ?? null;
 
     const row = await this.indentsRepository.transaction().execute(async (trx) => {
+      // The confirmation was uploaded before this request existed. Said plainly
+      // when it is missing, rather than as a foreign-key failure.
+      if (dto.spotConfirmationAttachmentId) {
+        const confirmation = await trx
+          .selectFrom('attachments')
+          .select('id')
+          .where('id', '=', dto.spotConfirmationAttachmentId)
+          .executeTakeFirst();
+        if (!confirmation) {
+          throw new DomainException(400, 'SPOT_CONFIRMATION_NOT_FOUND', "The client's confirmation could not be found. Attach it again.");
+        }
+      }
       const code = await this.numberingService.issue(trx, 'INDENT');
       const inserted = await this.indentsRepository.insert(trx, code, {
         client_id: dto.clientId,
@@ -340,6 +353,16 @@ export class IndentsService implements OnModuleInit {
         entityId: inserted.id,
         after: { code: inserted.code, branchId: matches[0].id },
       });
+      // Now that the request exists, the confirmation belongs to it — it was
+      // uploaded first, with no owner (UNLINKED_ENTITY_ID).
+      if (dto.spotConfirmationAttachmentId) {
+        await trx
+          .updateTable('attachments')
+          .set({ entity_type: 'indents', entity_id: inserted.id })
+          .where('id', '=', dto.spotConfirmationAttachmentId)
+          .where('entity_id', '=', UNLINKED_ENTITY_ID)
+          .execute();
+      }
       return inserted;
     });
 

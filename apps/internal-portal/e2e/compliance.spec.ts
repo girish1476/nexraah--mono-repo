@@ -45,12 +45,18 @@ test.describe('Compliance desk — COMPLIANCE role', () => {
     await page.goto('/compliance');
   });
 
-  test('renders all three queues with the seeded row counts', async ({ page }) => {
+  test('renders the transporter queues with the seeded row counts', async ({ page }) => {
     const main = page.locator('main');
     await expect(main.getByRole('heading', { name: 'Document verification' })).toBeVisible();
     await expect(panel(main, 'Vendor files').locator('table.table tbody tr')).toHaveCount(EXPECTED.vendorFiles());
-    await expect(panel(main, 'Client contracts').locator('table.table tbody tr')).toHaveCount(EXPECTED.clientContracts());
     await expect(panel(main, 'Trip documents awaiting verification').locator('table.table tbody tr')).toHaveCount(EXPECTED.tripDocuments());
+  });
+
+  test('client contracts are not on this Supply page — it points to Client verification', async ({ page }) => {
+    const main = page.locator('main');
+    await expect(panel(main, 'Vendor files')).toBeVisible();
+    await expect(panel(main, 'Client contracts')).toHaveCount(0);
+    await expect(main.getByRole('link', { name: 'Clients → Client verification' })).toHaveAttribute('href', '/clients/onboarding');
   });
 
   test('vendor files queue lists the two unverified vendor files, not the active one', async ({ page }) => {
@@ -73,9 +79,11 @@ test.describe('Compliance desk — COMPLIANCE role', () => {
     await expect(queue).not.toContainText('VND-2301');
   });
 
-  test('client contracts queue lists only the two CONTRACT-engagement clients', async ({ page }) => {
+  test('client contracts — now under Clients → Client verification — list only the CONTRACT-engagement clients', async ({ page }) => {
+    await page.goto('/clients/onboarding');
     const main = page.locator('main');
     const queue = panel(main, 'Client contracts');
+    await expect(queue.locator('table.table tbody tr')).toHaveCount(EXPECTED.clientContracts());
 
     const berger = queue.locator('tr').filter({ hasText: 'CLT-0092' });
     await expect(berger).toContainText('Berger Paints · rate contract BRG/RC/2026-27');
@@ -136,8 +144,9 @@ test.describe('Compliance desk — FINANCE (VIEW) role', () => {
     await expect(mutatingButtons).toHaveCount(0);
 
     await expect(panel(main, 'Vendor files').locator('table.table tbody tr')).toHaveCount(EXPECTED.vendorFiles());
-    await expect(panel(main, 'Client contracts').locator('table.table tbody tr')).toHaveCount(EXPECTED.clientContracts());
     await expect(panel(main, 'Trip documents awaiting verification').locator('table.table tbody tr')).toHaveCount(EXPECTED.tripDocuments());
+    // Finance has no client approvals to make, so no pointer to them either.
+    await expect(main.getByRole('link', { name: 'Clients → Client verification' })).toHaveCount(0);
 
     // Navigation links are still present — read-only means no mutation, not no access.
     await expect(main.getByRole('link', { name: 'Open file' }).first()).toBeVisible();

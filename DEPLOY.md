@@ -206,7 +206,7 @@ From the repository root, with the session pooler string (as the `postgres` user
 npx supabase db push --db-url "postgresql://postgres.<ref>:<db-password>@aws-0-ap-south-1.pooler.supabase.com:5432/postgres"
 ```
 
-It applies the 67 migrations in `supabase/migrations`. **Do not run `supabase/seed.sql`** — that is made-up test data.
+It applies every migration in `supabase/migrations` that the database does not have yet. **Run the same command again after every update that adds a migration** (a new file in that folder) — the new code expects the new columns, and without them it fails with "Internal server error". Already-applied migrations are skipped, so running it again is safe. **Do not run `supabase/seed.sql`** — that is made-up test data.
 
 Then check the database's security — the transporter login, the money columns, and each role's permissions against the API's role table:
 

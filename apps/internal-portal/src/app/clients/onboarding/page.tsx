@@ -4,6 +4,9 @@ import { useEffect, useRef, useState } from 'react';
 import { errorMessage } from '@/apis';
 import { openFileInNewTab, uploadAttachment } from '@/lib/attachments';
 import { fmtDate } from '@/lib/format';
+import Link from 'next/link';
+import { getComplianceQueues } from '@/app/vendors/apis';
+import type { ComplianceQueue } from '@/app/vendors/types';
 import {
   ActionCard,
   AllClear,
@@ -24,6 +27,7 @@ import {
   Stack,
   StatStrip,
   Tag,
+  Tone,
   useCan,
   useToast,
 } from '@/lib/ui';
@@ -78,6 +82,80 @@ const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
  * is "who is waiting on me", not "let me look up a client", so the list leads
  * and a client's checklist opens from it.
  */
+type ContractRow = ComplianceQueue['rows'][number];
+
+/** Why a contract's state pill says what it says — the server's `flag` strings. */
+const CONTRACT_FLAG_REASON: Record<string, string> = {
+  'No lanes priced': 'Signed, but no lane prices are on file, so nothing can be booked at an agreed rate',
+  'No rate card lanes': 'Signed, but no lane prices are on file, so nothing can be booked at an agreed rate',
+  'Yours to approve': 'Lane prices are on file and waiting for your approval',
+};
+
+const CONTRACT_COLUMNS: Column<ContractRow>[] = [
+  { key: 'ref', label: 'Reference', mono: true, render: (r) => r.ref },
+  { key: 'subject', label: 'Client and contract', render: (r) => r.subject },
+  { key: 'note', label: 'Where it stands', render: (r) => <span className="muted">{r.note}</span> },
+  { key: 'age', label: 'Waiting since', align: 'right', render: (r) => (r.ageDays === 1 ? '1 day' : `${r.ageDays} days`) },
+  {
+    key: 'flag',
+    label: 'Status',
+    render: (r) => (
+      <Tag tone={r.tone as Tone} reason={r.flag ? CONTRACT_FLAG_REASON[r.flag] : undefined}>
+        {r.flag}
+      </Tag>
+    ),
+  },
+  {
+    key: 'act',
+    label: '',
+    align: 'right',
+    render: (r) => (
+      <Link href={r.href} className="btn btn-secondary btn-sm">
+        {r.action}
+      </Link>
+    ),
+  },
+];
+
+/**
+ * Client contracts waiting on a decision — the `CLIENT_CONTRACTS` part of
+ * `GET /compliance/queues`. It used to sit on Supply's Document verification
+ * page, among the transporter files; it is a client matter, so it lives here.
+ * Shows nothing if the queue cannot be read, rather than an error on a page
+ * whose main job is the papers above.
+ */
+function ClientContracts() {
+  const [rows, setRows] = useState<ContractRow[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    getComplianceQueues()
+      .then((all) => live && setRows(all.find((q) => q.key === 'CLIENT_CONTRACTS')?.rows ?? []))
+      .catch(() => live && setRows(null));
+    return () => {
+      live = false;
+    };
+  }, []);
+  if (!rows) return null;
+  return (
+    <>
+      <SectionHead emoji="📑" title="Client contracts" note="Signed rate contracts — check the lane prices on file match what was agreed" />
+      <Panel pad={false} title="Client contracts">
+        <DataTable
+          columns={CONTRACT_COLUMNS}
+          rows={rows}
+          rowKey={(r) => r.ref}
+          empty={
+            <EmptyState
+              title="No client contracts waiting"
+              hint="A rate contract appears here when a client is signed on agreed lane prices, so you can confirm the prices on file match what was signed."
+            />
+          }
+        />
+      </Panel>
+    </>
+  );
+}
+
 export default function ClientOnboardingPage() {
   const can = useCan();
   const toast = useToast();
@@ -279,6 +357,8 @@ export default function ClientOnboardingPage() {
           }
         />
       </Panel>
+
+      <ClientContracts />
 
       {/* ---- one client's file ------------------------------------------- */}
       <Dialog
