@@ -909,7 +909,7 @@ export class VendorsService implements OnModuleInit {
         422,
         'BRANCH_REQUIRED',
         matches.length === 0
-          ? `No branch matches city "${baseCity}". Supply branchId explicitly.`
+          ? `No branch serves "${baseCity}". Choose the branch, or have an administrator add the town to one under "Also serves" in Administration → Branches.`
           : `${matches.length} branches match city "${baseCity}". Supply branchId explicitly.`,
       );
     }

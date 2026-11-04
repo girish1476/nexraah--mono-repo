@@ -133,19 +133,19 @@ export const SUPPLY_SOURCE_LABEL: Record<string, string> = {
  * real state an operator has to be able to see and fix, not an oversight.
  */
 export const BRANCHES = [
-  { id: 'br-nsk', code: 'NSK', name: 'Nashik', city: 'Nashik', catchmentKm: 150,
+  { id: 'br-nsk', code: 'NSK', name: 'Nashik', city: 'Nashik', catchmentKm: 150, servedCities: [],
     supplySource: 'BOTH', supplySourceLabel: 'Union and market',
     supplyRemarks: 'Union rates hold only through the cane season.' },
-  { id: 'br-pun', code: 'PUN', name: 'Pune', city: 'Pune', catchmentKm: 150,
+  { id: 'br-pun', code: 'PUN', name: 'Pune', city: 'Pune', catchmentKm: 150, servedCities: [],
     supplySource: 'MARKET', supplySourceLabel: 'Open market', supplyRemarks: null },
-  { id: 'br-vja', code: 'VJA', name: 'Vijayawada', city: 'Vijayawada', catchmentKm: 150,
+  { id: 'br-vja', code: 'VJA', name: 'Vijayawada', city: 'Vijayawada', catchmentKm: 150, servedCities: [],
     supplySource: 'UNION', supplySourceLabel: 'Transport union',
     supplyRemarks: 'Single union controls the port lanes.' },
-  { id: 'br-gdm', code: 'GDM', name: 'Gandhidham', city: 'Gandhidham', catchmentKm: 150,
+  { id: 'br-gdm', code: 'GDM', name: 'Gandhidham', city: 'Gandhidham', catchmentKm: 150, servedCities: [],
     supplySource: 'DIRECT_OWNER', supplySourceLabel: 'Direct owners', supplyRemarks: null },
-  { id: 'br-hsr', code: 'HSR', name: 'Hosur', city: 'Hosur', catchmentKm: 150,
+  { id: 'br-hsr', code: 'HSR', name: 'Hosur', city: 'Hosur', catchmentKm: 150, servedCities: [],
     supplySource: null, supplySourceLabel: null, supplyRemarks: null },
-  { id: 'br-vzg', code: 'VZG', name: 'Visakhapatnam (HO)', city: 'Visakhapatnam', catchmentKm: 150,
+  { id: 'br-vzg', code: 'VZG', name: 'Visakhapatnam (HO)', city: 'Visakhapatnam', catchmentKm: 150, servedCities: [],
     supplySource: null, supplySourceLabel: null, supplyRemarks: null },
 ] as {
   id: string;
@@ -153,6 +153,7 @@ export const BRANCHES = [
   name: string;
   city: string;
   catchmentKm: number;
+  servedCities: string[];
   supplySource: string | null;
   supplySourceLabel: string | null;
   supplyRemarks: string | null;

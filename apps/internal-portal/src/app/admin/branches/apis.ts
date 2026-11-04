@@ -11,7 +11,7 @@ export function createBranch(draft: BranchDraft) {
   return request<Branch>({ url: '/branches', method: 'POST', data: draft });
 }
 
-/** PATCH /branches/:id · `config.manage` — supply source and remarks. */
+/** PATCH /branches/:id · `config.manage` — supply source, remarks, and the towns it serves. */
 export function updateBranch(id: string, patch: BranchPatch) {
   return request<Branch>({ url: `/branches/${id}`, method: 'PATCH', data: patch });
 }

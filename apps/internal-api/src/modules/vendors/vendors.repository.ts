@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { DB } from '../../db/tokens';
 import type { DbExecutor, InternalDb } from '../../db/kysely';
+import { branchServesCity } from '../branches/branch-city';
 
 export interface VendorListFilters {
   q?: string;
@@ -85,7 +86,7 @@ export class VendorsRepository {
     return this.db
       .selectFrom('branches')
       .selectAll()
-      .where(sql`lower(city)`, '=', city.toLowerCase())
+      .where(branchServesCity(city))
       .execute();
   }
 

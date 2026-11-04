@@ -22,6 +22,8 @@ export interface Branch {
   name: string;
   city: string;
   catchmentKm: number;
+  /** Towns this branch also serves — a load picked up in one belongs here (BR-20). */
+  servedCities: string[];
   supplySource: SupplySource | null;
   supplySourceLabel: string | null;
   supplyRemarks: string | null;
@@ -32,6 +34,7 @@ export interface BranchDraft {
   city: string;
   code?: string;
   catchmentKm?: number;
+  servedCities?: string[];
   supplySource?: SupplySource;
   supplyRemarks?: string;
 }
@@ -40,6 +43,7 @@ export interface BranchPatch {
   name?: string;
   city?: string;
   catchmentKm?: number;
+  servedCities?: string[];
   supplySource?: SupplySource | null;
   supplyRemarks?: string | null;
 }

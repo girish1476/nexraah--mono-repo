@@ -286,7 +286,9 @@ export class IndentsService implements OnModuleInit {
       throw new DomainException(
         422,
         'BRANCH_REQUIRED',
-        `Cannot derive a branch from pickup city "${dto.fromCity}" (${matches.length} matches).`,
+        matches.length === 0
+          ? `No branch serves the pickup city "${dto.fromCity}". An administrator can add it to a branch under "Also serves" in Administration → Branches.`
+          : `"${dto.fromCity}" belongs to more than one branch (${matches.map((b) => b.name).join(', ')}). An administrator should keep it under one branch in Administration → Branches.`,
       );
     }
 

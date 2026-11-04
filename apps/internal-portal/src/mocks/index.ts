@@ -2084,6 +2084,7 @@ const routes: [string, RegExp, Handler][] = [
         name,
         city: body.city ? String(body.city).trim() : name,
         catchmentKm: Number(body.catchmentKm) || 150,
+        servedCities: Array.isArray(body.servedCities) ? body.servedCities.map(String) : [],
         supplySource,
         supplySourceLabel: supplySource ? (SUPPLY_SOURCE_LABEL[supplySource] ?? null) : null,
         supplyRemarks: body.supplyRemarks ? String(body.supplyRemarks) : null,
@@ -2105,6 +2106,13 @@ const routes: [string, RegExp, Handler][] = [
       }
       if (body?.supplyRemarks !== undefined) {
         branch.supplyRemarks = body.supplyRemarks ? String(body.supplyRemarks) : null;
+      }
+      if (Array.isArray(body?.servedCities)) {
+        const town = (body.servedCities as unknown[]).map(String).find((t) =>
+          BRANCHES.some((o) => o.id !== branch.id && [o.city, ...(o.servedCities ?? [])].some((c) => c.toLowerCase() === t.toLowerCase())),
+        );
+        if (town) fail(409, 'CONFLICT', `${town} is already served by another branch. A town can belong to one branch only.`);
+        branch.servedCities = (body.servedCities as unknown[]).map(String);
       }
       return ok(branch);
     },
@@ -3675,7 +3683,9 @@ const routes: [string, RegExp, Handler][] = [
         // Same rule as the real API (BR-20): the branch comes from the pickup
         // city, not from anything the form sends.
         branchName:
-          BRANCHES.find((b) => b.city.toLowerCase() === String(body.fromCity ?? '').toLowerCase())?.name ?? 'Nashik',
+          BRANCHES.find((b) =>
+            [b.city, ...(b.servedCities ?? [])].some((c) => c.toLowerCase() === String(body.fromCity ?? '').trim().toLowerCase()),
+          )?.name ?? 'Nashik',
         clientName: db.clients.find((c) => c.id === body.clientId)?.name ?? '—',
         distanceKm: 0,
         ...body,

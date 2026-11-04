@@ -2,6 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { AuditService } from '../audit/audit.service';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
 import { BranchesRepository } from './branches.repository';
+import { cleanServedCities } from './branch-city';
 import { SUPPLY_SOURCE_LABEL, type SupplySourceCode } from './branches.constants';
 import { CreateBranchDto } from './dto/create-branch.dto';
 import { UpdateBranchDto } from './dto/update-branch.dto';
@@ -12,6 +13,7 @@ interface BranchRow {
   name: string;
   city: string;
   catchment_km: number;
+  served_cities: string[] | null;
   supply_source: SupplySourceCode | null;
   supply_remarks: string | null;
 }
@@ -38,11 +40,13 @@ export class BranchesService {
   async create(dto: CreateBranchDto, actor: AuthenticatedUser) {
     const row = await this.branchesRepository.transaction().execute(async (trx) => {
       const code = await this.resolveCode(dto.code, dto.name);
+      const servedCities = await this.servedCitiesFree(dto.servedCities ?? [], dto.city, null);
       const inserted = await this.branchesRepository.insert(trx, {
         code,
         name: dto.name,
         city: dto.city,
         catchment_km: dto.catchmentKm ?? 150,
+        served_cities: servedCities,
         supply_source: dto.supplySource ?? null,
         supply_remarks: dto.supplyRemarks ?? null,
       });
@@ -65,6 +69,9 @@ export class BranchesService {
     if (dto.name !== undefined) patch.name = dto.name;
     if (dto.city !== undefined) patch.city = dto.city;
     if (dto.catchmentKm !== undefined) patch.catchment_km = dto.catchmentKm;
+    if (dto.servedCities !== undefined) {
+      patch.served_cities = await this.servedCitiesFree(dto.servedCities, dto.city ?? before.city, id);
+    }
     if (dto.supplySource !== undefined) patch.supply_source = dto.supplySource;
     if (dto.supplyRemarks !== undefined) patch.supply_remarks = dto.supplyRemarks;
     if (Object.keys(patch).length === 0) return this.toDto(before);
@@ -76,12 +83,31 @@ export class BranchesService {
         action: 'BRANCH_UPDATED',
         entityType: 'branches',
         entityId: id,
-        before: { supplySource: before.supply_source, supplyRemarks: before.supply_remarks },
-        after: { supplySource: updated.supply_source, supplyRemarks: updated.supply_remarks },
+        before: { supplySource: before.supply_source, supplyRemarks: before.supply_remarks, servedCities: before.served_cities ?? [] },
+        after: { supplySource: updated.supply_source, supplyRemarks: updated.supply_remarks, servedCities: updated.served_cities },
       });
       return updated;
     });
     return this.toDto(row as BranchRow);
+  }
+
+  /**
+   * The towns cleaned up, refusing any that would make a branch ambiguous: a
+   * town another branch already serves, or that is another branch's own city.
+   * One town, one branch — so deriving a load's branch never finds two.
+   */
+  private async servedCitiesFree(towns: readonly string[], ownCity: string, branchId: string | null): Promise<string[]> {
+    const own = ownCity.trim().toLowerCase();
+    const cleaned = cleanServedCities(towns).filter((t) => t.toLowerCase() !== own);
+    const others = ((await this.branchesRepository.findAll()) as BranchRow[]).filter((b) => b.id !== branchId);
+    for (const town of cleaned) {
+      const t = town.toLowerCase();
+      const taken = others.find(
+        (b) => b.city.trim().toLowerCase() === t || (b.served_cities ?? []).some((s) => s.trim().toLowerCase() === t),
+      );
+      if (taken) throw new ConflictException(`${town} is already served by the ${taken.name} branch. A town can belong to one branch only.`);
+    }
+    return cleaned;
   }
 
   /**
@@ -110,6 +136,7 @@ export class BranchesService {
       name: b.name,
       city: b.city,
       catchmentKm: b.catchment_km,
+      servedCities: b.served_cities ?? [],
       supplySource: b.supply_source,
       supplySourceLabel: b.supply_source ? SUPPLY_SOURCE_LABEL[b.supply_source] : null,
       supplyRemarks: b.supply_remarks,

@@ -40,6 +40,7 @@ export interface BranchesTable {
   lat: string | null;
   lng: string | null;
   catchment_km: Generated<number>;
+  served_cities: Generated<string[]>;
   supply_source: SupplySource | null;
   supply_remarks: string | null;
   created_at: Generated<string>;

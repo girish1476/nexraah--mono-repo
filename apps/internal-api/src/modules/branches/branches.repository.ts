@@ -9,6 +9,7 @@ const COLUMNS = [
   'name',
   'city',
   'catchment_km',
+  'served_cities',
   'supply_source',
   'supply_remarks',
 ] as const;
@@ -40,6 +41,7 @@ export class BranchesRepository {
       name: string;
       city: string;
       catchment_km: number;
+      served_cities: string[];
       supply_source: SupplySourceCode | null;
       supply_remarks: string | null;
     },

@@ -3,6 +3,7 @@ import { sql } from 'kysely';
 import { DB } from '../../db/tokens';
 import type { DbExecutor, InternalDb } from '../../db/kysely';
 import type { BandPosition } from '../../common/band-position';
+import { branchServesCity } from '../branches/branch-city';
 
 export interface IndentListFilters {
   stage?: string;
@@ -164,7 +165,7 @@ export class IndentsRepository {
     return this.db
       .selectFrom('branches')
       .selectAll()
-      .where(sql`lower(city)`, '=', city.toLowerCase())
+      .where(branchServesCity(city))
       .execute();
   }
 

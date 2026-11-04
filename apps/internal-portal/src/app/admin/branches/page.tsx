@@ -18,12 +18,24 @@ import {
 import { createBranch, listBranches, updateBranch } from './apis';
 import { Branch, SUPPLY_SOURCE_LABEL, SUPPLY_SOURCES, SupplySource } from './types';
 
+/** "Achuthapuram, anakapalli ," → the towns, trimmed, blanks dropped. */
+function townsFrom(text: string): string[] {
+  return text
+    .split(',')
+    .map((t) => t.trim().replace(/s+/g, ' '))
+    .filter(Boolean);
+}
+
 /**
  * Branches — `/admin/branches` · `config.manage`.
  *
  * Every branch selector across the console (vendor onboarding, indent
  * intake) reads this list, so opening a branch here makes it available
  * everywhere immediately.
+ *
+ * "Also serves" is the list a load's branch is found from: a pickup in one of
+ * those towns belongs to this branch (BR-20). Without it only the branch's own
+ * city matched, and a load from a nearby town could not be raised at all.
  *
  * Supply source is edited in place rather than behind a dialog: it is the one
  * field an operator revises as the market changes under them, and a branch
@@ -41,6 +53,7 @@ export default function BranchesPage() {
   const [name, setName] = useState('');
   const [city, setCity] = useState('');
   const [catchmentKm, setCatchmentKm] = useState(150);
+  const [servedCities, setServedCities] = useState('');
   const [supplySource, setSupplySource] = useState<SupplySource | ''>('');
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState<string | null>(null);
@@ -57,6 +70,7 @@ export default function BranchesPage() {
       const updated = await updateBranch(row.id, {
         supplySource: patch.supplySource,
         supplyRemarks: patch.supplyRemarks,
+        servedCities: patch.servedCities,
       });
       setBranches((prev) => prev?.map((b) => (b.id === updated.id ? updated : b)) ?? null);
     } catch (e) {
@@ -75,6 +89,7 @@ export default function BranchesPage() {
         name: name.trim(),
         city: city.trim(),
         catchmentKm,
+        servedCities: townsFrom(servedCities),
         supplySource: supplySource || undefined,
       });
       toast(`${name.trim()} added · available in every branch selector`);
@@ -82,6 +97,7 @@ export default function BranchesPage() {
       setName('');
       setCity('');
       setCatchmentKm(150);
+      setServedCities('');
       setSupplySource('');
       load();
     } catch (e) {
@@ -95,6 +111,29 @@ export default function BranchesPage() {
     { key: 'code', label: 'Code', mono: true, render: (r) => r.code },
     { key: 'name', label: 'Name', render: (r) => r.name },
     { key: 'city', label: 'City', render: (r) => r.city },
+    {
+      key: 'servedCities',
+      label: 'Also serves',
+      render: (r) => {
+        const towns = r.servedCities ?? [];
+        return editable ? (
+          <input
+            key={towns.join(',')}
+            defaultValue={towns.join(', ')}
+            disabled={saving === r.id}
+            placeholder="e.g. Achuthapuram, Anakapalli"
+            aria-label={`Towns ${r.name} also serves`}
+            title="Towns, separated by commas. A load picked up in one of them belongs to this branch."
+            onBlur={(e) => {
+              const next = townsFrom(e.target.value);
+              if (next.join(',') !== towns.join(',')) patchRow(r, { servedCities: next });
+            }}
+          />
+        ) : (
+          towns.join(', ') || '—'
+        );
+      },
+    },
     { key: 'catchment', label: 'Catchment (km)', align: 'right', render: (r) => r.catchmentKm },
     {
       key: 'supplySource',
@@ -146,7 +185,7 @@ export default function BranchesPage() {
       <PageHeader
         path="/admin/branches"
         title="Branches"
-        sub="Your offices, and where each one actually finds trucks. Every branch selector in the console — vendor onboarding, indent intake — reads this list."
+        sub="Your offices, the towns each one covers, and where each one finds trucks. A load belongs to the branch whose city, or one of whose &quot;Also serves&quot; towns, is its pickup city."
         module="admin"
         right={
           editable && (
@@ -185,6 +224,16 @@ export default function BranchesPage() {
         </Field>
         <Field label="City" required>
           <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="e.g. Visakhapatnam" />
+        </Field>
+        <Field
+          label="Also serves"
+          hint="Nearby towns this branch covers, separated by commas. A load picked up in one of them belongs to this branch."
+        >
+          <input
+            value={servedCities}
+            onChange={(e) => setServedCities(e.target.value)}
+            placeholder="e.g. Achuthapuram, Anakapalli"
+          />
         </Field>
         <Field
           label="Catchment (km)"
