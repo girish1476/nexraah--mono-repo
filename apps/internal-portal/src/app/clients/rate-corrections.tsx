@@ -277,6 +277,7 @@ export function RejectedLanesPanel({
                 approvalMailSubject: again.approvalMailSubject ?? '',
                 transitPenaltyApplies: !!again.transitPenaltyApplies,
                 transitPenaltyPerDayPaise: again.transitPenaltyPerDayPaise ?? 0,
+                branchId: again.branchId ?? null,
               }
             : undefined
         }

@@ -42,6 +42,15 @@ export function getPendingRateLanes(id: string) {
  * `request()` turns into a thrown `ApprovalRequiredError` — callers catch it
  * and say the change is waiting, they do not treat it as a failure.
  */
+/** PUT /clients/:id/rate-card/:laneId/branch — which branch runs a lane already on the rate card. */
+export function setLaneBranch(clientId: string, laneId: string, branchId: string) {
+  return request<{ laneId: string; branchId: string; branchName: string }>({
+    url: `/clients/${clientId}/rate-card/${laneId}/branch`,
+    method: 'PUT',
+    data: { branchId },
+  });
+}
+
 export function setLaneBand(
   clientId: string,
   laneId: string,
@@ -128,6 +137,7 @@ export interface RejectedRateLane {
   transitPenaltyApplies?: boolean;
   transitPenaltyPerDayPaise?: number;
   approvalMailSubject?: string;
+  branchId?: string | null;
 }
 
 /** GET /clients/:id/rate-card/rejected */

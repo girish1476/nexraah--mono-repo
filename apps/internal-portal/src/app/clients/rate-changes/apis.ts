@@ -55,6 +55,8 @@ export function proposeRateLane(
     transitPenaltyPerDayPaise?: number;
     approvalMailSubject: string;
     approvalMailAttachmentId?: string;
+    /** The branch that runs the lane's loads; an indent on the lane takes it. */
+    branchId: string;
   },
 ) {
   return request<never>({ url: `/clients/${clientId}/rate-card`, method: 'POST', data: body });

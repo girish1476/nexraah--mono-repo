@@ -31,7 +31,10 @@ import {
   getRateCard,
   patchClient,
   setLaneBand,
+  setLaneBranch,
 } from '../apis';
+import { listBranches } from '@/app/admin/branches/apis';
+import type { Branch } from '@/app/admin/branches/types';
 import { DeleteRateDialog, useCanDeleteRates } from '../delete-rate-dialog';
 import { EditLaneDialog, RejectedLanesPanel, useCanCorrectRates, type LaneEditTarget } from '../rate-corrections';
 import { LiveLane, liveLanes } from '../lanes';
@@ -164,6 +167,39 @@ export default function ClientDetailPage() {
     }
   };
 
+  // Which branch runs a lane: an indent raised on the lane takes it. Set
+  // directly — it is not a price — by whoever adds lanes or manages the client.
+  const canSetBranch = can('rate.revise') || can('client.manage');
+  const [branchLane, setBranchLane] = useState<RateCardLane | null>(null);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [laneBranch, setLaneBranchId] = useState('');
+  const [branchBusy, setBranchBusy] = useState(false);
+
+  const openBranch = (lane: RateCardLane) => {
+    setBranchLane(lane);
+    setLaneBranchId(lane.branchId ?? '');
+    if (!branches.length) {
+      listBranches()
+        .then(setBranches)
+        .catch((e) => toast(errorMessage(e)));
+    }
+  };
+
+  const saveBranch = async () => {
+    if (!branchLane || !laneBranch) return;
+    setBranchBusy(true);
+    try {
+      const saved = await setLaneBranch(id, branchLane.id, laneBranch);
+      toast(`${saved.branchName} now runs ${branchLane.origin} → ${branchLane.destination}`);
+      setBranchLane(null);
+      load();
+    } catch (e) {
+      toast(errorMessage(e));
+    } finally {
+      setBranchBusy(false);
+    }
+  };
+
   const [pending, setPending] = useState<PendingRateLane[]>([]);
   const canDelete = useCanDeleteRates();
   // A rate typed wrongly is corrected in place — agreed or still waiting.
@@ -193,6 +229,7 @@ export default function ClientDetailPage() {
     { key: 'truck', label: 'Truck type', render: (r) => r.truckType },
     { key: 'from', label: 'From', render: (r) => r.origin },
     { key: 'to', label: 'To', render: (r) => r.destination },
+    { key: 'branch', label: 'Branch', render: (r) => r.branchName ?? <span className="muted">From the pickup city</span> },
     { key: 'rate', label: 'Lane rate', align: 'right', render: (r) => rateWithBasis(inr(r.ratePaise), r.rateBasis) },
     { key: 'valid', label: 'Valid', render: (r) => `${fmtDate(r.validFrom)} → ${r.validTo ? fmtDate(r.validTo) : 'open'}` },
     { key: 'by', label: 'Added by', render: (r) => r.requesterName, sub: (r) => fmtDate(r.proposedAt) },
@@ -230,6 +267,22 @@ export default function ClientDetailPage() {
     { key: 'truck', label: 'Truck type', render: ({ lane: r }) => r.truckType },
     { key: 'from', label: 'From location', render: ({ lane: r }) => r.origin },
     { key: 'to', label: 'To location', render: ({ lane: r }) => r.destination },
+    {
+      key: 'branch',
+      label: 'Branch',
+      render: ({ lane: r }) => (
+        <>
+          {r.branchName ?? <span className="muted">No branch set</span>}
+          {canSetBranch && (
+            <div>
+              <button className="btn btn-ghost btn-sm" onClick={() => openBranch(r)}>
+                {r.branchId ? 'Change' : 'Set branch'}
+              </button>
+            </div>
+          )}
+        </>
+      ),
+    },
     { key: 'transit', label: 'Transit days', align: 'right', render: ({ lane: r }) => r.transitDays },
     {
       key: 'penalty',
@@ -446,6 +499,12 @@ export default function ClientDetailPage() {
                   price agreed since then is changed under Clients → Rate revision, and the old one is kept there.
                 </div>
               )}
+              {lanes.some(({ lane }) => !lane.branchId) && (
+                <div className="muted" style={{ fontSize: 11.5, padding: '0 14px 10px', lineHeight: 1.55 }}>
+                  A lane with no branch set sends its loads to the branch in its from city. Where no branch is
+                  in that city, a load cannot be raised on it until its branch is set.
+                </div>
+              )}
               {lanes.some(({ lane }) => !lane.supplySource) && (
                 <div className="muted" style={{ fontSize: 11.5, padding: '0 14px 12px', lineHeight: 1.55 }}>
                   Where a lane has no supply recorded, it can only be set on the quote (RFQ) lane it came from,
@@ -496,6 +555,32 @@ export default function ClientDetailPage() {
           setRateTick((t) => t + 1);
         }}
       />
+
+      <Dialog
+        open={branchLane !== null}
+        title={branchLane?.branchId ? 'Change the branch on this lane' : 'Set the branch on this lane'}
+        body={
+          branchLane
+            ? `${branchLane.origin} → ${branchLane.destination} · ${branchLane.truckType}. Every load raised on this lane from now on goes to this branch. Loads already raised keep theirs.`
+            : undefined
+        }
+        confirmLabel={branchBusy ? 'Saving…' : 'Save branch'}
+        confirmDisabled={!laneBranch || laneBranch === branchLane?.branchId}
+        onConfirm={saveBranch}
+        onClose={() => setBranchLane(null)}
+        busy={branchBusy}
+      >
+        <Field label="Branch" required>
+          <select aria-label="Branch" value={laneBranch} onChange={(e) => setLaneBranchId(e.target.value)}>
+            <option value="">Choose a branch</option>
+            {branches.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name} ({b.city})
+              </option>
+            ))}
+          </select>
+        </Field>
+      </Dialog>
 
       <Dialog
         open={bandLane !== null}

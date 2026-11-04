@@ -91,6 +91,7 @@ test('a rate is corrected in place, and one turned down is corrected and sent ag
   await field(lane, 'Lane rate per truck (₹)').fill('990000');
   await field(lane, 'Approval mail subject').fill('RE: Salem–Erode rate approved');
   await lane.locator('div.field').filter({ hasText: 'Where this rate was agreed' }).locator('textarea').fill('Agreed with the client by mail on 6 October 2026.');
+  await lane.locator('select[aria-label="Branch"]').selectOption('br-hsr');
   await lane.getByRole('button', { name: 'Send for sign-off' }).click();
   await expect(page.getByText(/Sent for sign-off/)).toBeVisible();
 
@@ -121,6 +122,7 @@ test('a rate is corrected in place, and one turned down is corrected and sent ag
   const again = dialog(page, /^Add a lane/);
   await expect(again.locator('div.field').filter({ hasText: 'From location' }).locator('input')).toHaveValue('Salem');
   await expect(field(again, 'Approval mail subject')).toHaveValue('RE: Salem–Erode rate approved');
+  await expect(again.locator('select[aria-label="Branch"]')).toHaveValue('br-hsr');
   await field(again, 'Lane rate per truck (₹)').fill('99000');
   await again.getByRole('button', { name: 'Send for sign-off' }).click();
   await expect(page.getByText(/Sent for sign-off/)).toBeVisible();

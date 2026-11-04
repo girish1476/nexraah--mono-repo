@@ -4,6 +4,9 @@ import { useEffect, useState } from 'react';
 import { ApprovalRequiredError, errorMessage, request } from '@/apis';
 import { TRUCK_TYPES } from '@/lib/vehicles';
 import { CityField, Dialog, Field, FormGrid, useToast } from '@/lib/ui';
+import { listBranches } from '@/app/admin/branches/apis';
+import type { Branch } from '@/app/admin/branches/types';
+import { branchForCity } from './lanes';
 import { proposeRateLane } from './rate-changes/apis';
 import { RATE_BASIS_LABEL, RateBasis } from './types';
 
@@ -13,8 +16,12 @@ const MIN_REASON = 20;
 const today = () => new Date().toISOString().slice(0, 10);
 
 /**
- * Add a lane to a client's rate card — the five things a lane is: truck type,
- * from, to, transit days and the lane rate.
+ * Add a lane to a client's rate card — the things a lane is: truck type, from,
+ * to, the branch that runs it, transit days and the lane rate.
+ *
+ * The branch is asked for because an indent raised on the lane takes it. It
+ * used to be worked out from the pickup city alone, so a lane from a town with
+ * no branch of its own was agreed and then could not be loaded.
  *
  * The rate card used to be written only by winning a rate request (RFQ), so a
  * client who had agreed prices on paper had an empty card until a whole
@@ -52,6 +59,7 @@ export function AddLaneDialog({
     approvalMailSubject?: string;
     transitPenaltyApplies?: boolean;
     transitPenaltyPerDayPaise?: number;
+    branchId?: string | null;
   };
 }) {
   const toast = useToast();
@@ -69,8 +77,27 @@ export function AddLaneDialog({
   const [mailSubject, setMailSubject] = useState('');
   const [mailFile, setMailFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [branchId, setBranchId] = useState('');
+  // Picked by hand: the from city stops choosing it.
+  const [branchChosen, setBranchChosen] = useState(false);
+
+  useEffect(() => {
+    if (!open || branches.length) return;
+    listBranches()
+      .then(setBranches)
+      .catch(() => setBranches([]));
+  }, [open, branches.length]);
+
+  // Until somebody picks one, the branch follows the from city when a branch sits there.
+  useEffect(() => {
+    if (branchChosen) return;
+    setBranchId(branchForCity(branches, origin)?.id ?? '');
+  }, [origin, branches, branchChosen]);
 
   const reset = () => {
+    setBranchId('');
+    setBranchChosen(false);
     setPenaltyApplies(false);
     setPenaltyPerDay('');
     setMailSubject('');
@@ -101,6 +128,10 @@ export function AddLaneDialog({
     setMailSubject(initial.approvalMailSubject ?? '');
     setPenaltyApplies(!!initial.transitPenaltyApplies);
     setPenaltyPerDay(initial.transitPenaltyPerDayPaise ? String(initial.transitPenaltyPerDayPaise / 100) : '');
+    if (initial.branchId) {
+      setBranchId(initial.branchId);
+      setBranchChosen(true);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initial?.origin, initial?.destination, initial?.truckType, initial?.ratePaise]);
 
@@ -110,6 +141,7 @@ export function AddLaneDialog({
     if (!truckType.trim()) return 'Say which truck type this rate is for.';
     if (origin.trim().length < 2 || destination.trim().length < 2) return 'Put in both the from and to city.';
     if (origin.trim().toLowerCase() === destination.trim().toLowerCase()) return 'The from and to city are the same.';
+    if (!branchId) return 'Choose the branch that runs loads on this lane.';
     if (transitDays.trim() === '' || !Number.isInteger(days) || days < 0 || days > 60) {
       return 'Transit days should be a whole number of days.';
     }
@@ -155,6 +187,7 @@ export function AddLaneDialog({
         ...(penaltyApplies ? { transitPenaltyPerDayPaise: Math.round(Number(penaltyPerDay) * 100) } : {}),
         approvalMailSubject: mailSubject.trim(),
         ...(approvalMailAttachmentId ? { approvalMailAttachmentId } : {}),
+        branchId,
       });
     } catch (e) {
       if (e instanceof ApprovalRequiredError) {
@@ -206,6 +239,27 @@ export function AddLaneDialog({
         </Field>
         <Field label="To location" required>
           <CityField listId="add-lane-to" value={destination} onChange={(e) => setDestination(e.target.value)} />
+        </Field>
+        <Field
+          label="Branch"
+          required
+          hint="The branch that runs loads on this lane. Every indent raised on the lane goes to it. Filled in when a branch serves the from city."
+        >
+          <select
+            aria-label="Branch"
+            value={branchId}
+            onChange={(e) => {
+              setBranchId(e.target.value);
+              setBranchChosen(true);
+            }}
+          >
+            <option value="">Choose a branch</option>
+            {branches.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name} ({b.city})
+              </option>
+            ))}
+          </select>
         </Field>
         <Field
           label="Rate basis"

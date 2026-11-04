@@ -126,6 +126,9 @@ export class ClientsService {
       supplySource: r.supply_source,
       supplySourceLabel: r.supply_source ? SUPPLY_SOURCE_LABEL[r.supply_source] : null,
       supplyRemarks: r.supply_remarks,
+      // Who runs this lane's loads; null where it is still worked out from the pickup city.
+      branchId: r.branch_id,
+      branchName: r.branch_name,
       bidMinPaise: r.bid_min,
       bidMaxPaise: r.bid_max,
       transitPenaltyApplies: r.transit_penalty_applies,

@@ -17,6 +17,18 @@ export interface LiveLane {
   replacedFrom: string | null;
 }
 
+/**
+ * The one branch serving a city — its own city, or a town it lists under "Also
+ * serves" — or null where none or more than one does. The rule the server
+ * derives a branch by (`branchServesCity`).
+ */
+export function branchForCity<B extends { city: string; servedCities?: string[] }>(branches: B[], city: string): B | null {
+  const c = city.trim().toLowerCase();
+  if (!c) return null;
+  const serving = branches.filter((b) => [b.city, ...(b.servedCities ?? [])].some((t) => t.trim().toLowerCase() === c));
+  return serving.length === 1 ? serving[0] : null;
+}
+
 const routeKey = (l: RateCardLane) => `${l.origin}·${l.destination}·${l.truckType}`;
 
 export function liveLanes(lanes: RateCardLane[], on: string = new Date().toISOString().slice(0, 10)): LiveLane[] {

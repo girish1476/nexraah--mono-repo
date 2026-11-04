@@ -89,6 +89,8 @@ describe('correcting rates', () => {
     validFrom: '2026-10-01',
     reason: 'Agreed with the client by mail on 6 October.',
     approvalMailSubject: 'Hosur–Madurai rate approval',
+    // The add-lane form always names the branch that runs the lane.
+    branchId: 'br-hsr',
     ...over,
   });
 

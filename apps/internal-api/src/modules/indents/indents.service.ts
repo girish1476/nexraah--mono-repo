@@ -277,21 +277,6 @@ export class IndentsService implements OnModuleInit {
       );
     }
 
-    // BR-20: branch derived from the pickup city, carried unchanged to the
-    // trip and the LR. Same flagged simplification as vendors.service.ts's
-    // deriveBranch — no geocoding provider is configured anywhere in this
-    // system, so this matches by exact city name rather than a 150km radius.
-    const matches = await this.indentsRepository.findBranchByCity(dto.fromCity);
-    if (matches.length !== 1) {
-      throw new DomainException(
-        422,
-        'BRANCH_REQUIRED',
-        matches.length === 0
-          ? `No branch serves the pickup city "${dto.fromCity}". An administrator can add it to a branch under "Also serves" in Administration → Branches.`
-          : `"${dto.fromCity}" belongs to more than one branch (${matches.map((b) => b.name).join(', ')}). An administrator should keep it under one branch in Administration → Branches.`,
-      );
-    }
-
     // The bid band is the client's, not the indent's: take it from the lane in
     // force for this route on the pickup date. No lane, no band — a spot load
     // or a route the rate card does not cover simply has nothing to enforce.
@@ -304,6 +289,27 @@ export class IndentsService implements OnModuleInit {
     );
     const bidMin = band?.bidMin ?? null;
     const bidMax = band?.bidMax ?? null;
+
+    // BR-20: the branch is carried unchanged to the trip and the LR. A lane
+    // that names its branch decides it — that is how a lane from a town with
+    // no branch of its own gets loaded. Otherwise it is derived from the pickup
+    // city — the branch's own city or a town it lists under "Also serves" —
+    // the same flagged simplification as vendors.service.ts's deriveBranch: no
+    // geocoding provider is configured, so names are matched, not a radius.
+    let branchId = band?.branchId ?? null;
+    if (!branchId) {
+      const matches = await this.indentsRepository.findBranchByCity(dto.fromCity);
+      if (matches.length !== 1) {
+        throw new DomainException(
+          422,
+          'BRANCH_REQUIRED',
+          matches.length === 0
+            ? `No branch serves the pickup city "${dto.fromCity}". Set the branch on this route's lane in the client's rate card, or an administrator can add the town to a branch under "Also serves" in Administration → Branches.`
+            : `"${dto.fromCity}" belongs to more than one branch (${matches.map((b) => b.name).join(', ')}). Set the branch on this route's lane in the client's rate card, or an administrator should keep the town under one branch in Administration → Branches.`,
+        );
+      }
+      branchId = matches[0].id;
+    }
 
     const row = await this.indentsRepository.transaction().execute(async (trx) => {
       // The confirmation was uploaded before this request existed. Said plainly
@@ -321,7 +327,7 @@ export class IndentsService implements OnModuleInit {
       const code = await this.numberingService.issue(trx, 'INDENT');
       const inserted = await this.indentsRepository.insert(trx, code, {
         client_id: dto.clientId,
-        branch_id: matches[0].id,
+        branch_id: branchId,
         from_city: dto.fromCity,
         to_city: dto.toCity,
         material: dto.material,
@@ -353,7 +359,7 @@ export class IndentsService implements OnModuleInit {
         action: 'INDENT_CREATED',
         entityType: 'indents',
         entityId: inserted.id,
-        after: { code: inserted.code, branchId: matches[0].id },
+        after: { code: inserted.code, branchId },
       });
       // Now that the request exists, the confirmation belongs to it — it was
       // uploaded first, with no owner (UNLINKED_ENTITY_ID).

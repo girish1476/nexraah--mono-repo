@@ -35,6 +35,8 @@ interface RateCardLaneAction {
   approvalMailAttachmentId: string | null;
   /** FTL (whole truck) or PMT (per metric tonne). Proposals raised before this existed replay as FTL. */
   rateBasis?: RateBasis;
+  /** The branch that runs the lane's loads. Proposals raised before this existed have none. */
+  branchId?: string | null;
 }
 
 export type RateBasis = 'FTL' | 'PMT';
@@ -202,6 +204,7 @@ export class RateRevisionService implements OnModuleInit {
         approval_mail_subject: action.approvalMailSubject,
         approval_mail_attachment_id: action.approvalMailAttachmentId,
         rate_basis: action.rateBasis ?? 'FTL',
+        branch_id: action.branchId ?? null,
       });
 
       await this.auditService.record(
@@ -323,6 +326,7 @@ export class RateRevisionService implements OnModuleInit {
         approval_mail_attachment_id: revision.approval_mail_attachment_id,
         // A new price on the same basis: a per-tonne lane stays per tonne.
         rate_basis: lane.rate_basis,
+        branch_id: lane.branch_id,
       });
 
       await this.clientsRepository.updateRevision(ctx.db, revision.id, {
@@ -458,7 +462,10 @@ export class RateRevisionService implements OnModuleInit {
    */
   async pendingLanes(clientId: string) {
     const rows = await this.approvalsService.pendingFor<RateCardLaneAction>('RATE_CARD_LANE', 'clients', clientId);
+    const branchName = new Map((await this.clientsRepository.branchNames()).map((b) => [b.id, b.name]));
     return rows.map((r) => ({
+      branchId: r.action.branchId ?? null,
+      branchName: r.action.branchId ? (branchName.get(r.action.branchId) ?? null) : null,
       approvalId: r.approvalId,
       requesterName: r.requesterName,
       proposedAt: r.createdAt,
@@ -644,6 +651,7 @@ export class RateRevisionService implements OnModuleInit {
       transitPenaltyApplies: r.action.transitPenaltyApplies,
       transitPenaltyPerDayPaise: r.action.transitPenaltyPerDayPaise,
       approvalMailSubject: r.action.approvalMailSubject,
+      branchId: r.action.branchId ?? null,
     }));
   }
 
@@ -872,7 +880,8 @@ export class RateRevisionService implements OnModuleInit {
       throw new DomainException(400, `RATE_LANE_${check.refusal}`, check.reason ?? 'That lane is not valid.');
     }
 
-    const action: RateCardLaneAction = { clientId, ...input };
+    const branch = await this.laneBranch(dto.branchId, input.origin);
+    const action: RateCardLaneAction = { clientId, ...input, branchId: branch.id };
     return this.approvalsService.raise(
       {
         kind: 'RATE_CARD_LANE',
@@ -883,12 +892,57 @@ export class RateRevisionService implements OnModuleInit {
         detail:
           `${rateLabel(input.ratePaise, input.rateBasis)} · ${input.truckType} · ${input.transitDays} days · from ${input.validFrom}` +
           (input.transitPenaltyApplies ? ` · late penalty ${rupees(input.transitPenaltyPerDayPaise)}/day` : ' · no late penalty') +
-          ` · mail: ${input.approvalMailSubject}`,
+          ` · branch: ${branch.name} · mail: ${input.approvalMailSubject}`,
         amountPaise: input.ratePaise,
         action,
       },
       actor,
     );
+  }
+
+  /**
+   * The branch that runs a lane's loads: the one chosen, else the one branch
+   * serving the from city. An indent on the lane takes it, so a lane from a
+   * town no branch serves can still be loaded.
+   */
+  private async laneBranch(chosen: string | undefined, origin: string): Promise<{ id: string; name: string }> {
+    if (chosen) {
+      const branch = await this.clientsRepository.findBranch(chosen);
+      if (!branch) throw new DomainException(400, 'BRANCH_NOT_FOUND', 'That branch does not exist. Choose it again.');
+      return branch;
+    }
+    const inCity = await this.clientsRepository.branchesInCity(origin);
+    if (inCity.length !== 1) {
+      throw new DomainException(400, 'BRANCH_REQUIRED', `Choose the branch that runs loads from ${origin}.`);
+    }
+    return inCity[0];
+  }
+
+  /**
+   * Which branch runs a lane already on the rate card — set where it has none,
+   * or changed. Not a price, so it needs no second signature; it is audited.
+   */
+  async setLaneBranch(clientId: string, laneId: string, branchId: string, actor: AuthenticatedUser) {
+    const branch = await this.clientsRepository.findBranch(branchId);
+    if (!branch) throw new DomainException(400, 'BRANCH_NOT_FOUND', 'That branch does not exist. Choose it again.');
+    return this.clientsRepository.transaction().execute(async (trx) => {
+      const lane = await this.clientsRepository.findLaneForUpdate(trx, laneId);
+      if (!lane || lane.client_id !== clientId || lane.deleted_at) {
+        throw new DomainException(404, 'NOT_FOUND', 'That rate is not on this client’s rate card.');
+      }
+      if (lane.branch_id === branch.id) {
+        throw new DomainException(409, 'NOTHING_CHANGED', `${branch.name} already runs this lane.`);
+      }
+      await this.clientsRepository.setLaneBranch(trx, lane.id, branch.id);
+      await this.auditService.record(trx, actor, {
+        action: 'RATE_LANE_BRANCH_SET',
+        entityType: 'rate_card_lanes',
+        entityId: lane.id,
+        before: { branchId: lane.branch_id },
+        after: { branchId: branch.id, branch: branch.name, route: `${lane.origin} → ${lane.destination}` },
+      });
+      return { laneId: lane.id, branchId: branch.id, branchName: branch.name };
+    });
   }
 
   // ---- Propose --------------------------------------------------------

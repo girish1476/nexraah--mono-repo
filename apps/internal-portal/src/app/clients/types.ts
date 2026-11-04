@@ -107,6 +107,13 @@ export interface RateCardLane {
   supplySourceLabel: string | null;
   supplyRemarks: string | null;
   /**
+   * The branch that runs this lane's loads — an indent raised on the lane takes
+   * it. Null on a lane added before lanes named one: the indent's branch is
+   * then worked out from the pickup city, and fails where no branch is there.
+   */
+  branchId?: string | null;
+  branchName?: string | null;
+  /**
    * The floor and ceiling a transporter quote is judged against on this lane,
    * copied onto every indent raised against it. Null until somebody sets it —
    * setting the first one is direct, changing one that exists goes to
@@ -129,6 +136,8 @@ export interface PendingRateLane {
   transitDays: number;
   validFrom: string;
   validTo: string | null;
+  branchId?: string | null;
+  branchName?: string | null;
 }
 
 /**

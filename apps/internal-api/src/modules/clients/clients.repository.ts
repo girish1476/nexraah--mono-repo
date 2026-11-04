@@ -3,6 +3,7 @@ import { sql } from 'kysely';
 import { DB } from '../../db/tokens';
 import type { DbExecutor, InternalDb } from '../../db/kysely';
 import type { RateCardLanesTable } from '../../db/types';
+import { branchServesCity } from '../branches/branch-city';
 
 /**
  * The period of the one synthetic, already-CLOSED RFQ a client's directly
@@ -140,9 +141,32 @@ export class ClientsRepository {
       approval_mail_subject?: string | null;
       approval_mail_attachment_id?: string | null;
       rate_basis?: string;
+      branch_id?: string | null;
     },
   ) {
     return db.insertInto('rate_card_lanes').values(row).returningAll().executeTakeFirstOrThrow();
+  }
+
+  /** The branch that runs a lane's loads, set on a lane already on the rate card. */
+  setLaneBranch(db: DbExecutor, laneId: string, branchId: string) {
+    return db
+      .updateTable('rate_card_lanes')
+      .set({ branch_id: branchId, updated_at: new Date().toISOString() })
+      .where('id', '=', laneId)
+      .executeTakeFirstOrThrow();
+  }
+
+  findBranch(id: string) {
+    return this.db.selectFrom('branches').select(['id', 'name']).where('id', '=', id).executeTakeFirst();
+  }
+
+  /** The branches serving a city — exactly one is the branch a lane from there belongs to. */
+  branchesInCity(city: string) {
+    return this.db.selectFrom('branches').select(['id', 'name']).where(branchServesCity(city)).execute();
+  }
+
+  branchNames() {
+    return this.db.selectFrom('branches').select(['id', 'name']).execute();
   }
 
   /**
@@ -334,10 +358,12 @@ export class ClientsRepository {
   rateCard(clientId: string) {
     return this.db
       .selectFrom('rate_card_lanes')
-      .selectAll()
-      .where('client_id', '=', clientId)
-      .where('deleted_at', 'is', null)
-      .orderBy('origin')
+      .leftJoin('branches', 'branches.id', 'rate_card_lanes.branch_id')
+      .selectAll('rate_card_lanes')
+      .select('branches.name as branch_name')
+      .where('rate_card_lanes.client_id', '=', clientId)
+      .where('rate_card_lanes.deleted_at', 'is', null)
+      .orderBy('rate_card_lanes.origin')
       .execute();
   }
 }

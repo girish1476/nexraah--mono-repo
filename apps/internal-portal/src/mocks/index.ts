@@ -11,6 +11,7 @@ import { fileFor, filesReady, keepFile } from './files';
 import { AxiosAdapter, AxiosError, AxiosRequestConfig, AxiosResponse } from 'axios';
 import { RoleCode, SEED_GRANTS } from '@/lib/permissions';
 import { LEGAL_DOCUMENT_KINDS, vendorFileGaps } from '@/lib/vendor-file';
+import { branchForCity } from '@/app/clients/lanes';
 import {
   ACCOUNTS,
   ADVANCE_DOCUMENT_SET,
@@ -674,6 +675,15 @@ function rateDeleteReason(role: string, body: any): string {
   return why;
 }
 
+/**
+ * The branch a lane's loads go to: the one set on it, else the one branch in
+ * its from city — how `20261104030000_rate_lane_branch.sql` fills lanes that
+ * were on rate cards before lanes named a branch.
+ */
+function laneBranchOf(lane: any) {
+  return (lane?.branchId && BRANCHES.find((b) => b.id === lane.branchId)) || branchForCity(BRANCHES, String(lane?.origin ?? ''));
+}
+
 function pendingLanesFor(clientId: string) {
   return db.approvals
     .filter((a: any) => a.kind === 'RATE_CARD_LANE' && a.status === 'PENDING' && a.entityId === clientId && a.action)
@@ -689,6 +699,8 @@ function pendingLanesFor(clientId: string) {
       transitDays: a.action.transitDays,
       validFrom: a.action.validFrom,
       validTo: a.action.validTo ?? null,
+      branchId: a.action.branchId ?? null,
+      branchName: BRANCHES.find((b) => b.id === a.action.branchId)?.name ?? null,
     }));
 }
 
@@ -1637,6 +1649,7 @@ const AUDIT_ACTION_VERB: Record<string, string> = {
   RATE_LANE_ADDED: 'added an agreed rate to',
   LANE_BAND_SET: 'set the bid band on',
   LANE_BAND_CHANGED: 'changed the bid band on',
+  RATE_LANE_BRANCH_SET: 'set the branch on',
   VENDOR_ACTIVATED: 'cleared for work',
   CLIENT_ACTIVATED: 'cleared for work',
 };
@@ -2292,6 +2305,7 @@ const routes: [string, RegExp, Handler][] = [
           transitPenaltyApplies: !!newLane.transitPenaltyApplies,
           transitPenaltyPerDayPaise: newLane.transitPenaltyApplies ? (newLane.transitPenaltyPerDayPaise ?? 0) : 0,
           approvalMailSubject: newLane.approvalMailSubject ?? null,
+          branchId: (newLane as any).branchId ?? null,
         });
       }
       // The vendor's standing advance moves only now, and the change is written
@@ -3022,6 +3036,8 @@ const routes: [string, RegExp, Handler][] = [
           bidMaxPaise: l.bidMaxPaise ?? null,
           transitPenaltyApplies: l.transitPenaltyApplies ?? false,
           transitPenaltyPerDayPaise: l.transitPenaltyPerDayPaise ?? 0,
+          branchId: laneBranchOf(l)?.id ?? null,
+          branchName: laneBranchOf(l)?.name ?? null,
         })),
       ),
   ],
@@ -3138,6 +3154,10 @@ const routes: [string, RegExp, Handler][] = [
         );
       const clash = laneClash(client.id, lane);
       if (clash) fail(400, 'RATE_LANE_LANE_EXISTS', clash);
+      // The branch that runs the lane — `RateRevisionService.laneBranch`.
+      const branch = body?.branchId
+        ? (BRANCHES.find((b) => b.id === body.branchId) ?? fail(400, 'BRANCH_NOT_FOUND', 'That branch does not exist. Choose it again.'))
+        : (branchForCity(BRANCHES, lane.origin) ?? fail(400, 'BRANCH_REQUIRED', `Choose the branch that runs loads from ${lane.origin}.`));
 
       return raiseApproval({
         kind: 'RATE_CARD_LANE',
@@ -3147,7 +3167,7 @@ const routes: [string, RegExp, Handler][] = [
         detail:
           `${rupeesOf(lane.ratePaise)} ${lane.rateBasis === 'PMT' ? 'per tonne' : 'per truck'} · ${lane.truckType} · ${lane.transitDays} days · from ${lane.validFrom}` +
           (penalty.transitPenaltyApplies ? ` · late penalty ${rupeesOf(penalty.transitPenaltyPerDayPaise)}/day` : ' · no late penalty') +
-          ` · mail: ${penalty.approvalMailSubject}`,
+          ` · branch: ${branch.name} · mail: ${penalty.approvalMailSubject}`,
         amountPaise: lane.ratePaise,
         // Same desks as a revision: Compliance and Leadership hold
         // `approve.contract`, neither holds `rate.revise`.
@@ -3155,8 +3175,25 @@ const routes: [string, RegExp, Handler][] = [
         requiredPermission: 'approve.contract',
         reason,
         role,
-        action: { clientId: client.id, ...lane, ...penalty },
+        action: { clientId: client.id, ...lane, ...penalty, branchId: branch.id },
       });
+    },
+  ],
+  // Which branch runs a lane already on the rate card — `RateRevisionService.setLaneBranch`.
+  [
+    'PUT',
+    /^\/clients\/([^/]+)\/rate-card\/([^/]+)\/branch$/,
+    ({ params, body, role }) => {
+      if (!SEED_GRANTS[role].includes('rate.revise') && !SEED_GRANTS[role].includes('client.manage'))
+        fail(403, 'PERMISSION_DENIED', 'You cannot change which branch runs a lane.');
+      const branch =
+        BRANCHES.find((b) => b.id === body?.branchId) ?? fail(400, 'BRANCH_NOT_FOUND', 'That branch does not exist. Choose it again.');
+      const lane =
+        (db.rateCards[params[0]] ?? []).find((l: any) => l.id === params[1] && !l.deletedAt) ??
+        fail(404, 'NOT_FOUND', 'That rate is not on this client’s rate card.');
+      if (lane.branchId === branch.id) fail(409, 'NOTHING_CHANGED', `${branch.name} already runs this lane.`);
+      lane.branchId = branch.id;
+      return ok({ laneId: lane.id, branchId: branch.id, branchName: branch.name });
     },
   ],
   [
@@ -3698,12 +3735,27 @@ const routes: [string, RegExp, Handler][] = [
         awardedQuoteId: null,
         quotes: [],
         failureCause: null,
-        // Same rule as the real API (BR-20): the branch comes from the pickup
-        // city, not from anything the form sends.
-        branchName:
-          BRANCHES.find((b) =>
-            [b.city, ...(b.servedCities ?? [])].some((c) => c.toLowerCase() === String(body.fromCity ?? '').trim().toLowerCase()),
-          )?.name ?? 'Nashik',
+        // Same rule as the real API (BR-20), never anything the form sends: the
+        // branch of the lane in force for this route, else the pickup city's.
+        // Where neither gives one the real API refuses the load; the demo
+        // still books it to Nashik so spot loads from anywhere can be tried.
+        ...(() => {
+          const norm = (s: unknown) => String(s ?? '').trim().toLowerCase();
+          const lane = (db.rateCards[body.clientId] ?? []).find(
+            (l: any) =>
+              !l.deletedAt &&
+              norm(l.origin) === norm(body.fromCity) &&
+              norm(l.destination) === norm(body.toCity) &&
+              norm(l.truckType) === norm(body.truckType) &&
+              l.validFrom <= body.pickupDate &&
+              (!l.validTo || l.validTo >= body.pickupDate),
+          );
+          const b =
+            (lane?.branchId && BRANCHES.find((x) => x.id === lane.branchId)) ||
+            branchForCity(BRANCHES, String(body.fromCity ?? '')) ||
+            BRANCHES.find((x) => x.code === 'NSK');
+          return { branchId: b?.id ?? null, branchName: b?.name ?? 'Nashik' };
+        })(),
         clientName: db.clients.find((c) => c.id === body.clientId)?.name ?? '—',
         distanceKm: 0,
         ...body,

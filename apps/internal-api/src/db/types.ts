@@ -473,6 +473,8 @@ export interface RateCardLanesTable {
   approval_mail_attachment_id: string | null;
   /** FTL — the rate is for the whole truck; PMT — per metric tonne. */
   rate_basis: Generated<string>;
+  /** The branch that runs this lane's loads; an indent on the lane takes it. Null: worked out from the pickup city. */
+  branch_id: string | null;
   /** A duplicate removed by Leadership or an administrator. Kept, never read as live. */
   deleted_at: string | null;
   deleted_by: string | null;

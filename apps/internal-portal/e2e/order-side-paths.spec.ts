@@ -92,6 +92,8 @@ test.describe('beside the main cycle', () => {
     await field(lane, basis === 'PMT' ? 'Lane rate per tonne (₹)' : 'Lane rate per truck (₹)').fill(rate);
     await field(lane, 'Approval mail subject').fill(`RE: Berger Kolkata–${to} rate approved`);
     await field(lane, 'Where this rate was agreed').fill('Client mail of 30 September agreeing the rate');
+    // No branch is in Kolkata; Nashik runs Berger's loads in the demo.
+    await lane.locator('select[aria-label="Branch"]').selectOption('br-nsk');
     await lane.getByRole('button', { name: 'Send for sign-off' }).click();
   };
 

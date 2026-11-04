@@ -50,7 +50,7 @@ export class IndentsRepository {
   ) {
     return this.db
       .selectFrom('rate_card_lanes')
-      .select(['bid_min as bidMin', 'bid_max as bidMax'])
+      .select(['bid_min as bidMin', 'bid_max as bidMax', 'branch_id as branchId'])
       .where('client_id', '=', clientId)
       .where('deleted_at', 'is', null)
       .where(sql<boolean>`lower(origin) = lower(${fromCity})`)

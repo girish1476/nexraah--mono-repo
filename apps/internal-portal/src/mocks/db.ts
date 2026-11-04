@@ -708,8 +708,9 @@ export const db = {
      * on this date" has exactly one answer — see `rate-revision.ts`.
      */
     'c-0090': [
-      { id: 'rc-3', rfqLaneId: 'rl-9', origin: 'Mundra', destination: 'Jaipur', truckType: '40 ft trailer', ratePaise: 5210000, transitDays: 2, reportingRule: 'SAME_DAY', validFrom: '2026-01-01', validTo: '2026-06-30' },
-      { id: 'rc-4', rfqLaneId: 'rl-9', origin: 'Mundra', destination: 'Jaipur', truckType: '40 ft trailer', ratePaise: 5390000, transitDays: 2, reportingRule: 'SAME_DAY', validFrom: '2026-07-01', validTo: '2026-12-31', bidMinPaise: 4200000, bidMaxPaise: 4700000 },
+      // Mundra has no branch of its own; Gandhidham, next door, runs the lane.
+      { id: 'rc-3', rfqLaneId: 'rl-9', origin: 'Mundra', destination: 'Jaipur', truckType: '40 ft trailer', ratePaise: 5210000, transitDays: 2, reportingRule: 'SAME_DAY', validFrom: '2026-01-01', validTo: '2026-06-30', branchId: 'br-gdm' },
+      { id: 'rc-4', rfqLaneId: 'rl-9', origin: 'Mundra', destination: 'Jaipur', truckType: '40 ft trailer', ratePaise: 5390000, transitDays: 2, reportingRule: 'SAME_DAY', validFrom: '2026-07-01', validTo: '2026-12-31', bidMinPaise: 4200000, bidMaxPaise: 4700000, branchId: 'br-gdm' },
     ],
   } as Record<string, any[]>,
 

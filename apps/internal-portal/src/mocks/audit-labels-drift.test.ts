@@ -32,6 +32,7 @@ const ACTIONS = [
   'RATE_LANE_ADDED',
   'LANE_BAND_SET',
   'LANE_BAND_CHANGED',
+  'RATE_LANE_BRANCH_SET',
   'VENDOR_ACTIVATED',
   'CLIENT_ACTIVATED',
   // Not in either map — the fallback has to agree too, or a future wave's

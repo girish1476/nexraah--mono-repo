@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { liveLanes } from './lanes';
+import { branchForCity, liveLanes } from './lanes';
 import { RateCardLane } from './types';
 
 const lane = (id: string, validFrom: string, validTo: string | null, route = 'Pune'): RateCardLane =>
@@ -37,5 +37,27 @@ describe('liveLanes', () => {
   it('does not treat a different route as a successor', () => {
     const rows = [lane('a', '2026-01-01', null, 'Pune'), lane('b', '2026-09-01', null, 'Nagpur')];
     expect(liveLanes(rows, '2026-09-26').every((l) => l.replacedFrom === null)).toBe(true);
+  });
+});
+
+describe('branchForCity', () => {
+  const branches = [
+    { id: 'nsk', city: 'Nashik' },
+    { id: 'pun', city: 'Pune' },
+    { id: 'pun2', city: 'pune ' },
+    { id: 'vzg', city: 'Visakhapatnam', servedCities: ['Achuthapuram'] },
+  ];
+  it('finds the branch that lists the town under "Also serves"', () => {
+    expect(branchForCity(branches, 'achuthapuram')?.id).toBe('vzg');
+  });
+  it('finds the one branch in the from city, whatever the case', () => {
+    expect(branchForCity(branches, ' nashik')?.id).toBe('nsk');
+  });
+  it('decides nothing where no branch is in the city — the lane must name one', () => {
+    expect(branchForCity(branches, 'Mundra')).toBeNull();
+    expect(branchForCity(branches, '')).toBeNull();
+  });
+  it('decides nothing where two branches share the city', () => {
+    expect(branchForCity(branches, 'Pune')).toBeNull();
   });
 });

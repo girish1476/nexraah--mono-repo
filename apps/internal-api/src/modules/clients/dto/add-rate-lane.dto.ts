@@ -40,6 +40,13 @@ export class AddRateLaneDto {
   /** A screenshot of that mail, uploaded through `/attachments`, when there is one. */
   @IsOptional() @IsUUID() approvalMailAttachmentId?: string;
 
+  /**
+   * The branch that runs this lane's loads; an indent raised on the lane takes
+   * it. Left out, it is the one branch in the from city, and the lane is
+   * refused when there is none or more than one.
+   */
+  @IsOptional() @IsUUID() branchId?: string;
+
   @IsDateString() validFrom!: string;
 
   /** Open-ended when left out — the lane runs until it is revised. */

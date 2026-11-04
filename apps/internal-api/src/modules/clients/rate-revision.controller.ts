@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Put, UseGuards } from '@nestjs/common';
-import { IsString, MinLength } from 'class-validator';
+import { IsString, IsUUID, MinLength } from 'class-validator';
 import { SupabaseJwtGuard } from '../../common/guards/supabase-jwt.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { assertAnyPermission } from '../../common/guards/assert-any-permission';
@@ -15,6 +15,10 @@ import { CorrectRateLaneDto, EditPendingRateLaneDto, EditPendingRateRevisionDto 
 /** Why a duplicate rate is being removed — kept with the deleted row and in the audit trail. */
 class DeleteRateDto {
   @IsString() @MinLength(10) reason!: string;
+}
+
+class SetLaneBranchDto {
+  @IsUUID() branchId!: string;
 }
 
 /**
@@ -179,6 +183,18 @@ export class RateRevisionController {
    * at once; changing an existing one returns `202 approvalRequired` and waits
    * for Leadership.
    */
+  /** The branch that runs a lane already on the rate card. Whoever adds lanes or manages the client. */
+  @Put(':id/rate-card/:laneId/branch')
+  setBranch(
+    @Param('id') id: string,
+    @Param('laneId') laneId: string,
+    @Body() dto: SetLaneBranchDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertAnyPermission(user, ['rate.revise', 'client.manage']);
+    return this.revisions.setLaneBranch(id, laneId, dto.branchId, user);
+  }
+
   @Put(':id/rate-card/:laneId/band')
   @RequirePermission('client.manage')
   setBand(

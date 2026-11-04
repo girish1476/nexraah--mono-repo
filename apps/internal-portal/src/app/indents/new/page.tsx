@@ -292,7 +292,7 @@ export default function NewIndentPage() {
       <PageHeader
         path="/indents/new"
         title="New load request"
-        sub="Branch is derived from the pickup city and carried unchanged to the trip and the LR."
+        sub="The branch is the agreed lane's, else worked out from the pickup city, and carried unchanged to the trip and the LR."
         module="indents"
       />
       <PageIntro
@@ -411,6 +411,7 @@ export default function NewIndentPage() {
                   Agreed {rateWithBasis(inr(lane.ratePaise), lane.rateBasis)}
                   {lane.rateBasis === 'PMT' ? ' — the freight is this × the weight' : ''} · valid {fmtDate(lane.validFrom)} → {lane.validTo ? fmtDate(lane.validTo) : 'open'}
                   {lane.transitPenaltyApplies ? ` · late delivery ${inr(lane.transitPenaltyPerDayPaise)}/day` : ''}
+                  {lane.branchName ? ` · run by ${lane.branchName}` : ''}
                 </p>
               )}
             </div>
@@ -422,7 +423,13 @@ export default function NewIndentPage() {
             <Field
               label="Pickup city"
               required
-              hint={locked ? 'From the agreed lane' : 'The branch that runs this load is worked out from the pickup city.'}
+              hint={
+                locked
+                  ? lane?.branchName
+                    ? `From the agreed lane — the load goes to ${lane.branchName}`
+                    : 'From the agreed lane'
+                  : 'The branch that runs this load is worked out from the pickup city.'
+              }
               error={errors.fromCity?.message}
             >
               <CityField

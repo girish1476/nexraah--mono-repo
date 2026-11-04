@@ -27,6 +27,7 @@ const ACTION_VERB: Record<string, string> = {
   RATE_LANE_ADDED: 'added an agreed rate to',
   LANE_BAND_SET: 'set the bid band on',
   LANE_BAND_CHANGED: 'changed the bid band on',
+  RATE_LANE_BRANCH_SET: 'set the branch on',
   VENDOR_ACTIVATED: 'cleared for work',
   CLIENT_ACTIVATED: 'cleared for work',
 };

@@ -43,6 +43,10 @@ test.describe('Add a lane to a rate card', () => {
       .locator('textarea')
       .fill('Annexure 2 of the signed agreement dated 1 September');
 
+    // No branch sits in a made-up town, so the lane waits for one to be chosen.
+    await expect(send).toBeDisabled();
+    await expect(page.getByText('Choose the branch that runs loads on this lane.')).toBeVisible();
+    await page.locator('select[aria-label="Branch"]').selectOption('br-nsk');
     await expect(send).toBeEnabled();
     await send.click();
     await expect(page.getByText(/^Sent for sign-off — it shows under “Lanes waiting for approval”/)).toBeVisible();
@@ -70,6 +74,7 @@ test.describe('Add a lane to a rate card', () => {
     await field(page, 'Lane rate per tonne (₹)').locator('input').fill('2450');
     await field(page, 'Approval mail subject').locator('input').fill('RE: per tonne rate approval');
     await field(page, 'Where this rate was agreed').locator('textarea').fill('Client mail of 30 September, per tonne');
+    await page.locator('select[aria-label="Branch"]').selectOption('br-pun');
     await page.getByRole('button', { name: 'Send for sign-off' }).click();
     await expect(page.getByRole('row').filter({ hasText: origin })).toContainText('₹2,450 / tonne');
   });
@@ -107,9 +112,55 @@ test.describe('Add a lane to a rate card', () => {
     await field(page, 'Where this rate was agreed')
       .locator('textarea')
       .fill('Repeat of the lane already on the card, to prove it is refused');
+    await page.locator('select[aria-label="Branch"]').selectOption('br-gdm');
     await page.getByRole('button', { name: 'Send for sign-off' }).click();
 
     await expect(page.getByText(/already has an agreed rate for that route/)).toBeVisible();
+  });
+
+  test('the lane names the branch that runs it — filled from the from city, chosen where none is there', async ({ page }) => {
+    await setRole(page, 'FINANCE');
+    await page.goto('/clients/rate-changes?client=c-0101&add=1');
+    const branch = page.locator('select[aria-label="Branch"]');
+    await expect(branch.locator('option')).toHaveCount(7);
+
+    await field(page, 'From location').locator('input').fill('Hosur');
+    await expect(branch).toHaveValue('br-hsr');
+    await field(page, 'From location').locator('input').fill('Mundra');
+    await expect(branch).toHaveValue('');
+
+    // Chosen by hand, it stays put when the from city changes.
+    await branch.selectOption('br-gdm');
+    await field(page, 'From location').locator('input').fill('Pune');
+    await expect(branch).toHaveValue('br-gdm');
+  });
+
+  test('the rate card shows each lane’s branch, and one with none can be given it', async ({ page }) => {
+    await setRole(page, 'FINANCE');
+    await page.goto('/clients/c-0090');
+    const card = page.locator('main table').first();
+    await expect(card.locator('tbody tr').filter({ hasText: 'Mundra' }).first()).toContainText('Gandhidham');
+
+    // Berger Paints' Kolkata lanes predate lanes naming a branch, and no branch is in Kolkata.
+    await page.goto('/clients/c-0092');
+    const kolkata = page.locator('main table').first().locator('tbody tr').filter({ hasText: 'Guwahati' });
+    await expect(kolkata).toContainText('No branch set');
+    await kolkata.getByRole('button', { name: 'Set branch' }).click();
+    const save = page.getByRole('button', { name: 'Save branch' });
+    await expect(save).toBeDisabled();
+    await page.locator('.surface').filter({ hasText: 'Set the branch on this lane' }).locator('select[aria-label="Branch"]').selectOption('br-vzg');
+    await save.click();
+    await expect(page.getByText('Visakhapatnam (HO) now runs Kolkata → Guwahati')).toBeVisible();
+    await expect(kolkata).toContainText('Visakhapatnam (HO)');
+    await expect(kolkata.getByRole('button', { name: 'Change' }).first()).toBeVisible();
+  });
+
+  test('a load raised on a lane says which branch it goes to', async ({ page }) => {
+    await setRole(page, 'OPS');
+    await page.goto('/indents/new');
+    await page.locator('select[name="clientId"]').selectOption({ label: 'Apex Ceramics · CONTRACT' });
+    await page.locator('select').filter({ has: page.locator('option[value="rc-4"]') }).selectOption('rc-4');
+    await expect(page.getByText('From the agreed lane — the load goes to Gandhidham')).toBeVisible();
   });
 
   test('a spot client has no rate card to add to', async ({ page }) => {
