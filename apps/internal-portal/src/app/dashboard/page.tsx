@@ -21,7 +21,7 @@ import { BarRow, ChartCard, ChartEmpty, ColumnPoint, Columns, HBars, Meter, Stat
 import { inrCompact, pct } from '@/lib/format';
 import { LiveStamp, useLiveRefresh } from '@/lib/live';
 import { ROLES, RoleCode } from '@/lib/permissions';
-import { Loading, ModuleGuard, PageHeader } from '@/lib/ui';
+import { Loading, ModuleGuard, PageHeader, useCan } from '@/lib/ui';
 
 /** The order's steps in the order a load passes through them, then the three ways one ends badly. */
 const PIPELINE: OrderStatus[] = [
@@ -133,11 +133,16 @@ export default function AdminDashboardPage() {
   const [data, setData] = useState<Everything | null>(null);
   /** Undefined while it is still being read; null when it could not be. */
   const [people, setPeople] = useState<AllowedEmail[] | null | undefined>(undefined);
-  const loadPeople = () => listAllowedEmails().then(setPeople, () => setPeople(null));
+  // Only an administrator may read who can sign in; Leadership sees this page
+  // too, and asking for them was refused every time ("could not be read").
+  const seesPeople = useCan()('config.manage');
+  const loadPeople = () => (seesPeople ? listAllowedEmails().then(setPeople, () => setPeople(null)) : Promise.resolve());
   useEffect(() => {
     void loadEverything().then(setData);
-    void loadPeople();
   }, []);
+  useEffect(() => {
+    void loadPeople();
+  }, [seesPeople]);
   const updatedAt = useLiveRefresh(() => Promise.all([loadEverything().then(setData), loadPeople()]), 60_000);
 
   if (!data) {
@@ -325,14 +330,16 @@ export default function AdminDashboardPage() {
           <CardLink href="/vendors">Open Transporters</CardLink>
         </ChartCard>
 
-        <ChartCard title="People by role" note="Everyone who can sign in today">
-          {people ? (
-            <HBars rows={roleRows} format={count} empty="Nobody is allowed to sign in yet." />
-          ) : (
-            <ChartEmpty>{people === undefined ? 'Reading the list of people…' : 'The list of people could not be read.'}</ChartEmpty>
-          )}
-          <CardLink href="/admin/users">Open Allowed emails</CardLink>
-        </ChartCard>
+        {seesPeople && (
+          <ChartCard title="People by role" note="Everyone who can sign in today">
+            {people ? (
+              <HBars rows={roleRows} format={count} empty="Nobody is allowed to sign in yet." />
+            ) : (
+              <ChartEmpty>{people === undefined ? 'Reading the list of people…' : 'The list of people could not be read.'}</ChartEmpty>
+            )}
+            <CardLink href="/admin/users">Open Allowed emails</CardLink>
+          </ChartCard>
+        )}
 
         <ChartCard title="Approvals waiting" note="By what is being asked for">
           {approvals ? <HBars rows={approvalRows} format={count} empty="Nothing is waiting on a decision." /> : <ChartEmpty>Approvals could not be read.</ChartEmpty>}

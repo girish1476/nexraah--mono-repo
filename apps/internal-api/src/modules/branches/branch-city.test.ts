@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ConflictException } from '@nestjs/common';
-import { cleanServedCities } from './branch-city';
+import { branchServingCity, cleanServedCities } from './branch-city';
 import { BranchesService } from './branches.service';
 
 describe('the towns a branch serves', () => {
@@ -10,6 +10,22 @@ describe('the towns a branch serves', () => {
       'anakapalli',
       'Sabbavaram Junction',
     ]);
+  });
+});
+
+describe('the branch a city falls back to', () => {
+  const towns = [
+    { id: 'vis', city: 'Visakhapatnam', served_cities: ['Achuthapuram'] },
+    { id: 'pun', city: 'Pune', served_cities: null },
+    { id: 'pun2', city: ' pune ', served_cities: [] },
+  ];
+  it('is the one branch whose city or served town it is, any case', () => {
+    expect(branchServingCity(towns, ' visakhapatnam')?.id).toBe('vis');
+    expect(branchServingCity(towns, 'ACHUTHAPURAM')?.id).toBe('vis');
+  });
+  it('is nobody when no branch, or more than one, serves it', () => {
+    expect(branchServingCity(towns, 'Mundra')).toBeNull();
+    expect(branchServingCity(towns, 'Pune')).toBeNull();
   });
 });
 
@@ -23,6 +39,8 @@ describe('one town, one branch', () => {
     const repo = {
       findAll: async () => branches,
       findById: async (id: string) => branches.find((b) => b.id === id),
+      findByCode: async () => undefined,
+      insert: vi.fn(async (_db: unknown, row: Record<string, unknown>) => ({ id: 'new', ...row })),
       transaction: () => ({ execute: (fn: (trx: unknown) => unknown) => fn({}) }),
       update: updated,
     };
@@ -39,6 +57,21 @@ describe('one town, one branch', () => {
     await expect(service().svc.update('vja', { servedCities: ['Visakhapatnam'] }, actor)).rejects.toThrow(
       /already served by the Visakhapatnam branch/,
     );
+  });
+
+  it('refuses a new branch in a town another branch already serves', async () => {
+    await expect(
+      service().svc.create({ name: 'Achuthapuram', city: ' achuthapuram ' } as never, actor),
+    ).rejects.toThrow(/already served by the Visakhapatnam branch/);
+  });
+
+  it('refuses moving a branch to a town another branch already serves', async () => {
+    await expect(service().svc.update('vja', { city: 'Achuthapuram' }, actor)).rejects.toThrow(ConflictException);
+  });
+
+  it('still opens a branch in a town nobody serves', async () => {
+    const out = await service().svc.create({ name: 'Anakapalli', city: 'Anakapalli' } as never, actor);
+    expect(out.city).toBe('Anakapalli');
   });
 
   it('saves the cleaned list, and returns it', async () => {

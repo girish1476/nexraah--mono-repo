@@ -40,6 +40,7 @@ export class BranchesService {
   async create(dto: CreateBranchDto, actor: AuthenticatedUser) {
     const row = await this.branchesRepository.transaction().execute(async (trx) => {
       const code = await this.resolveCode(dto.code, dto.name);
+      await this.cityFree(dto.city, null);
       const servedCities = await this.servedCitiesFree(dto.servedCities ?? [], dto.city, null);
       const inserted = await this.branchesRepository.insert(trx, {
         code,
@@ -67,7 +68,10 @@ export class BranchesService {
 
     const patch: Record<string, unknown> = {};
     if (dto.name !== undefined) patch.name = dto.name;
-    if (dto.city !== undefined) patch.city = dto.city;
+    if (dto.city !== undefined) {
+      await this.cityFree(dto.city, id);
+      patch.city = dto.city;
+    }
     if (dto.catchmentKm !== undefined) patch.catchment_km = dto.catchmentKm;
     if (dto.servedCities !== undefined) {
       patch.served_cities = await this.servedCitiesFree(dto.servedCities, dto.city ?? before.city, id);
@@ -108,6 +112,21 @@ export class BranchesService {
       if (taken) throw new ConflictException(`${town} is already served by the ${taken.name} branch. A town can belong to one branch only.`);
     }
     return cleaned;
+  }
+
+  /**
+   * The same rule from the other side: a branch's own city cannot be a town
+   * another branch lists under "Also serves", or loads from it would match two.
+   */
+  private async cityFree(city: string, branchId: string | null) {
+    const c = city.trim().toLowerCase();
+    const others = ((await this.branchesRepository.findAll()) as BranchRow[]).filter((b) => b.id !== branchId);
+    const taken = others.find((b) => (b.served_cities ?? []).some((s) => s.trim().toLowerCase() === c));
+    if (taken) {
+      throw new ConflictException(
+        `${city.trim()} is already served by the ${taken.name} branch. Take it off that branch's "Also serves" list first.`,
+      );
+    }
   }
 
   /**

@@ -328,3 +328,23 @@ test.describe('go-live import', () => {
     await expect(page.getByRole('button', { name: 'Run dry run' })).toBeDisabled();
   });
 });
+
+test.describe('branches — one town, one branch', () => {
+  test('a served town saves with a word to say so, and cannot open a second branch', async ({ page, isMobile }) => {
+    test.skip(!!isMobile, 'The same table on a narrower screen.');
+    await setRole(page, 'ADMIN');
+    await page.goto('/admin/branches');
+    const towns = page.getByLabel('Towns Gandhidham also serves');
+    await towns.fill('Mundra');
+    await towns.blur();
+    await expect(page.getByText('Gandhidham saved')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Add branch' }).first().click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel('Branch name').fill('Mundra port');
+    await dialog.getByLabel('City').fill('Mundra');
+    await dialog.getByRole('button', { name: 'Add branch' }).click();
+    await expect(page.getByText(/Mundra is already served by the Gandhidham branch/)).toBeVisible();
+    await expect(dialog).toBeVisible();
+  });
+});

@@ -1,12 +1,16 @@
 'use client';
 
 import {
+  cloneElement,
   forwardRef,
   InputHTMLAttributes,
+  isValidElement,
   KeyboardEvent as ReactKeyboardEvent,
+  ReactElement,
   ReactNode,
   useCallback,
   useEffect,
+  useId,
   useRef,
 } from 'react';
 import { useRouter } from 'next/navigation';
@@ -1148,6 +1152,18 @@ export function Dialog({
   /** Wider than the default for a dialog that shows a document beside a form. */
   width?: number;
 }) {
+  const titleId = useId();
+  // Escape closes, as every dialog does — unless it is part-way through saving.
+  const latestClose = useRef(onClose);
+  latestClose.current = onClose;
+  useEffect(() => {
+    if (!open || busy) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') latestClose.current();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, busy]);
   if (!open) return null;
   return (
     <div
@@ -1166,6 +1182,9 @@ export function Dialog({
       }}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
         onClick={(e) => e.stopPropagation()}
         className="surface"
         style={{
@@ -1179,7 +1198,7 @@ export function Dialog({
           animation: 'dialog-in var(--transition) both',
         }}
       >
-        <h2 style={{ fontSize: 22 }}>{title}</h2>
+        <h2 id={titleId} style={{ fontSize: 22 }}>{title}</h2>
         {body && (
           <div className="muted" style={{ fontSize: 13.5, lineHeight: 1.55, marginTop: 9 }}>
             {body}
@@ -1209,6 +1228,8 @@ export function Toast() {
   if (!toast) return null;
   return (
     <div
+      role="status"
+      aria-live="polite"
       style={{
         position: 'fixed',
         left: '50%',
@@ -1248,10 +1269,22 @@ export function Field({
   hint?: string;
   children: ReactNode;
 }) {
+  // Tie the label to a plain input, select or textarea, so it names the box
+  // for a screen reader and a click on it puts the cursor there.
+  const autoId = useId();
+  let control = children;
+  let forId: string | undefined;
+  if (isValidElement(children) && (['input', 'select', 'textarea'].includes(children.type as string) || children.type === CityField)) {
+    const el = children as ReactElement<{ id?: string }>;
+    forId = el.props.id ?? autoId;
+    if (!el.props.id) control = cloneElement(el, { id: forId });
+  }
   return (
     <div className="field">
-      <label className={required ? 'req' : undefined}>{label}</label>
-      {children}
+      <label htmlFor={forId} className={required ? 'req' : undefined}>
+        {label}
+      </label>
+      {control}
       {hint && !error && (
         <span className="muted" style={{ fontSize: 11 }}>
           {hint}

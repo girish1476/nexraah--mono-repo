@@ -4,6 +4,7 @@ import type { AuthenticatedUser } from '../../common/interfaces/authenticated-us
 import { AuditService } from '../audit/audit.service';
 import { NumberingService } from '../numbering/numbering.service';
 import { SUPPLY_SOURCE_LABEL } from '../branches/branches.constants';
+import { branchServingCity } from '../branches/branch-city';
 import { ClientsRepository } from './clients.repository';
 import type { CreateClientDto } from './dto/create-client.dto';
 import type { UpdateClientDto } from './dto/update-client.dto';
@@ -111,34 +112,40 @@ export class ClientsService {
     const client = await this.clientsRepository.findById(id);
     if (!client) throw new DomainException(404, 'NOT_FOUND', `Unknown client: ${id}`);
     const rows = await this.clientsRepository.rateCard(id);
-    return rows.map((r) => ({
-      id: r.id,
-      rfqLaneId: r.rfq_lane_id,
-      origin: r.origin,
-      destination: r.destination,
-      truckType: r.truck_type,
-      ratePaise: r.rate,
-      rateBasis: r.rate_basis,
-      transitDays: r.transit_days,
-      reportingRule: r.reporting_rule,
-      validFrom: r.valid_from,
-      validTo: r.valid_to,
-      supplySource: r.supply_source,
-      supplySourceLabel: r.supply_source ? SUPPLY_SOURCE_LABEL[r.supply_source] : null,
-      supplyRemarks: r.supply_remarks,
-      // Who runs this lane's loads; null where it is still worked out from the pickup city.
-      branchId: r.branch_id,
-      branchName: r.branch_name,
-      bidMinPaise: r.bid_min,
-      bidMaxPaise: r.bid_max,
-      transitPenaltyApplies: r.transit_penalty_applies,
-      transitPenaltyPerDayPaise: Number(r.transit_penalty_per_day),
-      approvalMailSubject: r.approval_mail_subject,
-      // The last correction of a mistyped figure, where there was one.
-      correctedAt: r.corrected_at,
-      correctionReason: r.correction_reason,
-      correctedFrom: r.corrected_from,
-    }));
+    const branches = rows.some((r) => !r.branch_id) ? await this.clientsRepository.branchesWithTowns() : [];
+    return rows.map((r) => {
+      // A lane with no branch of its own sends its loads to the one branch
+      // serving its from city (what an indent does), so name that one.
+      const branch = r.branch_id ? { id: r.branch_id, name: r.branch_name } : branchServingCity(branches, r.origin);
+      return {
+        id: r.id,
+        rfqLaneId: r.rfq_lane_id,
+        origin: r.origin,
+        destination: r.destination,
+        truckType: r.truck_type,
+        ratePaise: r.rate,
+        rateBasis: r.rate_basis,
+        transitDays: r.transit_days,
+        reportingRule: r.reporting_rule,
+        validFrom: r.valid_from,
+        validTo: r.valid_to,
+        supplySource: r.supply_source,
+        supplySourceLabel: r.supply_source ? SUPPLY_SOURCE_LABEL[r.supply_source] : null,
+        supplyRemarks: r.supply_remarks,
+        // Who runs this lane's loads; null only where no single branch serves its from city.
+        branchId: branch?.id ?? null,
+        branchName: branch?.name ?? null,
+        bidMinPaise: r.bid_min,
+        bidMaxPaise: r.bid_max,
+        transitPenaltyApplies: r.transit_penalty_applies,
+        transitPenaltyPerDayPaise: Number(r.transit_penalty_per_day),
+        approvalMailSubject: r.approval_mail_subject,
+        // The last correction of a mistyped figure, where there was one.
+        correctedAt: r.corrected_at,
+        correctionReason: r.correction_reason,
+        correctedFrom: r.corrected_from,
+      };
+    });
   }
 
   private toDto(row: {

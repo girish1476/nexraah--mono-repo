@@ -2091,11 +2091,16 @@ const routes: [string, RegExp, Handler][] = [
         (body.code ? String(body.code) : name.replace(/[^A-Za-z]/g, '').slice(0, 3)).toUpperCase() ||
         `BR${BRANCHES.length + 1}`;
       const supplySource = body.supplySource ? String(body.supplySource) : null;
+      // Mirrors `BranchesService.cityFree()`: one town, one branch.
+      const city = body.city ? String(body.city).trim() : name;
+      const servedBy = BRANCHES.find((o) => (o.servedCities ?? []).some((c) => c.toLowerCase() === city.toLowerCase()));
+      if (servedBy)
+        fail(409, 'CONFLICT', `${city} is already served by the ${servedBy.name} branch. Take it off that branch's "Also serves" list first.`);
       const branch = {
         id: `br-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || BRANCHES.length + 1}`,
         code,
         name,
-        city: body.city ? String(body.city).trim() : name,
+        city,
         catchmentKm: Number(body.catchmentKm) || 150,
         servedCities: Array.isArray(body.servedCities) ? body.servedCities.map(String) : [],
         supplySource,

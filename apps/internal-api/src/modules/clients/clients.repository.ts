@@ -169,6 +169,11 @@ export class ClientsRepository {
     return this.db.selectFrom('branches').select(['id', 'name']).execute();
   }
 
+  /** Every branch with the towns it serves, to name the branch a lane with none set falls back to. */
+  branchesWithTowns() {
+    return this.db.selectFrom('branches').select(['id', 'name', 'city', 'served_cities']).execute();
+  }
+
   /**
    * A duplicate taken off the rate card. The row stays — loads already raised
    * point at it — but every read of the rate card skips it from now on.

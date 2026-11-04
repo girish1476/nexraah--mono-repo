@@ -73,6 +73,8 @@ export default function BranchesPage() {
         servedCities: patch.servedCities,
       });
       setBranches((prev) => prev?.map((b) => (b.id === updated.id ? updated : b)) ?? null);
+      // Edits save on leaving the field, so say so — otherwise nothing shows it worked.
+      toast(`${updated.name} saved`);
     } catch (e) {
       toast(errorMessage(e));
       load();
