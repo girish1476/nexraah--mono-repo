@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
-import { setRole } from './helpers';
+import { scopedOperations, setRole } from './helpers';
 
 /**
  * `/orders` multi-field search and export — the owner's "All Orders page" note.
@@ -72,5 +72,28 @@ test.describe('orders search', () => {
     expect(lines[0]).toContain('Transporter');
     expect(lines).toHaveLength(2);
     expect(lines[1]).toContain('Rathod Roadlines');
+  });
+});
+
+test.describe('orders — nothing waiting on you', () => {
+  test('the loads still running are listed under the search bar instead of a blank', async ({ page }) => {
+    // The Nashik desk has nothing in Action required, and one load delivered but not yet paid.
+    await setRole(page, scopedOperations());
+    await page.goto('/orders');
+    await expect(page.getByTestId('running-orders-note')).toBeVisible();
+    await expect(rows(page)).toHaveCount(1);
+    await expect(page.locator('main').getByText('1 running order')).toBeVisible();
+
+    // A search is a search: the running list gives way to what was asked for.
+    await filter(page, 'vendor').fill('no such transporter');
+    await expect(page.getByTestId('running-orders-note')).toHaveCount(0);
+    await expect(page.locator('main').getByText('Nothing matches these filters')).toBeVisible();
+  });
+
+  test('when something is waiting, Action required lists only that', async ({ page }) => {
+    await setRole(page, 'OPS');
+    await page.goto('/orders');
+    await expect(rows(page)).toHaveCount(2);
+    await expect(page.getByTestId('running-orders-note')).toHaveCount(0);
   });
 });

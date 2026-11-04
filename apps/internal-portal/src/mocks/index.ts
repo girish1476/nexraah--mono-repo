@@ -2522,9 +2522,27 @@ const routes: [string, RegExp, Handler][] = [
     'PATCH',
     /^\/vendors\/leads\/([^/]+)$/,
     ({ params, body }) => {
+      // Mirrors `LeadsService.update()`: linking a transporter converts the
+      // lead, and Converted cannot be picked with nothing behind it.
       const lead = db.leads.find((l) => l.id === params[0]) ?? fail(404, 'NOT_FOUND', 'Lead not found');
-      Object.assign(lead, body);
-      return ok(lead);
+      const { convertedVendorId, convertedVendorCode: _c, convertedVendorName: _n, ...patch } = body ?? {};
+      if (convertedVendorId !== undefined) {
+        if (lead.convertedVendorId && lead.convertedVendorId !== convertedVendorId)
+          fail(409, 'LEAD_ALREADY_CONVERTED', 'This lead is already linked to a different transporter.');
+        const vendor = findVendor(convertedVendorId);
+        const other = db.leads.find((l) => l.convertedVendorId === vendor.id && l.id !== lead.id);
+        if (other) fail(409, 'VENDOR_ALREADY_LINKED', `That transporter already came from lead ${other.code}.`);
+        Object.assign(lead, {
+          convertedVendorId: vendor.id,
+          convertedVendorCode: vendor.code,
+          convertedVendorName: vendor.legalName,
+        });
+        patch.stage = 'CONVERTED';
+      }
+      if (patch.stage === 'CONVERTED' && !lead.convertedVendorId)
+        fail(400, 'VALIDATION_ERROR', 'A lead becomes Converted when it is onboarded, or linked to the transporter it became.');
+      Object.assign(lead, patch);
+      return ok({ convertedVendorId: null, convertedVendorCode: null, convertedVendorName: null, ...lead });
     },
   ],
   [
@@ -2669,7 +2687,7 @@ const routes: [string, RegExp, Handler][] = [
       let lead: Record<string, any> | undefined;
       if (leadId) {
         lead = db.leads.find((l) => l.id === leadId) ?? fail(404, 'NOT_FOUND', `Unknown lead: ${leadId}`);
-        if (lead.stage === 'CONVERTED' || lead.convertedVendorId)
+        if (lead.convertedVendorId)
           fail(409, 'LEAD_ALREADY_CONVERTED', 'This lead has already been converted to a vendor.');
       }
       const vendor = {

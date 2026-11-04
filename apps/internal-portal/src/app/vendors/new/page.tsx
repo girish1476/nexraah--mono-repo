@@ -510,9 +510,11 @@ export default function VendorWizardPage() {
               ? 'as a referral'
               : lead.source === 'FIELD'
                 ? 'through one of our people'
-                : 'from a lane we cannot cover'}
+                : lead.source === 'INBOUND'
+                  ? 'by calling us'
+                  : 'from a lane we cannot cover'}
             . Check every line against the transporter before you save —{' '}
-            {lead.stage === 'CONVERTED'
+            {lead.convertedVendorId
               ? 'the lead is now marked converted.'
               : 'saving this step marks the lead converted, so nobody works it twice.'}
           </Banner>

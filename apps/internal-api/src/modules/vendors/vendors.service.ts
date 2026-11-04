@@ -312,11 +312,13 @@ export class VendorsService implements OnModuleInit {
   async create(dto: CreateVendorDto, actor: AuthenticatedUser) {
     const { branchId, overridden } = await this.deriveBranch(dto.baseCity, dto.branchId, dto.branchOverrideReason);
 
-    let lead: { id: string; source: string | null; stage: string } | undefined;
+    // A lead counts as converted once it points at a transporter — not by its
+    // stage, which could once be set to Converted by hand with nothing behind it.
+    let lead: { id: string; source: string | null; converted_vendor_id: string | null } | undefined;
     if (dto.leadId) {
       lead = await this.leadsRepository.findById(dto.leadId);
       if (!lead) throw new DomainException(404, 'NOT_FOUND', `Unknown lead: ${dto.leadId}`);
-      if (lead.stage === 'CONVERTED') {
+      if (lead.converted_vendor_id) {
         throw new DomainException(409, 'LEAD_ALREADY_CONVERTED', 'This lead has already been converted to a vendor.');
       }
     }
@@ -355,7 +357,7 @@ export class VendorsService implements OnModuleInit {
       if (dto.leadId) {
         const leadForUpdate = await this.leadsRepository.findByIdForUpdate(trx, dto.leadId);
         if (!leadForUpdate) throw new DomainException(404, 'NOT_FOUND', `Unknown lead: ${dto.leadId}`);
-        if (leadForUpdate.stage === 'CONVERTED') {
+        if (leadForUpdate.converted_vendor_id) {
           throw new DomainException(409, 'LEAD_ALREADY_CONVERTED', 'This lead has already been converted to a vendor.');
         }
         await this.leadsRepository.updateInTransaction(trx, dto.leadId, {

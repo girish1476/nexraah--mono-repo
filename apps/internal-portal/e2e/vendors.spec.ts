@@ -545,6 +545,45 @@ test.describe('Vendor leads — /vendors/leads', () => {
     await expect(main.getByText('DOCUMENTS REQUESTED', { exact: true })).toBeVisible();
     await expect(main.getByRole('link', { name: 'Start onboarding' })).toHaveCount(0);
   });
+
+  test('a lead can be edited after it is added', async ({ page }) => {
+    await setRole(page, 'OPS');
+    await page.goto('/vendors/leads');
+    const row = page.locator('main table.table tbody tr').filter({ hasText: 'LD-0087' });
+    await row.getByRole('button', { name: /Edit/ }).click();
+    const dialog = page.locator('.surface').filter({ hasText: 'LD-0087 · Kutch Freight Lines' });
+    await expect(dialog.locator('input').first()).toHaveValue('Kutch Freight Lines');
+    await dialog.locator('textarea').fill('Runs Mundra → Jaipur, 18 trailers.');
+    await dialog.getByRole('button', { name: 'Save changes' }).click();
+    await expect(row).toContainText('Runs Mundra → Jaipur, 18 trailers.');
+  });
+
+  test('Converted cannot be picked by hand — it comes from the transporter the lead became', async ({ page }) => {
+    await setRole(page, 'OPS');
+    await page.goto('/vendors/leads');
+    const row = page.locator('main table.table tbody tr').filter({ hasText: 'LD-0086' });
+    await expect(row.locator('select option[value="CONVERTED"]')).toBeDisabled();
+  });
+
+  test('a lead onboarded separately is linked, and the transporter shows where it came from', async ({ page }) => {
+    await setRole(page, 'OPS');
+    await page.goto('/vendors/leads');
+    const row = page.locator('main table.table tbody tr').filter({ hasText: 'LD-0086' });
+    await row.getByRole('button', { name: /Edit/ }).click();
+    const dialog = page.locator('.surface').filter({ hasText: 'LD-0086' });
+    const pick = dialog.locator('select').last();
+    await expect(pick.locator('option', { hasText: 'Bhagwati Logistics' })).toHaveCount(1);
+    const value = await pick.locator('option', { hasText: 'Bhagwati Logistics' }).getAttribute('value');
+    await pick.selectOption(value!);
+    await dialog.getByRole('button', { name: 'Save and link' }).click();
+    await expect(row).toContainText('Now a transporter: Bhagwati Logistics');
+
+    await row.getByRole('link', { name: /Now a transporter/ }).click();
+    const lead = page.locator('main').getByText('Came to us as a lead');
+    await expect(lead).toBeVisible();
+    await page.locator('main').getByRole('link', { name: /LD-0086/ }).click();
+    await expect(page.locator('.surface').filter({ hasText: 'LD-0086 · Sri Lakshmi Roadways' })).toBeVisible();
+  });
 });
 
 test.describe('Vendor market gap — /vendors/market-gap', () => {

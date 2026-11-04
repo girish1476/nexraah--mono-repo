@@ -35,6 +35,7 @@ import {
   submitVendor,
   changeAdvancePolicy,
   getVendor,
+  listLeads,
   patchVendor,
   reinstateVendor,
   rejectDocument,
@@ -45,7 +46,8 @@ import {
   verifyDocument,
   verifyKyc,
 } from '../apis';
-import { CheckStatus, FleetRow, KycItem, VendorDetail, VendorDocument } from '../types';
+import { CheckStatus, FleetRow, KycItem, Lead, VendorDetail, VendorDocument } from '../types';
+import { leadSourceLabel } from '../lead-labels';
 import { DocPreview } from '@/components/doc-preview';
 import { UploadCell } from '../upload-cell';
 import { VendorPlacements } from './placements';
@@ -143,6 +145,19 @@ export default function VendorDetailPage() {
       .catch((e) => setError(errorMessage(e)));
   };
   useEffect(load, [id]);
+
+  // The lead this transporter came from, if any — what business development
+  // learnt about them before onboarding stays readable after it.
+  const [lead, setLead] = useState<Lead | null>(null);
+  useEffect(() => {
+    let live = true;
+    listLeads()
+      .then((leads) => live && setLead(leads.find((l) => l.convertedVendorId === id) ?? null))
+      .catch(() => live && setLead(null));
+    return () => {
+      live = false;
+    };
+  }, [id]);
   // An approval lands from the approver's screen, not this one — without this
   // the old advance % stayed on screen until a manual reload.
   useLiveRefresh(() => getVendor(id).then(apply));
@@ -637,6 +652,20 @@ export default function VendorDetailPage() {
                 ]}
               />
             </Panel>
+
+            {lead && (
+              <Panel title="Came to us as a lead" pad={false}>
+                <FactList
+                  facts={[
+                    ['Lead', <Link key="lead" href={`/vendors/leads?lead=${lead.id}`}>{lead.code} · open the lead</Link>],
+                    ['Where they came from', leadSourceLabel(lead.source)],
+                    ['Trucks they claimed', lead.trucksClaimed ?? '—'],
+                    ['Phone on the lead', lead.phone || '—'],
+                    ['Notes', lead.notes || '—'],
+                  ]}
+                />
+              </Panel>
+            )}
 
             <Panel title="Advance policy">
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>

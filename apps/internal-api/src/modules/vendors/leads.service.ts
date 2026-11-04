@@ -53,10 +53,41 @@ export class LeadsService {
 
     const patch: Record<string, unknown> = {};
     if (dto.stage !== undefined) patch.stage = dto.stage;
+    if (dto.name !== undefined) patch.name = dto.name.trim();
     if (dto.notes !== undefined) patch.notes = dto.notes;
     if (dto.city !== undefined) patch.city = dto.city;
     if (dto.phone !== undefined) patch.phone = dto.phone;
+    if (dto.source !== undefined) patch.source = dto.source;
+    if (dto.partyType !== undefined) patch.party_type = dto.partyType;
     if (dto.trucksClaimed !== undefined) patch.trucks_claimed = dto.trucksClaimed;
+
+    // A lead onboarded from Transporters → New rather than from its own row
+    // is linked afterwards; linking is what converts it.
+    if (dto.convertedVendorId !== undefined) {
+      if (existing.converted_vendor_id && existing.converted_vendor_id !== dto.convertedVendorId) {
+        throw new DomainException(409, 'LEAD_ALREADY_CONVERTED', 'This lead is already linked to a different transporter.');
+      }
+      if (!(await this.leadsRepository.vendorExists(dto.convertedVendorId))) {
+        throw new DomainException(404, 'NOT_FOUND', `Unknown transporter: ${dto.convertedVendorId}`);
+      }
+      const other = await this.leadsRepository.findByConvertedVendor(dto.convertedVendorId);
+      if (other && other.id !== id) {
+        throw new DomainException(409, 'VENDOR_ALREADY_LINKED', `That transporter already came from lead ${other.code}.`);
+      }
+      patch.converted_vendor_id = dto.convertedVendorId;
+      patch.stage = 'CONVERTED';
+    }
+
+    // Converted means "is now a transporter on our books" — a stage picked by
+    // hand with no transporter behind it left the lead with no onboarding
+    // button and nothing to open.
+    if (patch.stage === 'CONVERTED' && !patch.converted_vendor_id && !existing.converted_vendor_id) {
+      throw new DomainException(
+        400,
+        'VALIDATION_ERROR',
+        'A lead becomes Converted when it is onboarded, or linked to the transporter it became.',
+      );
+    }
 
     await this.leadsRepository.update(id, patch);
     // Joined re-fetch — `update()`'s plain `.returningAll()` row carries the

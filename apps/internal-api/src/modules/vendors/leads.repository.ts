@@ -61,6 +61,19 @@ export class LeadsRepository {
       .executeTakeFirst();
   }
 
+  findByConvertedVendor(vendorId: string) {
+    return this.db
+      .selectFrom('leads')
+      .select(['id', 'code'])
+      .where('converted_vendor_id', '=', vendorId)
+      .executeTakeFirst();
+  }
+
+  async vendorExists(vendorId: string) {
+    const row = await this.db.selectFrom('vendors').select('id').where('id', '=', vendorId).executeTakeFirst();
+    return !!row;
+  }
+
   findByIdForUpdate(db: DbExecutor, id: string) {
     return db.selectFrom('leads').selectAll().where('id', '=', id).forUpdate().executeTakeFirst();
   }

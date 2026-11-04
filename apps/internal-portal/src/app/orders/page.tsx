@@ -69,6 +69,9 @@ const FILTER_FIELDS: FilterField[] = [
   { kind: 'text', key: 'branchName', label: 'Branch name', placeholder: 'Branch name' },
 ];
 
+/** Every step short of the Payment tab's — the loads still being moved, delivered or billed. */
+const RUNNING = ALL_STATUSES.filter((s) => phaseFor(s) !== 'SETTLED').join(',');
+
 /** The steps that belong to one tab, so a tab is a server-side filter and not a view of one page. */
 function statusesIn(phase: OrderPhase | 'ALL'): string | undefined {
   if (phase === 'ALL') return undefined;
@@ -121,6 +124,12 @@ export default function OrdersPage() {
   );
   // Picking one stage wins over the tab; otherwise the tab's steps apply.
   const status = filters.stage || statusesIn(phase);
+  // The page opens on "Action required". When nothing is, and nobody has
+  // searched, a blank under the search bar tells the operator nothing — the
+  // loads still running are listed there instead.
+  const mayShowRunning = phase === 'NEEDS_YOU' && activeFilterCount(filters) === 0;
+  const [showingRunning, setShowingRunning] = useState(false);
+  const listedStatus = showingRunning ? RUNNING : status;
 
   // Only the newest request may write to the screen — typing quickly fires
   // several, and a slow early one landing last would show stale rows.
@@ -131,14 +140,18 @@ export default function OrdersPage() {
     setError(null);
     setLoading(true);
     listOrders({ ...searchParams, status, limit: PAGE_SIZE })
-      .then((page) => {
+      .then(async (page) => {
         if (mine !== latest.current) return;
+        const running = mayShowRunning && page.total === 0;
+        if (running) page = await listOrders({ ...searchParams, status: RUNNING, limit: PAGE_SIZE });
+        if (mine !== latest.current) return;
+        setShowingRunning(running);
         setRows(page.rows);
         setTotal(page.total);
       })
       .catch((e) => mine === latest.current && setError(errorMessage(e)))
       .finally(() => mine === latest.current && setLoading(false));
-  }, [searchParams, status]);
+  }, [searchParams, status, mayShowRunning]);
   useEffect(load, [load]);
 
   useEffect(() => {
@@ -157,7 +170,7 @@ export default function OrdersPage() {
     if (!rows) return;
     const mine = ++latest.current;
     setLoading(true);
-    listOrders({ ...searchParams, status, limit: PAGE_SIZE, offset: rows.length })
+    listOrders({ ...searchParams, status: listedStatus, limit: PAGE_SIZE, offset: rows.length })
       .then((page) => {
         if (mine !== latest.current) return;
         setRows((prev) => [...(prev ?? []), ...page.rows]);
@@ -187,7 +200,7 @@ export default function OrdersPage() {
   };
 
   const exportRows = async () => {
-    const { rows: everything, total: all, truncated } = await listAllOrders({ ...searchParams, status });
+    const { rows: everything, total: all, truncated } = await listAllOrders({ ...searchParams, status: listedStatus });
     downloadCsv(
       `orders-${todayStamp()}.csv`,
       [
@@ -346,9 +359,17 @@ export default function OrdersPage() {
             exportNote ??
             (loading
               ? 'Updating…'
-              : `${total.toLocaleString('en-IN')} order${total === 1 ? '' : 's'} found`)
+              : showingRunning
+                ? `${total.toLocaleString('en-IN')} running order${total === 1 ? '' : 's'}`
+                : `${total.toLocaleString('en-IN')} order${total === 1 ? '' : 's'} found`)
           }
         />
+
+        {showingRunning && rows.length > 0 && (
+          <div className="hint" data-testid="running-orders-note" style={{ margin: '0 0 10px' }}>
+            ✅ Nothing is waiting on you. Every load still running is listed below — open one to see where it is.
+          </div>
+        )}
 
         <Panel pad={false}>
           <DataTable
