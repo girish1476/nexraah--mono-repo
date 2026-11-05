@@ -254,7 +254,7 @@ export class VendorsService implements OnModuleInit {
       ifsc: vendor.ifsc,
       accountHolder: vendor.account_holder,
       status: vendor.status,
-      verifiedBy: vendor.verified_by,
+      verifiedBy: vendor.verifiedByName ?? null,
       panelDate: vendor.panel_date,
       rating: vendor.rating,
       source: vendor.source,
@@ -703,6 +703,8 @@ export class VendorsService implements OnModuleInit {
       const row = await this.vendorsRepository.update(trx, vendorId, {
         status: 'ACTIVE',
         verified_by: actor.userId,
+        // "On panel since": the day they were first cleared, kept through a hold and reinstatement.
+        ...(vendor.panel_date ? {} : { panel_date: new Date().toISOString().slice(0, 10) }),
       });
       await this.auditService.record(trx, actor, {
         action: 'STATUS_CHANGE',

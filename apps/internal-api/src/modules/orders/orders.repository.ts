@@ -525,11 +525,25 @@ export class OrdersRepository {
       .selectFrom('orders')
       .select(['id', 'indent_id as indentId'])
       .where((eb) =>
-        eb.not(
-          eb.exists(
-            eb.selectFrom('order_events').select('id').whereRef('order_events.order_id', '=', 'orders.id'),
+        eb.or([
+          eb.not(
+            eb.exists(
+              eb.selectFrom('order_events').select('id').whereRef('order_events.order_id', '=', 'orders.id'),
+            ),
           ),
-        ),
+          // Created by a repair at "Load requested" while the load had already
+          // moved on — it would otherwise sit there for good.
+          eb.and([
+            eb('orders.status', '=', 'INDENT_CREATED'),
+            eb.exists(
+              eb
+                .selectFrom('indents')
+                .select('indents.id')
+                .whereRef('indents.id', '=', 'orders.indent_id')
+                .where('indents.stage', 'in', ['TRIP_CREATED', 'CANCELLED']),
+            ),
+          ]),
+        ]),
       )
       .limit(limit)
       .execute();

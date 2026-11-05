@@ -72,8 +72,10 @@ export class VendorsRepository {
     return this.db
       .selectFrom('vendors')
       .leftJoin('branches', 'branches.id', 'vendors.branch_id')
+      // Who cleared them, by name — the page shows "Cleared by …".
+      .leftJoin('users as clearer', 'clearer.id', 'vendors.verified_by')
       .selectAll('vendors')
-      .select('branches.name as branchName')
+      .select(['branches.name as branchName', 'clearer.name as verifiedByName'])
       .where('vendors.id', '=', id)
       .executeTakeFirst();
   }

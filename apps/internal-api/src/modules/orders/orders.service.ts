@@ -364,7 +364,13 @@ export class OrdersService {
     let created = 0;
     for (const row of missing) {
       const order = await this.createForIndent(row.indentId, null);
-      if (order) created += 1;
+      if (!order) continue;
+      created += 1;
+      // The order starts at "Load requested" with that step on record, so the
+      // pass below (orders with no history) would never reach it — but an
+      // indent missing its order may be well past that: awarded, on the road,
+      // delivered. Bring it to where the load really is now.
+      await this.recompute(row.indentId, null, 'Reconciled from existing records');
     }
 
     const stale = await this.repo.listNeedingRecompute(limit);

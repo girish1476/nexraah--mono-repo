@@ -2911,6 +2911,7 @@ const routes: [string, RegExp, Handler][] = [
         fail(409, 'VENDOR_INCOMPLETE', 'An incomplete file cannot be activated (BR-01).', { unmet });
       vendor.status = 'ACTIVE';
       vendor.verifiedBy = USERS[role].name;
+      vendor.panelDate ??= helpers.now().slice(0, 10);
       return ok(vendor);
     },
   ],
