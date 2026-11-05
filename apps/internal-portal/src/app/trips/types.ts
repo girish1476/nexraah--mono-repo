@@ -106,8 +106,9 @@ export interface LorryReceipt {
 
 export interface TripDetail extends TripListRow {
   indentId: string;
-  vehicleType: string;
-  capacityTn: number;
+  /** Null when the truck is not in the transporter's fleet records. */
+  vehicleType: string | null;
+  capacityTn: number | null;
   driverName: string | null;
   driverLicence: string | null;
   /** The driver's mobile number, captured when the vehicle is allocated. */

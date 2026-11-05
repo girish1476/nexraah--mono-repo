@@ -172,7 +172,8 @@ export default function VendorsPage() {
                 </select>
               </Field>
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
+            {/* Wraps: four buttons in one unbreakable row ran 480px past a phone's edge. */}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', minWidth: 0, maxWidth: '100%' }}>
               <Link href="/vendors/leads" className="btn btn-secondary">
                 🌱 New leads
               </Link>

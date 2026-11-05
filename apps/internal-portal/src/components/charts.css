@@ -181,7 +181,9 @@
 }
 /* Thin, rounded at the end that carries the value, square on the baseline. */
 .viz-bar {
-  flex: none;
+  /* May shrink, so the figure beside the longest bar stays on screen: with
+     `flex: none` a long amount ran past a phone's edge. */
+  flex: 0 1 auto;
   height: 14px;
   min-width: 2px;
   max-width: calc(100% - 96px);

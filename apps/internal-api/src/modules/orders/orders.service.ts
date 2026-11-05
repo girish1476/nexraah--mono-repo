@@ -1,3 +1,4 @@
+import { isUuid } from '../../common/ids';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { DomainException } from '../../common/domain-exception';
 import { NumberingService } from '../numbering/numbering.service';
@@ -187,11 +188,17 @@ export class OrdersService {
    * indent detail page passes its own id), never the order's own id, which
    * no other screen knows.
    */
+  /** An order by its id, its indent's id, or its indent's code — the id lookups only for an id (see common/ids.ts). */
+  private async findByRef(ref: string) {
+    if (isUuid(ref)) {
+      const byId = (await this.repo.getById(ref)) ?? (await this.repo.getByIndentId(ref));
+      if (byId) return byId;
+    }
+    return this.repo.getByIndentCode(ref);
+  }
+
   async getById(ref: string, user?: AuthenticatedUser) {
-    const order =
-      (await this.repo.getById(ref)) ??
-      (await this.repo.getByIndentId(ref)) ??
-      (await this.repo.getByIndentCode(ref));
+    const order = await this.findByRef(ref);
     if (!order) throw new NotFoundException('Order not found');
     const [events, comments, allocation, podKind, hardCopy] = await Promise.all([
       this.repo.events(order.id),
@@ -328,7 +335,7 @@ export class OrdersService {
     if (!text) throw new DomainException(400, 'VALIDATION_ERROR', 'Write something before adding the comment.');
     if (text.length > 2000) throw new DomainException(400, 'VALIDATION_ERROR', 'Keep a comment under 2,000 characters.');
     const order =
-      (await this.repo.getById(ref)) ?? (await this.repo.getByIndentId(ref)) ?? (await this.repo.getByIndentCode(ref));
+      await this.findByRef(ref);
     if (!order) throw new NotFoundException('Order not found');
     await this.repo.addComment(order.id, user.userId, text);
     return this.repo.comments(order.id);

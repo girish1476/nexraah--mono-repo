@@ -328,12 +328,15 @@ export function Panel({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
+            // On a phone a long title and its buttons wrap to a second line
+            // instead of pushing the page wider than the screen.
+            flexWrap: 'wrap',
             gap: 12,
             padding: '12px 15px',
             borderBottom: '1px solid var(--color-divider)',
           }}
         >
-          <h2 style={{ fontSize: 17 }}>{title}</h2>
+          <h2 style={{ fontSize: 17, minWidth: 0 }}>{title}</h2>
           {right}
         </div>
       )}

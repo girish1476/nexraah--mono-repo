@@ -1,3 +1,4 @@
+import { isUuid } from '../../common/ids';
 import { NotificationsService } from '../notifications/notifications.service';
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { DomainException, type UnmetItem } from '../../common/domain-exception';
@@ -619,9 +620,12 @@ export class PaymentsService {
   }
 
   private async resolveTripForAdvance(ref: string) {
-    const byTrip = await this.paymentsRepository.resolveByTripId(ref);
-    if (byTrip) return byTrip;
-    const indent = (await this.paymentsRepository.resolveIndentById(ref)) ?? (await this.paymentsRepository.resolveIndentByCode(ref));
+    // The id lookups only for an id — see common/ids.ts.
+    if (isUuid(ref)) {
+      const byTrip = await this.paymentsRepository.resolveByTripId(ref);
+      if (byTrip) return byTrip;
+    }
+    const indent = (isUuid(ref) ? await this.paymentsRepository.resolveIndentById(ref) : undefined) ?? (await this.paymentsRepository.resolveIndentByCode(ref));
     if (!indent) return undefined;
     return this.paymentsRepository.findTripByIndentId(indent.id);
   }

@@ -2735,6 +2735,43 @@ const routes: [string, RegExp, Handler][] = [
       return ok(vendor);
     },
   ],
+  /*
+   * KYC back-fill (`/vendors/kyc-backfill`). Both used to be missing here, so
+   * the queue's GET fell through to the vendor lookup below as a vendor called
+   * "kyc-backfill-queue" and the page opened on "could not load this screen".
+   * Declared before `/vendors/:id` for that reason, as the API does.
+   */
+  [
+    'GET',
+    /^\/vendors\/kyc-backfill-queue$/,
+    () =>
+      ok(
+        db.vendors.flatMap((v: any) =>
+          (v.kyc ?? [])
+            .filter((k: any) => (k.kind === 'PAN' || k.kind === 'AADHAAR') && !k.valueMasked && k.status !== 'MISSING')
+            .map((k: any) => ({
+              vendorId: v.id,
+              vendorCode: v.code,
+              vendorName: v.legalName,
+              kind: k.kind,
+              attachmentId: k.attachmentId ?? `att-${v.id}-${k.kind.toLowerCase()}`,
+              status: k.status,
+            })),
+        ),
+      ),
+  ],
+  [
+    'PATCH',
+    /^\/vendors\/([^/]+)\/kyc\/([^/]+)\/value$/,
+    ({ params, body }) => {
+      const vendor = findVendor(params[0]);
+      const item = vendor.kyc.find((k: any) => k.kind === params[1]) ?? fail(404, 'NOT_FOUND', 'KYC item not found');
+      if (item.valueMasked) fail(409, 'ALREADY_BACKFILLED', `${params[1]} already has a value on file.`);
+      const value = String(body?.value ?? '').trim();
+      item.valueMasked = params[1] === 'AADHAAR' ? value.slice(-4) : value.toUpperCase();
+      return ok({ kind: item.kind, status: item.status });
+    },
+  ],
   ['GET', /^\/vendors\/([^/]+)$/, ({ params }) => {
     const v = findVendor(params[0]);
     const recoverableBalancePaise = db.sdr

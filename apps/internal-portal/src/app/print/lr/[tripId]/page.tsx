@@ -98,14 +98,14 @@ function Sheet({ label, trip, config }: { label: string; trip: TripDetail; confi
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0, borderBottom: '1px solid #000' }}>
         <Block title="Consignor">
-          <div>{lr?.consignor.name}</div>
-          <div style={{ fontSize: 11 }}>{lr?.consignor.address}</div>
-          <div style={{ fontSize: 11 }}>GSTIN {lr?.consignor.gstin}</div>
+          <div>{lr?.consignor?.name}</div>
+          <div style={{ fontSize: 11 }}>{lr?.consignor?.address}</div>
+          <div style={{ fontSize: 11 }}>GSTIN {lr?.consignor?.gstin}</div>
         </Block>
         <Block title="Consignee" border>
-          <div>{lr?.consignee.name}</div>
-          <div style={{ fontSize: 11 }}>{lr?.consignee.address}</div>
-          <div style={{ fontSize: 11 }}>GSTIN {lr?.consignee.gstin}</div>
+          <div>{lr?.consignee?.name}</div>
+          <div style={{ fontSize: 11 }}>{lr?.consignee?.address}</div>
+          <div style={{ fontSize: 11 }}>GSTIN {lr?.consignee?.gstin}</div>
         </Block>
       </div>
 
@@ -121,12 +121,12 @@ function Sheet({ label, trip, config }: { label: string; trip: TripDetail; confi
         </thead>
         <tbody>
           <tr>
-            <td style={cell}>{lr?.goods.description}</td>
-            <td style={cell}>{lr?.goods.packages}</td>
-            <td style={cell}>{lr?.goods.weightTn}</td>
-            <td style={cell}>{lr?.invoice.number}</td>
-            <td style={cell}>{inr(lr?.invoice.valuePaise ?? 0)}</td>
-            <td style={cell}>{lr?.eway.number || '—'}</td>
+            <td style={cell}>{lr?.goods?.description}</td>
+            <td style={cell}>{lr?.goods?.packages}</td>
+            <td style={cell}>{lr?.goods?.weightTn}</td>
+            <td style={cell}>{lr?.invoice?.number}</td>
+            <td style={cell}>{inr(lr?.invoice?.valuePaise ?? 0)}</td>
+            <td style={cell}>{lr?.eway?.number || '—'}</td>
           </tr>
         </tbody>
       </table>

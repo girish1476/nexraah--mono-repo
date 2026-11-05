@@ -24,6 +24,7 @@ import {
   Tag,
   Tone,
   useCan,
+  useLevel,
   useToast,
 } from '@/lib/ui';
 import {
@@ -48,6 +49,10 @@ import { TripTabs } from './tabs';
 export default function TripDetailPage() {
   const { id } = useParams<{ id: string }>();
   const can = useCan();
+  // A loading supervisor opens trips but not orders or payments — those links
+  // and panels led them to "Could not load this screen".
+  const seesOrders = useLevel('orders') !== 'NONE';
+  const seesPayments = useLevel('payments') !== 'NONE';
   const toast = useToast();
   const [trip, setTrip] = useState<TripDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -146,9 +151,11 @@ export default function TripDetailPage() {
         sub={`${trip.lane}${trip.distanceKm != null ? ` · ${trip.distanceKm} km` : ''} · ${trip.vendorName}`}
         module="trips"
         right={
-          <Link href={`/orders/${trip.indentCode}`} className="btn btn-secondary">
-            View order
-          </Link>
+          seesOrders ? (
+            <Link href={`/orders/${trip.indentCode}`} className="btn btn-secondary">
+              View order
+            </Link>
+          ) : undefined
         }
       />
       <PageIntro
@@ -177,9 +184,11 @@ export default function TripDetailPage() {
               <FactList
                 facts={[
                   ['Vehicle', trip.vehicleNo],
-                  ['Type', `${trip.vehicleType} · ${trip.capacityTn} MT`],
+                  // Empty when the truck is not in the transporter's fleet records — it
+                  // used to read "null · null MT" on a real database.
+                  ['Type', [trip.vehicleType, trip.capacityTn ? `${trip.capacityTn} MT` : null].filter(Boolean).join(' · ') || 'Not recorded'],
                   ['Load', `${trip.weightTn} MT`],
-                  ['Utilisation', `${utilisation}%`],
+                  ['Utilisation', trip.capacityTn ? `${utilisation}%` : '—'],
                   ['Driver', trip.driverName || '—'],
                   ['Licence', trip.driverLicence || '—'],
                   ['Driver mobile', trip.driverPhone || '—'],
@@ -262,7 +271,7 @@ export default function TripDetailPage() {
               ) : !trip.loadingCompletedAt ? (
                 <p className="muted" style={{ fontSize: 12.5, marginBottom: 0 }}>
                   Mark the truck as reached the loading point and loaded before this trip can start — on the order’s{' '}
-                  <Link href={`/orders/${trip.indentId}`}>Tracking tab</Link>
+                  {seesOrders ? <Link href={`/orders/${trip.indentId}`}>Tracking tab</Link> : 'Tracking tab'}
                   {trip.loadingSupervisorId ? ', or with Loading complete below' : ''}.
                 </p>
               ) : trip.lr && trip.lr.status !== 'RELEASED' ? (
@@ -332,8 +341,8 @@ export default function TripDetailPage() {
 
         <TripTrackingPanel vehicleNo={trip.vehicleNo || null} tripStage={trip.stage} />
 
-        {trip.buyRatePaise > 0 && <AdvancePanel indentId={trip.indentId} onReleased={load} />}
-        {trip.deliveredAt && <BalancePanel tripId={trip.id} onReleased={load} />}
+        {seesPayments && trip.buyRatePaise > 0 && <AdvancePanel indentId={trip.indentId} onReleased={load} />}
+        {seesPayments && trip.deliveredAt && <BalancePanel tripId={trip.id} onReleased={load} />}
 
         <Panel title="E-way bill">
           <FactList

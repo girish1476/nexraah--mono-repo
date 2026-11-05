@@ -58,6 +58,36 @@ const EMPTY: LorryReceipt = {
   chargeHeads: { freightPaise: 0, loadingPaise: 0, unloadingPaise: 0, detentionPaise: 0, otherPaise: 0, discountPaise: 0 },
 };
 
+/** `defaults`, with every value `given` actually has — a null or missing one keeps the default. */
+function fill<T extends object>(defaults: T, given: Partial<Record<keyof T, unknown>> | null | undefined): T {
+  const out = { ...defaults };
+  for (const key of Object.keys(defaults) as (keyof T)[]) {
+    const value = given?.[key];
+    if (value !== null && value !== undefined) out[key] = value as T[keyof T];
+  }
+  return out;
+}
+
+/**
+ * A saved receipt with every section present. The server sends `null` for a
+ * section that was never filled — the charges, typically — and the page
+ * reads them all, so a receipt saved without charges opened on
+ * "Application error" (found on a real database, 5 Nov 2026).
+ */
+function complete(lr: LorryReceipt): LorryReceipt {
+  return {
+    ...fill(EMPTY, lr),
+    consignor: fill(EMPTY.consignor, lr.consignor),
+    consignee: fill(EMPTY.consignee, lr.consignee),
+    goods: fill(EMPTY.goods, lr.goods),
+    invoice: fill(EMPTY.invoice, lr.invoice),
+    eway: fill(EMPTY.eway, lr.eway),
+    vehicle: fill(EMPTY.vehicle, lr.vehicle),
+    driver: fill(EMPTY.driver, lr.driver),
+    chargeHeads: fill(EMPTY.chargeHeads, lr.chargeHeads),
+  };
+}
+
 /**
  * The whole of `/trips/[id]/lr`, minus its own `PageHeader`/`PageIntro`/
  * `TripTabs` — extracted (part 04, the "everything about one order, one
@@ -108,11 +138,11 @@ export function LorryReceiptContent({
         setTrip(t);
         // A trip with no draft yet starts from what the trip already knows, so the
         // person issuing the receipt is checking it rather than typing it out.
-        const lrValue = l ?? {
+        const lrValue = l ? complete(l) : {
           ...EMPTY,
           consignor: { name: t.clientName, address: '', gstin: '' },
           goods: { ...EMPTY.goods, weightTn: t.weightTn ?? 0 },
-          vehicle: { registration: t.vehicleNo, type: t.vehicleType },
+          vehicle: { registration: t.vehicleNo, type: t.vehicleType ?? '' },
           driver: { name: t.driverName ?? '', licence: t.driverLicence ?? '', phone: t.driverPhone ?? '' },
           transitDays: t.transitDaysRequired,
           remarks: t.remarks,
