@@ -3333,8 +3333,9 @@ const routes: [string, RegExp, Handler][] = [
       if (!body.subject || String(body.subject).trim().length < 5) {
         fail(400, 'VALIDATION_ERROR', 'Give it a short title.');
       }
-      if (!body.detail || String(body.detail).trim().length < 20) {
-        fail(400, 'VALIDATION_ERROR', 'Say what is wrong in at least 20 characters.');
+      // MIN_REPORT (ticket-rules.ts): a few words is enough to send a report.
+      if (!body.detail || String(body.detail).trim().length < 5) {
+        fail(400, 'VALIDATION_ERROR', 'Say what is wrong, in a few words — at least 5 letters.');
       }
       if (!body.raisedOnPath) {
         // Captured by the client, never typed. A report without it is

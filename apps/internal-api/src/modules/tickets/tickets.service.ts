@@ -6,6 +6,8 @@ import { NumberingService } from '../numbering/numbering.service';
 import { TicketsRepository } from './tickets.repository';
 import { RaiseTicketDto, UpdateTicketDto } from './tickets.dto';
 import {
+  MIN_REPORT,
+  MIN_SUBJECT,
   TICKET_KINDS,
   TICKET_SEVERITIES,
   TICKET_STATUSES,
@@ -100,6 +102,15 @@ export class TicketsService {
   }
 
   async raise(dto: RaiseTicketDto, actor: AuthenticatedUser) {
+    // The DTO measures what was sent; what is stored is trimmed. Measured the
+    // same way here, so a padded report is answered in words, not refused by
+    // the database's own check.
+    if (dto.subject.trim().length < MIN_SUBJECT) {
+      throw new DomainException(400, 'VALIDATION_ERROR', `Give it a short title — at least ${MIN_SUBJECT} letters.`);
+    }
+    if (dto.detail.trim().length < MIN_REPORT) {
+      throw new DomainException(400, 'VALIDATION_ERROR', `Say what is wrong, in a few words — at least ${MIN_REPORT} letters.`);
+    }
     return this.ticketsRepository.transaction().execute(async (trx) => {
       const code = await this.numberingService.issue(trx, 'TICKET');
       const ticket = await this.ticketsRepository.insert(trx, {
