@@ -84,7 +84,7 @@ export default function RfqDetailPage() {
     { key: 'truck', label: 'Truck type', render: (r) => r.truckType },
     { key: 'transit', label: 'Transit', align: 'right', render: (r) => `${r.transitDays}d` },
     { key: 'report', label: 'Reporting', render: (r) => reportingLabel(r.reportingRule) },
-    { key: 'mode', label: 'Sourcing', render: (r) => <Tag tone="grey">{r.sourcingMode.replace('_', '/')}</Tag> },
+    { key: 'mode', label: 'Sourcing', render: (r) => <Tag tone="grey">{r.sourcingMode ? r.sourcingMode.replace('_', '/') : 'Not worked up'}</Tag> },
     { key: 'avg', label: 'Sourcing avg', align: 'right', render: (r) => inr(r.sourcingAvgPaise) },
     { key: 'oh', label: 'Overhead', align: 'right', render: (r) => inr(r.overheadPaise) },
     { key: 'margin', label: 'Margin', align: 'right', render: (r) => inr(r.marginPaise) },

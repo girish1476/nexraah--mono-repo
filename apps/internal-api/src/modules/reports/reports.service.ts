@@ -5,6 +5,11 @@ function ageDaysSince(iso: string): number {
   return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000));
 }
 
+/** What a trip cost us: the transporter's rate plus the charges paid on it. Numbers, whatever the driver returned. */
+export function tripCost(t: { buyRatePaise: number | string; chargeCostPaise?: number | string | null }): number {
+  return Number(t.buyRatePaise) + Number(t.chargeCostPaise ?? 0);
+}
+
 /** docs/api/09-reporting.md `GET /reports/today` — three working queues, not a dashboard. */
 @Injectable()
 export class ReportsService {
@@ -108,7 +113,7 @@ export class ReportsService {
       ]);
 
     const revenuePaise = trips.reduce((a, t) => a + t.sellRatePaise, 0);
-    const costPaise = trips.reduce((a, t) => a + t.buyRatePaise + (t.chargeCostPaise ?? 0), 0);
+    const costPaise = trips.reduce((a, t) => a + tripCost(t), 0);
     const onTime = trips.filter(
       (t) => t.actualTransitDays !== null && t.transitDaysRequired !== null && t.actualTransitDays <= t.transitDaysRequired,
     );
@@ -118,7 +123,7 @@ export class ReportsService {
       const acc = branchTotals.get(t.branchId) ?? { branchName: t.branchName, trips: 0, revenuePaise: 0, costPaise: 0 };
       acc.trips += 1;
       acc.revenuePaise += t.sellRatePaise;
-      acc.costPaise += t.buyRatePaise + (t.chargeCostPaise ?? 0);
+      acc.costPaise += tripCost(t);
       branchTotals.set(t.branchId, acc);
     }
 

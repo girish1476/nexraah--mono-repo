@@ -145,7 +145,10 @@ export class ReportsRepository {
         'trips.pod_closure_basis as podClosureBasis',
         eb
           .selectFrom('trip_charges')
-          .select((e) => e.fn.coalesce(e.fn.sum<number>('cost_amount'), sql<number>`0`).as('c'))
+          // ::bigint — sum() of a bigint is numeric, which node-postgres hands
+          // over as text; added to buy_rate that glued the digits together
+          // ("Paid to transporters ₹4.47 Cr" on pre-prod, 6 Nov 2026).
+          .select(sql<number>`coalesce(sum(cost_amount), 0)::bigint`.as('c'))
           .whereRef('trip_charges.trip_id', '=', 'trips.id')
           .as('chargeCostPaise'),
       ])

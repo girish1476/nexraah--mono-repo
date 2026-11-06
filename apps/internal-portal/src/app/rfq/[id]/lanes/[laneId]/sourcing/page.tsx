@@ -52,13 +52,14 @@ export default function SourcingPage() {
         if (!found) throw new Error('Lane not found');
         setLane(found);
         setPeriodFrom(rfq.periodFrom);
-        setMode(found.sourcingMode);
+        // A lane agreed straight onto the rate card has no sourcing yet.
+        setMode(found.sourcingMode ?? 'MONTHLY');
         setSupplySource(found.supplySource ?? '');
         setSupplyRemarks(found.supplyRemarks ?? '');
         setRows(
           found.sourcingRows.length
             ? found.sourcingRows
-            : found.sourcingMode === 'MONTHLY'
+            : (found.sourcingMode ?? 'MONTHLY') === 'MONTHLY'
               ? monthsOf(rfq.periodFrom, 3)
               : [
                   { month: null, ratePaise: 0 },

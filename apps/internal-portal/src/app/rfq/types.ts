@@ -21,7 +21,11 @@ export interface RfqLane {
   transitDays: number;
   /** Optional — null when the lane was saved without one. */
   reportingRule: 'SAME_DAY' | 'NEXT_DAY' | 'SCHEDULED' | null;
-  sourcingMode: SourcingMode;
+  /**
+   * Null on a lane agreed straight onto a client's rate card: its RFQ is a
+   * record of the agreement, and nobody worked the sourcing up.
+   */
+  sourcingMode: SourcingMode | null;
   sourcingRows: SourcingRow[];
   sourcingAvgPaise: number;
   overheadPaise: number;
