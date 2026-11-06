@@ -239,7 +239,9 @@ export class VendorsService implements OnModuleInit {
       legalName: vendor.legal_name,
       partyType: vendor.party_type,
       gstin: vendor.gstin,
-      pan: vendor.pan,
+      // Nothing writes `vendors.pan` after onboarding; the number lives on the
+      // PAN identity check (unmasked — only Aadhaar is cut to four digits).
+      pan: vendor.pan ?? kycByKind.get('PAN')?.value_masked ?? null,
       phone: vendor.phone,
       altPhone: vendor.alt_phone,
       email: vendor.email,

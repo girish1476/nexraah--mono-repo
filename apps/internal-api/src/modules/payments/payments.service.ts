@@ -203,7 +203,10 @@ export class PaymentsService {
         const gross = billable - r.advancePaid;
         const penalty = r.podClosureBasis === 'WAIVED' ? 0 : r.podPenalty;
         const transitPenalty = Number(r.transitPenalty ?? 0);
-        const podAgeDays = r.podReceivedAt ? this.daysBetween(r.podReceivedAt, new Date().toISOString()) : null;
+        // Days since delivery — the clock the late-proof penalty runs on, and what
+        // the demo shows; it was blank until the proof itself came in.
+        const since = r.deliveredAt ?? r.podReceivedAt;
+        const podAgeDays = since ? this.daysBetween(String(since), new Date().toISOString()) : null;
         const unmet = await this.balanceUnmet(r.tripId, r.podStatus, r.podClosureBasis);
         const sdr = await this.sdrPlan(this.paymentsRepository.executor(), r.tripId, r.vendorId, gross - penalty - transitPenalty);
         return {

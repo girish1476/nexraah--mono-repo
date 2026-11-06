@@ -111,11 +111,15 @@ export default function CompliancePage() {
     {
       key: 'flag',
       label: 'Status',
-      render: (r) => (
-        <Tag tone={r.tone as Tone} reason={r.flag ? FLAG_REASON[r.flag] : undefined}>
-          {r.flag}
-        </Tag>
-      ),
+      // No flag is no pill — an empty one read as a broken badge.
+      render: (r) =>
+        r.flag ? (
+          <Tag tone={r.tone as Tone} reason={FLAG_REASON[r.flag]}>
+            {r.flag}
+          </Tag>
+        ) : (
+          <span className="muted">—</span>
+        ),
     },
     {
       key: 'act',

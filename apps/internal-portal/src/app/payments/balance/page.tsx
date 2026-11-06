@@ -91,7 +91,7 @@ export default function BalanceQueuePage() {
       align: 'right',
       render: (r) => (
         <span style={{ color: r.podAgeDays > 40 ? 'var(--red)' : r.podAgeDays > 20 ? 'var(--flag)' : undefined }}>
-          {r.podAgeDays}
+          {r.podAgeDays ?? '—'}
         </span>
       ),
     },

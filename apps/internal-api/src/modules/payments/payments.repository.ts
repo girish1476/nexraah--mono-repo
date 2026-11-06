@@ -112,6 +112,7 @@ export class PaymentsRepository {
         'trips.lane as lane',
         'branches.name as branchName',
         'trips.pod_status as podStatus',
+        'trips.delivered_at as deliveredAt',
         'trips.pod_received_at as podReceivedAt',
         'trips.pod_closure_basis as podClosureBasis',
         'trips.pod_penalty as podPenalty',

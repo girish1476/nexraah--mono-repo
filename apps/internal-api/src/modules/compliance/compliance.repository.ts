@@ -7,31 +7,30 @@ import type { InternalDb } from '../../db/kysely';
 export class ComplianceRepository {
   constructor(@Inject(DB) private readonly db: InternalDb) {}
 
-  /** Vendor files awaiting compliance — `status = PENDING_VERIFICATION`, count of not-yet-verified items. */
+  /** Vendor files awaiting compliance — `status = PENDING_VERIFICATION`. */
   pendingVendorFiles() {
     return this.db
       .selectFrom('vendors')
-      .select((eb) => [
+      .select([
         'vendors.id as id',
         'vendors.code as code',
         'vendors.legal_name as legalName',
+        'vendors.party_type as partyType',
         'vendors.created_at as createdAt',
-        eb
-          .selectFrom('vendor_kyc')
-          .select((e) => e.fn.countAll<number>().as('c'))
-          .whereRef('vendor_kyc.vendor_id', '=', 'vendors.id')
-          .where('vendor_kyc.status', '!=', 'VERIFIED')
-          .as('kycPending'),
-        eb
-          .selectFrom('vendor_documents')
-          .select((e) => e.fn.countAll<number>().as('c'))
-          .whereRef('vendor_documents.vendor_id', '=', 'vendors.id')
-          .where('vendor_documents.status', '!=', 'VERIFIED')
-          .as('docsPending'),
       ])
       .where('vendors.status', '=', 'PENDING_VERIFICATION')
       .orderBy('vendors.created_at')
       .execute();
+  }
+
+  /** Every identity check and document on file for these vendors, with its status. */
+  async papersFor(vendorIds: string[]) {
+    if (!vendorIds.length) return { kyc: [], documents: [] };
+    const [kyc, documents] = await Promise.all([
+      this.db.selectFrom('vendor_kyc').select(['vendor_id as vendorId', 'kind', 'status']).where('vendor_id', 'in', vendorIds).execute(),
+      this.db.selectFrom('vendor_documents').select(['vendor_id as vendorId', 'kind', 'status']).where('vendor_id', 'in', vendorIds).execute(),
+    ]);
+    return { kyc, documents };
   }
 
   /** Active/contracted clients whose agreement has no priced lanes yet. */

@@ -428,6 +428,8 @@ const findVendor = (idOrCode: string) => {
   for (const k of (vendor.kyc ?? []) as any[]) {
     if (k.valueMasked == null && k.value) k.valueMasked = kycValueMasked(k.kind, k.value);
   }
+  // As the API: a PAN typed on the identity check is the transporter's PAN.
+  if (!vendor.pan) vendor.pan = (vendor.kyc ?? []).find((k: any) => k.kind === 'PAN')?.valueMasked ?? vendor.pan;
   return vendor;
 };
 
