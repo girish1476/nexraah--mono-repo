@@ -267,6 +267,9 @@ export default function ClientDetailPage() {
     { key: 'truck', label: 'Truck type', render: ({ lane: r }) => r.truckType },
     { key: 'from', label: 'From location', render: ({ lane: r }) => r.origin },
     { key: 'to', label: 'To location', render: ({ lane: r }) => r.destination },
+    // The price straight after the route: this table scrolls sideways beside
+    // the client details, and the rate was the column that fell off the edge.
+    { key: 'rate', label: 'Lane rate', align: 'right', render: ({ lane: r }) => rateWithBasis(inr(r.ratePaise), r.rateBasis) },
     {
       key: 'branch',
       label: 'Branch',
@@ -290,7 +293,6 @@ export default function ClientDetailPage() {
       render: ({ lane: r }) =>
         r.transitPenaltyApplies ? `${inr(r.transitPenaltyPerDayPaise)} per day` : <span className="muted">Not applied</span>,
     },
-    { key: 'rate', label: 'Lane rate', align: 'right', render: ({ lane: r }) => rateWithBasis(inr(r.ratePaise), r.rateBasis) },
     { key: 'basis', label: 'Rate basis', render: ({ lane: r }) => (r.rateBasis === 'PMT' ? 'PMT' : 'FTL') },
     {
       key: 'band',
