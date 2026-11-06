@@ -3,6 +3,7 @@ import { DB } from '../../db/tokens';
 import type { DbExecutor, InternalDb } from '../../db/kysely';
 import type { ImportSet } from './import.rules';
 import { syntheticRfqPeriod } from '../clients/clients.repository';
+import { branchServesCity } from '../branches/branch-city';
 
 export interface BatchRow {
   id: string;
@@ -34,6 +35,11 @@ export class ImportRepository {
    * other route still satisfies the dependency, and the rule is about the data
    * being there, not about how it arrived.
    */
+  /** The branches that serve a town — by their own city or the towns they list. */
+  branchesServing(city: string) {
+    return this.db.selectFrom('branches').select(['id', 'name']).where(branchServesCity(city)).execute();
+  }
+
   async existingCounts(): Promise<{ clients: number; vendors: number }> {
     const [clients, vendors] = await Promise.all([
       this.db.selectFrom('clients').select(({ fn }) => fn.countAll<string>().as('n')).executeTakeFirst(),

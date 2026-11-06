@@ -60,6 +60,7 @@ export class ImportService {
     }
 
     const result = validate(set, rows);
+    if (set === 'vendors') await this.placeInBranches(result, rows);
     const fileHash = createHash('sha256').update(file.buffer).digest('hex');
 
     const batch = await this.importRepository.transaction().execute((trx) =>
@@ -81,6 +82,38 @@ export class ImportService {
     );
 
     return this.toDto(batch as unknown as BatchRow, result.report);
+  }
+
+  /**
+   * Every transporter belongs to a branch (`vendors.branch_id` is required),
+   * worked out from the base city exactly as onboarding does it. The import
+   * never set it, so committing any transporter sheet failed on a real
+   * database with "A required value is missing". Settled here, at the dry run,
+   * so a town no branch serves is a line in the report before anything is
+   * written — not a failed commit after.
+   */
+  private async placeInBranches(result: ReturnType<typeof validate>, rows: Record<string, string>[]) {
+    const cache = new Map<string, { id: string; name: string }[]>();
+    const kept: Record<string, unknown>[] = [];
+    for (const row of result.accepted) {
+      const city = String(row.baseCity ?? '').trim();
+      const key = city.toLowerCase();
+      if (!cache.has(key)) cache.set(key, await this.importRepository.branchesServing(city));
+      const branches = cache.get(key)!;
+      if (branches.length === 1) {
+        kept.push({ ...row, branchId: branches[0].id });
+        continue;
+      }
+      const at = rows.findIndex((r) => (r.code ?? '').trim() === row.code) + 2;
+      result.report.rejects.push({
+        row: at,
+        reason:
+          branches.length === 0
+            ? `No branch serves "${city}" — add it to a branch's towns (Control → Branches), then upload again`
+            : `${branches.length} branches serve "${city}" (${branches.map((b) => b.name).join(', ')}) — onboard this transporter in the console to choose one`,
+      });
+    }
+    result.accepted = kept;
   }
 
   /**
@@ -217,10 +250,12 @@ export class ImportService {
         legal_name: rowData.legalName,
         party_type: rowData.partyType,
         base_city: rowData.baseCity,
+        branch_id: rowData.branchId,
         phone: rowData.phone,
         gstin: rowData.gstin,
         pan: rowData.pan,
-        advance_pct: rowData.advancePct,
+        // A blank cell is "use the default", not null — the column is NOT NULL.
+        advance_pct: rowData.advancePct ?? 0,
         bank_account: rowData.bankAccount,
         ifsc: rowData.ifsc,
         account_holder: rowData.accountHolder,
