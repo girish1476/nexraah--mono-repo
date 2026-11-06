@@ -162,7 +162,7 @@ export default function ReceivablesPage() {
               { key: 'code', label: 'Receipt', mono: true, render: (r) => r.code },
               { key: 'invoice', label: 'Bill', mono: true, render: (r) => r.invoiceCode ?? '—' },
               { key: 'client', label: 'Client', render: (r) => r.clientName },
-              { key: 'when', label: 'Paid so far', render: (r) => fmtDate(r.receivedOn) },
+              { key: 'when', label: 'Received on', render: (r) => fmtDate(r.receivedOn) },
               { key: 'mode', label: 'Paid by', render: (r) => r.mode },
               { key: 'ref', label: 'Reference number', mono: true, render: (r) => r.reference },
               { key: 'amount', label: 'Amount', align: 'right', render: (r) => inr(r.amountPaise) },
