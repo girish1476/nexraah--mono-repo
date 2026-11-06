@@ -25,6 +25,7 @@ import {
   getCrossCheck,
   getLr,
   getTrip,
+  getTripDocuments,
   patchLr,
   rejectTripDocument,
   shareLr,
@@ -74,6 +75,40 @@ function fill<T extends object>(defaults: T, given: Partial<Record<keyof T, unkn
  * reads them all, so a receipt saved without charges opened on
  * "Application error" (found on a real database, 5 Nov 2026).
  */
+/**
+ * A draft receipt's blank invoice and e-way details, filled from what
+ * Compliance typed off those papers when verifying them. Only blanks, and only
+ * while the receipt is a draft — a figure someone typed is never replaced.
+ *
+ * The server cross-checks the receipt against those papers before it will
+ * issue it, so a draft left with invoice value 0 could never be issued until
+ * someone retyped what the system already held (found on a real database,
+ * 6 Nov 2026). Returns null when there was nothing to fill.
+ */
+function fromPapers(lr: LorryReceipt, docs: TripDocument[]): LorryReceipt | null {
+  if (lr.status !== 'DRAFT') return null;
+  const keyed = (kind: string) => docs.find((d) => d.kind === kind && d.keyedValues && Object.keys(d.keyedValues).length)?.keyedValues ?? {};
+  const invoice = keyed('CLIENT_INVOICE_OR_PO');
+  const eway = keyed('EWAY_BILL');
+  const next: LorryReceipt = {
+    ...lr,
+    consignor: { ...lr.consignor, gstin: lr.consignor.gstin || invoice.consignorGstin || '' },
+    consignee: { ...lr.consignee, name: lr.consignee.name || invoice.consigneeName || '' },
+    invoice: {
+      ...lr.invoice,
+      number: lr.invoice.number || invoice.invoiceNo || '',
+      valuePaise: lr.invoice.valuePaise || Number(invoice.invoiceValue) || 0,
+    },
+    eway: {
+      ...lr.eway,
+      number: lr.eway.number || eway.ewayNo || '',
+      // The receipt holds a date and time; the paper gives the day it runs out.
+      validTill: lr.eway.validTill || (eway.validTill ? `${eway.validTill.slice(0, 10)}T23:59` : ''),
+    },
+  };
+  return JSON.stringify(next) === JSON.stringify(lr) ? null : next;
+}
+
 function complete(lr: LorryReceipt): LorryReceipt {
   return {
     ...fill(EMPTY, lr),
@@ -133,8 +168,8 @@ export function LorryReceiptContent({
 
   const load = useCallback(() => {
     setError(null);
-    Promise.all([getTrip(tripId), getLr(tripId), getCrossCheck(tripId)])
-      .then(([t, l, c]) => {
+    Promise.all([getTrip(tripId), getLr(tripId), getCrossCheck(tripId), getTripDocuments(tripId).catch(() => [] as TripDocument[])])
+      .then(([t, l, c, docs]) => {
         setTrip(t);
         // A trip with no draft yet starts from what the trip already knows, so the
         // person issuing the receipt is checking it rather than typing it out.
@@ -148,9 +183,17 @@ export function LorryReceiptContent({
           remarks: t.remarks,
           chargeHeads: { ...EMPTY.chargeHeads, freightPaise: t.sellRatePaise ?? 0 },
         };
-        setLr(lrValue);
+        const filled = fromPapers(lrValue, docs);
+        setLr(filled ?? lrValue);
         setCrossCheck(c);
-        onLoaded?.({ trip: t, lr: lrValue });
+        onLoaded?.({ trip: t, lr: filled ?? lrValue });
+        // Saved straight away, so the cross-check below reads the filled receipt.
+        if (filled) {
+          patchLr(tripId, filled)
+            .then(() => getCrossCheck(tripId))
+            .then(setCrossCheck)
+            .catch(() => undefined);
+        }
       })
       .catch((e) => setError(errorMessage(e)));
     // `onLoaded` is a fresh function identity on every parent render (it

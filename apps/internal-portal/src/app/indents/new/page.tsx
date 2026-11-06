@@ -240,6 +240,20 @@ export default function NewIndentPage() {
   };
 
   const submit = form.handleSubmit(async (v) => {
+    // The agreed rate only applies inside the lane's dates. The list shows lanes
+    // that start later too, so a pickup outside them was refused by the server
+    // after the press (RATE_CROSS_CHECK_FAILED); say it on the date instead.
+    if (v.rateSource === 'CONTRACT' && lane) {
+      const day = v.pickupDate.slice(0, 10);
+      const from = lane.validFrom.slice(0, 10);
+      const to = lane.validTo ? lane.validTo.slice(0, 10) : null;
+      if (day < from || (to && day > to)) {
+        form.setError('pickupDate', {
+          message: `This lane's agreed rate runs ${fmtDate(from)} → ${to ? fmtDate(to) : 'open'}. Pick a pickup date inside it, or book the load as spot.`,
+        });
+        return;
+      }
+    }
     try {
       const indent = await createIndent({
         clientId: v.clientId,
@@ -395,6 +409,7 @@ export default function NewIndentPage() {
                       {live.map((l) => (
                         <option key={l.id} value={l.id}>
                           {l.origin} → {l.destination} · {l.truckType} · {rateWithBasis(inr(l.ratePaise), l.rateBasis)}
+                          {l.validFrom.slice(0, 10) > new Date().toISOString().slice(0, 10) ? ` · from ${fmtDate(l.validFrom)}` : ''}
                         </option>
                       ))}
                     </select>
