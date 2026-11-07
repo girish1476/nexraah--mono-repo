@@ -21,6 +21,7 @@ import {
   Tag,
   Tone,
   useCan,
+  useRole,
 } from '@/lib/ui';
 import { listTrips } from '@/app/trips/apis';
 import type { TripListRow } from '@/app/trips/types';
@@ -40,6 +41,7 @@ const TONE: Record<InvoiceStatus, Tone> = {
 export default function InvoicesPage() {
   const router = useRouter();
   const can = useCan();
+  const role = useRole();
   const [rows, setRows] = useState<Invoice[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<'' | InvoiceStatus>('');
@@ -154,11 +156,18 @@ export default function InvoicesPage() {
         sub="No tax is added to these invoices — the client is responsible for reporting and paying GST themselves."
         module="invoices"
         right={
-          can('invoice.create') && (
-            <Link href="/invoices/new" className="btn">
-              New invoice
-            </Link>
-          )
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {role === 'ADMIN' && (
+              <Link href="/admin/invoices" className="btn btn-secondary">
+                ✍️ Manual invoice
+              </Link>
+            )}
+            {can('invoice.create') && (
+              <Link href="/invoices/new" className="btn">
+                New invoice
+              </Link>
+            )}
+          </div>
         }
       />
 

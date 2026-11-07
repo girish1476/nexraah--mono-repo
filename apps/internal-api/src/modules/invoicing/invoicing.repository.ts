@@ -45,6 +45,7 @@ export class InvoicingRepository {
         'invoices.notes as notes',
         'invoices.sac_code as sacCode',
         'invoices.details as details',
+        'invoices.manual as manual',
       ]);
   }
 
@@ -89,6 +90,8 @@ export class InvoicingRepository {
       round_off: number;
       total: number;
       notes: string | null;
+      /** JSON-encoded `ManualDetails` — a manual invoice only. */
+      manual?: string | null;
     },
   ) {
     return db

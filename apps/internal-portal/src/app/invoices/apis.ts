@@ -1,4 +1,5 @@
 import { idempotent, request } from '@/apis';
+import type { ManualInvoiceInput } from '@/lib/manual-invoice';
 import { Invoice, InvoiceDetail, InvoiceDraft, InvoiceEdit, InvoiceStatus, Receipt, ReceivablesResponse } from './types';
 
 /** GET /invoices?q=&status=&from=&to= */
@@ -35,6 +36,21 @@ export function updateInvoice(id: string, body: InvoiceEdit) {
  */
 export function generateInvoice(id: string) {
   return request<Invoice>({ url: `/invoices/${id}/generate`, method: 'POST' });
+}
+
+/** POST /invoices/manual — an invoice built by hand (administrators). `issue` numbers it at once. */
+export function createManualInvoice(body: ManualInvoiceInput, issue: boolean) {
+  return request<Invoice>({ url: '/invoices/manual', method: 'POST', data: { ...body, issue } });
+}
+
+/** POST /invoices/manual/bulk — many at once, all or none; a refusal names each row and what is wrong. */
+export function createManualInvoices(invoices: ManualInvoiceInput[], issue: boolean) {
+  return request<Invoice[]>({ url: '/invoices/manual/bulk', method: 'POST', data: { invoices, issue } });
+}
+
+/** PATCH /invoices/manual/:id — corrects one built by hand, until a receipt is recorded against it. */
+export function updateManualInvoice(id: string, body: ManualInvoiceInput, issue: boolean) {
+  return request<Invoice>({ url: `/invoices/manual/${id}`, method: 'PATCH', data: { ...body, issue } });
 }
 
 /** POST /invoices/:id/cancel  { reason } — never deletes; the number is kept. */

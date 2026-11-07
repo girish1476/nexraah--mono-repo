@@ -23,6 +23,7 @@ import {
   Split,
   Tag,
   useCan,
+  useRole,
   useToast,
 } from '@/lib/ui';
 import { cancelInvoice, generateInvoice, getInvoice } from '../apis';
@@ -32,6 +33,7 @@ import { InvoiceDetail, Receipt } from '../types';
 export default function InvoiceDetailPage() {
   const { id } = useParams<{ id: string }>();
   const can = useCan();
+  const role = useRole();
   const toast = useToast();
 
   const [invoice, setInvoice] = useState<InvoiceDetail | null>(null);
@@ -95,15 +97,21 @@ export default function InvoiceDetailPage() {
         module="invoices"
         right={
           <div style={{ display: 'flex', gap: 8 }}>
-            {invoice.code && (
+            {/* One built by hand prints as the full GST tax invoice; the browser's "Save as PDF" keeps that layout. */}
+            {invoice.code && invoice.manual && (
+              <Link href={`/print/invoice/${id}`} target="_blank" className="btn btn-secondary">
+                Print / save as PDF
+              </Link>
+            )}
+            {invoice.code && !invoice.manual && (
               <button className="btn btn-secondary" onClick={() => downloadInvoicePdf(invoice)}>
                 Download PDF
               </button>
             )}
             {/* Same two conditions the edit page itself guards on — no
                 sense offering a door that only leads to a blocked screen. */}
-            {invoice.status !== 'CANCELLED' && invoice.receivedPaise === 0 && can('invoice.create') && (
-              <Link href={`/invoices/${id}/edit`} className="btn btn-secondary">
+            {invoice.status !== 'CANCELLED' && invoice.receivedPaise === 0 && can('invoice.create') && (!invoice.manual || role === 'ADMIN') && (
+              <Link href={invoice.manual ? `/admin/invoices?id=${id}` : `/invoices/${id}/edit`} className="btn btn-secondary">
                 Edit
               </Link>
             )}

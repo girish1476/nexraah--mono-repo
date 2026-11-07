@@ -26,6 +26,7 @@ import {
   termsLines,
 } from '@/lib/invoice-layout';
 import { ErrorState, Loading } from '@/lib/ui';
+import { TaxInvoiceSheet } from '@/components/tax-invoice-sheet';
 
 /**
  * Printed invoice — `/print/invoice/[invoiceId]` (part 08 §2.1).
@@ -67,7 +68,8 @@ export default function PrintInvoicePage() {
         </span>
       </div>
 
-      <Sheet invoice={invoice} />
+      {/* One built by hand prints as a full GST tax invoice — it carries the consignment itself. */}
+      {invoice.manual ? <TaxInvoiceSheet invoice={{ ...invoice, manual: invoice.manual }} /> : <Sheet invoice={invoice} />}
     </div>
   );
 }

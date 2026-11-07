@@ -8,6 +8,7 @@ import { InvoicingService } from './invoicing.service';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { CancelInvoiceDto } from './dto/cancel-invoice.dto';
+import { ManualInvoiceBulkDto, ManualInvoiceDto } from './dto/manual-invoice.dto';
 
 const INVOICE_CREATE = 'invoice.create';
 
@@ -35,6 +36,25 @@ export class InvoicesController {
   @RequirePermission(INVOICE_CREATE)
   create(@Body() dto: CreateInvoiceDto, @CurrentUser() user: AuthenticatedUser) {
     return this.invoicingService.create(dto, user);
+  }
+
+  // Built by hand — administrators only; the service checks the role too.
+  @Post('manual')
+  @RequirePermission(INVOICE_CREATE)
+  createManual(@Body() dto: ManualInvoiceDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.invoicingService.createManual(dto, user);
+  }
+
+  @Post('manual/bulk')
+  @RequirePermission(INVOICE_CREATE)
+  createManualBulk(@Body() dto: ManualInvoiceBulkDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.invoicingService.createManualBulk(dto, user);
+  }
+
+  @Patch('manual/:id')
+  @RequirePermission(INVOICE_CREATE)
+  updateManual(@Param('id') id: string, @Body() dto: ManualInvoiceDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.invoicingService.updateManual(id, dto, user);
   }
 
   @Patch(':id')

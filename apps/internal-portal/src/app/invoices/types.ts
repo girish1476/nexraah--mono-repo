@@ -1,6 +1,7 @@
 import { CompanyDetails } from '@/app/admin/types';
 import { Client } from '@/app/clients/types';
 import { TripListRow } from '@/app/trips/types';
+import type { ManualDetails } from '@/lib/manual-invoice';
 
 /**
  * Invoicing — part 08. Our invoice to the client.
@@ -68,6 +69,8 @@ export interface Invoice {
   sacCode?: string | null;
   /** A free line printed on the invoice — whatever it would otherwise miss. */
   details?: string;
+  /** Set when an administrator built it by hand (Control → Manual invoices): who, what and where. */
+  manual?: ManualDetails | null;
 }
 
 /** What `PATCH /invoices/:id` accepts beyond the create body — both set only on the edit screen. */

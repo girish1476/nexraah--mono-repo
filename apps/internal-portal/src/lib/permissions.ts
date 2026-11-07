@@ -986,6 +986,14 @@ export const NAV: NavGroup[] = [
         permission: 'audit.view',
       },
       { label: 'Data import', href: '/admin/import', module: 'admin', emoji: '⬆️' },
+      {
+        label: 'Manual invoices',
+        href: '/admin/invoices',
+        module: 'admin',
+        emoji: '✍️',
+        note: 'Build GST tax invoices by hand — one, or a whole sheet at once',
+        permission: 'config.manage',
+      },
     ],
   },
 ];

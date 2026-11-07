@@ -910,6 +910,8 @@ export interface InvoicesTable {
   sac_code: string | null;
   /** A free line printed on the invoice — whatever it would otherwise miss. */
   details: string | null;
+  /** A manual invoice's details (`ManualDetails`); null on every other invoice. */
+  manual: Json | null;
   created_at: Generated<string>;
   updated_at: Generated<string>;
 }

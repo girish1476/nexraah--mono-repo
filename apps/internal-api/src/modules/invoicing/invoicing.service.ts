@@ -10,6 +10,9 @@ import type { CreateInvoiceDto } from './dto/create-invoice.dto';
 import type { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import type { CancelInvoiceDto } from './dto/cancel-invoice.dto';
 import type { RecordReceiptDto } from './dto/record-receipt.dto';
+import type { ManualInvoiceBulkDto, ManualInvoiceDto } from './dto/manual-invoice.dto';
+import { checkManualInvoice, manualDetailsOf, manualTotals, type ManualDetails } from '../../common/manual-invoice';
+import type { DbExecutor } from '../../db/kysely';
 
 /**
  * A client can be invoiced once the truck is on the road — in transit,
@@ -169,6 +172,10 @@ export class InvoicingService {
           'A receipt has already been recorded against this invoice. Cancel and raise a new one instead of editing it.',
         );
       }
+      // Its lines are the freight; changing heads here would leave them disagreeing with the total.
+      if (row.manual) {
+        throw new DomainException(409, 'MANUAL_INVOICE', 'This invoice was built by hand — change it in the manual invoice builder.');
+      }
 
       const isDraft = row.status === 'DRAFT';
       const currentTripIds = (await this.invoicingRepository.invoiceTripIds(id)).map((l) => l.trip_id);
@@ -270,41 +277,183 @@ export class InvoicingService {
       if (row.status !== 'DRAFT') {
         throw new DomainException(409, 'ALREADY_ISSUED', 'This invoice has already been issued.');
       }
-
-      // Recomputed from the row's own stored heads — never trust a stored
-      // total either, only the charge heads that produced it (NFR-09).
-      const { totalPaise, roundOffPaise } = this.computeTotals({
-        freight: row.freight,
-        loading: row.loading,
-        unloading: row.unloading,
-        detention: row.detention,
-        other: row.other,
-        discount: row.discount,
-        extra: this.sumExtraCharges(this.storedExtraCharges(row.extra_charges)),
-      });
-
-      // BR-14: consumed inside the issuing transaction.
-      const code = await this.numberingService.issue(trx, 'INVOICE');
-      const updated = await this.invoicingRepository.updateInvoice(trx, id, {
-        code,
-        status: 'ISSUED',
-        total: totalPaise,
-        round_off: roundOffPaise,
-      });
-
-      const links = await this.invoicingRepository.invoiceTripIds(id);
-      const tripIds = links.map((l) => l.trip_id);
-      await this.invoicingRepository.markTripsBilled(trx, tripIds);
-
-      await this.auditService.record(trx, actor, {
-        action: 'STATUS_CHANGE',
-        entityType: 'invoices',
-        entityId: id,
-        after: { code, status: 'ISSUED' },
-      });
-
+      const { updated, tripIds } = await this.issueDraft(trx, row, actor);
       const client = await this.invoicingRepository.findClientById(updated.client_id);
       return this.invoiceDto(this.rawInvoiceToJoined(updated, client?.name ?? ''), tripIds);
+    });
+  }
+
+  /** Numbers a draft and marks its trips billed, inside the caller's transaction. */
+  private async issueDraft(
+    trx: DbExecutor,
+    row: { id: string; freight: number; loading: number; unloading: number; detention: number; other: number; discount: number; extra_charges: unknown },
+    actor: AuthenticatedUser,
+  ) {
+    const id = row.id;
+    // Recomputed from the row's own stored heads — never trust a stored
+    // total either, only the charge heads that produced it (NFR-09).
+    const { totalPaise, roundOffPaise } = this.computeTotals({
+      freight: row.freight,
+      loading: row.loading,
+      unloading: row.unloading,
+      detention: row.detention,
+      other: row.other,
+      discount: row.discount,
+      extra: this.sumExtraCharges(this.storedExtraCharges(row.extra_charges)),
+    });
+
+    // BR-14: consumed inside the issuing transaction.
+    const code = await this.numberingService.issue(trx, 'INVOICE');
+    const updated = await this.invoicingRepository.updateInvoice(trx, id, {
+      code,
+      status: 'ISSUED',
+      total: totalPaise,
+      round_off: roundOffPaise,
+    });
+
+    const links = await this.invoicingRepository.invoiceTripIds(id);
+    const tripIds = links.map((l) => l.trip_id);
+    await this.invoicingRepository.markTripsBilled(trx, tripIds);
+
+    await this.auditService.record(trx, actor, {
+      action: 'STATUS_CHANGE',
+      entityType: 'invoices',
+      entityId: id,
+      after: { code, status: 'ISSUED' },
+    });
+    return { updated, tripIds };
+  }
+
+  // ---- Manual invoices ----------------------------------------------------
+
+  /**
+   * An invoice an administrator fills in by hand — no trips behind it. Its
+   * lines become the freight head, so totals, receivables and receipts work
+   * as for any invoice; what it says beyond that lives in `invoices.manual`.
+   */
+  async createManual(dto: ManualInvoiceDto, actor: AuthenticatedUser) {
+    const [invoice] = await this.createManualMany([dto], dto.issue === true, actor);
+    return invoice;
+  }
+
+  /**
+   * Many at once — all or none. Every row is checked before anything is
+   * written, and a refusal names each row with what is wrong with it, so a
+   * sheet of fifty is corrected in one pass rather than one row at a time.
+   */
+  async createManualBulk(dto: ManualInvoiceBulkDto, actor: AuthenticatedUser) {
+    return this.createManualMany(dto.invoices, dto.issue === true, actor);
+  }
+
+  async updateManual(id: string, dto: ManualInvoiceDto, actor: AuthenticatedUser) {
+    this.assertAdmin(actor);
+    await this.assertManualValid([dto]);
+    return this.invoicingRepository.transaction().execute(async (trx) => {
+      const row = await this.invoicingRepository.findByIdForUpdate(trx, id);
+      if (!row) throw new DomainException(404, 'NOT_FOUND', `Unknown invoice: ${id}`);
+      if (!row.manual) throw new DomainException(409, 'NOT_MANUAL', 'Only an invoice built by hand is changed here.');
+      if (row.status === 'CANCELLED') throw new DomainException(409, 'ALREADY_CANCELLED', 'This invoice has already been cancelled.');
+      if (row.received > 0) {
+        throw new DomainException(
+          409,
+          'INVOICE_HAS_RECEIPTS',
+          'A receipt has already been recorded against this invoice. Cancel and raise a new one instead of editing it.',
+        );
+      }
+      if (row.status !== 'DRAFT' && dto.clientId !== row.client_id) {
+        throw new DomainException(409, 'INVOICE_LOCKED', 'An issued invoice stays with the client it was cut for. Cancel it and raise a new one instead.');
+      }
+      let updated = await this.invoicingRepository.updateInvoice(trx, id, this.manualColumns(dto));
+      if (dto.issue && row.status === 'DRAFT') updated = (await this.issueDraft(trx, updated, actor)).updated;
+      await this.auditService.record(trx, actor, {
+        action: 'INVOICE_UPDATED',
+        entityType: 'invoices',
+        entityId: id,
+        after: { totalPaise: updated.total, manual: true },
+      });
+      const client = await this.invoicingRepository.findClientById(updated.client_id);
+      return this.invoiceDto(this.rawInvoiceToJoined(updated, client?.name ?? ''), []);
+    });
+  }
+
+  private assertAdmin(actor: AuthenticatedUser) {
+    if (actor.role !== 'ADMIN') {
+      throw new DomainException(403, 'PERMISSION_DENIED', 'Only an administrator can build an invoice by hand.');
+    }
+  }
+
+  private async assertManualValid(rows: ManualInvoiceDto[]) {
+    const known = new Set<string>();
+    for (const cid of new Set(rows.map((r) => r.clientId).filter(Boolean))) {
+      if (await this.invoicingRepository.findClientById(cid)) known.add(cid);
+    }
+    const problems = rows
+      .map((r, n) => {
+        const p = checkManualInvoice(r);
+        if (r.clientId && !known.has(r.clientId)) p.push('Client is not on the system');
+        return { row: n + 1, problems: p };
+      })
+      .filter((r) => r.problems.length > 0);
+    if (problems.length === 0) return;
+    const message =
+      rows.length === 1
+        ? `This invoice cannot be saved yet: ${problems[0].problems.join('; ')}.`
+        : `${problems.length} of ${rows.length} invoices cannot be saved yet, so none were. ` +
+          problems.map((r) => `Row ${r.row}: ${r.problems.join('; ')}`).join('. ') +
+          '.';
+    throw new DomainException(400, 'MANUAL_INVOICE_INVALID', message, problems);
+  }
+
+  /** The stored columns for a manual invoice: its lines as freight, totals worked out here (NFR-09). */
+  private manualColumns(dto: ManualInvoiceDto) {
+    const extraCharges = this.cleanExtraCharges(dto.extraCharges ?? []);
+    const freight = manualTotals(dto.items).itemsPaise;
+    const { totalPaise, roundOffPaise } = this.computeTotals({
+      freight,
+      loading: 0,
+      unloading: 0,
+      detention: 0,
+      other: 0,
+      discount: 0,
+      extra: this.sumExtraCharges(extraCharges),
+    });
+    return {
+      client_id: dto.clientId,
+      invoice_date: dto.invoiceDate,
+      due_date: dto.dueDate,
+      freight,
+      loading: 0,
+      unloading: 0,
+      detention: 0,
+      other: 0,
+      discount: 0,
+      extra_charges: JSON.stringify(extraCharges),
+      round_off: roundOffPaise,
+      total: totalPaise,
+      notes: dto.notes?.trim() || null,
+      manual: JSON.stringify(manualDetailsOf(dto)),
+    };
+  }
+
+  private async createManualMany(rows: ManualInvoiceDto[], issue: boolean, actor: AuthenticatedUser) {
+    this.assertAdmin(actor);
+    await this.assertManualValid(rows);
+    return this.invoicingRepository.transaction().execute(async (trx) => {
+      const out: ReturnType<InvoicingService['invoiceDto']>[] = [];
+      for (const dto of rows) {
+        const id = randomUUID();
+        let row = await this.invoicingRepository.insertInvoiceDraft(trx, { id, code: `DRAFT-${id}`, ...this.manualColumns(dto) });
+        await this.auditService.record(trx, actor, {
+          action: 'INVOICE_CREATED',
+          entityType: 'invoices',
+          entityId: id,
+          after: { clientId: dto.clientId, totalPaise: row.total, manual: true },
+        });
+        if (issue) row = (await this.issueDraft(trx, row, actor)).updated;
+        const client = await this.invoicingRepository.findClientById(row.client_id);
+        out.push(this.invoiceDto(this.rawInvoiceToJoined(row, client?.name ?? ''), []));
+      }
+      return out;
     });
   }
 
@@ -646,6 +795,7 @@ export class InvoicingService {
       notes: string | null;
       sac_code: string | null;
       details: string | null;
+      manual?: unknown;
     },
     clientName: string,
   ) {
@@ -672,6 +822,7 @@ export class InvoicingService {
       notes: row.notes,
       sacCode: row.sac_code,
       details: row.details,
+      manual: row.manual ?? null,
     };
   }
 
@@ -699,6 +850,7 @@ export class InvoicingService {
       notes: string | null;
       sacCode: string | null;
       details: string | null;
+      manual?: unknown;
     },
     tripIds: string[],
   ) {
@@ -728,6 +880,8 @@ export class InvoicingService {
       // then falls back to `company.sac`.
       sacCode: row.sacCode ?? null,
       details: row.details ?? '',
+      // A manual invoice's bill-to, consignment and lines; null on every other.
+      manual: (row.manual as ManualDetails | null | undefined) ?? null,
     };
   }
 }

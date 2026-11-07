@@ -3,6 +3,7 @@ import { ReaderUnavailable, readDetails } from '../lib/free-reader';
 import { integrationSwitches } from '../lib/integration-switches';
 import { livePositions, withLiveGps, withLiveUpdate } from '../lib/live-gps';
 import { journalLines } from '../lib/accounting';
+import { checkManualInvoice, manualDetailsOf, manualTotals, type ManualInvoiceInput } from '../lib/manual-invoice';
 import { planRecovery } from './sdr-recovery';
 import { computeTransitPenalty } from './transit-penalty';
 import { bandPositionFor } from './band-position';
@@ -444,6 +445,54 @@ const findTrip = (idOrCode: string) =>
 const findInvoice = (idOrCode: string) =>
   db.invoices.find((i) => i.id === idOrCode || i.code === idOrCode) ??
   fail(404, 'NOT_FOUND', `Invoice ${idOrCode} not found`);
+
+/**
+ * Manual invoices — mirrors `InvoicingService.createManualMany`/`updateManual`:
+ * administrators only, every row checked by the same shared rules before any
+ * is saved, lines become the freight head, totals rounded to the rupee.
+ */
+function assertManualRows(role: string, rows: ManualInvoiceInput[]) {
+  if (role !== 'ADMIN') fail(403, 'PERMISSION_DENIED', 'Only an administrator can build an invoice by hand.');
+  const problems = rows
+    .map((r, n) => {
+      const p = checkManualInvoice(r);
+      if (r.clientId && !db.clients.some((c) => c.id === r.clientId)) p.push('Client is not on the system');
+      return { row: n + 1, problems: p };
+    })
+    .filter((r) => r.problems.length > 0);
+  if (problems.length === 0) return;
+  fail(
+    400,
+    'MANUAL_INVOICE_INVALID',
+    rows.length === 1
+      ? `This invoice cannot be saved yet: ${problems[0].problems.join('; ')}.`
+      : `${problems.length} of ${rows.length} invoices cannot be saved yet, so none were. ` +
+          problems.map((r) => `Row ${r.row}: ${r.problems.join('; ')}`).join('. ') +
+          '.',
+  );
+}
+
+function manualFields(r: ManualInvoiceInput) {
+  const extraCharges = (r.extraCharges ?? []).map((c) => ({ label: c.label.trim(), amountPaise: c.amountPaise }));
+  const t = manualTotals(r.items, extraCharges);
+  return {
+    clientId: r.clientId,
+    clientName: db.clients.find((c) => c.id === r.clientId)?.name ?? '—',
+    invoiceDate: r.invoiceDate,
+    dueDate: r.dueDate,
+    freightPaise: t.itemsPaise,
+    loadingPaise: 0,
+    unloadingPaise: 0,
+    detentionPaise: 0,
+    otherPaise: 0,
+    discountPaise: 0,
+    extraCharges,
+    roundOffPaise: t.roundOffPaise,
+    totalPaise: t.totalPaise,
+    notes: (r.notes ?? '').trim(),
+    manual: manualDetailsOf(r),
+  };
+}
 
 const findRfq = (id: string) => db.rfqs.find((r) => r.id === id) ?? fail(404, 'NOT_FOUND', `RFQ ${id} not found`);
 
@@ -5780,6 +5829,52 @@ const routes: [string, RegExp, Handler][] = [
   ],
   [
     'POST',
+    /^\/invoices\/manual(\/bulk)?$/,
+    ({ params, body, role }) => {
+      const bulk = !!params[0];
+      const rows: ManualInvoiceInput[] = bulk ? (body?.invoices ?? []) : [body];
+      assertManualRows(role, rows);
+      const made = rows.map((r) => {
+        const invoice: Record<string, any> = {
+          id: `inv-${db.invoices.length + 500}`,
+          code: body?.issue ? nextNumber('INVOICE') : null,
+          status: body?.issue ? 'ISSUED' : 'DRAFT',
+          tripIds: [],
+          receivedPaise: 0,
+          taxMechanism: 'REVERSE_CHARGE',
+          cancelReason: null,
+          sacCode: null,
+          details: '',
+          ...manualFields(r),
+        };
+        db.invoices.unshift(invoice);
+        return invoice;
+      });
+      return ok(bulk ? made : made[0]);
+    },
+  ],
+  [
+    'PATCH',
+    /^\/invoices\/manual\/([^/]+)$/,
+    ({ params, body, role }) => {
+      assertManualRows(role, [body]);
+      const invoice = findInvoice(params[0]);
+      if (!invoice.manual) fail(409, 'NOT_MANUAL', 'Only an invoice built by hand is changed here.');
+      if (invoice.status === 'CANCELLED') fail(409, 'ALREADY_CANCELLED', 'This invoice has already been cancelled.');
+      if (invoice.receivedPaise > 0)
+        fail(409, 'INVOICE_HAS_RECEIPTS', 'A receipt has already been recorded against this invoice. Cancel and raise a new one instead of editing it.');
+      if (invoice.status !== 'DRAFT' && body.clientId !== invoice.clientId)
+        fail(409, 'INVOICE_LOCKED', 'An issued invoice stays with the client it was cut for. Cancel it and raise a new one instead.');
+      Object.assign(invoice, manualFields(body));
+      if (body.issue && invoice.status === 'DRAFT') {
+        invoice.code = nextNumber('INVOICE');
+        invoice.status = 'ISSUED';
+      }
+      return ok(invoice);
+    },
+  ],
+  [
+    'POST',
     /^\/invoices$/,
     ({ body }) => {
       // `invoices/new/page.tsx` deliberately never sends `roundOffPaise` or
@@ -5838,6 +5933,7 @@ const routes: [string, RegExp, Handler][] = [
       // draft's `tripIds` — never marked `billed` yet — is free to change).
       const invoice = findInvoice(params[0]);
       if (invoice.status === 'CANCELLED') fail(409, 'ALREADY_CANCELLED', 'This invoice has already been cancelled.');
+      if (invoice.manual) fail(409, 'MANUAL_INVOICE', 'This invoice was built by hand — change it in the manual invoice builder.');
       if (invoice.receivedPaise > 0)
         fail(
           409,
