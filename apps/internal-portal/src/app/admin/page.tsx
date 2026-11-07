@@ -59,7 +59,11 @@ const COMPANY_LABELS: Record<string, string> = {
   bank: 'Bank details',
   sac: 'SAC code',
   signatory: 'Signatory (name printed under the signature line)',
+  email: 'Email (printed as "Mail ID" on the lorry receipt)',
 };
+
+/** Details every company has a box for, even before one is saved — an older saved config has no email yet. */
+const COMPANY_ALWAYS = ['email'] as const;
 
 export default function ControlPanelPage() {
   const can = useCan();
@@ -250,7 +254,7 @@ export default function ControlPanelPage() {
 
           <Panel title="Company details" right={<span className="muted" style={{ fontSize: 11.5 }}>printed on every document</span>}>
             <FormGrid>
-              {(Object.keys(config.company) as (keyof Config['company'])[])
+              {(Array.from(new Set([...Object.keys(config.company), ...COMPANY_ALWAYS])) as (keyof Config['company'])[])
                 // The plain one-line details. The rest have boxes of their own below.
                 .filter(
                   (key): key is Exclude<keyof Config['company'], 'extra' | 'lrCopies' | 'lrTerms' | 'invoiceTerms'> =>
@@ -267,10 +271,10 @@ export default function ControlPanelPage() {
                       <Box
                         name={`company-${key}`}
                         rows={key === 'address' ? 4 : undefined}
-                        defaultValue={config.company[key]}
+                        defaultValue={config.company[key] ?? ''}
                         disabled={!editable}
                         onBlur={(e) =>
-                          e.target.value !== config.company[key] &&
+                          e.target.value !== (config.company[key] ?? '') &&
                           save({ company: { ...config.company, [key]: e.target.value } })
                         }
                       />
@@ -347,7 +351,7 @@ function PrintedDocuments({
         <FormGrid cols={1}>
           <Field
             label="Lorry receipt — terms and conditions"
-            hint="Printed at the foot of every copy. Each line here is printed as its own line. Leave it empty to print none."
+            hint="Printed on the back of every copy. Each line is one point; a line starting with # (for example # Risk and insurance) is a heading over the points below it. Leave it empty to print none."
           >
             <textarea
               name="lr-terms"

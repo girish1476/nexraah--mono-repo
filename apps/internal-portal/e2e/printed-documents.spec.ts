@@ -14,11 +14,13 @@ test.describe('printed documents in the control panel', () => {
 
     const panel = page.locator('[data-printed-documents]');
     await expect(panel).toContainText('Lorry receipt copies');
-    await expect(panel.locator('input[name="lr-copy-0"]')).toHaveValue('Consignor copy');
+    // The company's own LR book (Nov 2026): its four copies and its terms.
+    await expect(panel.locator('input[name="lr-copy-0"]')).toHaveValue('Shipper copy');
     await expect(panel.locator('input[name="lr-copy-1"]')).toHaveValue('Consignee copy');
-    await expect(panel.locator('input[name="lr-copy-2"]')).toHaveValue('Carrier copy');
-    await expect(panel.locator('input[name="lr-copy-3"]')).toHaveValue('Office copy');
-    await expect(panel.locator('textarea[name="lr-terms"]')).toHaveValue(/owner’s risk/);
+    await expect(panel.locator('input[name="lr-copy-2"]')).toHaveValue('POD copy');
+    await expect(panel.locator('input[name="lr-copy-3"]')).toHaveValue('POD duplicate');
+    await expect(panel.locator('textarea[name="lr-terms"]')).toHaveValue(/# Risk and insurance/);
+    await expect(panel.locator('textarea[name="lr-terms"]')).toHaveValue(/Owner's risk/);
     await expect(panel.locator('textarea[name="invoice-terms"]')).toHaveValue(/Confidentiality/);
 
     // Renaming a copy saves when the box is left.
@@ -46,16 +48,24 @@ test.describe('printed documents in the control panel', () => {
 });
 
 test.describe('the printed lorry receipt and invoice', () => {
-  test('the lorry receipt prints its four copies and its terms', async ({ page }) => {
+  test('the lorry receipt prints its four copies, front and back, as the company’s LR book', async ({ page }) => {
     await setRole(page, 'OPS');
     await page.goto('/print/lr/t-120881');
-    await expect(page.getByText('4 copies · A4', { exact: false })).toBeVisible();
-    await expect(page.locator('.sheet')).toHaveCount(4);
-    for (const copy of ['Consignor copy', 'Consignee copy', 'Carrier copy', 'Office copy']) {
-      await expect(page.getByText(new RegExp(`Lorry receipt · ${copy}`, 'i')).first()).toBeVisible();
+    await expect(page.getByText('4 copies, front and back', { exact: false })).toBeVisible();
+    await expect(page.locator('.sheet')).toHaveCount(8);
+    for (const copy of ['Shipper copy', 'Consignee copy', 'POD copy', 'POD duplicate']) {
+      await expect(page.getByText(new RegExp(`^${copy}$`, 'i')).first()).toBeVisible();
     }
-    await expect(page.locator('[data-lr-terms]').first()).toContainText('Terms & Conditions.');
-    await expect(page.locator('[data-lr-terms]').first()).toContainText('owner’s risk');
+    const front = page.locator('.sheet').first();
+    for (const field of ['Consignor Name', 'Consignee Name', 'Invoice No', 'E Way Bill No', 'Charged Weight', 'Gate In / Time', 'Loading Halting Days', 'Loading Supervisor Name']) {
+      await expect(front).toContainText(field);
+    }
+    const back = page.locator('.sheet').nth(1);
+    await expect(back).toContainText('Unloading Purpose');
+    await expect(back).toContainText('Consignee Sign / Stamp');
+    await expect(page.locator('[data-lr-terms]').first()).toContainText('Terms and Conditions');
+    await expect(page.locator('[data-lr-terms]').first()).toContainText('Risk and insurance');
+    await expect(page.locator('[data-lr-terms]').first()).toContainText("Owner's risk");
   });
 
   test('the invoice prints its terms', async ({ page }) => {

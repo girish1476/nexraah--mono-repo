@@ -1,10 +1,12 @@
 import {
   IsDateString,
+  IsIn,
   IsInt,
   IsNumber,
   IsOptional,
   IsString,
   Matches,
+  Max,
   MaxLength,
   Min,
 } from 'class-validator';
@@ -45,6 +47,9 @@ export class LrPartyDto {
   @IsOptional()
   @Matches(GSTIN_SHAPE_RE, { message: FORMAT_MESSAGE.gstin })
   gstin?: string;
+
+  /** Printed beside the GSTIN on the company's LR. Blank: the state the GSTIN's first two digits name. */
+  @IsOptional() @IsString() @MaxLength(60) state?: string;
 }
 
 export class LrGoodsDto {
@@ -54,6 +59,9 @@ export class LrGoodsDto {
 
   /** Tonnes, so a decimal — unlike the paise fields, which are integers. */
   @IsOptional() @IsNumber() @Min(0) weightTn?: number;
+
+  /** The weight freight is charged on, when it is not the actual weight (a minimum, a volumetric figure). */
+  @IsOptional() @IsNumber() @Min(0) chargedWeightTn?: number;
 
   @IsOptional() @IsInt() @Min(0) valuePaise?: number;
 }
@@ -83,6 +91,9 @@ export class LrVehicleDto {
   registration?: string;
 
   @IsOptional() @IsString() @MaxLength(60) type?: string;
+
+  /** "Vehicle type: Closed / Open" on the company's LR. Blank until someone says. */
+  @BlankAsAbsent() @IsOptional() @IsIn(['CLOSED', 'OPEN']) body?: 'CLOSED' | 'OPEN';
 }
 
 export class LrDriverDto {
@@ -111,5 +122,17 @@ export class LrChargeHeadsDto {
   @IsOptional() @IsInt() @Min(0) detentionPaise?: number;
   @IsOptional() @IsInt() @Min(0) otherPaise?: number;
   @IsOptional() @IsInt() @Min(0) discountPaise?: number;
+
+  // How the money above is booked — the boxes on the company's printed LR.
+  // Not money, so nothing adds these into the total.
+
+  /** "Loading charges per ton / fixed": how `loadingPaise` was agreed. */
+  @BlankAsAbsent() @IsOptional() @IsIn(['PER_TON', 'FIXED']) loadingBasis?: 'PER_TON' | 'FIXED';
+
+  /** Who pays the freight and when: already paid, billed to the consignor later, or collected at delivery. */
+  @BlankAsAbsent() @IsOptional() @IsIn(['PAID', 'TO_BE_BILLED', 'TO_PAY']) freightTerms?: 'PAID' | 'TO_BE_BILLED' | 'TO_PAY';
+
+  /** Days the truck was held at the loading point. */
+  @IsOptional() @IsInt() @Min(0) @Max(60) loadingHaltingDays?: number;
 }
 

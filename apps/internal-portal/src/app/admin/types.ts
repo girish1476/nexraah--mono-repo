@@ -19,6 +19,8 @@ export interface CompanyDetails {
   /** The name/title printed under the signature line on a printed invoice
    *  — e.g. "Authorised Signatory", or a specific person once designated. */
   signatory: string;
+  /** Printed as "Mail ID" on the lorry receipt. */
+  email?: string;
   /** Details added from Admin → Control panel, in the order they were added. */
   extra?: CompanyExtra[];
   /** The names of the lorry receipt's copies, in the order printed. Unset prints the usual four. */

@@ -313,6 +313,7 @@ export const db = {
       // Same default the real config seed carries as of
       // 20260920010000_company_signatory.sql — editable from /admin.
       signatory: 'Authorised Signatory',
+      email: 'info@nexraah.com',
     },
   },
 
@@ -1044,14 +1045,24 @@ export const db = {
         sharedAt: null,
         consignor: { name: 'Berger Paints', address: 'MIDC Satpur, Nashik', gstin: '27AAACB2545C1Z9' },
         consignee: { name: 'Berger Paints Depot', address: 'Dum Dum, Kolkata', gstin: '19AAACB2545C1Z9' },
-        goods: { description: 'Paint drums', packages: 420, weightTn: 19, valuePaise: 1840000 },
+        goods: { description: 'Paint drums', packages: 420, weightTn: 19, valuePaise: 1840000, chargedWeightTn: 20 },
         invoice: { number: 'SM/26/1189', datedOn: daysAgo(26), valuePaise: 1840000 },
         eway: { number: '', validTill: '' },
-        vehicle: { registration: 'MH 15 GT 4482', type: '32 ft SXL' },
+        vehicle: { registration: 'MH 15 GT 4482', type: '32 ft SXL', body: 'CLOSED' },
         driver: { name: 'Sandeep Rathod', licence: 'MH15 20180004471', phone: '9822014479' },
         transitDays: 5,
         remarks: 'Stack no more than three high.',
-        chargeHeads: { freightPaise: 6420000, loadingPaise: 220000, unloadingPaise: 0, detentionPaise: 0, otherPaise: 0, discountPaise: 0 },
+        chargeHeads: {
+          freightPaise: 6420000,
+          loadingPaise: 220000,
+          unloadingPaise: 0,
+          detentionPaise: 0,
+          otherPaise: 0,
+          discountPaise: 0,
+          loadingBasis: 'FIXED',
+          freightTerms: 'TO_BE_BILLED',
+          loadingHaltingDays: 1,
+        },
       },
     },
     {

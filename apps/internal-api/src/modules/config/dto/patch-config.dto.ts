@@ -5,6 +5,7 @@ import {
   ArrayNotEmpty,
   IsArray,
   IsBoolean,
+  IsEmail,
   IsIn,
   IsInt,
   IsObject,
@@ -15,6 +16,7 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { GSTIN_SHAPE_RE, PAN_RE } from '../../../common/validation/formats';
@@ -38,6 +40,8 @@ class CompanyDto {
   /** The name/title printed under the signature line on a printed invoice
    *  — e.g. "Authorised Signatory", or a specific person once designated. */
   @IsString() signatory!: string;
+  /** Printed as "Mail ID" on the lorry receipt. */
+  @IsOptional() @ValidateIf((_, v) => v !== '') @IsEmail({}, { message: 'That does not look like an email address.' }) email?: string;
   /** Details added from Admin → Control panel, in the order they were added. */
   @IsOptional()
   @IsArray()
@@ -48,7 +52,7 @@ class CompanyDto {
   /** The names of the lorry receipt's copies, in the order printed. */
   @IsOptional() @IsArray() @ArrayMaxSize(6) @IsString({ each: true }) @MaxLength(40, { each: true }) lrCopies?: string[];
   /** The lorry receipt's terms and conditions, a line each. Empty prints none. */
-  @IsOptional() @IsString() @MaxLength(4000) lrTerms?: string;
+  @IsOptional() @IsString() @MaxLength(8000) lrTerms?: string;
   /** The invoice's terms and conditions, by the same rule. */
   @IsOptional() @IsString() @MaxLength(4000) invoiceTerms?: string;
 }

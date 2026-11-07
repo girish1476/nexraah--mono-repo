@@ -10,6 +10,7 @@ import {
   invoiceTermsLines,
   lrCopies,
   lrTermsLines,
+  termsSections,
 } from './print-settings';
 
 /**
@@ -27,7 +28,7 @@ const call = async (role: RoleCode, method: string, url: string, data?: unknown)
 describe('the lorry receipt’s copies', () => {
   it('are the usual four until the company names its own', () => {
     expect(lrCopies(undefined)).toEqual(DEFAULT_LR_COPIES);
-    expect(lrCopies({})).toEqual(['Consignor copy', 'Consignee copy', 'Carrier copy', 'Office copy']);
+    expect(lrCopies({})).toEqual(['Shipper copy', 'Consignee copy', 'POD copy', 'POD duplicate']);
   });
 
   it('take the company’s names, in order; an empty name drops that copy', () => {
@@ -47,7 +48,7 @@ describe('the lorry receipt’s copies', () => {
 
 describe('terms and conditions', () => {
   it('are the standard ones until set, a line each once set, and none when emptied', () => {
-    expect(lrTermsLines({})).toEqual([DEFAULT_LR_TERMS]);
+    expect(lrTermsLines({})).toEqual(DEFAULT_LR_TERMS.split('\n'));
     expect(invoiceTermsLines(null)).toEqual([DEFAULT_INVOICE_TERMS]);
     expect(lrTermsLines({ lrTerms: '1. Goods at owner’s risk.\n\n2. Claims within 7 days.  \n' })).toEqual([
       '1. Goods at owner’s risk.',
@@ -82,5 +83,26 @@ describe('terms and conditions', () => {
     const doc = await buildInvoicePdf({ ...invoice, company: { ...invoice.company, invoiceTerms: '' } });
     expect(termsLines({ ...invoice, company: { ...invoice.company, invoiceTerms: '' } })).toEqual([]);
     expect(doc.getNumberOfPages()).toBe(1);
+  });
+});
+
+describe('the lorry receipt’s terms, in sections', () => {
+  it('are the company’s five headings, each with its points', () => {
+    const sections = termsSections(lrTermsLines({}));
+    expect(sections.map((x) => x.heading)).toEqual([
+      'Risk and insurance',
+      'Packing, documentation and compliance',
+      'Liability, exclusions and force majeure',
+      'Transit, delivery, claims and demurrage',
+      'Freight, lien, sale of goods and jurisdiction',
+    ]);
+    expect(sections.every((x) => x.points.length >= 3)).toBe(true);
+    expect(DEFAULT_LR_TERMS).not.toContain('insert exact number');
+  });
+
+  it('written without headings, still print — as one section', () => {
+    expect(termsSections(['Goods at owner’s risk.', 'Claims within 7 days.'])).toEqual([
+      { heading: null, points: ['Goods at owner’s risk.', 'Claims within 7 days.'] },
+    ]);
   });
 });

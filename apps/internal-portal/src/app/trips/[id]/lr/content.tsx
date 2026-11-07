@@ -32,7 +32,8 @@ import {
   uploadTripDocument,
   verifyTripDocument,
 } from '../../apis';
-import { CrossCheckResult, LorryReceipt, TripDetail, TripDocument } from '../../types';
+import { CrossCheckResult, FREIGHT_TERMS_LABEL, LorryReceipt, TripDetail, TripDocument, lrChargesTotal } from '../../types';
+import { stateFromGstin } from '@/lib/gst-state';
 
 const LR_DOC_TONE: Record<TripDocument['status'], Tone> = {
   MISSING: 'grey',
@@ -47,17 +48,30 @@ const EMPTY: LorryReceipt = {
   lrDate: null,
   bookedAt: null,
   sharedAt: null,
-  consignor: { name: '', address: '', gstin: '' },
-  consignee: { name: '', address: '', gstin: '' },
-  goods: { description: '', packages: 0, weightTn: 0, valuePaise: 0 },
+  consignor: { name: '', address: '', gstin: '', state: '' },
+  consignee: { name: '', address: '', gstin: '', state: '' },
+  goods: { description: '', packages: 0, weightTn: 0, valuePaise: 0, chargedWeightTn: 0 },
   invoice: { number: '', datedOn: '', valuePaise: 0 },
   eway: { number: '', validTill: '' },
-  vehicle: { registration: '', type: '' },
+  vehicle: { registration: '', type: '', body: '' },
   driver: { name: '', licence: '', phone: '' },
   transitDays: 0,
   remarks: '',
-  chargeHeads: { freightPaise: 0, loadingPaise: 0, unloadingPaise: 0, detentionPaise: 0, otherPaise: 0, discountPaise: 0 },
+  chargeHeads: {
+    freightPaise: 0,
+    loadingPaise: 0,
+    unloadingPaise: 0,
+    detentionPaise: 0,
+    otherPaise: 0,
+    discountPaise: 0,
+    loadingBasis: '',
+    freightTerms: '',
+    loadingHaltingDays: 0,
+  },
 };
+
+/** The six money heads — the rest of `chargeHeads` says how they are booked. */
+type MoneyHead = 'freightPaise' | 'loadingPaise' | 'unloadingPaise' | 'detentionPaise' | 'otherPaise' | 'discountPaise';
 
 /** `defaults`, with every value `given` actually has — a null or missing one keeps the default. */
 function fill<T extends object>(defaults: T, given: Partial<Record<keyof T, unknown>> | null | undefined): T {
@@ -517,6 +531,14 @@ export function LorryReceiptContent({
               onChange={(e) => edit({ consignor: { ...lr.consignor, gstin: e.target.value } })}
             />
           </Field>
+          <Field label="State" hint="Leave blank to print the state the GSTIN names.">
+            <input
+              value={lr.consignor.state ?? ''}
+              placeholder={stateFromGstin(lr.consignor.gstin) || 'e.g. Andhra Pradesh'}
+              disabled={!!lr.code}
+              onChange={(e) => edit({ consignor: { ...lr.consignor, state: e.target.value } })}
+            />
+          </Field>
         </FormGrid>
       </Panel>
 
@@ -541,6 +563,14 @@ export function LorryReceiptContent({
               value={lr.consignee.gstin}
               disabled={!!lr.code}
               onChange={(e) => edit({ consignee: { ...lr.consignee, gstin: e.target.value } })}
+            />
+          </Field>
+          <Field label="State" hint="Leave blank to print the state the GSTIN names.">
+            <input
+              value={lr.consignee.state ?? ''}
+              placeholder={stateFromGstin(lr.consignee.gstin) || 'e.g. Andhra Pradesh'}
+              disabled={!!lr.code}
+              onChange={(e) => edit({ consignee: { ...lr.consignee, state: e.target.value } })}
             />
           </Field>
         </FormGrid>
@@ -569,6 +599,14 @@ export function LorryReceiptContent({
               value={lr.goods.weightTn}
               disabled={!!lr.code}
               onChange={(e) => edit({ goods: { ...lr.goods, weightTn: Number(e.target.value) } })}
+            />
+          </Field>
+          <Field label="Charged weight (MT)" hint="Only when freight is charged on a different weight. Blank prints the actual weight.">
+            <input
+              type="number"
+              value={lr.goods.chargedWeightTn || ''}
+              disabled={!!lr.code}
+              onChange={(e) => edit({ goods: { ...lr.goods, chargedWeightTn: Number(e.target.value) } })}
             />
           </Field>
           <Field label="Client invoice number">
@@ -612,6 +650,17 @@ export function LorryReceiptContent({
           <Field label="Vehicle type">
             <input value={lr.vehicle.type} disabled />
           </Field>
+          <Field label="Body" hint="Printed as Vehicle type: Closed / Open.">
+            <select
+              value={lr.vehicle.body ?? ''}
+              disabled={!!lr.code}
+              onChange={(e) => edit({ vehicle: { ...lr.vehicle, body: e.target.value as LorryReceipt['vehicle']['body'] } })}
+            >
+              <option value="">Not said</option>
+              <option value="CLOSED">Closed</option>
+              <option value="OPEN">Open</option>
+            </select>
+          </Field>
           <Field label="Driver">
             <input
               value={lr.driver.name}
@@ -645,7 +694,7 @@ export function LorryReceiptContent({
               ['detentionPaise', 'Detention'],
               ['otherPaise', 'Other'],
               ['discountPaise', 'Discount'],
-            ] as [keyof LorryReceipt['chargeHeads'], string][]
+            ] as [MoneyHead, string][]
           ).map(([key, label]) => (
             <Field key={key} label={`${label} (₹)`}>
               <input
@@ -656,12 +705,48 @@ export function LorryReceiptContent({
               />
             </Field>
           ))}
+          <Field label="Loading charged" hint="Printed as Loading charges per ton / fixed.">
+            <select
+              value={lr.chargeHeads.loadingBasis ?? ''}
+              disabled={!!lr.code}
+              onChange={(e) =>
+                edit({ chargeHeads: { ...lr.chargeHeads, loadingBasis: e.target.value as LorryReceipt['chargeHeads']['loadingBasis'] } })
+              }
+            >
+              <option value="">Not said</option>
+              <option value="PER_TON">Per ton</option>
+              <option value="FIXED">Fixed</option>
+            </select>
+          </Field>
+          <Field label="Freight" hint="Paid / To be billed, or To pay at delivery — where the total is printed.">
+            <select
+              value={lr.chargeHeads.freightTerms ?? ''}
+              disabled={!!lr.code}
+              onChange={(e) =>
+                edit({ chargeHeads: { ...lr.chargeHeads, freightTerms: e.target.value as LorryReceipt['chargeHeads']['freightTerms'] } })
+              }
+            >
+              <option value="">Not said</option>
+              {(Object.keys(FREIGHT_TERMS_LABEL) as (keyof typeof FREIGHT_TERMS_LABEL)[]).map((k) => (
+                <option key={k} value={k}>
+                  {FREIGHT_TERMS_LABEL[k]}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Loading halting days">
+            <input
+              type="number"
+              min={0}
+              value={lr.chargeHeads.loadingHaltingDays || ''}
+              disabled={!!lr.code}
+              onChange={(e) => edit({ chargeHeads: { ...lr.chargeHeads, loadingHaltingDays: Number(e.target.value) } })}
+            />
+          </Field>
         </FormGrid>
         <div style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'center' }}>
           <Tag tone="grey">Total</Tag>
-          <span className="mono">
-            {inr(Object.values(lr.chargeHeads).reduce((a, b) => a + b, 0) - 2 * lr.chargeHeads.discountPaise)}
-          </span>
+          <span className="mono">{inr(lrChargesTotal(lr.chargeHeads))}</span>
         </div>
       </Panel>
     </Stack>

@@ -85,12 +85,14 @@ export interface LorryReceipt {
   bookedAt: string | null;
   /** BR-22 — sharing is optional and never a required workflow step. */
   sharedAt: string | null;
-  consignor: { name: string; address: string; gstin: string };
-  consignee: { name: string; address: string; gstin: string };
-  goods: { description: string; packages: number; weightTn: number; valuePaise: number };
+  /** `state` blank: printed from the GSTIN (lib/gst-state.ts). */
+  consignor: { name: string; address: string; gstin: string; state?: string };
+  consignee: { name: string; address: string; gstin: string; state?: string };
+  /** `chargedWeightTn`: the weight freight is charged on, when it is not the actual weight. */
+  goods: { description: string; packages: number; weightTn: number; valuePaise: number; chargedWeightTn?: number };
   invoice: { number: string; datedOn: string; valuePaise: number };
   eway: { number: string; validTill: string };
-  vehicle: { registration: string; type: string };
+  vehicle: { registration: string; type: string; body?: '' | 'CLOSED' | 'OPEN' };
   driver: { name: string; licence: string; phone: string };
   transitDays: number;
   remarks: string;
@@ -101,8 +103,24 @@ export interface LorryReceipt {
     detentionPaise: number;
     otherPaise: number;
     discountPaise: number;
+    // How the money is booked — the boxes on the printed LR. Not money; see lrChargesTotal.
+    loadingBasis?: '' | 'PER_TON' | 'FIXED';
+    freightTerms?: '' | 'PAID' | 'TO_BE_BILLED' | 'TO_PAY';
+    loadingHaltingDays?: number;
   };
 }
+
+/** The LR's total: the five charges less the discount — named, so the booking fields beside them are never added in. */
+export function lrChargesTotal(h: LorryReceipt['chargeHeads'] | null | undefined): number {
+  if (!h) return 0;
+  return h.freightPaise + h.loadingPaise + h.unloadingPaise + h.detentionPaise + h.otherPaise - h.discountPaise;
+}
+
+export const FREIGHT_TERMS_LABEL: Record<'PAID' | 'TO_BE_BILLED' | 'TO_PAY', string> = {
+  PAID: 'Paid',
+  TO_BE_BILLED: 'To be billed',
+  TO_PAY: 'To pay',
+};
 
 export interface TripDetail extends TripListRow {
   indentId: string;
