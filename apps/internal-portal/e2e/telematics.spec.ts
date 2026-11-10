@@ -68,6 +68,9 @@ test.describe('fleet board — manual update', () => {
     const dialog = page.locator('.surface').filter({ has: page.getByRole('heading', { name: 'Update MH 15 GT 4482' }) });
     await expect(dialog).toBeVisible();
 
+    // Position is found by place name; a shared pin's coordinates sit behind this toggle.
+    await dialog.getByRole('button', { name: /Enter coordinates instead/ }).click();
+
     // Seeded at 22.5726, 88.3639 (Kolkata) — move it to a different, clearly
     // distinct point so the assertion can't pass by coincidence.
     const lat = fieldControl(dialog, 'Latitude');
@@ -83,6 +86,7 @@ test.describe('fleet board — manual update', () => {
     // Re-open the same dialog: the new values round-tripped through the
     // save, not just held in the form's own local state.
     await row.getByRole('button', { name: 'Update' }).click();
+    await page.getByRole('button', { name: /Enter coordinates instead/ }).click();
     await expect(fieldControl(page, 'Latitude')).toHaveValue('19.076');
     await expect(fieldControl(page, 'Longitude')).toHaveValue('72.8777');
     await page.getByRole('button', { name: 'Cancel' }).click();

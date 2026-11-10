@@ -22,6 +22,7 @@ import {
   useLevel,
   useToast,
 } from '@/lib/ui';
+import { PlacePicker } from '@/components/place-picker';
 import { getTelematics, updateVehicleTelematics } from './apis';
 import { AlertKind, TelematicsResponse, VehicleRow } from './types';
 
@@ -411,7 +412,7 @@ export default function TelematicsPage() {
           />
           <div className="muted" style={{ fontSize: 11.5, padding: '10px 14px' }}>
             {canEdit
-              ? 'No GPS provider is wired up — Ops updates a truck’s position and status by hand from the "Update" action, and the board refreshes every thirty seconds.'
+              ? 'No GPS provider is wired up — Ops updates a truck’s position (by place name) and status by hand from the "Update" action, and the board refreshes every thirty seconds.'
               : 'No GPS provider is wired up — every row is a manual update from Ops, refreshed every thirty seconds.'}
           </div>
         </Panel>
@@ -435,36 +436,18 @@ export default function TelematicsPage() {
           />
         </Field>
         {/*
-          The board's own body copy above ("Ops updates a truck's position
-          and status by hand") promised this and never had a field for it —
-          speed and fuel were the only two things this dialog could actually
-          change. `lat`/`lng` were always accepted by the server
-          (`ManualUpdateDto`) and always shown on the board's own map data;
-          they just had no way in from here. Paste-friendly: a driver's
-          shared-location link or a Google Maps right-click both hand you a
-          plain "lat, lng" pair, so typing two separate boxes is the
-          realistic path, not a map widget nobody asked for.
+          Position by place name: Ops is told "near the Nagpur bypass", not a
+          latitude. The name is looked up and its point saved (`lat`/`lng`,
+          what `ManualUpdateDto` takes); coordinates from a shared pin are
+          still one click away inside the picker.
         */}
-        <Field label="Latitude" hint="e.g. 19.997454, from wherever the driver last shared a pin.">
-          <input
-            type="number"
-            step="0.000001"
-            min={-90}
-            max={90}
-            value={form.lat}
-            onChange={(e) => setForm((f) => ({ ...f, lat: Number(e.target.value) || 0 }))}
+        {editing && (
+          <PlacePicker
+            key={editing.vehicleNo}
+            value={{ lat: form.lat, lng: form.lng }}
+            onChange={(p) => setForm((f) => ({ ...f, lat: p.lat, lng: p.lng }))}
           />
-        </Field>
-        <Field label="Longitude" hint="e.g. 73.789803">
-          <input
-            type="number"
-            step="0.000001"
-            min={-180}
-            max={180}
-            value={form.lng}
-            onChange={(e) => setForm((f) => ({ ...f, lng: Number(e.target.value) || 0 }))}
-          />
-        </Field>
+        )}
         <Field label="Fuel %">
           <input
             type="number"
