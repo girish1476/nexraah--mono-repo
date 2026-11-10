@@ -24,6 +24,7 @@ import {
 } from '@/lib/ui';
 import { getConfig, getNumberSeries, patchConfig, patchNumberSeries } from './apis';
 import { CompanyExtra, Config, NumberSeries } from './types';
+import { SmsPanel } from './sms-panel';
 
 /**
  * Control panel — `/admin` · `config.manage`.
@@ -294,6 +295,8 @@ export default function ControlPanelPage() {
             editable={editable}
             save={(changed) => save({ company: { ...config.company, ...changed } })}
           />
+
+          <SmsPanel editable={editable} />
 
           <Panel title="Numbering series" pad={false}>
             <DataTable columns={seriesColumns} rows={series} rowKey={(r) => r.key} />

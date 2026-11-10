@@ -2006,6 +2006,30 @@ const routes: [string, RegExp, Handler][] = [
   ['GET', /^\/notifications\/push-key$/, () => ok({ publicKey: null })],
   ['POST', /^\/notifications\/push-subscriptions$/, () => ok({ saved: true, confirmation: { ok: false, message: 'Demo — nothing is sent.' } })],
   ['DELETE', /^\/notifications\/push-subscriptions$/, () => ok({ removed: true })],
+  // The demo has no SMS gateway: it says so, as the real server does with nothing set.
+  [
+    'GET',
+    /^\/notifications\/sms$/,
+    () =>
+      ok({
+        provider: null,
+        ready: false,
+        missing: ['SMS_PROVIDER (msg91 or fast2sms)', 'SMS_API_KEY', 'SMS_TEMPLATES'],
+        templates: [
+          'quote.awarded',
+          'payment.released',
+          'pod.due',
+          'pod.breached',
+          'pod.forfeit_warning',
+          'pod.rejected',
+          'bill.queried',
+          'vendor.activated',
+          'approval.raised',
+          'approval.decided',
+        ].map((event) => ({ event, templateId: null })),
+      }),
+  ],
+  ['POST', /^\/notifications\/sms\/test$/, () => fail(409, 'SMS_NOT_SET_UP', 'SMS is not set up in the demo — nothing is sent.')],
   /* --------------------------------------------------- allowed emails --- */
   [
     'GET',
