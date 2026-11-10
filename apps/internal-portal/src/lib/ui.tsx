@@ -468,6 +468,14 @@ export interface Stat {
    * even when the label changes — that is the entire point.
    */
   id?: string;
+  /**
+   * Makes the tile a button — typically "show me the rows behind this
+   * number". A tile that looks pressable and does nothing on a click reads
+   * as broken, so only tiles with a handler get the button treatment.
+   */
+  onClick?: () => void;
+  /** The tile's filter is the one currently applied to the list below. */
+  active?: boolean;
 }
 
 /**
@@ -478,17 +486,27 @@ export interface Stat {
  * first and third only, floating on the page ground — which is how a screen
  * ends up with six numbers on it and no way to tell which one is a problem.
  */
-export function StatStrip({ stats }: { stats: Stat[] }) {
+export function StatStrip({ stats, compact = false }: { stats: Stat[]; compact?: boolean }) {
   return (
-    <div className="stat-strip">
-      {stats.map((s) => (
-        <div
+    <div className={compact ? 'stat-strip stat-strip-compact' : 'stat-strip'}>
+      {stats.map((s) => {
+        const Tile = s.onClick ? 'button' : 'div';
+        return (
+        <Tile
           key={s.k}
           data-testid={s.id}
+          {...(s.onClick
+            ? {
+                type: 'button' as const,
+                onClick: s.onClick,
+                'aria-pressed': !!s.active,
+                className: s.active ? 'stat-tile-btn is-active' : 'stat-tile-btn',
+              }
+            : {})}
           style={s.tone ? { ['--tile-edge' as string]: toneInk(s.tone) } : undefined}
         >
           <div className="stat-head">
-            {s.emoji && <Glyph size={16}>{s.emoji}</Glyph>}
+            {s.emoji && <Glyph size={compact ? 12 : 16}>{s.emoji}</Glyph>}
             <div className="eyebrow">{s.k}</div>
           </div>
           {/*
@@ -510,8 +528,9 @@ export function StatStrip({ stats }: { stats: Stat[] }) {
               {s.note}
             </div>
           )}
-        </div>
-      ))}
+        </Tile>
+        );
+      })}
     </div>
   );
 }

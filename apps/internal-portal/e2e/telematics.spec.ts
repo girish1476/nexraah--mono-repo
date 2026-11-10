@@ -26,6 +26,37 @@ const fieldControl = (scope: Page | Locator, label: string): Locator =>
     .locator('input, select, textarea')
     .first();
 
+test.describe('fleet board — tiles filter the list', () => {
+  test('clicking a warning tile shows only those trucks; clicking it again shows all', async ({ page }) => {
+    await setRole(page, 'OPS');
+    await page.goto('/telematics');
+
+    const rows = page.locator('table.table tbody tr');
+    await expect(rows).toHaveCount(3);
+
+    // Seeded: only MH 04 TT 2019 is over the limit.
+    const fast = page.getByTestId('tracking-overspeed');
+    await expect(fast).toContainText('1');
+    await fast.click();
+    await expect(fast).toHaveAttribute('aria-pressed', 'true');
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText('MH 04 TT 2019');
+    await expect(page.getByText('Showing 1 of 3 trucks')).toBeVisible();
+
+    // Same tile again clears the filter.
+    await fast.click();
+    await expect(fast).toHaveAttribute('aria-pressed', 'false');
+    await expect(rows).toHaveCount(3);
+
+    // Another tile, then back to everything from "Vehicles we can see".
+    await page.getByTestId('tracking-dark-vehicle').click();
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText('MH 15 GT 4482');
+    await page.getByTestId('tracking-all').click();
+    await expect(rows).toHaveCount(3);
+  });
+});
+
 test.describe('fleet board — manual update', () => {
   test('updating a vehicle\'s coordinates changes the linked trip\'s Position tile', async ({ page }) => {
     await setRole(page, 'OPS');

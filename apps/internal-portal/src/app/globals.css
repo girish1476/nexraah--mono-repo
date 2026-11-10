@@ -1577,7 +1577,8 @@ table.table tbody tr:nth-child(even):hover {
   grid-template-columns: repeat(auto-fit, minmax(184px, 1fr));
   gap: var(--space-3);
 }
-.stat-strip > div {
+.stat-strip > div,
+.stat-strip > .stat-tile-btn {
   min-width: 0;
   padding: var(--space-4);
   background: var(--color-surface);
@@ -1619,6 +1620,61 @@ table.table tbody tr:nth-child(even):hover {
   font-size: 33px;
   font-weight: 800;
   letter-spacing: -0.028em;
+}
+
+/* A tile that filters the list below it. Same tile, made pressable: it lifts
+   on hover and, while its filter is on, wears its own edge colour as a ring
+   so the reader can see which figure the list is showing. */
+.stat-strip > .stat-tile-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: box-shadow 0.12s ease, border-color 0.12s ease, transform 0.12s ease;
+}
+.stat-strip > .stat-tile-btn:hover {
+  box-shadow: var(--shadow-md, var(--shadow-sm));
+  transform: translateY(-1px);
+}
+.stat-strip > .stat-tile-btn:focus-visible {
+  outline: 2px solid var(--tile-edge, var(--color-primary, currentColor));
+  outline-offset: 2px;
+}
+.stat-strip > .stat-tile-btn.is-active {
+  border-color: var(--tile-edge, var(--color-divider-strong));
+  box-shadow: 0 0 0 1px var(--tile-edge, var(--color-divider-strong)), var(--shadow-sm);
+}
+
+/* Compact strip: a row of small tiles with small icons, for boards where the
+   table underneath is the real content and the figures are its filters. */
+.stat-strip-compact {
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: var(--space-2);
+}
+.stat-strip.stat-strip-compact > div,
+.stat-strip.stat-strip-compact > .stat-tile-btn {
+  padding: 7px 10px;
+  border-left-width: 3px;
+}
+.stat-strip-compact .stat-head {
+  gap: 5px;
+}
+.stat-strip-compact .stat-head .glyph {
+  font-size: 12px !important;
+}
+.stat-strip-compact .stat-head .eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  line-height: 1.25;
+}
+.stat-strip-compact .stat-value {
+  font-size: 18px;
+  margin-top: 2px;
+}
+.stat-strip-compact .stat-urgent {
+  font-size: 20px;
 }
 
 /* ---- business snapshot --------------------------------------------------

@@ -135,6 +135,8 @@ export default function TelematicsPage() {
     alerts: AlertKind[];
   }>({ speedKmph: 0, fuelPct: 0, lat: 0, lng: 0, ewayValidTill: '', alerts: [] });
   const [saving, setSaving] = useState(false);
+  // Which tile the list is narrowed to; null shows every truck.
+  const [filter, setFilter] = useState<AlertKind | null>(null);
 
   const load = () => {
     setError(null);
@@ -158,8 +160,17 @@ export default function TelematicsPage() {
   if (error) return <ErrorState message={error} retry={load} />;
   if (!data) return <Loading what="Loading the fleet board" />;
 
-  const alerts = data.vehicles.flatMap((v) => v.alerts);
-  const count = (kind: AlertKind) => alerts.filter((a) => a === kind).length;
+  // Trucks, not alert entries — the tile's number has to match the rows a click shows.
+  const count = (kind: AlertKind) => data.vehicles.filter((v) => v.alerts.includes(kind)).length;
+  const shownVehicles = filter ? vehicles.filter((v) => v.alerts.includes(filter)) : vehicles;
+  const pick = (kind: AlertKind | null) => setFilter((f) => (kind === null || f === kind ? null : kind));
+  const FILTER_EMPTY: Record<AlertKind, string> = {
+    EWAY_EXPIRING: 'No truck has an e-way bill running out.',
+    OVERSPEED: 'No truck is driving too fast.',
+    LONG_HALT: 'No truck has been stopped too long.',
+    DARK_VEHICLE: 'Every truck is still reporting its position.',
+    EWAY_EXPIRED: 'No truck has an expired e-way bill.',
+  };
 
   const toggleOne = (vehicleNo: string) =>
     setSelected((s) => {
@@ -170,10 +181,14 @@ export default function TelematicsPage() {
     });
 
   const toggleAll = () =>
-    setSelected((s) => (s.size === vehicles.length ? new Set() : new Set(vehicles.map((v) => v.vehicleNo))));
+    setSelected((s) =>
+      s.size === shownVehicles.length && shownVehicles.length > 0
+        ? new Set()
+        : new Set(shownVehicles.map((v) => v.vehicleNo)),
+    );
 
   const doExport = () => {
-    const rows = selected.size ? vehicles.filter((v) => selected.has(v.vehicleNo)) : vehicles;
+    const rows = selected.size ? vehicles.filter((v) => selected.has(v.vehicleNo)) : shownVehicles;
     exportToExcel(rows);
     toast(`Downloaded ${rows.length} truck${rows.length === 1 ? '' : 's'} — the file opens in Excel`);
   };
@@ -316,10 +331,10 @@ export default function TelematicsPage() {
         module="telematics"
         right={
           <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn-secondary" onClick={toggleAll} disabled={vehicles.length === 0}>
-              {selected.size === vehicles.length && vehicles.length > 0 ? 'Clear selection' : 'Select all'}
+            <button className="btn btn-secondary" onClick={toggleAll} disabled={shownVehicles.length === 0}>
+              {selected.size === shownVehicles.length && shownVehicles.length > 0 ? 'Clear selection' : 'Select all'}
             </button>
-            <button className="btn" onClick={doExport} disabled={vehicles.length === 0}>
+            <button className="btn" onClick={doExport} disabled={shownVehicles.length === 0 && selected.size === 0}>
               {selected.size ? `Export selected (${selected.size})` : 'Export to Excel'}
             </button>
           </div>
@@ -335,18 +350,65 @@ export default function TelematicsPage() {
       </PageIntro>
 
       <Stack>
+        {/* Each tile is a filter: click to see just those trucks, click again for all of them. */}
         <StatStrip
+          compact
           stats={[
-            { k: 'Vehicles we can see', emoji: '📍', v: data.vehicles.length },
-            { k: 'E-way bill running out', emoji: '⏰', v: count('EWAY_EXPIRING'), tone: 'flag' },
-            { k: 'Driving too fast', emoji: '⚡', v: count('OVERSPEED'), tone: 'red' },
-            { k: 'Stopped too long', emoji: '🛑', v: count('LONG_HALT'), tone: 'flag' },
-            { k: 'Gone quiet', emoji: '📵', v: count('DARK_VEHICLE'), tone: 'flag' },
+            {
+              k: 'Vehicles we can see',
+              emoji: '📍',
+              v: data.vehicles.length,
+              id: 'tracking-all',
+              onClick: () => pick(null),
+              active: filter === null,
+            },
+            ...(
+              [
+                ['EWAY_EXPIRING', 'E-way bill running out', '⏰', 'flag'],
+                ['OVERSPEED', 'Driving too fast', '⚡', 'red'],
+                ['LONG_HALT', 'Stopped too long', '🛑', 'flag'],
+                ['DARK_VEHICLE', 'Gone quiet', '📵', 'flag'],
+              ] as const
+            ).map(([kind, k, emoji, tone]) => ({
+              k,
+              emoji,
+              tone,
+              v: count(kind),
+              id: `tracking-${kind.toLowerCase().replace(/_/g, '-')}`,
+              onClick: () => pick(kind),
+              active: filter === kind,
+            })),
           ]}
         />
 
         <Panel pad={false}>
-          <DataTable columns={columns} rows={vehicles} rowKey={(r) => r.vehicleNo} empty="No trucks in motion." />
+          {filter && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 8,
+                padding: '8px 14px',
+                borderBottom: '1px solid var(--color-divider)',
+                fontSize: 13,
+              }}
+            >
+              <span>
+                Showing {shownVehicles.length} of {vehicles.length} truck{vehicles.length === 1 ? '' : 's'} ·{' '}
+                <strong>{ALERT_LABEL[filter] ?? filter}</strong>
+              </span>
+              <button className="btn btn-secondary btn-sm" onClick={() => pick(null)}>
+                Show all trucks
+              </button>
+            </div>
+          )}
+          <DataTable
+            columns={columns}
+            rows={shownVehicles}
+            rowKey={(r) => r.vehicleNo}
+            empty={filter ? FILTER_EMPTY[filter] : 'No trucks in motion.'}
+          />
           <div className="muted" style={{ fontSize: 11.5, padding: '10px 14px' }}>
             {canEdit
               ? 'No GPS provider is wired up — Ops updates a truck’s position and status by hand from the "Update" action, and the board refreshes every thirty seconds.'
