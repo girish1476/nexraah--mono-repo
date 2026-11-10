@@ -11,10 +11,8 @@ import { BalancePanel } from '@/components/balance-panel';
 import { fmtDate, fmtDateTime, inr } from '@/lib/format';
 import {
   Banner,
-  Dialog,
   ErrorState,
   FactList,
-  Field,
   Loading,
   ModuleGuard,
   PageHeader,
@@ -32,11 +30,10 @@ import {
   completeLoading,
   deliverTrip,
   departTrip,
-  getLoadingSupervisorOptions,
   getTrip,
-  LoadingSupervisorOption,
   startLoading,
 } from '../apis';
+import { LoadingSupervisorDialog } from '@/components/loading-supervisor-dialog';
 import { TripTrackingPanel } from '@/components/trip-tracking-panel';
 import { WaiverDialog, WaiverEvidence } from '@/components/waiver-dialog';
 import { uploadAttachment } from '@/lib/attachments';
@@ -60,8 +57,6 @@ export default function TripDetailPage() {
   const session = useAtomValue(sessionAtom);
   const [waiveOpen, setWaiveOpen] = useState(false);
   const [supervisorOpen, setSupervisorOpen] = useState(false);
-  const [supervisorOptions, setSupervisorOptions] = useState<LoadingSupervisorOption[]>([]);
-  const [supervisorId, setSupervisorId] = useState('');
 
   const load = () => {
     setError(null);
@@ -81,15 +76,9 @@ export default function TripDetailPage() {
     }
   };
 
-  const openSupervisorDialog = () => {
-    setSupervisorId(trip?.loadingSupervisorId ?? '');
-    setSupervisorOpen(true);
-    getLoadingSupervisorOptions(id)
-      .then(setSupervisorOptions)
-      .catch((e) => toast(errorMessage(e)));
-  };
+  const openSupervisorDialog = () => setSupervisorOpen(true);
 
-  const submitSupervisor = async () => {
+  const submitSupervisor = async (supervisorId: string) => {
     if (!supervisorId) return;
     await runLoadingStep(() => assignLoadingSupervisor(id, supervisorId), 'Loading supervisor assigned');
     setSupervisorOpen(false);
@@ -369,27 +358,15 @@ export default function TripDetailPage() {
         onClose={() => setWaiveOpen(false)}
       />
 
-      <Dialog
+      <LoadingSupervisorDialog
         open={supervisorOpen}
-        title="Assign loading supervisor"
-        body="One Operations person runs the loading for this trip and uploads its loading and vehicle documents."
-        confirmLabel="Assign"
-        confirmDisabled={!supervisorId}
+        tripId={id}
+        currentId={trip?.loadingSupervisorId ?? null}
+        body="The loading supervisor runs the loading for this trip and uploads its loading and vehicle documents."
         busy={stageBusy}
-        onConfirm={submitSupervisor}
+        onAssign={submitSupervisor}
         onClose={() => setSupervisorOpen(false)}
-      >
-        <Field label="Supervisor" required>
-          <select value={supervisorId} onChange={(e) => setSupervisorId(e.target.value)}>
-            <option value="">Choose a person…</option>
-            {supervisorOptions.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-      </Dialog>
+      />
     </ModuleGuard>
   );
 }
