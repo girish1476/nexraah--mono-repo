@@ -22,14 +22,19 @@ import {
   Tag,
   useCan,
 } from '@/lib/ui';
-import { listAllOrders, listOrders, OrderSearchParams } from './apis';
+import { listAllOrders, listOrders, OrderSearchParams, orderCounts } from './apis';
 import {
   ORDER_NEXT_ACTION,
+  ORDER_PHASE_EMOJI,
+  ORDER_PHASE_LABEL,
   ORDER_STATUS_LABEL,
   ORDER_STATUS_SEQUENCE,
   ORDER_STATUS_TONE,
+  OrderCounts,
   OrderListRow,
+  OrderPhase,
   OrderStatus,
+  phaseFor,
 } from './types';
 
 const PAGE_SIZE = 200;
@@ -59,6 +64,12 @@ const FILTER_FIELDS: FilterField[] = [
   { kind: 'text', key: 'branchName', label: 'Branch name', placeholder: 'Branch name' },
 ];
 
+/** The quick views under the search (owner's request, 10 Nov 2026), and the steps each one lists. */
+type View = 'ALL' | Extract<OrderPhase, 'PLACING' | 'MOVING' | 'DELIVERED'>;
+const VIEWS: View[] = ['ALL', 'PLACING', 'MOVING', 'DELIVERED'];
+const statusesIn = (view: View) =>
+  view === 'ALL' ? undefined : ALL_STATUSES.filter((s) => phaseFor(s) === view).join(',');
+
 /**
  * `/orders` — every shipment's lifecycle in one list.
  *
@@ -80,6 +91,9 @@ export default function OrdersPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [exportNote, setExportNote] = useState<string | null>(null);
+  const [view, setView] = useState<View>('ALL');
+  // Per step, for the counts on the quick views — what the search found, whatever the view.
+  const [counts, setCounts] = useState<OrderCounts>({});
 
   const searchParams = useMemo<OrderSearchParams>(
     () => ({
@@ -91,10 +105,27 @@ export default function OrdersPage() {
       truck: filters.truck,
       ref: filters.ref,
       branchName: filters.branchName,
-      status: filters.stage || undefined,
+      // One stage picked in the box wins; otherwise the view's steps.
+      status: filters.stage || statusesIn(view),
     }),
-    [filters],
+    [filters, view],
   );
+
+  useEffect(() => {
+    let current = true;
+    orderCounts(searchParams)
+      .then((c) => current && setCounts(c))
+      // A failed count must not blank the list — the views just show no number.
+      .catch(() => current && setCounts({}));
+    return () => {
+      current = false;
+    };
+    // The counts ignore the view and the stage, so only the search boxes refetch them.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.q, filters.clientName, filters.vendor, filters.from, filters.to, filters.truck, filters.ref, filters.branchName]);
+
+  const countOf = (v: View) =>
+    Object.entries(counts).reduce((a, [s, n]) => a + (v === 'ALL' || phaseFor(s as OrderStatus) === v ? (n ?? 0) : 0), 0);
 
   // Only the newest request may write to the screen — typing quickly fires
   // several, and a slow early one landing last would show stale rows.
@@ -131,7 +162,14 @@ export default function OrdersPage() {
 
   const changeFilters = (next: FilterValues) => {
     setExportNote(null);
+    // Picking one stage is narrower than any view; the views go back to all.
+    if (next.stage && next.stage !== filters.stage) setView('ALL');
     setFilters(next);
+  };
+  const changeView = (next: View) => {
+    setExportNote(null);
+    setView(next);
+    if (filters.stage) setFilters({ ...filters, stage: '' });
   };
 
   const exportRows = async () => {
@@ -246,6 +284,26 @@ export default function OrdersPage() {
           }
         />
 
+        {/* Quick views under the search, each with how many the search found there. */}
+        <nav aria-label="Quick views" data-testid="order-quick-views" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '0 0 12px' }}>
+          {VIEWS.map((v) => (
+            <button
+              key={v}
+              type="button"
+              className={view === v && !filters.stage ? 'btn btn-sm' : 'btn btn-secondary btn-sm'}
+              aria-pressed={view === v && !filters.stage}
+              onClick={() => changeView(v)}
+            >
+              {v === 'ALL' ? '📦 All orders' : `${ORDER_PHASE_EMOJI[v]} ${ORDER_PHASE_LABEL[v]}`} · {countOf(v).toLocaleString('en-IN')}
+            </button>
+          ))}
+          {can('indent.view') && (
+            <Link href="/indents" className="btn btn-secondary btn-sm">
+              📝 Indents
+            </Link>
+          )}
+        </nav>
+
         <Panel pad={false}>
           <DataTable
             columns={columns}
@@ -255,6 +313,16 @@ export default function OrdersPage() {
             empty={
               activeFilterCount(filters) > 0 ? (
                 <EmptyState title="Nothing matches these filters" hint="Loosen one of the boxes above, or use Clear to start again." />
+              ) : view !== 'ALL' ? (
+                <EmptyState
+                  title={`Nothing in ${ORDER_PHASE_LABEL[view]} right now`}
+                  hint="Every load is in another step."
+                  action={
+                    <button type="button" className="btn" onClick={() => changeView('ALL')}>
+                      Show all orders
+                    </button>
+                  }
+                />
               ) : (
                 <EmptyState
                   title="No orders yet"

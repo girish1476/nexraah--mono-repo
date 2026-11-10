@@ -91,3 +91,30 @@ test.describe('orders — the page itself', () => {
     await expect(page.locator('main').getByText('Nothing matches these filters')).toBeVisible();
   });
 });
+
+test.describe('orders — quick views under the search', () => {
+  test('All orders, Vehicle assignment, In transit, Delivered and Indents are one click away', async ({ page }) => {
+    await setRole(page, 'OPS');
+    await page.goto('/orders');
+    const views = page.getByTestId('order-quick-views');
+    const all = views.getByRole('button', { name: /All orders · \d+/ });
+    await expect(all).toHaveAttribute('aria-pressed', 'true');
+    const everything = await rows(page).count();
+
+    // Each view narrows the list to its steps, and its count is what it lists.
+    for (const name of ['Vehicle assignment', 'In transit', 'Delivered']) {
+      const button = views.getByRole('button', { name: new RegExp(name) });
+      const count = Number((await button.innerText()).split('·').pop()!.replace(/\D/g, ''));
+      await button.click();
+      await expect(button).toHaveAttribute('aria-pressed', 'true');
+      if (count > 0) await expect(rows(page)).toHaveCount(count);
+      else await expect(page.locator('main')).toContainText(`Nothing in ${name} right now`);
+    }
+
+    await all.click();
+    await expect(rows(page)).toHaveCount(everything);
+
+    await views.getByRole('link', { name: /Indents/ }).click();
+    await expect(page).toHaveURL(/\/indents$/);
+  });
+});
