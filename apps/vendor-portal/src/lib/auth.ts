@@ -268,3 +268,29 @@ export function signOut(): void {
     // Never configured for real auth, so there is no remote session to revoke.
   }
 }
+
+/**
+ * The signed-in transporter sets a password of their own — the one Nexraah
+ * made for them arrives by email or from the desk, and should not stay theirs.
+ * Supabase Auth's own endpoint, with their session: nobody else's password can
+ * be changed this way, and staff never learn the new one.
+ */
+export async function changePassword(newPassword: string): Promise<void> {
+  if (newPassword.length < 10) throw new AuthError('Use at least 10 characters.');
+  if (USE_MOCK) return;
+  await ensureFreshToken();
+  const token = getToken();
+  if (!token) throw new AuthError('Your session has ended. Sign in again, then change the password.');
+  const { url, anonKey } = supabaseConfig();
+  const response = await fetch(`${url}/auth/v1/user`, {
+    method: 'PUT',
+    headers: { apikey: anonKey, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: newPassword }),
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as { msg?: string; error_code?: string; message?: string };
+    if (body.error_code === 'same_password') throw new AuthError('That is the password you have now. Choose a new one.');
+    if (body.error_code === 'weak_password') throw new AuthError('That password is too easy to guess. Choose a longer one.');
+    throw new AuthError(body.msg ?? body.message ?? 'The password could not be changed. Try again.');
+  }
+}

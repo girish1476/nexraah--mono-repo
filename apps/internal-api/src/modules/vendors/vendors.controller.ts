@@ -13,11 +13,16 @@ import { VerifyItemDto } from './dto/verify-item.dto';
 import { AdvancePolicyDto } from './dto/advance-policy.dto';
 import { BackfillKycValueDto } from './dto/backfill-kyc-value.dto';
 import { SuspendVendorDto } from './dto/suspend-vendor.dto';
+import { CreatePortalLoginDto } from './dto/portal-login.dto';
+import { VendorPortalAccountService } from './vendor-portal-account.service';
 
 @Controller('vendors')
 @UseGuards(SupabaseJwtGuard, PermissionsGuard)
 export class VendorsController {
-  constructor(private readonly vendorsService: VendorsService) {}
+  constructor(
+    private readonly vendorsService: VendorsService,
+    private readonly portalAccounts: VendorPortalAccountService,
+  ) {}
 
   // No @RequirePermission on GETs: every internal role can see the vendor
   // file (docs/api/02-vendors-compliance.md), the module matrix (BR-29)
@@ -144,6 +149,29 @@ export class VendorsController {
   @RequirePermission('vendor.activate')
   activate(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.vendorsService.activate(id, user);
+  }
+
+  /**
+   * The transporter's portal login — the email they sign in with, and the
+   * desk that clears them (`vendor.activate`) making or resetting it. A new
+   * password is answered once and emailed to the transporter when email is set
+   * up; it cannot be read back afterwards.
+   */
+  @Get(':id/portal-login')
+  async portalLogin(@Param('id') id: string) {
+    return { email: await this.portalAccounts.loginEmail(id) };
+  }
+
+  @Post(':id/portal-login')
+  @RequirePermission('vendor.activate')
+  createPortalLogin(@Param('id') id: string, @Body() dto: CreatePortalLoginDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.portalAccounts.create(id, dto.email, user);
+  }
+
+  @Post(':id/portal-login/reset')
+  @RequirePermission('vendor.activate')
+  resetPortalLogin(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.portalAccounts.reset(id, user);
   }
 
   /**

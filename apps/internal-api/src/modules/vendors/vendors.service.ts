@@ -725,8 +725,16 @@ export class VendorsService implements OnModuleInit {
       return row;
     });
 
-    const provisioning = await this.portalAccountService.provision(result.id, result.phone);
-    return { id: result.id, status: result.status, portalAccountProvisioned: provisioning.provisioned };
+    // The transporter's portal login: made now when they have an email, else from the console.
+    const provisioning = await this.portalAccountService.provision(result.id, actor);
+    return {
+      id: result.id,
+      status: result.status,
+      portalAccountProvisioned: provisioning.provisioned,
+      portalLoginEmail: provisioning.email ?? null,
+      portalLoginEmailed: provisioning.emailed ?? false,
+      portalLoginReason: provisioning.reason ?? null,
+    };
   }
 
   // ---- On hold / off hold ----------------------------------------------

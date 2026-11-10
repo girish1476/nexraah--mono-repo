@@ -160,14 +160,20 @@ export function submitVendor(id: string) {
  *
  * The response is deliberately narrow, not a full `VendorDetail` — the
  * caller re-fetches for that (`getVendor`), the same pattern as
- * `verifyKyc`/`verifyDocument`. `portalAccountProvisioned` is the honest
- * answer to whether this activation actually created the transporter's
- * portal login: until Supabase Auth Admin provisioning is wired up, it is
- * always `false`, and the caller should say so rather than claim a login
- * was created.
+ * `verifyKyc`/`verifyDocument`. `portalAccountProvisioned` says whether the
+ * transporter now has a portal login: made at activation when they have an
+ * email (and emailed to them when email is set up), otherwise made from the
+ * transporter's page. `portalLoginReason` says why not.
  */
 export function activateVendor(id: string) {
-  return request<{ id: string; status: VendorStatus; portalAccountProvisioned: boolean }>({
+  return request<{
+    id: string;
+    status: VendorStatus;
+    portalAccountProvisioned: boolean;
+    portalLoginEmail?: string | null;
+    portalLoginEmailed?: boolean;
+    portalLoginReason?: string | null;
+  }>({
     url: `/vendors/${id}/activate`,
     method: 'POST',
   });
@@ -260,4 +266,26 @@ export function updateIssue(id: string, patch: { status?: Issue['status']; note?
 /** GET /compliance/queues → the three segments of part 03 §4. */
 export function getComplianceQueues() {
   return request<ComplianceQueue[]>({ url: '/compliance/queues', method: 'GET' });
+}
+
+/** A portal password, answered once when it is made — it cannot be read back. */
+export interface PortalLoginIssued {
+  email: string;
+  temporaryPassword: string;
+  emailed: boolean;
+}
+
+/** GET /vendors/:id/portal-login — the address the transporter signs in with, or null. */
+export function getPortalLogin(id: string) {
+  return request<{ email: string | null }>({ url: `/vendors/${id}/portal-login`, method: 'GET' });
+}
+
+/** POST /vendors/:id/portal-login · `vendor.activate` */
+export function createPortalLogin(id: string, email: string) {
+  return request<PortalLoginIssued>({ url: `/vendors/${id}/portal-login`, method: 'POST', data: { email } });
+}
+
+/** POST /vendors/:id/portal-login/reset · `vendor.activate` */
+export function resetPortalLogin(id: string) {
+  return request<PortalLoginIssued>({ url: `/vendors/${id}/portal-login/reset`, method: 'POST' });
 }

@@ -420,6 +420,12 @@ function financialYearOf(d: Date): { from: string; to: string } {
   return { from: `${start}-04-01`, to: `${start + 1}-03-31` };
 }
 
+/** A portal password as the API makes them: twelve characters, nothing that reads two ways. */
+const demoPassword = () => {
+  const alphabet = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from({ length: 12 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
+};
+
 const findVendor = (idOrCode: string) => {
   const vendor =
     db.vendors.find((v) => v.id === idOrCode || v.code === idOrCode) ??
@@ -3024,7 +3030,43 @@ const routes: [string, RegExp, Handler][] = [
       vendor.status = 'ACTIVE';
       vendor.verifiedBy = USERS[role].name;
       vendor.panelDate ??= helpers.now().slice(0, 10);
-      return ok(vendor);
+      // Same rule as the API: a transporter with an email gets its portal login now.
+      const made = !vendor.portalLoginEmail && !!vendor.email;
+      if (made) vendor.portalLoginEmail = String(vendor.email).toLowerCase();
+      return ok({
+        ...vendor,
+        portalAccountProvisioned: !!vendor.portalLoginEmail,
+        portalLoginEmail: vendor.portalLoginEmail ?? null,
+        portalLoginEmailed: false,
+        portalLoginReason: vendor.portalLoginEmail ? (made ? null : 'ALREADY_HAS_LOGIN') : 'NO_EMAIL',
+      });
+    },
+  ],
+  // The transporter's portal login. The demo makes a password but sends nothing,
+  // and the password signs in nowhere — the demo portal has its own login.
+  ['GET', /^\/vendors\/([^/]+)\/portal-login$/, ({ params }) => ok({ email: findVendor(params[0]).portalLoginEmail ?? null })],
+  [
+    'POST',
+    /^\/vendors\/([^/]+)\/portal-login$/,
+    ({ params, body }) => {
+      const vendor = findVendor(params[0]);
+      if (vendor.portalLoginEmail) fail(409, 'PORTAL_LOGIN_EXISTS', 'This transporter already has a portal login. Reset its password instead.');
+      const email = String(body?.email ?? '').trim().toLowerCase();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) fail(400, 'PORTAL_LOGIN_BAD_EMAIL', 'That does not look like an email address.');
+      if (ACCOUNTS.some((u) => u.email.toLowerCase() === email))
+        fail(409, 'PORTAL_LOGIN_STAFF_EMAIL', 'That address is a staff sign-in. Give the transporter an address of its own.');
+      vendor.portalLoginEmail = email;
+      vendor.email ??= email;
+      return ok({ email, temporaryPassword: demoPassword(), emailed: false });
+    },
+  ],
+  [
+    'POST',
+    /^\/vendors\/([^/]+)\/portal-login\/reset$/,
+    ({ params }) => {
+      const vendor = findVendor(params[0]);
+      if (!vendor.portalLoginEmail) fail(409, 'PORTAL_LOGIN_NONE', 'This transporter has no portal login yet. Create one first.');
+      return ok({ email: vendor.portalLoginEmail, temporaryPassword: demoPassword(), emailed: false });
     },
   ],
   [

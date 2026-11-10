@@ -51,6 +51,7 @@ import { leadSourceLabel } from '../lead-labels';
 import { DocPreview } from '@/components/doc-preview';
 import { UploadCell } from '../upload-cell';
 import { VendorPlacements } from './placements';
+import { PortalLoginPanel } from './portal-login';
 
 const CHECK_TONE: Record<CheckStatus, Tone> = {
   MISSING: 'red',
@@ -195,8 +196,10 @@ export default function VendorDetailPage() {
       setConfirmActivate(false);
       toast(
         result.portalAccountProvisioned
-          ? 'Vendor activated · awardable across every branch · portal login created'
-          : 'Vendor activated · awardable across every branch · portal login not yet set up',
+          ? `Vendor activated · portal login ${result.portalLoginEmail ?? 'ready'}${result.portalLoginEmailed ? ' · details emailed to them' : ''}`
+          : result.portalLoginReason === 'NO_EMAIL'
+            ? 'Vendor activated · no email on file, so no portal login yet — create one below'
+            : 'Vendor activated · portal login not made — create one below',
       );
     } catch (e) {
       if (e instanceof ApiError && e.code === 'VENDOR_INCOMPLETE') {
@@ -666,6 +669,8 @@ export default function VendorDetailPage() {
                 />
               </Panel>
             )}
+
+            <PortalLoginPanel vendorId={vendor.id} vendorEmail={vendor.email ?? null} refreshKey={vendor.status} />
 
             <Panel title="Advance policy">
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>

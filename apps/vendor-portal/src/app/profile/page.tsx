@@ -20,6 +20,7 @@ import { invalidateAccount, profileAtom } from '@/lib/account';
 import { newIdempotencyKey } from '@/apis';
 import { forgetPushSubscription, getProfile, getPushKey, savePushSubscription, uploadDocument } from './apis';
 import { pushState, turnOff, turnOn, type PushState } from '@/lib/push';
+import { AuthError, changePassword } from '@/lib/auth';
 import { DOCUMENT_STATUS_LABEL, DocumentStatus, Profile, VendorDocument } from './types';
 
 /** What each document status means for the transporter, in one sentence. */
@@ -265,6 +266,85 @@ function DocumentRow({
  * Shows nothing at all when this browser cannot do it or the server has no
  * key yet: a switch that cannot work is worse than no switch.
  */
+/**
+ * Change password — the password Nexraah made for a new login is emailed or
+ * read out, so the transporter replaces it with one only they know.
+ */
+function PasswordCard() {
+  const [next, setNext] = useState('');
+  const [again, setAgain] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const mismatch = again.length > 0 && next !== again;
+
+  const save = async () => {
+    setBusy(true);
+    setNote(null);
+    try {
+      await changePassword(next);
+      setNext('');
+      setAgain('');
+      setNote({ ok: true, text: 'Password changed. Use the new one next time you sign in.' });
+    } catch (e) {
+      setNote({ ok: false, text: e instanceof AuthError ? e.message : 'The password could not be changed. Try again.' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="card" aria-label="Change password">
+      <p className="card-title" style={{ marginBottom: 4 }}>
+        Change password
+      </p>
+      <p className="muted">Replace the password Nexraah gave you with one only you know. At least 10 characters.</p>
+      <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+        <input
+          type="password"
+          name="new-password"
+          autoComplete="new-password"
+          placeholder="New password"
+          value={next}
+          onChange={(e) => setNext(e.target.value)}
+          className="field"
+        />
+        <input
+          type="password"
+          name="new-password-again"
+          autoComplete="new-password"
+          placeholder="New password again"
+          value={again}
+          onChange={(e) => setAgain(e.target.value)}
+          className="field"
+        />
+        {mismatch && <p style={{ color: 'var(--color-danger, #b91c1c)', fontSize: 14 }}>The two do not match.</p>}
+        <button
+          type="button"
+          onClick={save}
+          disabled={busy || next.length < 10 || next !== again}
+          className="tap"
+          style={{
+            border: 'none',
+            background: 'var(--color-accent)',
+            color: '#fff',
+            borderRadius: 999,
+            padding: '11px 20px',
+            fontWeight: 600,
+            opacity: busy || next.length < 10 || next !== again ? 0.55 : 1,
+          }}
+        >
+          {busy ? 'Saving…' : 'Change password'}
+        </button>
+        {note && (
+          <p role="status" style={{ fontSize: 14, color: note.ok ? 'var(--color-accent-700)' : 'var(--color-danger, #b91c1c)' }}>
+            {note.text}
+          </p>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function NotificationsCard() {
   const [publicKey, setPublicKey] = useState<string | null>(null);
   const [state, setState] = useState<PushState | null>(null);
@@ -484,6 +564,7 @@ export default function ProfilePage() {
       />
 
       <NotificationsCard />
+      <PasswordCard />
 
       <div className="card">
         <p className="card-title" style={{ marginBottom: 4 }}>
