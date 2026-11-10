@@ -66,7 +66,7 @@ export default function PrintLrPage() {
       {copies.map((copy) => (
         <div key={copy}>
           <Front label={copy} trip={trip} config={config} />
-          <Back trip={trip} config={config} />
+          <Back config={config} />
         </div>
       ))}
     </div>
@@ -206,13 +206,14 @@ function Front({ label, trip, config }: { label: string; trip: TripDetail; confi
   );
 }
 
-function Back({ trip, config }: { trip: TripDetail; config: Config }) {
+function Back({ config }: { config: Config }) {
   const sections = termsSections(lrTermsLines(config.company));
   return (
     <div className="sheet lr-sheet" style={sheet}>
       <div style={{ padding: '8px 12px' }}>
         <div style={{ textAlign: 'center', fontWeight: 700, color: INK, textDecoration: 'underline', fontSize: 13 }}>Unloading Purpose</div>
-        <Pair left={<Line label="Truck No" value={trip.lr?.vehicle?.registration || trip.vehicleNo} />} right={<Line label="Report Date/Time" />} />
+        {/* All blank — written by hand at the destination, the truck number included. */}
+        <Pair left={<Line label="Truck No" />} right={<Line label="Report Date/Time" />} />
         <Pair left={<Line label="Unloading Charges (Hamali)" />} right={<Line label="Unloading Date / Time" />} />
         <Pair left={<Line label="No. of Halting Days" />} right={<Line label="Halting Amount" />} />
         <Pair left={<Line label="No. of Material Received" />} right={<Line label="Trans Shipment Vehicle Number" />} />

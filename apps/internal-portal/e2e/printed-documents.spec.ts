@@ -62,6 +62,9 @@ test.describe('the printed lorry receipt and invoice', () => {
     }
     const back = page.locator('.sheet').nth(1);
     await expect(back).toContainText('Unloading Purpose');
+    // Filled by hand at the destination: the truck number prints on the front only.
+    await expect(front).toContainText('MH 15 GT 4482');
+    await expect(back).not.toContainText('MH 15 GT 4482');
     await expect(back).toContainText('Consignee Sign / Stamp');
     await expect(page.locator('[data-lr-terms]').first()).toContainText('Terms and Conditions');
     await expect(page.locator('[data-lr-terms]').first()).toContainText('Risk and insurance');
