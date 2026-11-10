@@ -188,7 +188,9 @@ test.describe('trip detail — 120881 (OPS, edit)', () => {
 test.describe('trip detail sub-pages — 120881 (OPS)', () => {
   test('documents page shows each document as a card, grouped, with the vehicle papers as one PDF', async ({ page }) => {
     await setRole(page, 'OPS');
-    await page.goto('/trips/t-120881/documents');
+    // The order page's Documents tab — where the card offers the E-LR.
+    await page.goto('/orders/i-4443');
+    await page.getByRole('tab', { name: /Documents/ }).click();
     await expect(panel(page, '🧾 Client documents')).toBeVisible();
     await expect(panel(page, '🚛 Vehicle documents')).toBeVisible();
     await expect(panel(page, '🪪 Driver')).toBeVisible();
@@ -283,5 +285,22 @@ test.describe('trip detail — 120855 (fully cleared money gates)', () => {
     await expect(page).toHaveURL(/\/trips\/t-120855\/charges$/);
     await expect(page.getByText('Charges are captured at POD verification by branch or compliance.')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Capture' })).toHaveCount(0);
+  });
+});
+
+test.describe('loading slip covered by the E-LR', () => {
+  test('offers only "Open the E-LR" — no upload, no empty file box', async ({ page }) => {
+    // Order 4443's trip 120881 has its E-LR (LR-88214) issued and no loading slip: the E-LR stands
+    // in for it, so the card is a record of that, not a request for a file.
+    await setRole(page, 'OPS');
+    // The order page's Documents tab — the trip page has its own LR tab and leaves the E-LR off its cards.
+    await page.goto('/orders/i-4443');
+    await page.getByRole('tab', { name: /Documents/ }).click();
+    const slip = page.locator('[data-doc="loading-slip"]');
+    await expect(slip).toContainText('Not needed · covered by E-LR LR-88214');
+    await expect(slip.getByRole('button', { name: /Open the E-LR/ })).toBeVisible();
+    await expect(slip.getByRole('button', { name: /Upload/ })).toHaveCount(0);
+    await expect(slip).not.toContainText('Not uploaded yet');
+    await expect(slip).not.toContainText('Uploaded once the truck is loaded');
   });
 });

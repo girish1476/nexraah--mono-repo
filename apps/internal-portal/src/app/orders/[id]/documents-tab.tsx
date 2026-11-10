@@ -454,7 +454,11 @@ export function OrderDocumentsTab({
     }
     return (
       <div key={item.id} data-doc={item.id} className="doc-card">
-        <DocPreview attachmentId={attachmentId} label={item.title} width={item.pdf ? 130 : 150} height={item.pdf ? 160 : 190} />
+        {/* With the E-LR standing in for the slip there is no file to show, and an
+            empty "Not uploaded yet" box read as something still owed. */}
+        {!coveredByLr && (
+          <DocPreview attachmentId={attachmentId} label={item.title} width={item.pdf ? 130 : 150} height={item.pdf ? 160 : 190} />
+        )}
         <div style={{ minWidth: 0 }}>
           <div className="doc-card-head">
             <strong>{item.title}</strong>
@@ -477,15 +481,15 @@ export function OrderDocumentsTab({
             <div style={{ color: 'var(--red)', fontSize: 'var(--text-sm)', marginTop: 8 }}>Rejected: {rejectedWhy}</div>
           )}
           <div className="doc-actions">
-            {canUpload && loaded && (
+            {/* Covered by the issued E-LR: the E-LR is the record, so the only
+                action offered is opening it — no "upload one anyway". */}
+            {canUpload && loaded && !coveredByLr && (
               <button
-                className={uploaded || coveredByLr ? 'btn btn-secondary btn-sm' : 'btn btn-sm'}
+                className={uploaded ? 'btn btn-secondary btn-sm' : 'btn btn-sm'}
                 disabled={busy}
                 onClick={() => openUpload(item)}
               >
-                {coveredByLr
-                  ? 'Upload one anyway'
-                  : uploaded
+                {uploaded
                     ? state === 'REJECTED'
                       ? 'Upload again'
                       : 'Replace file'
@@ -522,7 +526,7 @@ export function OrderDocumentsTab({
                 {lrStarted ? `📄 Open the E-LR${trip.lr?.code ? ` · ${trip.lr.code}` : ''}` : '＋ Generate E-LR'}
               </button>
             )}
-            {!loaded && !uploaded && (
+            {!loaded && !uploaded && !coveredByLr && (
               <span className="muted" style={{ fontSize: 12 }}>
                 Uploaded once the truck is loaded.
               </span>
