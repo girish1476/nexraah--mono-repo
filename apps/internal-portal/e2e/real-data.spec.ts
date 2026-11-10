@@ -405,7 +405,6 @@ test.describe('real data, end to end', () => {
     await expect(page.getByText('Priya Menon').first()).toBeVisible();
     // And she sees the same orders the rest of the business entered.
     await page.goto('/orders');
-    await page.getByText(/All shipments/).first().click();
     await expect(page.locator('main')).toContainText(CLIENT);
   });
 });

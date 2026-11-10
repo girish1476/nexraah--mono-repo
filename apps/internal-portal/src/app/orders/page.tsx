@@ -12,34 +12,24 @@ import {
   DataTable,
   EmptyState,
   ErrorState,
-  Glyph,
-  Journey,
   JourneyMini,
   Loading,
   ModuleGuard,
   NextAction,
   PageHeader,
-  PageIntro,
   Panel,
-  StageTabs,
   Stack,
   Tag,
   useCan,
 } from '@/lib/ui';
-import { listAllOrders, listOrders, OrderSearchParams, orderCounts } from './apis';
+import { listAllOrders, listOrders, OrderSearchParams } from './apis';
 import {
   ORDER_NEXT_ACTION,
-  ORDER_PHASE_EMOJI,
-  ORDER_PHASE_LABEL,
-  ORDER_PHASE_SEQUENCE,
   ORDER_STATUS_LABEL,
   ORDER_STATUS_SEQUENCE,
   ORDER_STATUS_TONE,
-  OrderCounts,
   OrderListRow,
-  OrderPhase,
   OrderStatus,
-  phaseFor,
 } from './types';
 
 const PAGE_SIZE = 200;
@@ -69,46 +59,28 @@ const FILTER_FIELDS: FilterField[] = [
   { kind: 'text', key: 'branchName', label: 'Branch name', placeholder: 'Branch name' },
 ];
 
-/** Every step short of the Payment tab's — the loads still being moved, delivered or billed. */
-const RUNNING = ALL_STATUSES.filter((s) => phaseFor(s) !== 'SETTLED').join(',');
-
-/** The steps that belong to one tab, so a tab is a server-side filter and not a view of one page. */
-function statusesIn(phase: OrderPhase | 'ALL'): string | undefined {
-  if (phase === 'ALL') return undefined;
-  return ALL_STATUSES.filter((s) => phaseFor(s) === phase).join(',');
-}
-
 /**
  * `/orders` — every shipment's lifecycle in one list.
  *
- * Built around one question rather than one entity: *what needs me, and what
- * do I do about it?* So the phase tabs lead, the row's dominant line is the
- * client and lane rather than the order code, the next action and its owner
- * sit second, and how far along it is renders as progress instead of a noun.
- * Nothing here mutates anything — every action opens the indent, trip, POD or
- * invoice that owns it.
+ * The search boxes lead and every order is listed under them, newest first —
+ * no phase tabs, intro or legend (owner's request, 10 Nov 2026): the Order
+ * stage box narrows to one step. The row's dominant line is the client and
+ * lane, the next action and its owner sit beside the stage, and how far along
+ * it is renders as progress. Nothing here mutates anything — every action
+ * opens the indent, trip, POD or invoice that owns it.
  */
 export default function OrdersPage() {
   const router = useRouter();
   const can = useCan();
   const [rows, setRows] = useState<OrderListRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [phase, setPhase] = useState<OrderPhase | 'ALL'>('NEEDS_YOU');
   const [filters, setFilters] = useState<FilterValues>(() => emptyFilters(FILTER_FIELDS));
   // What the server says matches, so the screen can admit when it is showing
   // a page rather than everything.
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [exportNote, setExportNote] = useState<string | null>(null);
-  // Counts come from the server, not from the loaded page. Deriving them from
-  // `rows` looked fine while the list was unpaged and every order was in
-  // memory; the moment it pages, a tab would report how many of *this page*
-  // are in that phase and read as a total. A tab that quietly undercounts is
-  // worse than no tab.
-  const [statusCounts, setStatusCounts] = useState<OrderCounts>({});
 
-  // The search the server is asked, without the step: the tabs and the stage
-  // box both decide that, and the counts deliberately ignore it.
   const searchParams = useMemo<OrderSearchParams>(
     () => ({
       q: filters.q,
@@ -119,17 +91,10 @@ export default function OrdersPage() {
       truck: filters.truck,
       ref: filters.ref,
       branchName: filters.branchName,
+      status: filters.stage || undefined,
     }),
     [filters],
   );
-  // Picking one stage wins over the tab; otherwise the tab's steps apply.
-  const status = filters.stage || statusesIn(phase);
-  // The page opens on "Action required". When nothing is, and nobody has
-  // searched, a blank under the search bar tells the operator nothing — the
-  // loads still running are listed there instead.
-  const mayShowRunning = phase === 'NEEDS_YOU' && activeFilterCount(filters) === 0;
-  const [showingRunning, setShowingRunning] = useState(false);
-  const listedStatus = showingRunning ? RUNNING : status;
 
   // Only the newest request may write to the screen — typing quickly fires
   // several, and a slow early one landing last would show stale rows.
@@ -139,38 +104,22 @@ export default function OrdersPage() {
     const mine = ++latest.current;
     setError(null);
     setLoading(true);
-    listOrders({ ...searchParams, status, limit: PAGE_SIZE })
-      .then(async (page) => {
+    listOrders({ ...searchParams, limit: PAGE_SIZE })
+      .then((page) => {
         if (mine !== latest.current) return;
-        const running = mayShowRunning && page.total === 0;
-        if (running) page = await listOrders({ ...searchParams, status: RUNNING, limit: PAGE_SIZE });
-        if (mine !== latest.current) return;
-        setShowingRunning(running);
         setRows(page.rows);
         setTotal(page.total);
       })
       .catch((e) => mine === latest.current && setError(errorMessage(e)))
       .finally(() => mine === latest.current && setLoading(false));
-  }, [searchParams, status, mayShowRunning]);
-  useEffect(load, [load]);
-
-  useEffect(() => {
-    let current = true;
-    orderCounts(searchParams)
-      .then((c) => current && setStatusCounts(c))
-      // A failed count must not blank the list — the tabs fall back to zero
-      // and the rows still render.
-      .catch(() => current && setStatusCounts({}));
-    return () => {
-      current = false;
-    };
   }, [searchParams]);
+  useEffect(load, [load]);
 
   const showMore = () => {
     if (!rows) return;
     const mine = ++latest.current;
     setLoading(true);
-    listOrders({ ...searchParams, status: listedStatus, limit: PAGE_SIZE, offset: rows.length })
+    listOrders({ ...searchParams, limit: PAGE_SIZE, offset: rows.length })
       .then((page) => {
         if (mine !== latest.current) return;
         setRows((prev) => [...(prev ?? []), ...page.rows]);
@@ -182,25 +131,11 @@ export default function OrdersPage() {
 
   const changeFilters = (next: FilterValues) => {
     setExportNote(null);
-    // Choosing a stage moves the tab to the phase it belongs to, so the tab
-    // strip never claims one thing while the list shows another.
-    if (next.stage && next.stage !== filters.stage) {
-      const owner = phaseFor(next.stage as OrderStatus);
-      if (phase !== 'ALL' && phase !== owner) setPhase(owner);
-    }
     setFilters(next);
-  };
-  const changeTab = (key: string) => {
-    setExportNote(null);
-    setPhase(key as OrderPhase | 'ALL');
-    // A stage that is not in the tab just chosen would empty the list; drop it.
-    if (filters.stage && key !== 'ALL' && phaseFor(filters.stage as OrderStatus) !== key) {
-      setFilters({ ...filters, stage: '' });
-    }
   };
 
   const exportRows = async () => {
-    const { rows: everything, total: all, truncated } = await listAllOrders({ ...searchParams, status: listedStatus });
+    const { rows: everything, total: all, truncated } = await listAllOrders(searchParams);
     downloadCsv(
       `orders-${todayStamp()}.csv`,
       [
@@ -219,21 +154,6 @@ export default function OrdersPage() {
         : `Exported ${everything.length.toLocaleString('en-IN')} order${everything.length === 1 ? '' : 's'}.`,
     );
   };
-
-  // Ten server-side status counts folded into the five phases the tabs show.
-  const counts = useMemo(() => {
-    const acc: Record<string, number> = {};
-    for (const [status, n] of Object.entries(statusCounts)) {
-      const phaseKey = phaseFor(status as OrderListRow['status']);
-      acc[phaseKey] = (acc[phaseKey] ?? 0) + (n ?? 0);
-    }
-    return acc;
-  }, [statusCounts]);
-
-  const countedTotal = useMemo(
-    () => Object.values(statusCounts).reduce((a, b) => a + (b ?? 0), 0),
-    [statusCounts],
-  );
 
   // A failure before anything has loaded takes the page; after that it only
   // takes the table, so the filter boxes keep what somebody typed into them.
@@ -300,16 +220,6 @@ export default function OrdersPage() {
     },
   ];
 
-  const tabs = [
-    ...ORDER_PHASE_SEQUENCE.map((p) => ({
-      key: p,
-      label: `${ORDER_PHASE_EMOJI[p]} ${ORDER_PHASE_LABEL[p]}`,
-      count: counts[p] ?? 0,
-      tone: p === 'NEEDS_YOU' ? ('flag' as const) : undefined,
-    })),
-    { key: 'ALL', label: '📦 All shipments', count: countedTotal },
-  ];
-
   return (
     <ModuleGuard module="orders">
       <PageHeader
@@ -324,32 +234,7 @@ export default function OrdersPage() {
           )
         }
       />
-      <PageIntro
-        what="One row per load, from the moment a client asks us to move it to the moment the transporter is paid in full."
-        who="Anyone can look here. To change something, open the load request, the trip or the bill it links to."
-      />
-
-      {/* The legend, and the page's own explanation of what a shipment goes
-          through. Ten emoji are self-explanatory only once — this is where
-          somebody learns them, so the little rail in every row below stops
-          needing a translation. */}
-      <details className="journey-legend">
-        <summary>
-          <Glyph size={17}>🚚</Glyph>
-          What every load goes through — the ten steps
-        </summary>
-        <div style={{ paddingTop: 14 }}>
-          <Journey step={0} />
-          <div className="hint" style={{ marginTop: 4 }}>
-            The row of dots in the list below is these ten steps. Filled dots are done, and the
-            emoji beside them names where the load is sitting right now.
-          </div>
-        </div>
-      </details>
-
       <Stack gap={0}>
-        <StageTabs tabs={tabs} value={phase} onChange={changeTab} />
-
         <FilterBar
           fields={FILTER_FIELDS}
           values={filters}
@@ -357,19 +242,9 @@ export default function OrdersPage() {
           onExport={exportRows}
           resultNote={
             exportNote ??
-            (loading
-              ? 'Updating…'
-              : showingRunning
-                ? `${total.toLocaleString('en-IN')} running order${total === 1 ? '' : 's'}`
-                : `${total.toLocaleString('en-IN')} order${total === 1 ? '' : 's'} found`)
+            (loading ? 'Updating…' : `${total.toLocaleString('en-IN')} order${total === 1 ? '' : 's'} found`)
           }
         />
-
-        {showingRunning && rows.length > 0 && (
-          <div className="hint" data-testid="running-orders-note" style={{ margin: '0 0 10px' }}>
-            ✅ Nothing is waiting on you. Every load still running is listed below — open one to see where it is.
-          </div>
-        )}
 
         <Panel pad={false}>
           <DataTable
@@ -379,37 +254,15 @@ export default function OrdersPage() {
             onRowClick={(r) => router.push(`/orders/${r.id}`)}
             empty={
               activeFilterCount(filters) > 0 ? (
-                phase !== 'ALL' && countedTotal > 0 ? (
-                  // The tab is a filter too. Say where the matches are rather
-                  // than showing a blank that reads as "no such order".
-                  <EmptyState
-                    title="Nothing in this tab matches"
-                    hint={`${countedTotal.toLocaleString('en-IN')} other order${countedTotal === 1 ? ' matches' : 's match'} this search under a different tab.`}
-                    action={
-                      <button type="button" className="btn" onClick={() => changeTab('ALL')}>
-                        Search all shipments
-                      </button>
-                    }
-                  />
-                ) : (
-                  <EmptyState
-                    title="Nothing matches these filters"
-                    hint="Loosen one of the boxes above, or use Clear to start again."
-                  />
-                )
-              ) : phase === 'NEEDS_YOU' ? (
-                <EmptyState
-                  title="Nothing is waiting on you"
-                  hint="Orders appear here when someone has to act — a placement that failed, advance documents to verify, or proof of delivery to check. Everything else is moving on its own."
-                />
+                <EmptyState title="Nothing matches these filters" hint="Loosen one of the boxes above, or use Clear to start again." />
               ) : (
                 <EmptyState
-                  title={`No orders in ${ORDER_PHASE_LABEL[phase as OrderPhase] ?? 'this phase'}`}
-                  hint="An order appears the moment an indent is raised, then tracks itself through placement, the trip, delivery and payment."
+                  title="No orders yet"
+                  hint="An order appears the moment a load request is raised, then tracks itself through placement, the trip, delivery and payment."
                   action={
                     can('indent.create') ? (
                       <Link href="/indents/new" className="btn">
-                        Raise an indent
+                        Raise a load request
                       </Link>
                     ) : undefined
                   }

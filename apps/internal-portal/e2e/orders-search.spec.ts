@@ -19,8 +19,6 @@ test.describe('orders search', () => {
   test.beforeEach(async ({ page }) => {
     await setRole(page, 'OPS');
     await page.goto('/orders');
-    // The default tab is "Action required"; search across every shipment.
-    await page.getByRole('tab', { name: /All shipments/ }).click();
     await expect(filter(page, 'vendor')).toBeVisible();
   });
 
@@ -47,8 +45,7 @@ test.describe('orders search', () => {
   });
 
   test('Clear empties every box and brings the list back', async ({ page }) => {
-    // Seven orders in the fixtures; waited for rather than counted, because the
-    // list still shows the "Action required" rows for a moment after the tab click.
+    // Seven orders in the fixtures, all listed when nothing is searched.
     const total = 7;
     await expect(rows(page)).toHaveCount(total);
     await filter(page, 'vendor').fill('rathod');
@@ -75,25 +72,22 @@ test.describe('orders search', () => {
   });
 });
 
-test.describe('orders — nothing waiting on you', () => {
-  test('the loads still running are listed under the search bar instead of a blank', async ({ page }) => {
-    // The Nashik desk has nothing in Action required, and one load delivered but not yet paid.
-    await setRole(page, scopedOperations());
-    await page.goto('/orders');
-    await expect(page.getByTestId('running-orders-note')).toBeVisible();
-    await expect(rows(page)).toHaveCount(1);
-    await expect(page.locator('main').getByText('1 running order')).toBeVisible();
-
-    // A search is a search: the running list gives way to what was asked for.
-    await filter(page, 'vendor').fill('no such transporter');
-    await expect(page.getByTestId('running-orders-note')).toHaveCount(0);
-    await expect(page.locator('main').getByText('Nothing matches these filters')).toBeVisible();
-  });
-
-  test('when something is waiting, Action required lists only that', async ({ page }) => {
+test.describe('orders — the page itself', () => {
+  test('opens straight on the search boxes and every order: no intro, legend or tabs', async ({ page }) => {
     await setRole(page, 'OPS');
     await page.goto('/orders');
-    await expect(rows(page)).toHaveCount(2);
-    await expect(page.getByTestId('running-orders-note')).toHaveCount(0);
+    await expect(filter(page, 'q')).toBeVisible();
+    await expect(rows(page)).toHaveCount(7);
+    await expect(page.getByRole('tab')).toHaveCount(0);
+    await expect(page.getByText('What every load goes through')).toHaveCount(0);
+    await expect(page.getByText('One row per load, from the moment')).toHaveCount(0);
+  });
+
+  test('a branch desk sees its own orders, and a search with no match says so', async ({ page }) => {
+    await setRole(page, scopedOperations());
+    await page.goto('/orders');
+    await expect(rows(page)).toHaveCount(1);
+    await filter(page, 'vendor').fill('no such transporter');
+    await expect(page.locator('main').getByText('Nothing matches these filters')).toBeVisible();
   });
 });
