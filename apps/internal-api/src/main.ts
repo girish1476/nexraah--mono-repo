@@ -21,7 +21,23 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, { rawBody: true });
 
   app.setGlobalPrefix('api/v1');
-  app.enableCors();
+  // Which sites' pages may call this API from a browser: CORS_ORIGIN, a
+  // comma-separated list (the console's address, e.g.
+  // https://app.nexraah.com,http://localhost:3002). It was open to every site;
+  // a session token still guarded each call, but nothing else needs to reach
+  // this API from a browser. Unset, it stays open — a deployment that has not
+  // named its console is not locked out — and says so at boot. Server-to-server
+  // callers (the transporter API, GPS units, the email hook) send no Origin and
+  // are not affected.
+  const allowed = (process.env.CORS_ORIGIN ?? '')
+    .split(',')
+    .map((o) => o.trim().replace(/\/$/, ''))
+    .filter(Boolean);
+  app.enableCors(allowed.length ? { origin: allowed } : undefined);
+  if (!allowed.length) {
+    // eslint-disable-next-line no-console
+    console.warn('[internal-api] CORS_ORIGIN is not set — any site may call this API from a browser. Set it to the console address.');
+  }
   // `forbidNonWhitelisted`: a property the DTO does not declare is a 400, not
   // a silent drop. Without it a stray or misspelt key answered "200 OK" with
   // the data gone — four confirmed instances (vendor fleet fields, lead notes,
