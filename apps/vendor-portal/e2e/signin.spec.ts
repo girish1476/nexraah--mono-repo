@@ -48,6 +48,22 @@ test.describe('signing in', () => {
     await expect(page.locator('.signin-error')).toContainText('Enter your email address');
   });
 
+  // A slow phone shows the form before its script runs. Pressing "Sign in" in
+  // that gap used to let the browser send the form itself — as a GET, with
+  // the password in the address bar and history — and the sign-in failed.
+  test('pressing Sign in before the page has finished loading never puts the password in the address', async ({ page }) => {
+    const documents: string[] = [];
+    page.on('request', (r) => {
+      if (r.resourceType() === 'document') documents.push(r.url());
+    });
+    await page.goto('/signin', { waitUntil: 'commit' });
+    await page.getByLabel('Your email').fill(EMAIL);
+    await page.getByLabel('Password').fill(PASSWORD);
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await expect(page).toHaveURL(/\/loads$/, { timeout: 15_000 });
+    expect(documents.filter((u) => u.includes('password'))).toEqual([]);
+  });
+
   test('signing out and back in works', async ({ page }) => {
     await page.goto('/signin');
     await page.getByLabel('Your email').fill(EMAIL);
