@@ -27,6 +27,7 @@ import {
 } from '@/lib/invoice-layout';
 import { ErrorState, Loading } from '@/lib/ui';
 import { TaxInvoiceSheet } from '@/components/tax-invoice-sheet';
+import { UpiQr } from '@/components/upi-qr';
 
 /**
  * Printed invoice — `/print/invoice/[invoiceId]` (part 08 §2.1).
@@ -204,6 +205,7 @@ function Sheet({ invoice }: { invoice: InvoiceDetail }) {
         {noteLines(invoice).map((line, i) => (
           <div key={i}>{line}</div>
         ))}
+        <UpiQr amountPaise={totals.duePaise} invoiceCode={invoice.code} />
 
         {termsLines(invoice).length > 0 && (
           <div data-invoice-terms>

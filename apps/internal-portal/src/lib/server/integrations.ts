@@ -1,6 +1,7 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 import {
   INTEGRATIONS,
+  UPI_ID_RE,
   integrationById,
   type IntegrationDef,
   type IntegrationId,
@@ -220,6 +221,13 @@ export async function publicSwitches(): Promise<IntegrationSwitches> {
     whatsapp: on('whatsapp'),
     gps: on('gps') && !!resolve(integrationById('gps') as IntegrationDef, all.gps).value.deviceKey,
     googleMapsKey: all.maps?.values?.googleMapsKey || null,
+    pincode: on('pincode'),
+    // The two ends are found by the Place finder, so distance needs it on too.
+    distance: on('distance') && on('geocode'),
+    upi:
+      on('upi') && all.upi?.values?.vpa && UPI_ID_RE.test(all.upi.values.vpa)
+        ? { vpa: all.upi.values.vpa, payeeName: all.upi.values.payeeName ?? '' }
+        : null,
   };
 }
 
@@ -331,6 +339,11 @@ export async function saveIntegration(id: IntegrationId, change: IntegrationChan
   // A test of the old settings says nothing about the new ones.
   if (settingsChanged) record.lastTest = null;
 
+  // Money is sent to this ID from every printed invoice: a typo is refused, not printed.
+  if (id === 'upi' && record.values?.vpa && !UPI_ID_RE.test(record.values.vpa)) {
+    throw new SettingRefused('Not saved — that UPI ID does not look right. It reads like name@bank, e.g. nexraah@hdfcbank.');
+  }
+
   if (id === 'email' && settingsChanged) {
     const config = mailConfigOf(resolve(def, record));
     if (!config) throw new SettingRefused(`Not saved. ${missingFor(def, resolve(def, record)) ?? 'The email settings are not complete.'}`);
@@ -426,6 +439,31 @@ async function attempt(id: IntegrationId, admin: string): Promise<string> {
       return 'Nothing to connect: the statement is opened on Payments → Bank statement check.';
     case 'whatsapp':
       return 'Nothing to connect: a WhatsApp link opens WhatsApp on the phone or computer it is tapped on.';
+    case 'pincode': {
+      const response = await get('https://api.postalpincode.in/pincode/411001');
+      if (!response.ok) throw new Error(`India Post answered ${response.status}.`);
+      const [first] = (await response.json()) as { Status?: string; PostOffice?: { District?: string; State?: string }[] | null }[];
+      const office = first?.PostOffice?.[0];
+      if (first?.Status !== 'Success' || !office) throw new Error('India Post did not find 411001.');
+      return `India Post named 411001: ${office.District}, ${office.State}.`;
+    }
+    case 'distance': {
+      // Pune to Mumbai, by road.
+      const response = await get('https://router.project-osrm.org/route/v1/driving/73.8567,18.5204;72.8777,19.076?overview=false');
+      if (!response.ok) throw new Error(`OSRM answered ${response.status}.`);
+      const body = (await response.json()) as { code?: string; routes?: { distance?: number }[] };
+      const metres = body.routes?.[0]?.distance;
+      if (body.code !== 'Ok' || !metres) throw new Error('OSRM found no road from Pune to Mumbai.');
+      const placeFinder = (await readOrNothing()).geocode?.enabled !== false;
+      return `OSRM routed Pune to Mumbai: ${Math.round(metres / 1000)} km by road.` + (placeFinder ? '' : ' The Place finder is switched off, so no distance is shown until it is on.');
+    }
+    case 'upi': {
+      const upi = (await publicSwitches()).upi;
+      if (!upi) throw new Error('No UPI ID is saved, or the code is switched off.');
+      const response = await get('https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js', { method: 'HEAD' });
+      if (!response.ok) throw new Error(`jsDelivr answered ${response.status} for the QR library.`);
+      return `Invoices will carry a code paying ${upi.vpa}${upi.payeeName ? ` (${upi.payeeName})` : ''}. Scan one printed invoice with a phone to check the name before sending them out.`;
+    }
   }
 }
 

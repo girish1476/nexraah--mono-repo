@@ -41,6 +41,7 @@ import { waivePenalty } from '@/app/pod/apis';
 import { POD_STATUS_LABEL, POD_TONE } from '@/lib/documents';
 import { TripDetail } from '../types';
 import { TripTabs } from './tabs';
+import { laneEnds, useRoadDistance } from '@/lib/road-distance';
 
 /** Trip detail — `/trips/[id]` (part 05 §2). */
 export default function TripDetailPage() {
@@ -125,6 +126,9 @@ export default function TripDetailPage() {
     }
   };
 
+  const [laneFrom, laneTo] = laneEnds(trip?.lane ?? '');
+  const roadKm = useRoadDistance(laneFrom, laneTo, trip?.distanceKm);
+
   if (error) return <ErrorState message={error} retry={load} />;
   if (!trip) return <Loading what="Loading the trip" />;
 
@@ -137,7 +141,7 @@ export default function TripDetailPage() {
       <PageHeader
         path={`/trips/${trip.code}`}
         title={trip.code}
-        sub={`${trip.lane}${trip.distanceKm != null ? ` · ${trip.distanceKm} km` : ''} · ${trip.vendorName}`}
+        sub={`${trip.lane}${roadKm != null ? ` · ${trip.distanceKm != null ? '' : '≈ '}${roadKm.toLocaleString('en-IN')} km` : ''} · ${trip.vendorName}`}
         module="trips"
         right={
           seesOrders ? (

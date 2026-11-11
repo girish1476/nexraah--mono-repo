@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -10,6 +10,7 @@ import { errorMessage } from '@/apis';
 import { uploadAttachment } from '@/lib/attachments';
 import { capitalizeWords } from '@/lib/format';
 import { checkGstin } from '@/lib/gstin';
+import { usePincodeLookup } from '@/lib/pincode';
 import {
   CityField,
   EmptyState,
@@ -94,6 +95,13 @@ export default function NewClientPage() {
 
   const engagement = form.watch('engagement');
   const gstinValue = form.watch('gstin');
+  // India Post fills the city and state from the PIN code when they are still blank.
+  const pinArea = usePincodeLookup(form.watch('billingPincode'));
+  useEffect(() => {
+    if (!pinArea) return;
+    if (!form.getValues('billingState')) form.setValue('billingState', pinArea.state, { shouldValidate: true });
+    if (!form.getValues('billingCity')) form.setValue('billingCity', pinArea.district, { shouldValidate: true });
+  }, [pinArea, form]);
 
   // The files chosen for each paper. They are sent once the client exists.
   const [files, setFiles] = useState<Partial<Record<ClientDocumentKind, File>>>({});
@@ -222,7 +230,12 @@ export default function NewClientPage() {
                 onBlur={(e) => form.setValue('billingState', capitalizeWords(e.target.value))}
               />
             </Field>
-            <Field label="PIN code" required error={form.formState.errors.billingPincode?.message}>
+            <Field
+              label="PIN code"
+              required
+              error={form.formState.errors.billingPincode?.message}
+              hint={pinArea ? `📮 ${pinArea.places.slice(0, 3).join(', ')}${pinArea.places.length > 3 ? '…' : ''} · ${pinArea.district}, ${pinArea.state}` : undefined}
+            >
               <input {...form.register('billingPincode')} inputMode="numeric" maxLength={6} placeholder="e.g. 531011" />
             </Field>
             <Field

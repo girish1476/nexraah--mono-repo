@@ -126,11 +126,28 @@ describe('switches', () => {
       whatsapp: true,
       gps: false,
       googleMapsKey: null,
+      pincode: true,
+      distance: true,
+      upi: null,
     });
     await saveIntegration('fuel', { enabled: false }, 'me@co.in');
     expect(await integrationOn('fuel')).toBe(false);
     expect((await publicSwitches()).fuel).toBe(false);
     expect(await integrationOn('geocode')).toBe(true);
+  });
+
+  it('take road distance off with the Place finder that finds its two ends', async () => {
+    await saveIntegration('geocode', { enabled: false }, 'me@co.in');
+    expect((await publicSwitches()).distance).toBe(false);
+  });
+
+  it('print a UPI code only for a UPI ID that is saved, well-formed and switched on', async () => {
+    await expect(saveIntegration('upi', { values: { vpa: 'nexraah-hdfcbank' } }, 'me@co.in')).rejects.toThrow(/UPI ID does not look right/);
+    expect((await publicSwitches()).upi).toBeNull();
+    await saveIntegration('upi', { values: { vpa: 'nexraah@hdfcbank', payeeName: 'Nexraah Logistics' } }, 'me@co.in');
+    expect((await publicSwitches()).upi).toEqual({ vpa: 'nexraah@hdfcbank', payeeName: 'Nexraah Logistics' });
+    await saveIntegration('upi', { enabled: false }, 'me@co.in');
+    expect((await publicSwitches()).upi).toBeNull();
   });
 
   it('carry a Google Maps key saved here to the browser', async () => {

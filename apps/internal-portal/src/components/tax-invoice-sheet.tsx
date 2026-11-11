@@ -18,6 +18,7 @@ import {
   isoDay,
 } from '@/lib/invoice-layout';
 import { invoiceTermsLines } from '@/lib/print-settings';
+import { UpiQr } from './upi-qr';
 import {
   type ManualDetails,
   amountInWords,
@@ -315,6 +316,7 @@ export function TaxInvoiceSheet({ invoice }: { invoice: TaxInvoiceView }) {
                 .map((l) => (
                   <div key={l}>{l}</div>
                 ))}
+              <UpiQr amountPaise={totals.totalPaise - invoice.receivedPaise} invoiceCode={invoice.code} />
               {invoice.notes ? (
                 <>
                   <div style={{ ...label, marginTop: 7 }}>Notes</div>

@@ -34,6 +34,7 @@ import type { VendorListRow } from '@/app/vendors/types';
 import { awardQuote, cancelIndent, createTrip, getIndent, reassignTransporter, recordQuote } from '../apis';
 import { EditLoadButton, EditQuoteButton, RemoveQuoteButton } from '@/components/corrections';
 import { IndentDetail, Quote } from '../types';
+import { useRoadDistance } from '@/lib/road-distance';
 
 const BAND_LABEL: Record<Quote['bandPosition'], string> = {
   BELOW_BAND: 'Below band',
@@ -170,6 +171,9 @@ export default function IndentDetailPage() {
     }
   };
 
+  // Typed on the record, else worked out by road (Control → Integrations → Road distance).
+  const roadKm = useRoadDistance(indent?.fromCity, indent?.toCity, indent?.distanceKm);
+
   if (error) return <ErrorState message={error} retry={load} />;
   if (!indent) return <Loading what="Loading the indent" />;
 
@@ -187,7 +191,7 @@ export default function IndentDetailPage() {
     ['Material', indent.material],
     ['Truck type', indent.truckType],
     ['Weight', `${indent.weightTn} MT`],
-    indent.distanceKm != null ? ['Distance', `${indent.distanceKm} km`] : null,
+    roadKm != null ? ['Distance', indent.distanceKm != null ? `${roadKm} km` : `≈ ${roadKm.toLocaleString('en-IN')} km by road`] : null,
     ['Pickup', fmtDate(indent.pickupDate)],
     ['Transit days', indent.transitDays],
     ['Reporting', reportingLabel(indent.reportingRule)],

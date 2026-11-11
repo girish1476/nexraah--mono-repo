@@ -21,7 +21,10 @@ export type IntegrationId =
   | 'reader'
   | 'whatsapp'
   | 'accounts'
-  | 'bank';
+  | 'bank'
+  | 'pincode'
+  | 'distance'
+  | 'upi';
 
 export interface IntegrationField {
   key: string;
@@ -241,7 +244,54 @@ export const INTEGRATIONS: IntegrationDef[] = [
     canSwitchOff: false,
     fields: [],
   },
+  {
+    id: 'pincode',
+    name: 'PIN code lookup',
+    emoji: '📮',
+    provider: 'India Post, through the free postalpincode.in service',
+    what: 'Fills the city and state from a 6-digit PIN code as it is typed, and names the post office areas it covers to check against the address.',
+    where: 'New client and client details → billing address',
+    cost: 'Free — no key',
+    canSwitchOff: true,
+    offMeans: 'The PIN code is still taken; city and state are typed by hand.',
+    fields: [],
+  },
+  {
+    id: 'distance',
+    name: 'Road distance',
+    emoji: '🛣️',
+    provider: 'OSRM (OpenStreetMap routing), with the Place finder for the two ends',
+    what: 'Works out how far a load travels by road, from its pick-up city to its delivery city.',
+    where: 'Load request → Distance · Trip → heading',
+    cost: 'Free — no key. Each lane is worked out once and remembered on that computer.',
+    canSwitchOff: true,
+    offMeans: 'Distance is shown only where somebody typed it in.',
+    fields: [],
+  },
+  {
+    id: 'upi',
+    name: 'UPI payment code',
+    emoji: '📲',
+    provider: 'Any UPI app — the code is made on the invoice itself; the QR drawing library loads from jsDelivr',
+    what: 'Prints a "scan to pay" QR code on every invoice for the amount still due, paid straight to the company’s UPI ID. Payments are still recorded as receipts with their UTR.',
+    where: 'Printed invoices — trip invoices and manual invoices',
+    cost: 'Free — UPI collections into a current account cost nothing up to the bank’s own limits',
+    canSwitchOff: true,
+    offMeans: 'Invoices print without the QR code; bank details stay.',
+    setup: [
+      'Ask the bank for the UPI ID (VPA) on the company’s current account, e.g. nexraah@hdfcbank.',
+      'Type it below with the name it is registered to, and save.',
+      'Print any invoice: the code sits beside the bank details. Scan it with a phone to check the name and amount before sending invoices out.',
+    ],
+    fields: [
+      { key: 'vpa', label: 'UPI ID (VPA)', placeholder: 'nexraah@hdfcbank', hint: 'The account the money goes to — check it twice.' },
+      { key: 'payeeName', label: 'Name on the UPI ID', placeholder: 'Nexraah Logistics Private Limited' },
+    ],
+  },
 ];
+
+/** A UPI ID: a handle, an @, and the bank's or app's name for itself. */
+export const UPI_ID_RE = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z][a-zA-Z0-9.\-]{1,63}$/;
 
 export const integrationById = (id: string): IntegrationDef | undefined => INTEGRATIONS.find((i) => i.id === id);
 
@@ -256,6 +306,10 @@ export interface IntegrationSwitches {
   gps: boolean;
   /** Null: no key saved here — the deployment's own setting, if any, is used. */
   googleMapsKey: string | null;
+  pincode: boolean;
+  distance: boolean;
+  /** The company's UPI ID, when one is saved and the code is switched on — null prints no code. */
+  upi: { vpa: string; payeeName: string } | null;
 }
 
 export const ALL_ON: IntegrationSwitches = {
@@ -264,6 +318,10 @@ export const ALL_ON: IntegrationSwitches = {
   ifsc: true,
   reader: true,
   whatsapp: true,
+  pincode: true,
+  distance: true,
+  // No UPI ID can be known without the settings, so no code is printed.
+  upi: null,
   // Off when the switches cannot be read: asking for positions nobody can send costs every map a round trip.
   gps: false,
   googleMapsKey: null,

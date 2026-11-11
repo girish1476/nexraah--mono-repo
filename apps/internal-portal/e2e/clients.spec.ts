@@ -237,3 +237,49 @@ test.describe('new client form', () => {
     await expect(page.getByText('Nashik · contract', { exact: false })).toBeVisible();
   });
 });
+
+test.describe('PIN code lookup on the new client form', () => {
+  test('typing a PIN code fills the blank city and state from India Post and names its areas', async ({ page }) => {
+    // India Post's answer, as it gives it — the test does not lean on their server being up.
+    await page.route('https://api.postalpincode.in/pincode/531011', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        headers: { 'access-control-allow-origin': '*' },
+        body: JSON.stringify([
+          {
+            Status: 'Success',
+            PostOffice: [
+              { Name: 'Atchutapuram', District: 'Visakhapatnam', State: 'Andhra Pradesh' },
+              { Name: 'Chodapalle', District: 'Visakhapatnam', State: 'Andhra Pradesh' },
+            ],
+          },
+        ]),
+      }),
+    );
+    await setRole(page, 'FINANCE');
+    await page.goto('/clients/new');
+    await field(page, 'billingPincode').locator('input').fill('531011');
+    await expect(field(page, 'billingState').locator('input')).toHaveValue('Andhra Pradesh');
+    await expect(field(page, 'billingCity').locator('input')).toHaveValue('Visakhapatnam');
+    await expect(field(page, 'billingPincode')).toContainText('Atchutapuram, Chodapalle · Visakhapatnam, Andhra Pradesh');
+  });
+
+  test('a city and state already typed are left as they are', async ({ page }) => {
+    await page.route('https://api.postalpincode.in/pincode/411001', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        headers: { 'access-control-allow-origin': '*' },
+        body: JSON.stringify([{ Status: 'Success', PostOffice: [{ Name: 'Pune GPO', District: 'Pune', State: 'Maharashtra' }] }]),
+      }),
+    );
+    await setRole(page, 'FINANCE');
+    await page.goto('/clients/new');
+    await field(page, 'billingCity').locator('input').fill('Pimpri');
+    await field(page, 'billingState').locator('input').fill('Maharashtra');
+    await field(page, 'billingPincode').locator('input').fill('411001');
+    await expect(field(page, 'billingPincode')).toContainText('Pune GPO');
+    await expect(field(page, 'billingCity').locator('input')).toHaveValue('Pimpri');
+  });
+});

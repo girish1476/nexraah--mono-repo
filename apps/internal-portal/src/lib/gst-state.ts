@@ -1,46 +1,17 @@
+import { GST_STATES } from './manual-invoice';
+
 /**
  * The state a GSTIN was issued in — its first two digits are the GST state
  * code. The lorry receipt prints a State beside each party's GSTIN; when
  * nobody typed one, this is what the GSTIN already says.
+ *
+ * The codes are the one list shared with invoices and the API
+ * (internal-api/src/common/manual-invoice.ts), plus 28: Andhra Pradesh's code
+ * before 2014, still on some older registrations.
  */
 const GST_STATE: Record<string, string> = {
-  '01': 'Jammu and Kashmir',
-  '02': 'Himachal Pradesh',
-  '03': 'Punjab',
-  '04': 'Chandigarh',
-  '05': 'Uttarakhand',
-  '06': 'Haryana',
-  '07': 'Delhi',
-  '08': 'Rajasthan',
-  '09': 'Uttar Pradesh',
-  '10': 'Bihar',
-  '11': 'Sikkim',
-  '12': 'Arunachal Pradesh',
-  '13': 'Nagaland',
-  '14': 'Manipur',
-  '15': 'Mizoram',
-  '16': 'Tripura',
-  '17': 'Meghalaya',
-  '18': 'Assam',
-  '19': 'West Bengal',
-  '20': 'Jharkhand',
-  '21': 'Odisha',
-  '22': 'Chhattisgarh',
-  '23': 'Madhya Pradesh',
-  '24': 'Gujarat',
-  '26': 'Dadra and Nagar Haveli and Daman and Diu',
-  '27': 'Maharashtra',
+  ...Object.fromEntries(GST_STATES.map((s) => [s.code, s.name])),
   '28': 'Andhra Pradesh',
-  '29': 'Karnataka',
-  '30': 'Goa',
-  '31': 'Lakshadweep',
-  '32': 'Kerala',
-  '33': 'Tamil Nadu',
-  '34': 'Puducherry',
-  '35': 'Andaman and Nicobar Islands',
-  '36': 'Telangana',
-  '37': 'Andhra Pradesh',
-  '38': 'Ladakh',
 };
 
 /** "37AAKCN9322K1ZY" → "Andhra Pradesh"; '' when there is no GSTIN or the code is unknown. */

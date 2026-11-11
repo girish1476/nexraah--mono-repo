@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { ApprovalRequiredError, errorMessage } from '@/apis';
 import { fmtDate, inr, inrCompact } from '@/lib/format';
+import { usePincodeLookup } from '@/lib/pincode';
 import {
   Column,
   DataTable,
@@ -79,6 +80,12 @@ export default function ClientDetailPage() {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Partial<Client>>({});
   const [saving, setSaving] = useState(false);
+  // India Post fills the state, and the city if blank, from a PIN code typed while editing.
+  const pinArea = usePincodeLookup(editing ? (draft.billingPincode ?? undefined) : undefined);
+  useEffect(() => {
+    if (!pinArea) return;
+    setDraft((d) => ({ ...d, billingState: d.billingState || pinArea.state, billingCity: d.billingCity || pinArea.district }));
+  }, [pinArea]);
 
   const openEdit = () => {
     if (!client) return;
@@ -652,6 +659,7 @@ export default function ClientDetailPage() {
           error={
             draft.billingPincode && !/^[1-9]\d{5}$/.test(draft.billingPincode) ? 'A PIN code is 6 digits' : undefined
           }
+          hint={pinArea ? `📮 ${pinArea.places.slice(0, 3).join(', ')}${pinArea.places.length > 3 ? '…' : ''} · ${pinArea.district}, ${pinArea.state}` : undefined}
         >
           <input
             inputMode="numeric"
