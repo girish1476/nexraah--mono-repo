@@ -48,10 +48,12 @@ try {
   process.exit(1);
 }
 
-// 2 · each built-in role's permissions.
+// 2 · each built-in role's permissions. A permission switched off in Access
+// control stays as a row at level NONE, which grants nothing — the API's guard
+// reads it as not held — so it is not counted as a grant here either.
 const rows = (
   await client.query(
-    'select r.code as role, p.code as perm from role_permissions rp join roles r on r.id = rp.role_id join permissions p on p.id = rp.permission_id',
+    "select r.code as role, p.code as perm from role_permissions rp join roles r on r.id = rp.role_id join permissions p on p.id = rp.permission_id where rp.level <> 'NONE'",
   )
 ).rows;
 await client.end();
