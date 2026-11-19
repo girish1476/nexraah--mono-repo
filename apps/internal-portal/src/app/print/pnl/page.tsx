@@ -48,10 +48,13 @@ export default function PrintPnlPage() {
           </div>
         </div>
 
+        {/* Scrolls inside the sheet on a phone rather than spilling past its border; prints at full width. */}
+        <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, marginTop: 10 }}>
           <thead>
             <tr>
-              {['Period', 'Placement', 'Loading', 'Unloading', 'Detention', 'Other', 'Total cost', 'Revenue', 'Margin', '%'].map(
+              {/* The same words as the P&L screen's columns. The statement is the monthly view, whose rows are branches. */}
+              {['Branch / period', 'Base vehicle cost', 'Loading', 'Unloading', 'Detention', 'Other', 'Total we paid out', 'Billed to the client', 'What we kept', '%'].map(
                 (h) => (
                   <th key={h} style={{ textAlign: 'left', borderBottom: '1px solid #000', padding: '5px 4px', fontSize: 9.5 }}>
                     {h}
@@ -89,6 +92,7 @@ export default function PrintPnlPage() {
             </tr>
           </tbody>
         </table>
+        </div>
 
         <div style={{ fontSize: 9.5, marginTop: 10, lineHeight: 1.45 }}>
           Cost is the placement rate paid to the transporter plus every charge booked against the load. No

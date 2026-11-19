@@ -3963,6 +3963,11 @@ const routes: [string, RegExp, Handler][] = [
     return ok(
       db.indents
         .filter((i: any) => ['OPEN', 'VENDOR_ASSIGNED', 'VEHICLE_PLACED', 'TRIP_CREATED'].includes(i.stage))
+        // A trip that has left, or has its advance paid, is not waiting on anyone — same rule as the server.
+        .filter((i: any) => {
+          const trip = i.stage === 'TRIP_CREATED' ? tripForIndent(i) : undefined;
+          return !trip || trip.stage === 'CANCELLED' || (trip.stage === 'OPEN' && !(trip.advancePaidPaise > 0));
+        })
         .filter((i: any) => {
           const last = lastMoved(i);
           return last !== null && last < cutoff;

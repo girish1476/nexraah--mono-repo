@@ -247,6 +247,12 @@ export class IndentsRepository {
    * not yet awarded, or awarded with the truck still to load. A review ("keep")
    * counts as a touch, so a kept indent leaves the list until it has been quiet
    * for another week.
+   *
+   * An indent's own stage stops at TRIP_CREATED — the trip carries the load from
+   * there — so its `updated_at` goes quiet the moment the truck is placed. Such an
+   * indent is only "waiting" while its trip has not left and no advance is paid
+   * (exactly when Cancel can still work); a truck on the road, delivered or
+   * closed is not a load to cancel or keep (preprod, 19 Nov 2026: 11 of 18 listed).
    */
   listStale(days: number, branchId?: string) {
     let query = this.db
@@ -266,6 +272,9 @@ export class IndentsRepository {
       .where('indents.stage', 'in', ['OPEN', 'VENDOR_ASSIGNED', 'VEHICLE_PLACED', 'TRIP_CREATED'])
       .where(
         sql<boolean>`greatest(indents.updated_at, coalesce(indents.last_reviewed_at, indents.updated_at)) < now() - make_interval(days => ${days})`,
+      )
+      .where(
+        sql<boolean>`not exists (select 1 from trips t where t.indent_id = indents.id and t.stage <> 'CANCELLED' and (t.stage <> 'OPEN' or t.advance_paid > 0))`,
       );
     if (branchId) query = query.where('indents.branch_id', '=', branchId);
     return query.orderBy('indents.updated_at').execute();

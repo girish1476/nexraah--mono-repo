@@ -103,5 +103,17 @@ describe('a stale indent', () => {
     stale = await call('OPS', 'GET', '/indents/stale');
     expect(stale.map((s: any) => s.id)).not.toContain('i-4468');
   });
+
+  it('leaves out a load whose truck has left — its indent goes quiet once the trip takes over', async () => {
+    const moving = db.indents.find((i: any) => {
+      if (i.stage !== 'TRIP_CREATED') return false;
+      const trip = db.trips.find((t: any) => t.indentId === i.id || t.indentCode === i.code);
+      return trip && trip.stage !== 'OPEN' && trip.stage !== 'CANCELLED';
+    })!;
+    expect(moving).toBeTruthy();
+    moving.updatedAt = new Date(Date.now() - 20 * 86_400_000).toISOString();
+    const stale = await call('OPS', 'GET', '/indents/stale');
+    expect(stale.map((s: any) => s.id)).not.toContain(moving.id);
+  });
 });
 
