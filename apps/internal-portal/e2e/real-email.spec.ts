@@ -34,7 +34,8 @@ test('the code arrives by email and signs in; no demo code, no demo panel', asyn
   await page.getByLabel('Digit 1').fill(code);
   await expect(page).not.toHaveURL(/\/signin$/, { timeout: 30_000 });
   // Signed in as the person and role on the server's list.
-  await expect(page.getByText('Kavya S').first()).toBeVisible({ timeout: 30_000 });
+  // On a phone the name sits in the top bar behind the menu, so it is on the page but not shown.
+  await expect(page.getByText('Kavya S').first()).toBeAttached({ timeout: 30_000 });
 });
 
 test('someone not on the list gets no email', async ({ page }) => {
