@@ -20,7 +20,7 @@ export const RESEND_AFTER_S = 60;
 export const MAX_ATTEMPTS = 5;
 export const COOKIE_NAME = 'nx_signin';
 
-export const ROLE_CODES = ['OPS', 'COMPLIANCE', 'FINANCE', 'BD', 'LEADERSHIP', 'ADMIN', 'LOADING_SUPERVISOR'] as const;
+export const ROLE_CODES = ['OPS', 'COMPLIANCE', 'FINANCE', 'BD', 'LEADERSHIP', 'ADMIN', 'LOADING_SUPERVISOR', 'HR'] as const;
 export type SignInRole = (typeof ROLE_CODES)[number];
 
 export interface Person {

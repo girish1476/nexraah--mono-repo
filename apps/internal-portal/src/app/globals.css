@@ -89,6 +89,10 @@
   --area-money-tint: #fcf1de;
   --area-control: #4a566b;
   --area-control-tint: #eef1f6;
+  --area-self: #c0365f;
+  --area-self-tint: #fdebf0;
+  --area-people: #b5541c;
+  --area-people-tint: #fcefe6;
 
   --color-neutral-200: #eef0f3;
   --color-neutral-300: #dfe3e9;
@@ -201,6 +205,10 @@
   --area-money-tint: #2c2416;
   --area-control: #9aa5b3;
   --area-control-tint: #222833;
+  --area-self: #ec8fa9;
+  --area-self-tint: #33171f;
+  --area-people: #eba070;
+  --area-people-tint: #33221a;
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 2px 6px rgba(0, 0, 0, 0.34), 0 1px 2px rgba(0, 0, 0, 0.3);

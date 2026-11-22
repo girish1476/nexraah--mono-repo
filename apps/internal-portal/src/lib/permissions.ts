@@ -17,6 +17,7 @@ export const ROLE_CODES = [
   'LEADERSHIP',
   'ADMIN',
   'LOADING_SUPERVISOR',
+  'HR',
 ] as const;
 
 export type RoleCode = (typeof ROLE_CODES)[number];
@@ -101,6 +102,22 @@ export const ROLES: Record<RoleCode, RoleDef> = {
     landsOn: '/loading',
     owns: 'Loading of the trips they are assigned, and uploading their loading and vehicle documents',
   },
+  /**
+   * Human resources. Added 2026-11-22 at the owner's direction: a login for
+   * HR alone, which runs the people side — employee records, attendance,
+   * leave approvals, holidays and the monthly payroll.
+   *
+   * Deliberately sees none of the freight screens: the desk that keeps
+   * salaries is not a desk that moves loads. Payroll is two-person — HR
+   * prepares a month (`payroll.run`), Leadership approves it
+   * (`payroll.approve`), so nobody both sets and signs off what is paid.
+   */
+  HR: {
+    code: 'HR',
+    label: 'Human resources',
+    landsOn: '/hr',
+    owns: 'Employee records, attendance, leave approvals, holidays and payroll',
+  },
 };
 
 /* ---- named permissions — part 01 §2.4 ---------------------------------- */
@@ -137,6 +154,10 @@ export const PERMISSIONS = [
   'approve.contract',
   'pnl.view_all',
   'pnl.view_own',
+  'hr.manage',
+  'leave.approve',
+  'payroll.run',
+  'payroll.approve',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -147,6 +168,8 @@ export const FIXED_PERMISSIONS: Permission[] = [
   'pod.waive',
   'rfq.submit',
   'config.manage',
+  // Two-person payroll: HR prepares, Leadership approves.
+  'payroll.approve',
 ];
 
 /** Freely attachable to any internal role (D-17, BR-41). */
@@ -225,6 +248,8 @@ export const SEED_GRANTS: Record<RoleCode, Permission[]> = {
   BD: ['rfq.edit', 'client.manage', 'indent.view', 'pnl.view_own', 'rate.revise'],
   /** No permission codes — see `ROLES.LOADING_SUPERVISOR`. */
   LOADING_SUPERVISOR: [],
+  /** The people desk. Prepares payroll; approving it is Leadership's (`payroll.approve`). */
+  HR: ['hr.manage', 'leave.approve', 'payroll.run'],
   /**
    * Leadership oversees every desk. As of 2026-08-26 that is literal rather
    * than nominal: they hold the operating permissions of Operations,
@@ -237,6 +262,8 @@ export const SEED_GRANTS: Record<RoleCode, Permission[]> = {
    * the audit trail is only worth reading while exactly one desk can pay.
    */
   LEADERSHIP: [
+    'leave.approve',
+    'payroll.approve',
     'indent.create',
     'indent.manage',
     'indent.reassign',
@@ -277,6 +304,10 @@ export const SEED_GRANTS: Record<RoleCode, Permission[]> = {
    * administrator may approve a POD they verified themselves.
    */
   ADMIN: [
+    'hr.manage',
+    'leave.approve',
+    'payroll.run',
+    'payroll.approve',
     'payment.release',
     'pod.waive',
     'rfq.submit',
@@ -334,7 +365,11 @@ export type ModuleKey =
   | 'search'
   | 'tickets'
   | 'loading'
-  | 'admin';
+  | 'admin'
+  /** My HR — every person's own attendance, leave, payslips and profile. */
+  | 'me'
+  /** The HR desk — everybody's records, approvals and payroll. */
+  | 'hr';
 
 const E: Level = 'EDIT';
 const V: Level = 'VIEW';
@@ -363,15 +398,15 @@ export const MODULE_ACCESS: Record<ModuleKey, Record<RoleCode, Level>> = {
    * simply means "can open it", so every role gets one place to see where a
    * shipment actually stands instead of piecing it together across screens.
    */
-  orders: { OPS: E, COMPLIANCE: E, FINANCE: E, BD: E, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
+  orders: { OPS: E, COMPLIANCE: E, FINANCE: E, BD: E, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N, HR: N },
   /** The third common segment. One box that finds anything, for everybody. */
-  search: { OPS: E, COMPLIANCE: E, FINANCE: E, BD: E, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
+  search: { OPS: E, COMPLIANCE: E, FINANCE: E, BD: E, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N, HR: N },
   /**
    * Raising a ticket is open to every desk — the person who spots wrong data
    * is whoever was using the screen. Acting on one is gated separately by
    * `ticket.resolve`, which only Administration holds.
    */
-  tickets: { OPS: E, COMPLIANCE: E, FINANCE: E, BD: E, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
+  tickets: { OPS: E, COMPLIANCE: E, FINANCE: E, BD: E, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N, HR: E },
   /*
    * My desk, Business snapshot and Global search are EDIT for every role at
    * the owner's direction — the three screens everybody starts from, common
@@ -379,8 +414,8 @@ export const MODULE_ACCESS: Record<ModuleKey, Record<RoleCode, Level>> = {
    * and Compliance VIEW on `home`, which meant two desks landed on a screen
    * they could read and not work.
    */
-  today: { OPS: E, COMPLIANCE: E, FINANCE: E, BD: E, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
-  home: { OPS: E, COMPLIANCE: E, FINANCE: E, BD: E, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
+  today: { OPS: E, COMPLIANCE: E, FINANCE: E, BD: E, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N, HR: N },
+  home: { OPS: E, COMPLIANCE: E, FINANCE: E, BD: E, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N, HR: N },
   /**
    * Operations owns vendor onboarding — it is the desk that actually brings a
    * transporter in and collects their papers. Compliance still owns the
@@ -388,7 +423,7 @@ export const MODULE_ACCESS: Record<ModuleKey, Record<RoleCode, Level>> = {
    * SEED_GRANTS.OPS, so an operator can open and fill a vendor record but
    * cannot pass it themselves.
    */
-  vendors: { OPS: E, COMPLIANCE: E, FINANCE: V, BD: V, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
+  vendors: { OPS: E, COMPLIANCE: E, FINANCE: V, BD: V, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N, HR: N },
   /**
    * Leadership was `NONE` here until 2026-08-26 — the compliance queue was the
    * one screen in the console they could not open at all, which sat oddly with
@@ -404,7 +439,7 @@ export const MODULE_ACCESS: Record<ModuleKey, Record<RoleCode, Level>> = {
    *
    * BD is `NONE`: rate work has no business in the document queue.
    */
-  compliance: { OPS: N, COMPLIANCE: E, FINANCE: V, BD: N, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
+  compliance: { OPS: N, COMPLIANCE: E, FINANCE: V, BD: N, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N, HR: N },
   /**
    * Compliance runs client onboarding — bringing a client in, collecting
    * their papers and clearing them — so `clients` is EDIT for them, the same
@@ -412,10 +447,10 @@ export const MODULE_ACCESS: Record<ModuleKey, Record<RoleCode, Level>> = {
    * keeps `client.manage` and with it the commercial record; the two
    * permissions divide the module rather than competing for it.
    */
-  clients: { OPS: V, COMPLIANCE: E, FINANCE: E, BD: E, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
-  indents: { OPS: E, COMPLIANCE: E, FINANCE: V, BD: V, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
-  trips: { OPS: E, COMPLIANCE: E, FINANCE: V, BD: V, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: V },
-  pod: { OPS: E, COMPLIANCE: E, FINANCE: V, BD: N, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
+  clients: { OPS: V, COMPLIANCE: E, FINANCE: E, BD: E, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N, HR: N },
+  indents: { OPS: E, COMPLIANCE: E, FINANCE: V, BD: V, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N, HR: N },
+  trips: { OPS: E, COMPLIANCE: E, FINANCE: V, BD: V, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: V, HR: N },
+  pod: { OPS: E, COMPLIANCE: E, FINANCE: V, BD: N, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N, HR: N },
   /**
    * Compliance verifies the advance document checklist; Finance releases the
    * money. Both need the payments screens, so the module is EDIT for both —
@@ -432,14 +467,14 @@ export const MODULE_ACCESS: Record<ModuleKey, Record<RoleCode, Level>> = {
    * BD is VIEW — a desk that prices lanes needs to see whether the money on
    * them actually moved, and nothing beyond that.
    */
-  payments: { OPS: V, COMPLIANCE: E, FINANCE: E, BD: V, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
-  invoices: { OPS: V, COMPLIANCE: N, FINANCE: E, BD: V, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
-  receivables: { OPS: V, COMPLIANCE: N, FINANCE: E, BD: V, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
+  payments: { OPS: V, COMPLIANCE: E, FINANCE: E, BD: V, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N, HR: N },
+  invoices: { OPS: V, COMPLIANCE: N, FINANCE: E, BD: V, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N, HR: N },
+  receivables: { OPS: V, COMPLIANCE: N, FINANCE: E, BD: V, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N, HR: N },
   /** BD's home screen — the lane price is built here. */
-  rfq: { OPS: E, COMPLIANCE: V, FINANCE: V, BD: E, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
-  telematics: { OPS: E, COMPLIANCE: V, FINANCE: N, BD: N, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
-  pnl: { OPS: V, COMPLIANCE: N, FINANCE: E, BD: V, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
-  approvals: { OPS: E, COMPLIANCE: E, FINANCE: E, BD: V, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
+  rfq: { OPS: E, COMPLIANCE: V, FINANCE: V, BD: E, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N, HR: N },
+  telematics: { OPS: E, COMPLIANCE: V, FINANCE: N, BD: N, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N, HR: N },
+  pnl: { OPS: V, COMPLIANCE: N, FINANCE: E, BD: V, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N, HR: N },
+  approvals: { OPS: E, COMPLIANCE: E, FINANCE: E, BD: V, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N, HR: N },
   /**
    * The audit trail. EDIT for the three desks that hold `audit.view`, for
    * the same reason `orders` is EDIT everywhere: the module level only
@@ -447,15 +482,27 @@ export const MODULE_ACCESS: Record<ModuleKey, Record<RoleCode, Level>> = {
    * the row from the sidebar entirely. Nothing on it mutates anything —
    * nothing CAN, the table refuses UPDATE and DELETE at the database.
    */
-  records: { OPS: N, COMPLIANCE: N, FINANCE: E, BD: N, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N },
-  admin: { OPS: N, COMPLIANCE: N, FINANCE: N, BD: N, LEADERSHIP: V, ADMIN: E, LOADING_SUPERVISOR: N },
+  records: { OPS: N, COMPLIANCE: N, FINANCE: E, BD: N, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N, HR: N },
+  admin: { OPS: N, COMPLIANCE: N, FINANCE: N, BD: N, LEADERSHIP: V, ADMIN: E, LOADING_SUPERVISOR: N, HR: N },
   /**
    * The loading supervisor's own screen: the trips assigned to them. The one
    * module ADMIN does not hold — the list is "trips assigned to *you*", and an
    * administrator is never a trip's loading supervisor, so for them it could
    * only ever be an empty page.
    */
-  loading: { OPS: N, COMPLIANCE: N, FINANCE: N, BD: N, LEADERSHIP: N, ADMIN: N, LOADING_SUPERVISOR: E },
+  loading: { OPS: N, COMPLIANCE: N, FINANCE: N, BD: N, LEADERSHIP: N, ADMIN: N, LOADING_SUPERVISOR: E, HR: N },
+  /**
+   * My HR — everybody's own attendance, leave, payslips and profile. EDIT for
+   * every role, loading supervisors included: a person always reaches their
+   * own record, whatever desk they sit at.
+   */
+  me: { OPS: E, COMPLIANCE: E, FINANCE: E, BD: E, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: E, HR: E },
+  /**
+   * The HR desk. Leadership opens it to approve payroll and see the people
+   * picture; Administration holds every module. No freight desk sees it —
+   * salaries are nobody else's business.
+   */
+  hr: { OPS: N, COMPLIANCE: N, FINANCE: N, BD: N, LEADERSHIP: E, ADMIN: E, LOADING_SUPERVISOR: N, HR: E },
 };
 
 export const MODULE_LABEL: Record<ModuleKey, string> = {
@@ -480,6 +527,8 @@ export const MODULE_LABEL: Record<ModuleKey, string> = {
   tickets: 'Tickets',
   loading: 'My loading trips',
   admin: 'Settings',
+  me: 'My HR',
+  hr: 'People',
 };
 
 /**
@@ -516,6 +565,8 @@ export const MODULE_EMOJI: Record<ModuleKey, string> = {
   tickets: '🎫',
   loading: '🏗️',
   admin: '🎛️',
+  me: '🙋',
+  hr: '🧑‍🤝‍🧑',
 };
 
 /** Plain-language labels for raw permission keys, for use anywhere a permission is named in the UI. */
@@ -560,6 +611,11 @@ export const PERMISSION_LABEL: Record<Permission, string> = {
   'approve.contract': 'Approve contracts',
   'pnl.view_all': 'View profit & loss (all branches)',
   'pnl.view_own': 'View profit & loss (own branch)',
+  'hr.manage': 'Keep employee records, attendance and holidays',
+  'leave.approve': 'Approve anybody’s leave and attendance corrections',
+  'payroll.run': 'Prepare the monthly payroll',
+  // The second key on the money: whoever prepared a month cannot approve it.
+  'payroll.approve': 'Approve the monthly payroll',
 };
 
 /** Which module a route belongs to, longest prefix first. */
@@ -585,6 +641,8 @@ const ROUTE_MODULES: [string, ModuleKey][] = [
   ['/tickets', 'tickets'],
   ['/dashboard', 'admin'],
   ['/admin', 'admin'],
+  ['/me', 'me'],
+  ['/hr', 'hr'],
 ];
 
 export function moduleForPath(pathname: string): ModuleKey | null {
@@ -621,7 +679,7 @@ export function levelFor(module: ModuleKey, role: RoleCode): Level {
  * out. They are separate desks doing separate work, so they are separate
  * areas.
  */
-export type AreaKey = 'desk' | 'ship' | 'biz' | 'supply' | 'money' | 'control';
+export type AreaKey = 'desk' | 'ship' | 'biz' | 'supply' | 'money' | 'control' | 'self' | 'people';
 
 export interface NavItem {
   label: string;
@@ -701,6 +759,23 @@ export const NAV: NavGroup[] = [
         emoji: '🏗️',
         note: 'Trips you are loading, and the documents to upload',
       },
+    ],
+  },
+  /**
+   * My HR — the bar every person gets, whatever their desk (2026-11-22, owner's
+   * direction): mark attendance, apply for leave, read payslips, keep their
+   * own details. Second in the sidebar so it is one tap from anywhere.
+   */
+  {
+    label: 'My HR',
+    area: 'self',
+    emoji: '🙋',
+    items: [
+      { label: 'Today & attendance', href: '/me', module: 'me', emoji: '⏱️', note: 'Check in, check out, and your month at a glance' },
+      { label: 'My calendar', href: '/me/attendance', module: 'me', emoji: '🗓️', note: 'Every day of the month, and corrections' },
+      { label: 'Leave', href: '/me/leave', module: 'me', emoji: '🌴', note: 'Your balances, and apply for time off' },
+      { label: 'Payslips', href: '/me/payslips', module: 'me', emoji: '💰', note: 'Every month’s payslip, ready to print' },
+      { label: 'My profile', href: '/me/profile', module: 'me', emoji: '🪪', note: 'Your details, bank account and documents' },
     ],
   },
   {
@@ -919,6 +994,23 @@ export const NAV: NavGroup[] = [
         emoji: '📈',
         note: 'What we earned against what we spent',
       },
+    ],
+  },
+  /**
+   * People — the HR desk (2026-11-22). Employee records, the attendance
+   * board, leave and correction approvals, holidays and policies, payroll.
+   */
+  {
+    label: 'People',
+    area: 'people',
+    emoji: '🧑‍🤝‍🧑',
+    items: [
+      { label: 'People overview', href: '/hr', module: 'hr', emoji: '🌤️', note: 'Who is in today, and everything waiting on HR' },
+      { label: 'Employees', href: '/hr/employees', module: 'hr', emoji: '🧑‍💼', note: 'Everyone on the rolls, their job and salary' },
+      { label: 'Attendance', href: '/hr/attendance', module: 'hr', emoji: '🕘', note: 'Today’s board, the monthly register, corrections' },
+      { label: 'Leave', href: '/hr/leave', module: 'hr', emoji: '🏖️', note: 'Approve time off, and see who is away' },
+      { label: 'Payroll', href: '/hr/payroll', module: 'hr', emoji: '🏦', note: 'Run the month, approve it, release payslips' },
+      { label: 'Holidays & policies', href: '/hr/settings', module: 'hr', emoji: '📜', note: 'Shift times, leave quotas, holidays, statutory rates' },
     ],
   },
   {

@@ -16,6 +16,7 @@ export const INTERNAL_ROLES = [
   'LEADERSHIP',
   'ADMIN',
   'LOADING_SUPERVISOR',
+  'HR',
 ] as const;
 
 export type InternalRoleCode = (typeof INTERNAL_ROLES)[number];
@@ -32,6 +33,8 @@ export const SEED_GRANTS: Record<InternalRoleCode, string[]> = {
   // Holds no permission codes: a loading supervisor acts on the trips they are
   // assigned to, checked per trip in `TripsService`, not through a blanket grant.
   LOADING_SUPERVISOR: [],
+  // Human resources (2026-11-22): the people desk. Approving payroll is Leadership's.
+  HR: ['hr.manage', 'leave.approve', 'payroll.run'],
   // Operations absorbed the branch manager — see the portal's permissions.ts
   // for the full reasoning, including the deliberate cost of `approve.exception`
   // landing on the desk that raises exceptions.
@@ -82,6 +85,8 @@ export const SEED_GRANTS: Record<InternalRoleCode, string[]> = {
   // stays out — a fixed permission that never belongs to two roles, so
   // oversight of the money never becomes a second pair of hands on it.
   LEADERSHIP: [
+    'leave.approve',
+    'payroll.approve',
     'indent.create',
     'indent.manage',
     'indent.reassign',
@@ -122,6 +127,10 @@ export const SEED_GRANTS: Record<InternalRoleCode, string[]> = {
    * unchanged: it only stops these being granted to *other* roles by PATCH.
    */
   ADMIN: [
+    'hr.manage',
+    'leave.approve',
+    'payroll.run',
+    'payroll.approve',
     'payment.release',
     'pod.waive',
     'rfq.submit',

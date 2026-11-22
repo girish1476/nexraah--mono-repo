@@ -79,6 +79,8 @@ export const ACCOUNTS: FixtureAccount[] = [
   { userId: 'u-adm', name: 'S. Krishnan', email: 'krishnan@nexraah.in', phone: '9820011207', role: 'ADMIN', branch: null },
   // The loading supervisor: assigned per trip, uploads that trip's loading and
   // vehicle documents. Unbranched, so any trip can be assigned to them.
+  // Human resources (2026-11-22): runs employee records, attendance, leave and payroll.
+  { userId: 'u-hr', name: 'Swathi Reddy', email: 'swathi@nexraah.in', phone: '9820011209', role: 'HR', branch: null },
   { userId: 'u-lgs', name: 'Ravi Kumar', email: 'ravi@nexraah.in', phone: '9820011208', role: 'LOADING_SUPERVISOR', branch: null },
 ];
 

@@ -6,6 +6,7 @@ import { journalLines } from '../lib/accounting';
 import { missingDependencies, readTable, validate } from '../lib/import-rules';
 import { checkManualInvoice, manualDetailsOf, manualTotals, type ManualInvoiceInput } from '../lib/manual-invoice';
 import { planRecovery } from './sdr-recovery';
+import { hrRoutes } from './hr';
 import { computeTransitPenalty } from './transit-penalty';
 import { bandPositionFor } from './band-position';
 import { isDemoData, loadPeople, persist, savePeople } from './persist';
@@ -2007,6 +2008,8 @@ function clientOnboardingDetail(client: any) {
 /* ---- routes ------------------------------------------------------------- */
 
 const routes: [string, RegExp, Handler][] = [
+  // HR — My HR and the People desk. Their own file and their own saved copy (mocks/hr.ts).
+  ...(hrRoutes as unknown as [string, RegExp, Handler][]),
   /* ------------------------------------------ browser notifications --- */
   // No push key in the demo — there is no server to send from — so the bell
   // in the user bar stays hidden. Saving and forgetting are accepted anyway.
