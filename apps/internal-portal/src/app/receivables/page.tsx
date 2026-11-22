@@ -7,6 +7,7 @@ import { getReceivables, recordReceipt } from '@/app/invoices/apis';
 import { AgeingBucket, ReceivablesResponse, ReceivablesRow } from '@/app/invoices/types';
 import { PAYMENT_MODES } from '@/lib/documents';
 import { fmtDate, inr } from '@/lib/format';
+import { OpeningBalances } from './opening-balances';
 import {
   Column,
   DataTable,
@@ -155,6 +156,8 @@ export default function ReceivablesPage() {
         <Panel pad={false}>
           <DataTable columns={columns} rows={data.rows} rowKey={(r) => r.invoiceId} empty="Nothing outstanding." />
         </Panel>
+
+        <OpeningBalances />
 
         <Panel title="Recent receipts" pad={false}>
           <DataTable

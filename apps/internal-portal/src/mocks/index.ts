@@ -3,6 +3,7 @@ import { ReaderUnavailable, readDetails } from '../lib/free-reader';
 import { integrationSwitches } from '../lib/integration-switches';
 import { livePositions, withLiveGps, withLiveUpdate } from '../lib/live-gps';
 import { journalLines } from '../lib/accounting';
+import { missingDependencies, readTable, validate } from '../lib/import-rules';
 import { checkManualInvoice, manualDetailsOf, manualTotals, type ManualInvoiceInput } from '../lib/manual-invoice';
 import { planRecovery } from './sdr-recovery';
 import { computeTransitPenalty } from './transit-penalty';
@@ -6207,6 +6208,41 @@ const routes: [string, RegExp, Handler][] = [
     },
   ],
 
+  /** `GET /opening-balances` — what was owed at go-live, open first and oldest first (ImportService.openingBalances). */
+  [
+    'GET',
+    /^\/opening-balances$/,
+    () => {
+      const today = Date.parse(new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10));
+      const rows = (db.openingBalances ?? []).map((b: any) => {
+        const party = b.vendorId ? db.vendors.find((v: any) => v.id === b.vendorId) : db.clients.find((c: any) => c.id === b.clientId);
+        return {
+          ...b,
+          partyType: b.vendorId ? 'VENDOR' : 'CLIENT',
+          partyId: b.vendorId ?? b.clientId,
+          partyName: (b.vendorId ? party?.legalName : party?.name) ?? '—',
+          ageDays: Math.max(0, Math.round((today - Date.parse(b.dated)) / 86_400_000)),
+        };
+      });
+      rows.sort((a: any, b: any) => a.status.localeCompare(b.status) || a.dated.localeCompare(b.dated));
+      return ok(rows);
+    },
+  ],
+  [
+    'POST',
+    /^\/opening-balances\/([^/]+)\/settle$/,
+    ({ params, body, role, userId }) => {
+      const why = String(body?.note ?? '').trim();
+      if (why.length < 5) fail(400, 'VALIDATION_ERROR', 'Say how it was settled — a receipt, cheque or adjustment reference — in a few words.');
+      const row = (db.openingBalances ?? []).find((b: any) => b.id === params[0]) ?? fail(404, 'NOT_FOUND', 'No such opening balance.');
+      const needs = row.kind === 'ADVANCE' ? 'payment.release' : 'receipt.record';
+      if (!SEED_GRANTS[role]?.includes(needs)) fail(403, 'PERMISSION_DENIED', `Missing permission: ${needs}.`);
+      if (row.status === 'SETTLED') fail(409, 'ALREADY_SETTLED', 'This opening balance is already settled.');
+      Object.assign(row, { status: 'SETTLED', settledAt: helpers.now(), settledBy: personName(userId, role), settledNote: why });
+      return ok({ id: row.id, status: 'SETTLED' });
+    },
+  ],
+
   /* ---- the books and the bank — lib/accounting.ts ------------------------- */
   /** `GET /accounting/journal?from=&to=` — invoices, receipts and released payments as journal lines. */
   [
@@ -6695,12 +6731,30 @@ const routes: [string, RegExp, Handler][] = [
         );
       }
       if (params[0] === 'opening-balances') {
-        fail(
-          501,
-          'IMPORT_SET_NOT_WRITABLE',
-          'Opening balances validate and reconcile, but committing them needs a file format that carries the ' +
-            'fields an advance, an unbilled trip and an invoice each require. That format is not yet specified.',
-        );
+        // Written as the server writes them (ImportService.writeOpeningBalances):
+        // one row per accepted line, carrying the batch that brought it in.
+        db.openingBalances ??= [];
+        const taken = new Set(db.openingBalances.map((b: any) => `${b.kind}:${String(b.reference).toUpperCase()}`));
+        const payload: any[] = batch.payload ?? [];
+        if (payload.some((p) => taken.has(`${p.kind}:${String(p.reference).toUpperCase()}`))) {
+          fail(409, 'ALREADY_EXISTS', 'A record with these details already exists.');
+        }
+        for (const p of payload) {
+          db.openingBalances.push({
+            id: `ob-${Date.now()}-${db.openingBalances.length + 1}`,
+            kind: p.kind,
+            reference: p.reference,
+            clientId: p.clientId,
+            vendorId: p.vendorId,
+            amountPaise: p.amountPaise,
+            dated: p.dated,
+            status: 'OPEN',
+            settledAt: null,
+            settledBy: null,
+            settledNote: null,
+            batchId: batch.id,
+          });
+        }
       }
 
       batch.status = 'COMMITTED';
@@ -6711,8 +6765,41 @@ const routes: [string, RegExp, Handler][] = [
   [
     'POST',
     /^\/admin\/import\/([^/]+)$/,
-    ({ params }) => {
+    async ({ params, body }) => {
       const set = params[0];
+      const file: any = typeof FormData !== 'undefined' && body instanceof FormData ? body.get('file') : null;
+      if (set === 'opening-balances' && file && typeof file.text === 'function') {
+        const missing = missingDependencies('opening-balances', { clients: db.clients.length, vendors: db.vendors.length });
+        if (missing.length > 0) {
+          fail(409, 'IMPORT_OUT_OF_ORDER', `The opening-balances set depends on ${missing.join(' and ')}, which ${missing.length > 1 ? 'have' : 'has'} not been imported yet.`);
+        }
+        const { header, rows } = readTable(await file.text());
+        if (header.length === 0) fail(400, 'VALIDATION_ERROR', 'The file has no header row.');
+        const byCode = (list: any[]) => new Map(list.filter((x) => x.code).map((x) => [String(x.code).toUpperCase(), x.id]));
+        const result = validate('opening-balances', rows, {
+          clients: byCode(db.clients),
+          vendors: byCode(db.vendors),
+          existing: new Set((db.openingBalances ?? []).map((b: any) => `${b.kind}:${String(b.reference).toUpperCase()}`)),
+          today: new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10),
+        });
+        const batch = {
+          id: `imp-${Date.now()}`,
+          set,
+          fileName: file.name ?? 'opening-balances.csv',
+          fileHash: Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', await file.arrayBuffer())))
+            .map((b) => b.toString(16).padStart(2, '0'))
+            .join(''),
+          rows: result.report.rowCount,
+          rejected: result.report.rejects.length,
+          actor: USERS.ADMIN.name,
+          committedAt: null,
+          status: result.aborted ? 'ABORTED' : 'DRY_RUN',
+          report: result.report,
+          payload: result.accepted,
+        };
+        db.importBatches.unshift(batch);
+        return ok(batch);
+      }
       const batch = {
         id: `imp-${Date.now()}`,
         set,

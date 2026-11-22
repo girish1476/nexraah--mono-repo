@@ -109,8 +109,10 @@ export default function OrderDetailPage() {
     if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  if (error) return <ErrorState message={error} retry={load} />;
-  if (!order) return <Loading what="Loading the order" />;
+  // Inside the guard, so a desk without access is sent to its own start page
+  // rather than shown the server's refusal as a broken screen.
+  if (error) return <ModuleGuard module="orders"><ErrorState message={error} retry={load} /></ModuleGuard>;
+  if (!order) return <ModuleGuard module="orders"><Loading what="Loading the order" /></ModuleGuard>;
 
   return (
     <ModuleGuard module="orders">

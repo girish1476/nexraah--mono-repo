@@ -1594,6 +1594,9 @@ export const db = {
   importBatches: [
     { id: 'imp-1', set: 'clients', fileName: 'clients-2026-08.csv', fileHash: 'e3b0c44298fc1c14', rows: 38, rejected: 0, actor: 'S. Krishnan', committedAt: daysAgo(9), status: 'COMMITTED' },
   ] as Record<string, any>[],
+
+  /** Balances carried in by an opening-balance import — none until one is committed. */
+  openingBalances: [] as Record<string, any>[],
 };
 
 export const helpers = { now, daysAgo, daysAhead };
@@ -1603,6 +1606,7 @@ const TRANSACTIONAL_KEYS = [
   'approvals', 'vendors', 'leads', 'marketGap', 'issues', 'clients', 'indents',
   'trips', 'podReceipts', 'payments', 'vendorBills', 'invoices', 'receipts',
   'rfqs', 'telematics', 'importBatches', 'rateRevisions', 'auditEvents', 'tickets',
+  'openingBalances',
 ] as const;
 
 /**

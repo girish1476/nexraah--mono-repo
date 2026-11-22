@@ -143,45 +143,85 @@ describe('clients', () => {
 });
 
 describe('opening balances — the control total decides', () => {
-  const header = 'kind,reference,amount_paise';
+  const header = 'kind,reference,party_code,amount_paise,dated,ageing_days';
+  const ctx = {
+    clients: new Map([['ACME', 'client-1']]),
+    vendors: new Map([['SRT', 'vendor-1']]),
+    existing: new Set<string>(),
+    today: '2026-11-22',
+  };
+  const run = (body: string, c = ctx) => validate('opening-balances', table(`${header}\n${body}`), c);
 
   it('reconciles when the supplied total matches the rows', () => {
-    const r = validate(
-      'opening-balances',
-      table(`${header}\nADVANCE,TRP-1,100000\nINVOICE,NEX-1,250000\nCONTROL_TOTAL,file,350000`),
-    );
+    const r = run('ADVANCE,TRP-1,SRT,100000,2026-10-01,\nINVOICE,NEX-1,ACME,250000,,30\nCONTROL_TOTAL,file,,350000,,');
     expect(r.report.controlTotals).toEqual({ suppliedPaise: 350000, computedPaise: 350000, reconciles: true });
     expect(r.aborted).toBe(false);
-    expect(r.accepted).toHaveLength(2);
+    expect(r.accepted).toEqual([
+      { kind: 'ADVANCE', reference: 'TRP-1', partyCode: 'SRT', clientId: null, vendorId: 'vendor-1', amountPaise: 100000, dated: '2026-10-01' },
+      { kind: 'INVOICE', reference: 'NEX-1', partyCode: 'ACME', clientId: 'client-1', vendorId: null, amountPaise: 250000, dated: '2026-10-23' },
+    ]);
   });
 
   it('aborts the entire import when it does not, carrying nothing forward', () => {
-    const r = validate(
-      'opening-balances',
-      table(`${header}\nADVANCE,TRP-1,100000\nINVOICE,NEX-1,250000\nCONTROL_TOTAL,file,999999`),
-    );
+    const r = run('ADVANCE,TRP-1,SRT,100000,,5\nINVOICE,NEX-1,ACME,250000,,5\nCONTROL_TOTAL,file,,999999,,');
     expect(r.report.controlTotals).toMatchObject({ computedPaise: 350000, reconciles: false });
     expect(r.aborted).toBe(true);
     expect(r.accepted).toEqual([]);
   });
 
   it('refuses a file that supplies no control total at all', () => {
-    const r = validate('opening-balances', table(`${header}\nADVANCE,TRP-1,100000`));
+    const r = run('ADVANCE,TRP-1,SRT,100000,,5');
     expect(r.aborted).toBe(true);
     expect(r.accepted).toEqual([]);
     expect(r.report.rejects[0].reason).toContain('No CONTROL_TOTAL row');
   });
 
   it('refuses a second control total rather than picking one', () => {
-    const r = validate(
-      'opening-balances',
-      table(`${header}\nADVANCE,TRP-1,100000\nCONTROL_TOTAL,file,100000\nCONTROL_TOTAL,again,100000`),
-    );
+    const r = run('ADVANCE,TRP-1,SRT,100000,,5\nCONTROL_TOTAL,file,,100000,,\nCONTROL_TOTAL,again,,100000,,');
     expect(r.report.rejects.some((x) => x.reason.includes('More than one CONTROL_TOTAL'))).toBe(true);
   });
 
   it('does not count the control total as an imported row', () => {
-    const r = validate('opening-balances', table(`${header}\nADVANCE,TRP-1,100000\nCONTROL_TOTAL,file,100000`));
-    expect(r.report.rowCount).toBe(1);
+    expect(run('ADVANCE,TRP-1,SRT,100000,,5\nCONTROL_TOTAL,file,,100000,,').report.rowCount).toBe(1);
+  });
+
+  it('names whose balance it is: a client for invoices and unbilled trips, a transporter for advances', () => {
+    const r = run('INVOICE,NEX-1,SRT,100000,,5\nCONTROL_TOTAL,file,,100000,,');
+    expect(r.report.rejects[0].reason).toBe('No client with code "SRT" — import or add the client first');
+    const missing = run('ADVANCE,TRP-1,,100000,,5\nCONTROL_TOTAL,file,,100000,,');
+    expect(missing.report.rejects[0].reason).toContain('party_code (the transporter code');
+    expect(run('UNBILLED,LR-9,acme,100000,,5\nCONTROL_TOTAL,file,,100000,,').accepted[0]).toMatchObject({ clientId: 'client-1' });
+  });
+
+  it('stops the whole file over one bad line, even when the rest adds up to the total', () => {
+    const r = run('ADVANCE,TRP-1,SRT,100000,,5\nINVOICE,NEX-1,NOBODY,250000,,5\nCONTROL_TOTAL,file,,100000,,');
+    expect(r.report.controlTotals?.reconciles).toBe(true);
+    expect(r.aborted).toBe(true);
+    expect(r.accepted).toEqual([]);
+  });
+
+  it('refuses a reference twice in one file, or one an earlier import already carried in', () => {
+    const twice = run('ADVANCE,TRP-1,SRT,100000,,5\nADVANCE,trp-1,SRT,100000,,5\nCONTROL_TOTAL,file,,200000,,');
+    expect(twice.report.rejects[0].reason).toBe('ADVANCE trp-1 appears twice in this file');
+    const again = run('ADVANCE,TRP-1,SRT,100000,,5\nCONTROL_TOTAL,file,,100000,,', { ...ctx, existing: new Set(['ADVANCE:TRP-1']) });
+    expect(again.report.rejects[0].reason).toContain('already carried in');
+    // The same reference under a different kind is a different balance.
+    expect(run('ADVANCE,X-1,SRT,100,,5\nINVOICE,X-1,ACME,100,,5\nCONTROL_TOTAL,file,,200,,').aborted).toBe(false);
+  });
+
+  it('needs an age: a date, or a number of days counted back from today', () => {
+    expect(run('ADVANCE,TRP-1,SRT,100000,,\nCONTROL_TOTAL,file,,100000,,').report.rejects[0].reason).toContain('Give either dated');
+    expect(run('ADVANCE,TRP-1,SRT,100000,05/10/2026,\nCONTROL_TOTAL,file,,100000,,').accepted[0]).toMatchObject({ dated: '2026-10-05' });
+    expect(run('ADVANCE,TRP-1,SRT,100000,2026-12-01,\nCONTROL_TOTAL,file,,100000,,').report.rejects[0].reason).toContain('in the future');
+    expect(run('ADVANCE,TRP-1,SRT,100000,soon,\nCONTROL_TOTAL,file,,100000,,').report.rejects[0].reason).toContain('dated must be a date');
+  });
+
+  it('refuses a zero or negative balance — nothing is owed', () => {
+    expect(run('ADVANCE,TRP-1,SRT,0,,5\nCONTROL_TOTAL,file,,0,,').report.rejects[0].reason).toContain('above zero');
+  });
+
+  it('without a database to check against, no party is known, so nothing passes', () => {
+    const r = validate('opening-balances', table(`${header}\nADVANCE,TRP-1,SRT,100000,,5\nCONTROL_TOTAL,file,,100000,,`));
+    expect(r.aborted).toBe(true);
   });
 });

@@ -174,8 +174,10 @@ export default function IndentDetailPage() {
   // Typed on the record, else worked out by road (Control → Integrations → Road distance).
   const roadKm = useRoadDistance(indent?.fromCity, indent?.toCity, indent?.distanceKm);
 
-  if (error) return <ErrorState message={error} retry={load} />;
-  if (!indent) return <Loading what="Loading the indent" />;
+  // Inside the guard, so a desk without access is sent to its own start page
+  // rather than shown the server's refusal as a broken screen.
+  if (error) return <ModuleGuard module="indents"><ErrorState message={error} retry={load} /></ModuleGuard>;
+  if (!indent) return <ModuleGuard module="indents"><Loading what="Loading the indent" /></ModuleGuard>;
 
   // Each step's completion comes from the data it actually represents, not
   // from matching the indent's single `stage` against a lookup entry — two

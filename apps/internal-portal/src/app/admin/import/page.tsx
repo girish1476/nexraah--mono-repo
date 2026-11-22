@@ -36,7 +36,8 @@ const SETS: { key: ImportSet; label: string; note: string }[] = [
   {
     key: 'opening-balances',
     label: '3 · Opening balances',
-    note: 'Outstanding advances, unbilled trips, open invoices and their ageing. Must reconcile to a control total supplied with the file; a mismatch aborts the whole import.',
+    note:
+      'Outstanding advances, unbilled trips and open invoices, with their dates. Columns: kind (INVOICE, UNBILLED, ADVANCE or CONTROL_TOTAL), reference (the old invoice, trip or LR number), party_code (the client code for INVOICE and UNBILLED, the transporter code for ADVANCE), amount_paise, and dated or ageing_days. One CONTROL_TOTAL row must equal the sum of the rest; a mismatch or any bad line aborts the whole import. Committed balances appear under Receivables → Carried in at go-live.',
   },
 ];
 
@@ -140,7 +141,7 @@ export default function ImportPage() {
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
             <div style={{ flex: '0 1 260px' }}>
               <Field label="Set" required>
-                <select value={set} onChange={(e) => setSet(e.target.value as ImportSet)} disabled={!can('config.manage')}>
+                <select value={set} onChange={(e) => { setSet(e.target.value as ImportSet); setBatch(null); }} disabled={!can('config.manage')}>
                   {SETS.map((s) => (
                     <option key={s.key} value={s.key}>
                       {s.label}
@@ -184,7 +185,7 @@ export default function ImportPage() {
               </div>
             </div>
 
-            {aborted && !totals && (
+            {aborted && (!totals || totals.reconciles) && (
               <Banner tone="red" title="This file cannot be committed">
                 It was read and checked, but nothing here can be written. The rejects below say why —
                 correct the file and upload it again.
@@ -204,8 +205,8 @@ export default function ImportPage() {
             {batch.report.rejects.length > 0 && (
               <div style={{ marginTop: 12 }}>
                 <div className="eyebrow">Rejects</div>
-                {batch.report.rejects.map((r) => (
-                  <div key={r.row} style={{ fontSize: 12.5, padding: '4px 0' }}>
+                {batch.report.rejects.map((r, i) => (
+                  <div key={`${r.row}-${i}`} style={{ fontSize: 12.5, padding: '4px 0' }}>
                     <span className="mono">row {r.row}</span> · {r.reason}
                   </div>
                 ))}

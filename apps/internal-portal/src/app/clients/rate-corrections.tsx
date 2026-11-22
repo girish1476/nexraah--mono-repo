@@ -198,12 +198,17 @@ export function RejectedLanesPanel({
   onResent: () => void;
 }) {
   const canCorrect = useCanCorrectRates();
+  const can = useCan();
+  // Who the server shows turned-down rates to (rate-revision.controller.ts).
+  // Anyone else was sent a request they were always refused.
+  const maySee = can('rate.revise') || can('approve.contract') || can('client.manage');
   const toast = useToast();
   const [rows, setRows] = useState<RejectedRateLane[]>([]);
   const [again, setAgain] = useState<RejectedRateLane | null>(null);
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
+    if (!maySee) return;
     let alive = true;
     getRejectedRateLanes(clientId)
       .then((r) => alive && setRows(r))
@@ -211,7 +216,7 @@ export function RejectedLanesPanel({
     return () => {
       alive = false;
     };
-  }, [clientId, refreshKey, tick]);
+  }, [clientId, refreshKey, tick, maySee]);
 
   if (rows.length === 0) return null;
 

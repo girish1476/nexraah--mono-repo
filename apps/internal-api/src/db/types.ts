@@ -1042,6 +1042,24 @@ export interface ImportBatchesTable {
   updated_at: Generated<string>;
 }
 
+/** Part 12 · opening balances carried in at go-live. `20261122010000_opening_balances.sql`. */
+export interface OpeningBalancesTable {
+  id: Generated<string>;
+  kind: string;
+  reference: string;
+  client_id: string | null;
+  vendor_id: string | null;
+  amount_paise: number;
+  dated: string;
+  status: Generated<string>;
+  settled_at: string | null;
+  settled_by: string | null;
+  settled_note: string | null;
+  batch_id: string;
+  created_at: Generated<string>;
+  updated_at: Generated<string>;
+}
+
 export interface Database {
   branches: BranchesTable;
   roles: RolesTable;
@@ -1051,6 +1069,7 @@ export interface Database {
   users: UsersTable;
   config: ConfigTable;
   import_batches: ImportBatchesTable;
+  opening_balances: OpeningBalancesTable;
   number_series: NumberSeriesTable;
   attachments: AttachmentsTable;
   approvals: ApprovalsTable;

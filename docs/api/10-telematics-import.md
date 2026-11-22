@@ -174,21 +174,36 @@ closed RFQ referenced `IMPORT/<batch id>`, one per client per batch.
 
 | Column | Required | Notes |
 |---|---|---|
-| `kind` | yes | `ADVANCE`, `UNBILLED`, `INVOICE`, or `CONTROL_TOTAL` |
-| `reference` | yes | Ignored on the control-total row |
-| `amount_paise` | yes | Whole paise |
-| `ageing_days` | no | |
+| `kind` | yes | `INVOICE` (an open client invoice), `UNBILLED` (a trip run but not yet billed), `ADVANCE` (an advance paid to a transporter and not yet adjusted), or `CONTROL_TOTAL` |
+| `reference` | yes | The old invoice, trip or LR number. A `kind` + `reference` pair may appear once — in the file and across every import. Ignored on the control-total row |
+| `party_code` | yes | The client's code for `INVOICE` and `UNBILLED`, the transporter's code for `ADVANCE`. Must already exist |
+| `amount_paise` | yes | Whole paise, above zero |
+| `dated` | one of these two | The invoice, trip or advance date (`2026-10-05`, `05/10/2026`, `05 Oct 2026`). Not in the future |
+| `ageing_days` | | Days old as of the dry run, used when `dated` is blank |
+
+```csv
+kind,reference,party_code,amount_paise,dated,ageing_days
+INVOICE,OLD-INV-77,CLT-0092,12500000,,45
+UNBILLED,LR-5521,CLT-0092,3150000,2026-10-28,
+ADVANCE,OLD-TRP-12,VND-2214,4000000,2026-10-01,
+CONTROL_TOTAL,total,,19650000,,
+```
 
 **Exactly one `CONTROL_TOTAL` row is required.** Its `amount_paise` is compared
-against the sum of every other row; a mismatch — or a missing control total —
-aborts the whole file, and nothing is carried forward to a commit.
+against the sum of every other row; a mismatch, a missing control total, or
+**any line that cannot be written** aborts the whole file, and nothing is
+carried forward to a commit. Money is all or nothing: a dropped line would be a
+balance the old books show and Nexraah would not.
 
-> **This set validates but does not yet commit.** An advance, an unbilled trip
-> and an open invoice land in three different tables and each needs fields
-> (trip, UTR, value date; client, invoice dates, line totals) that a
-> `kind,reference,amount` line cannot supply, and no format here carries them.
-> Committing returns `501 IMPORT_SET_NOT_WRITABLE` rather than writing an
-> invented mapping into the ledger. Extend the format above before wiring it.
+A commit writes each line to `opening_balances` — its own table, carrying the
+batch id — and not as invoices, trips or payments, which need fields (GST
+lines, truck and route, UTR and value date) a balance line does not have.
+
+`GET /opening-balances` lists them (open first, oldest first, with `ageDays`);
+the receivables page shows them as **Carried in at go-live**.
+`POST /opening-balances/:id/settle { note }` closes one with a note of at least
+five characters saying how — `receipt.record` for a client balance,
+`payment.release` for an advance. Settling is audited.
 
 ## Reading the report
 

@@ -327,6 +327,62 @@ test.describe('go-live import', () => {
     await expect(fieldControl(page, 'CSV file')).toBeDisabled();
     await expect(page.getByRole('button', { name: 'Run dry run' })).toBeDisabled();
   });
+
+  const openingFile = (...lines: string[]) => ({
+    name: 'opening-balances.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from(['kind,reference,party_code,amount_paise,dated,ageing_days', ...lines].join('\n')),
+  });
+
+  test('opening balances commit, show under Receivables, and are settled there with a note', async ({ page }) => {
+    await setRole(page, 'ADMIN');
+    await page.goto('/admin/import');
+    await fieldControl(page, 'Set').selectOption('opening-balances');
+    await fieldControl(page, 'CSV file').setInputFiles(
+      openingFile(
+        'INVOICE,OLD-INV-77,CLT-0092,12500000,,45',
+        'ADVANCE,OLD-TRP-12,VND-2214,4000000,2026-10-01,',
+        'CONTROL_TOTAL,total,,16500000,,',
+      ),
+    );
+    await page.getByRole('button', { name: 'Run dry run' }).click();
+    await expect(page.getByText('Control totals reconcile')).toBeVisible();
+    await page.getByRole('button', { name: 'Confirm and commit' }).click();
+    await expect(page.getByText('Committed · 2 rows in one transaction')).toBeVisible();
+
+    // In the app, not a reload: the test data lives only in this page's memory.
+    await page.evaluate(() => (window as any).next.router.push('/receivables'));
+    const panel = page.locator('.surface').filter({ hasText: 'Carried in at go-live' });
+    const invoice = panel.locator('tbody tr').filter({ hasText: 'OLD-INV-77' });
+    await expect(invoice).toContainText('Open invoice');
+    await expect(invoice).toContainText('Berger Paints');
+    await expect(invoice).toContainText('45 days');
+    await expect(panel.locator('tbody tr').filter({ hasText: 'OLD-TRP-12' })).toContainText('Rathod Roadlines');
+    await expect(panel.getByText('2 still open')).toBeVisible();
+
+    await invoice.getByRole('button', { name: 'Mark settled' }).click();
+    const dialog = page.getByRole('dialog');
+    const confirm = dialog.getByRole('button', { name: 'Mark settled' });
+    await expect(confirm).toBeDisabled();
+    await fieldControl(page, 'How it was settled').fill('Paid by NEFT, UTR HDFC0012345');
+    await confirm.click();
+    await expect(page.getByText('Open invoice OLD-INV-77 marked settled')).toBeVisible();
+    await expect(invoice).toContainText('Settled');
+    await expect(panel.getByText('1 still open')).toBeVisible();
+  });
+
+  test('an opening balance for nobody stops the whole file, even when the total adds up', async ({ page }) => {
+    await setRole(page, 'ADMIN');
+    await page.goto('/admin/import');
+    await fieldControl(page, 'Set').selectOption('opening-balances');
+    await fieldControl(page, 'CSV file').setInputFiles(
+      openingFile('INVOICE,OLD-INV-78,CLT-0092,100000,,10', 'INVOICE,OLD-INV-79,NOBODY,50000,,10', 'CONTROL_TOTAL,total,,100000,,'),
+    );
+    await page.getByRole('button', { name: 'Run dry run' }).click();
+    await expect(page.getByText('No client with code "NOBODY" — import or add the client first')).toBeVisible();
+    await expect(page.getByText('This file cannot be committed')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Confirm and commit' })).toBeDisabled();
+  });
 });
 
 test.describe('branches — one town, one branch', () => {

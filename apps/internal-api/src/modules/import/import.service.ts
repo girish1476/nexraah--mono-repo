@@ -1,12 +1,36 @@
 import { Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { DomainException } from '../../common/domain-exception';
+import { isUuid } from '../../common/ids';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
 import type { DbExecutor } from '../../db/kysely';
 import { AuditService } from '../audit';
 import { ImportRepository, type BatchRow } from './import.repository';
 import { readTable } from './csv';
-import { missingDependencies, validate, type ImportSet } from './import.rules';
+import { missingDependencies, validate, type BalanceContext, type ImportSet } from './import.rules';
+
+/** Today in India, `YYYY-MM-DD` — ageing and "not in the future" are counted in the business's own day. */
+export function indiaToday(now = Date.now()): string {
+  return new Date(now + 330 * 60_000).toISOString().slice(0, 10);
+}
+
+/** One opening balance as the console shows it. */
+export interface OpeningBalanceDto {
+  id: string;
+  kind: 'ADVANCE' | 'UNBILLED' | 'INVOICE';
+  reference: string;
+  partyType: 'CLIENT' | 'VENDOR';
+  partyId: string;
+  partyName: string;
+  amountPaise: number;
+  dated: string;
+  ageDays: number;
+  status: 'OPEN' | 'SETTLED';
+  settledAt: string | null;
+  settledBy: string | null;
+  settledNote: string | null;
+  batchId: string;
+}
 
 /** The wire shape of `docs/api/10-telematics-import.md`. */
 export interface ImportBatchDto {
@@ -59,7 +83,9 @@ export class ImportService {
       throw new DomainException(400, 'VALIDATION_ERROR', 'The file has no header row.');
     }
 
-    const result = validate(set, rows);
+    let ctx: BalanceContext | undefined;
+    if (set === 'opening-balances') ctx = { ...(await this.importRepository.balanceContext()), today: indiaToday() };
+    const result = validate(set, rows, ctx);
     if (set === 'vendors') await this.placeInBranches(result, rows);
     const fileHash = createHash('sha256').update(file.buffer).digest('hex');
 
@@ -174,29 +200,88 @@ export class ImportService {
     if (set === 'clients') return this.writeClients(trx, payload, batch);
     if (set === 'vendors') return this.writeVendors(trx, payload, batch);
 
-    /*
-     * Opening balances stop here, deliberately and loudly.
-     *
-     * The dry run for this set is complete and does the thing part 12 actually
-     * emphasises — reconciling to the supplied control total, and aborting the
-     * whole file when it does not add up. What is missing is the other half:
-     * an outstanding advance, an unbilled trip and an open invoice land in
-     * three different tables, each needing fields (trip, UTR, value date;
-     * client, invoice dates, line totals) that a `kind,reference,amount` line
-     * cannot supply. No file format in the spec set carries them.
-     *
-     * Inventing a mapping would put fabricated money rows into the ledger on
-     * day one, and silently committing nothing would report success for an
-     * import that did not happen. Both are worse than saying so.
-     */
-    throw new DomainException(
-      501,
-      'IMPORT_SET_NOT_WRITABLE',
-      'Opening balances validate and reconcile, but committing them needs a file format that carries the fields ' +
-        'an advance, an unbilled trip and an invoice each require. That format is not yet specified, so this ' +
-        'import cannot be written without inventing it.',
-      { set, reconciled: true },
-    );
+    return this.writeOpeningBalances(trx, payload, batch);
+  }
+
+  /**
+   * Opening balances land in their own table, exactly as the file gave them —
+   * not as made-up invoices, trips or payments, which need fields (GST lines,
+   * truck and route, UTR and value date) an opening-balance line does not
+   * carry. Each row keeps the batch that brought it in.
+   */
+  private async writeOpeningBalances(trx: DbExecutor, payload: Record<string, unknown>[], batch: BatchRow): Promise<number> {
+    for (const rowData of payload) {
+      await this.importRepository.insertOpeningBalance(trx, {
+        kind: rowData.kind,
+        reference: rowData.reference,
+        client_id: rowData.clientId ?? null,
+        vendor_id: rowData.vendorId ?? null,
+        amount_paise: rowData.amountPaise,
+        dated: rowData.dated,
+        batch_id: batch.id,
+      });
+    }
+    return payload.length;
+  }
+
+  /* ---- opening balances after go-live ------------------------------------ */
+
+  /** `GET /opening-balances` — open first, oldest first. */
+  async openingBalances(): Promise<OpeningBalanceDto[]> {
+    const today = indiaToday();
+    const rows = await this.importRepository.listOpeningBalances();
+    return rows.map((r) => {
+      const dated = typeof r.dated === 'string' ? r.dated.slice(0, 10) : new Date(r.dated as unknown as Date).toISOString().slice(0, 10);
+      return {
+        id: r.id,
+        kind: r.kind as OpeningBalanceDto['kind'],
+        reference: r.reference,
+        partyType: r.vendor_id ? 'VENDOR' : 'CLIENT',
+        partyId: (r.vendor_id ?? r.client_id)!,
+        partyName: (r.vendor_id ? r.vendor_name : r.client_name) ?? '—',
+        amountPaise: Number(r.amount_paise),
+        dated,
+        ageDays: Math.max(0, Math.round((Date.parse(today) - Date.parse(dated)) / 86_400_000)),
+        status: r.status as OpeningBalanceDto['status'],
+        settledAt: r.settled_at ? new Date(r.settled_at).toISOString() : null,
+        settledBy: r.settled_by_name ?? null,
+        settledNote: r.settled_note ?? null,
+        batchId: r.batch_id,
+      };
+    });
+  }
+
+  /**
+   * `POST /opening-balances/:id/settle` — the old invoice was paid, the trip
+   * billed outside Nexraah, or the advance adjusted. Who may say so follows the
+   * money: a client balance needs `receipt.record`, an advance needs
+   * `payment.release`.
+   */
+  async settleOpeningBalance(id: string, note: string, actor: AuthenticatedUser): Promise<{ id: string; status: 'SETTLED' }> {
+    const why = String(note ?? '').trim();
+    if (why.length < 5) {
+      throw new DomainException(400, 'VALIDATION_ERROR', 'Say how it was settled — a receipt, cheque or adjustment reference — in a few words.');
+    }
+    return this.importRepository.transaction().execute(async (trx) => {
+      const row = isUuid(id) ? await this.importRepository.findOpeningBalanceForUpdate(trx, id) : undefined;
+      if (!row) throw new DomainException(404, 'NOT_FOUND', 'No such opening balance.');
+      const needs = row.kind === 'ADVANCE' ? 'payment.release' : 'receipt.record';
+      if (actor.permissions.get(needs) !== 'EDIT') {
+        throw new DomainException(403, 'PERMISSION_DENIED', `Missing permission: ${needs}.`);
+      }
+      if (row.status === 'SETTLED') {
+        throw new DomainException(409, 'ALREADY_SETTLED', 'This opening balance is already settled.');
+      }
+      await this.importRepository.settleOpeningBalance(trx, id, actor.userId, why);
+      await this.auditService.record(trx, actor, {
+        action: 'OPENING_BALANCE_SETTLED',
+        entityType: 'opening_balances',
+        entityId: id,
+        before: { status: row.status },
+        after: { status: 'SETTLED', note: why },
+      });
+      return { id, status: 'SETTLED' as const };
+    });
   }
 
   private async writeClients(trx: DbExecutor, payload: Record<string, unknown>[], batch: BatchRow): Promise<number> {

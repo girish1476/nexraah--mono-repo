@@ -145,6 +145,7 @@ export function applyCleanSlate(db: Record<string, any>): void {
     'tickets',
     'auditEvents',
     'importBatches',
+    'openingBalances',
   ]) {
     if (key in db) db[key] = [];
   }
