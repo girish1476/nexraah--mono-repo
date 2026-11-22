@@ -4300,3 +4300,55 @@ input[type='radio'] {
     bottom: 12px;
   }
 }
+
+/* ---- sign-in mode: Live (emailed code) or Mock (any role, demo data only) ---- */
+
+.auth-mode {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  margin: 0 0 var(--space-5);
+  border: 1px solid var(--auth-line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.auth-mode-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--auth-ink-soft);
+  font: inherit;
+  font-size: var(--text-md);
+  font-weight: 700;
+  cursor: pointer;
+}
+.auth-mode-option:hover:not(:disabled) {
+  color: #fff;
+}
+.auth-mode-option.is-on {
+  background: linear-gradient(135deg, var(--auth-sky), var(--auth-sky-2));
+  color: #fff;
+  box-shadow: 0 6px 18px -8px rgba(0, 0, 0, 0.6);
+}
+.auth-mode-option:focus-visible {
+  outline: 2px solid var(--auth-sky-2);
+  outline-offset: 2px;
+}
+.auth-mode-hint {
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.8;
+}
+.auth-role-list {
+  margin-top: var(--space-4);
+}
+.auth-role-list .auth-demo-card:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}

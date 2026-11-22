@@ -4,7 +4,7 @@ import './integrations.css';
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getToken, signOut } from '@/lib/auth';
+import { getToken, isMockMode, signOut } from '@/lib/auth';
 import { forgetIntegrationSwitches } from '@/lib/integration-switches';
 import { INTEGRATIONS, type IntegrationDef, type IntegrationField, type IntegrationState } from '@/lib/integrations';
 import { fmtDateTime } from '@/lib/format';
@@ -56,6 +56,11 @@ export default function IntegrationsPage() {
   const load = () => {
     setRefusal(null);
     setSessionEnded(false);
+    if (isMockMode()) {
+      // Integration keys are real and kept on the server; a mock sign-in never opens them.
+      setRefusal('Integrations hold real keys, so they open only after a Live sign-in with an emailed code. Sign out and choose Live to manage them.');
+      return;
+    }
     call<Loaded>('/api/integrations')
       .then(setData)
       .catch((e) => {

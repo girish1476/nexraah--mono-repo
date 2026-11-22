@@ -15,7 +15,18 @@
  */
 import { ClipboardEvent, FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { AuthError, CODE_TTL_S, isSignedIn, realEmailEnabled, sendSignInCode, verifySignInCode } from '@/lib/auth';
+import {
+  AuthError,
+  CODE_TTL_S,
+  isMockMode,
+  isSignedIn,
+  mockModeAvailable,
+  realEmailEnabled,
+  sendSignInCode,
+  setSignInMode,
+  signInAsMock,
+  verifySignInCode,
+} from '@/lib/auth';
 import { MOCKS_ENABLED, mockAccounts } from '@/mocks';
 import { DEMO_CODE } from '@/mocks/db';
 import { forgetSaved } from '@/mocks/persist';
@@ -41,9 +52,34 @@ export default function SignInPage() {
   const [now, setNow] = useState(() => Date.now());
   // Codes emailed for real: the demo panel and its fixed code go away.
   const [realEmail, setRealEmail] = useState(false);
+  // Live: the emailed code. Mock (demo-data deployments only): pick any role and go in.
+  const [mode, setMode] = useState<'live' | 'mock'>('live');
+  useEffect(() => {
+    setMode(isMockMode() ? 'mock' : 'live');
+  }, []);
   useEffect(() => {
     void realEmailEnabled().then(setRealEmail);
-  }, []);
+  }, [mode]);
+
+  const chooseMode = (next: 'live' | 'mock') => {
+    setSignInMode(next);
+    setMode(next);
+    setStep('email');
+    setError(null);
+  };
+
+  const enterAs = (pickedEmail: string) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      signInAsMock(pickedEmail);
+      router.push('/');
+    } catch (e) {
+      setError(message(e));
+      setBusy(false);
+    }
+  };
 
   // Someone who still holds a session has no business on this screen; send
   // them on rather than letting them sign in a second time over the top.
@@ -126,6 +162,38 @@ export default function SignInPage() {
       <div className="auth-form-col">
         <div style={{ maxWidth: 440, width: '100%' }}>
           <div className="surface auth-card">
+            {mockModeAvailable() && (
+              <div className="auth-mode" role="radiogroup" aria-label="Sign-in mode">
+                {(['live', 'mock'] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    role="radio"
+                    aria-checked={mode === m}
+                    className={mode === m ? 'auth-mode-option is-on' : 'auth-mode-option'}
+                    onClick={() => chooseMode(m)}
+                    disabled={busy}
+                  >
+                    {m === 'live' ? 'Live' : 'Mock'}
+                    <span className="auth-mode-hint">{m === 'live' ? 'Emailed code' : 'Any role, no login'}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {mode === 'mock' ? (
+              <>
+                <p className="auth-card-eyebrow">Mock mode</p>
+                <h1>Pick a role</h1>
+                <p className="auth-card-sub">
+                  No email and no code — choose who to be and you are in, on this browser’s demo data. Switch back to
+                  Live for a real sign-in.
+                </p>
+                {error && <ErrorLine text={error} />}
+                <RoleList onPick={enterAs} disabled={busy} />
+              </>
+            ) : (
+              <>
             <p className="auth-card-eyebrow">{step === 'email' ? 'Sign in' : 'Step 2 of 2 · verify'}</p>
             <h1>{step === 'email' ? 'Welcome back' : 'Enter your code'}</h1>
 
@@ -215,9 +283,11 @@ export default function SignInPage() {
                 </div>
               </form>
             )}
+              </>
+            )}
           </div>
 
-          {MOCKS_ENABLED && !realEmail && (
+          {MOCKS_ENABLED && mode === 'live' && !realEmail && (
             <DemoAccounts
               onPick={(pickedEmail) => {
                 setEmail(pickedEmail);
@@ -357,11 +427,42 @@ const ROLE_AVATAR_COLOR: Record<string, string> = {
   LEADERSHIP: '#ef4444',
   ADMIN: '#6366f1',
   LOADING_SUPERVISOR: '#64748b',
+  HR: '#ec4899',
 };
 
 function initials(name: string) {
   const parts = name.trim().split(/\s+/);
   return ((parts[0]?.[0] ?? '') + (parts[parts.length - 1]?.[0] ?? '')).toUpperCase();
+}
+
+/** Mock mode: every demo account, one tap each — straight in, no code. */
+function RoleList({ onPick, disabled }: { onPick: (email: string) => void; disabled: boolean }) {
+  return (
+    <div className="auth-demo-list auth-role-list">
+      {mockAccounts().map((account) => (
+        <button
+          key={account.email}
+          type="button"
+          className="auth-demo-card"
+          onClick={() => onPick(account.email)}
+          disabled={disabled}
+          data-mock-role={account.role}
+        >
+          <span className="auth-demo-avatar" style={{ background: ROLE_AVATAR_COLOR[account.role] ?? '#2196e6' }} aria-hidden>
+            {initials(account.name)}
+          </span>
+          <span className="auth-demo-info">
+            <span className="auth-demo-name">{ROLES[account.role]?.label ?? 'Added role'}</span>
+            <span className="auth-demo-role">
+              {account.name}
+              {account.branch ? ` · ${account.branch} branch` : ''}
+            </span>
+          </span>
+          <span className="auth-demo-arrow" aria-hidden>→</span>
+        </button>
+      ))}
+    </div>
+  );
 }
 
 /**

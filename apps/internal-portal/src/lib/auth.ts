@@ -1,4 +1,4 @@
-import { MOCKS_ENABLED, mockRefresh, mockSendCode, mockSessionFor, mockVerifyCode } from '@/mocks';
+import { MOCKS_ENABLED, mockRefresh, mockSendCode, mockSessionFor, mockSignInAs, mockVerifyCode } from '@/mocks';
 
 /**
  * Sign-in, sign-out and the access-token lifecycle — the one place in this
@@ -67,6 +67,53 @@ function browser(): boolean {
  */
 export const CODE_TTL_S = 240;
 
+/* ---- mock mode ------------------------------------------------------------ */
+
+const MODE_KEY = 'nexraah.signInMode';
+
+/**
+ * Mock mode: on a deployment that runs on in-browser demo data
+ * (`NEXT_PUBLIC_USE_MOCKS` on — never preprod or a real backend), anyone may
+ * enter as any role without an emailed code, to try the console out.
+ *
+ * It is the demo and nothing more. The browser holds a demo token only; the
+ * server's own session cookie is never issued, so whatever this console keeps
+ * on its server (integration keys, the server's list of people) stays closed
+ * to a mock sign-in. Live mode is the emailed-code sign-in, unchanged.
+ */
+export function mockModeAvailable(): boolean {
+  return MOCKS_ENABLED;
+}
+
+export function isMockMode(): boolean {
+  if (!MOCKS_ENABLED || !browser()) return false;
+  try {
+    return localStorage.getItem(MODE_KEY) === 'mock';
+  } catch {
+    return false;
+  }
+}
+
+export function setSignInMode(mode: 'mock' | 'live'): void {
+  if (!MOCKS_ENABLED || !browser()) return;
+  try {
+    if (mode === 'mock') localStorage.setItem(MODE_KEY, 'mock');
+    else localStorage.removeItem(MODE_KEY);
+  } catch {
+    // Storage refused (a private window): the page simply stays in live mode.
+  }
+}
+
+/** Mock mode only: enter as this demo account at once — no code. */
+export function signInAsMock(email: string): void {
+  if (!isMockMode()) throw new AuthError('Switch to mock mode first.');
+  try {
+    store(mockSignInAs(email));
+  } catch (e) {
+    throw new AuthError((e as Error).message);
+  }
+}
+
 let realEmailCheck: Promise<{ realEmail: boolean; peopleStore: boolean }> | null = null;
 
 /**
@@ -86,6 +133,9 @@ export function peopleStoreEnabled(): Promise<boolean> {
 }
 
 function signInStatus(): Promise<{ realEmail: boolean; peopleStore: boolean }> {
+  // In mock mode the page behaves as a demo with no email service behind it:
+  // the people list is this browser's own, and no server session is expected.
+  if (isMockMode()) return Promise.resolve({ realEmail: false, peopleStore: false });
   if (!realEmailCheck) {
     realEmailCheck =
       typeof window === 'undefined' || typeof fetch === 'undefined'

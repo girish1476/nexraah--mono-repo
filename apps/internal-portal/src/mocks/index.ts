@@ -269,6 +269,14 @@ export async function mockVerifyCode(email: string, code: string) {
   return issue(account);
 }
 
+/** Mock mode (lib/auth.ts `signInAsMock`): a demo account's session, with no code asked for. */
+export function mockSignInAs(email: string) {
+  const account = CREDENTIALS[email.trim().toLowerCase()];
+  if (!account) throw new Error('No demo account with that email.');
+  if (DISABLED_EMAILS.has(account.email.toLowerCase())) throw new Error('This demo account has been switched off on Allowed emails.');
+  return issue(account);
+}
+
 /** `GET /admin/roles` — the shape every roles route answers with. */
 function roleMatrixView() {
   return {
