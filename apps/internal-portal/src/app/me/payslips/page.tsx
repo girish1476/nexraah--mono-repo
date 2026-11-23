@@ -7,8 +7,12 @@ import { monthLabel } from '@/lib/hr/calendar';
 import { PayslipSummary, getMyPayslips } from '@/lib/hr/apis';
 import { ErrorState, Loading, ModuleGuard, PageHeader, Stack, StatStrip } from '@/lib/ui';
 import { Card, Empty, fmtDays, rupees } from '@/components/hr/hr-ui';
+import { PayslipDownload } from '@/components/hr/payslip-download';
 
-/** Payslips — `/me/payslips`. Every released month, ready to open and print. */
+/**
+ * Payslips — `/me/payslips`. Every released month, newest first, each one a
+ * Nexraah payslip PDF to download. The totals for the financial year sit below.
+ */
 export default function MyPayslipsPage() {
   const [rows, setRows] = useState<PayslipSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -27,18 +31,50 @@ export default function MyPayslipsPage() {
   const fy = rows.filter((r) => r.month >= fyStart);
   const ytdNet = fy.reduce((a, r) => a + r.netPaise, 0);
   const ytdGross = fy.reduce((a, r) => a + r.grossPaise, 0);
-  const max = Math.max(...rows.map((r) => r.grossPaise), 1);
-  const chart = [...rows].slice(0, 12).reverse();
 
   return (
     <ModuleGuard module="me">
-      <PageHeader title="Payslips" sub="Every month HR has released. Open one to read it in full, print it, or save it as a PDF." module="me" />
+      <PageHeader title="Payslips" sub="Your payslip for every month HR has released — download each one as a PDF." module="me" />
       {rows.length === 0 ? (
         <Card>
           <Empty emoji="🧾">No payslips yet. Each month’s appears here as soon as HR releases the payroll.</Empty>
         </Card>
       ) : (
         <Stack gap={16}>
+          <Card title="Month by month" emoji="🧾">
+            <div className="slip-list" role="list">
+              {rows.map((r) => (
+                <div key={r.id} className="slip-list-row" role="listitem" data-payslip-month={r.month}>
+                  <div className="slip-list-month">
+                    <div className="slip-list-title">{monthLabel(r.month)}</div>
+                    <div className="hr-muted">
+                      {fmtDays(r.payableDays)} days paid{r.lopDays ? ` · ${fmtDays(r.lopDays)} unpaid` : ''}
+                    </div>
+                  </div>
+                  <div className="slip-list-figs">
+                    <div>
+                      <div className="hr-muted">Earned</div>
+                      <div>{rupees(r.grossPaise)}</div>
+                    </div>
+                    <div>
+                      <div className="hr-muted">Deductions</div>
+                      <div>{rupees(r.deductionsPaise)}</div>
+                    </div>
+                    <div>
+                      <div className="hr-muted">Take-home</div>
+                      <strong>{rupees(r.netPaise)}</strong>
+                    </div>
+                  </div>
+                  <div className="slip-list-actions">
+                    <PayslipDownload id={r.id} />
+                    <Link href={`/print/payslip/${r.id}`} target="_blank" className="btn btn-secondary btn-sm">
+                      View
+                    </Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
           <StatStrip
             stats={[
               { k: 'Last take-home', emoji: '💰', v: rupees(rows[0].netPaise), note: monthLabel(rows[0].month) },
@@ -46,43 +82,6 @@ export default function MyPayslipsPage() {
               { k: 'Earned this financial year', emoji: '🧮', v: rupees(ytdGross), note: `Deductions ${rupees(ytdGross - ytdNet)}` },
             ]}
           />
-          {chart.length > 1 && (
-            <Card title="Month by month" emoji="📊">
-              <div className="bars" style={{ height: 150 }}>
-                {chart.map((r) => (
-                  <div key={r.id} title={`${monthLabel(r.month)}: take-home ${rupees(r.netPaise)}`}>
-                    <span className="hr-muted" style={{ fontSize: 10.5 }}>
-                      {rupees(r.netPaise).replace('₹', '₹ ')}
-                    </span>
-                    <div className="bars-col" style={{ height: `${Math.max(8, (r.netPaise / max) * 100)}%`, background: 'linear-gradient(180deg, var(--hr-self-b), var(--hr-self-a))' }} />
-                    <span className="bars-lab">{monthLabel(r.month).slice(0, 3)}</span>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          )}
-          <div className="hr-grid">
-            {rows.map((r) => (
-              <Link key={r.id} href={`/print/payslip/${r.id}`} target="_blank" className="hr-card" style={{ textDecoration: 'none', color: 'inherit' }}>
-                <div className="hr-card-head">
-                  <div className="hr-card-title">🧾 {monthLabel(r.month)}</div>
-                  <span className="hr-muted">Open ↗</span>
-                </div>
-                <div>
-                  <div className="hr-muted">Take-home</div>
-                  <div className="hr-big">{rupees(r.netPaise)}</div>
-                </div>
-                <div className="pay-split" aria-hidden="true">
-                  <span style={{ width: `${(r.netPaise / r.grossPaise) * 100}%`, background: 'var(--hr-present)' }} />
-                  <span style={{ width: `${(r.deductionsPaise / r.grossPaise) * 100}%`, background: 'var(--hr-late)' }} />
-                </div>
-                <div className="hr-muted">
-                  Earned {rupees(r.grossPaise)} · deductions {rupees(r.deductionsPaise)} · {fmtDays(r.payableDays)} days paid
-                  {r.lopDays ? ` · ${fmtDays(r.lopDays)} unpaid` : ''}
-                </div>
-              </Link>
-            ))}
-          </div>
         </Stack>
       )}
     </ModuleGuard>

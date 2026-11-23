@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { PayslipDownload } from '@/components/hr/payslip-download';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { errorMessage } from '@/apis';
@@ -276,8 +277,9 @@ export default function EmployeePage() {
                       </div>
                     </div>
                     <DayPill status={p.status === 'RELEASED' ? 'PRESENT' : 'LATE'}>{p.status === 'RELEASED' ? 'Released' : 'Not released'}</DayPill>
+                    <PayslipDownload id={p.id} label="PDF" />
                     <Link href={`/print/payslip/${p.id}`} target="_blank" className="btn btn-secondary btn-sm">
-                      Open
+                      View
                     </Link>
                   </div>
                 ))}

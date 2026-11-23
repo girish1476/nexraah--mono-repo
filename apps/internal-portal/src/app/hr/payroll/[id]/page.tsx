@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { PayslipDownload } from '@/components/hr/payslip-download';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { errorMessage } from '@/apis';
@@ -82,7 +83,7 @@ export default function PayrollRunPage() {
     { key: 'x', label: 'Deductions', align: 'right', render: (r) => rupees(r.deductionsPaise) },
     { key: 'n', label: 'Take-home', align: 'right', render: (r) => <strong>{rupees(r.netPaise)}</strong> },
     { key: 'f', label: 'Check', render: (r) => (r.flags.length ? <span title={r.flags.join('\n')} style={{ color: 'var(--flag)', fontWeight: 600, fontSize: 12.5 }}>⚠️ {r.flags[0]}{r.flags.length > 1 ? ` +${r.flags.length - 1}` : ''}</span> : <span className="hr-muted">✓</span>) },
-    { key: 'o', label: '', render: (r) => <Link className="btn btn-secondary btn-sm" href={`/print/payslip/${r.id}`} target="_blank">Payslip</Link> },
+    { key: 'o', label: '', render: (r) => <span style={{ display: 'inline-flex', gap: 6 }}><PayslipDownload id={r.id} label="PDF" /><Link className="btn btn-secondary btn-sm" href={`/print/payslip/${r.id}`} target="_blank">View</Link></span> },
   ];
 
   return (

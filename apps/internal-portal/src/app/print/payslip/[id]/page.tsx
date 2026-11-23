@@ -12,6 +12,7 @@ import { getPayslip } from '@/lib/hr/apis';
 import type { PayLine, Payslip } from '@/lib/hr/types';
 import { amountInWords } from '@/lib/manual-invoice';
 import { ErrorState, Loading } from '@/lib/ui';
+import { PayslipDownload } from '@/components/hr/payslip-download';
 
 /**
  * A payslip — `/print/payslip/[id]`. One A4 page: who, which month, the days
@@ -47,12 +48,10 @@ export default function PrintPayslipPage() {
   return (
     <div style={{ background: 'var(--color-bg)', minHeight: '100vh', padding: '20px 14px 40px' }}>
       <div className="no-print" style={{ maxWidth: 820, margin: '0 auto 14px', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-        <button className="btn" onClick={() => window.print()}>
-          🖨️ Print or save as PDF
+        <PayslipDownload id={slip.id} className="btn" />
+        <button className="btn btn-secondary" onClick={() => window.print()}>
+          🖨️ Print
         </button>
-        <span className="muted" style={{ fontSize: 'var(--text-sm)' }}>
-          Choose “Save as PDF” in the print window to keep a copy.
-        </span>
       </div>
 
       <article className="slip" aria-label={`Payslip for ${slip.label}`}>

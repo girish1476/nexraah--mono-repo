@@ -88,3 +88,21 @@ test('payroll: HR prepares November, Leadership approves, the payslip is release
   await page.goto('/me/payslips');
   await expect(page.getByText('November 2026').first()).toBeVisible();
 });
+
+test('each month’s payslip downloads as a Nexraah payslip PDF', async ({ page }) => {
+  await as(page, 'OPS');
+  await page.goto('/me/payslips');
+  const row = page.locator('[data-payslip-month]').first();
+  await expect(row).toBeVisible();
+  const month = await row.getAttribute('data-payslip-month');
+
+  const [download] = await Promise.all([page.waitForEvent('download'), row.getByRole('button', { name: /Download PDF/ }).click()]);
+  expect(download.suggestedFilename()).toMatch(new RegExp(`^Nexraah-Payslip-[A-Za-z0-9-]+-${month}\.pdf$`));
+  const path = await download.path();
+  const bytes = require('node:fs').readFileSync(path);
+  expect(bytes.subarray(0, 5).toString()).toBe('%PDF-');
+  const text = bytes.toString('latin1');
+  expect(text).toContain('PAYSLIP');
+  expect(text).toContain('Anil Deshmukh');
+  expect(text).toContain('NET PAY FOR');
+});

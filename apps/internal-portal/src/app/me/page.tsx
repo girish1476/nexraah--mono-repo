@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { PayslipDownload } from '@/components/hr/payslip-download';
 import { useCallback, useEffect, useState } from 'react';
 import { ApiError, errorMessage } from '@/apis';
 import { DAY_STATUS_LABEL } from '@/lib/hr/attendance';
@@ -253,9 +254,12 @@ export default function MyHrPage() {
                     Deductions {rupees(data.latestPayslip.deductionsPaise)}
                   </span>
                 </div>
-                <Link href={`/print/payslip/${data.latestPayslip.id}`} className="btn btn-secondary btn-sm" style={{ alignSelf: 'flex-start' }} target="_blank">
-                  Open payslip
-                </Link>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <PayslipDownload id={data.latestPayslip.id} />
+                  <Link href={`/print/payslip/${data.latestPayslip.id}`} className="btn btn-secondary btn-sm" target="_blank">
+                    View
+                  </Link>
+                </div>
               </>
             ) : (
               <Empty emoji="🧾">Your first payslip appears here once HR releases a month.</Empty>
