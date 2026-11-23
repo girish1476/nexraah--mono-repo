@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import { PayslipDownload } from '@/components/hr/payslip-download';
 import { useCallback, useEffect, useState } from 'react';
 import { ApiError, errorMessage } from '@/apis';
 import { DAY_STATUS_LABEL } from '@/lib/hr/attendance';
@@ -11,7 +10,6 @@ import type { PendingItem } from '@/lib/hr/types';
 import { Dialog, ErrorState, Field, Glyph, Loading, ModuleGuard, Stack, useToast } from '@/lib/ui';
 import {
   Avatar,
-  Balance,
   Card,
   DayPill,
   Empty,
@@ -21,13 +19,12 @@ import {
   Ring,
   WeekStrip,
   fmtDays,
-  rupees,
   useNow,
 } from '@/components/hr/hr-ui';
 
 /**
  * My HR — `/me`. Every person's own page, whatever their desk: check in and
- * out, the week, leave left, the latest payslip, holidays — and, for anyone
+ * out, the week, holidays coming up — and, for anyone
  * people report to, their team's day and what is waiting on them.
  */
 
@@ -201,7 +198,7 @@ export default function MyHrPage() {
           </div>
         </section>
 
-        <div className="hr-grid">
+        <div className="hr-grid is-2">
           <Card title="Your week" emoji="📆" right={<Link href="/me/attendance" className="btn btn-secondary btn-sm">Full calendar</Link>}>
             <WeekStrip days={data.week} today={today.date} fullDayMinutes={policy.fullDayMinutes} />
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 8 }}>
@@ -225,47 +222,8 @@ export default function MyHrPage() {
             </div>
           </Card>
 
-          <Card title="Leave left" emoji="🌴" right={<Link href="/me/leave?apply=1" className="btn btn-sm">Apply for leave</Link>}>
-            <Stack gap={14}>
-              {data.balances.filter((b) => b.paid).map((b) => (
-                <Balance key={b.code} b={b} />
-              ))}
-            </Stack>
-          </Card>
-
-          <Card title="Latest payslip" emoji="💰" right={<Link href="/me/payslips" className="btn btn-secondary btn-sm">All payslips</Link>}>
-            {data.latestPayslip ? (
-              <>
-                <div>
-                  <div className="hr-muted">Paid for {monthLabel(data.latestPayslip.month)}</div>
-                  <div className="hr-big">{rupees(data.latestPayslip.netPaise)}</div>
-                </div>
-                <div className="pay-split" aria-hidden="true">
-                  <span style={{ width: `${(data.latestPayslip.netPaise / data.latestPayslip.grossPaise) * 100}%`, background: 'var(--hr-present)' }} />
-                  <span style={{ width: `${(data.latestPayslip.deductionsPaise / data.latestPayslip.grossPaise) * 100}%`, background: 'var(--hr-late)' }} />
-                </div>
-                <div className="pay-legend">
-                  <span>
-                    <i style={{ background: 'var(--hr-present)' }} />
-                    Take-home {rupees(data.latestPayslip.netPaise)}
-                  </span>
-                  <span>
-                    <i style={{ background: 'var(--hr-late)' }} />
-                    Deductions {rupees(data.latestPayslip.deductionsPaise)}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <PayslipDownload id={data.latestPayslip.id} />
-                  <Link href={`/print/payslip/${data.latestPayslip.id}`} className="btn btn-secondary btn-sm" target="_blank">
-                    View
-                  </Link>
-                </div>
-              </>
-            ) : (
-              <Empty emoji="🧾">Your first payslip appears here once HR releases a month.</Empty>
-            )}
-          </Card>
-
+          {/* Leave balances and payslips have their own tabs (Leave, Payslips) —
+              repeating them here as cards only doubled what the tabs show. */}
           <Card title="Coming up" emoji="🎉">
             {data.holidays.length ? (
               <Stack gap={12}>
