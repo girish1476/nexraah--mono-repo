@@ -8,7 +8,7 @@ import { LEAVE_STATUS_LABEL } from '@/lib/hr/leave';
 import { MyLeave, applyLeave, cancelLeave, countLeaveDays, getMyLeave } from '@/lib/hr/apis';
 import type { LeaveRequest } from '@/lib/hr/types';
 import { Dialog, ErrorState, Field, Glyph, Loading, ModuleGuard, PageHeader, Stack, useToast } from '@/lib/ui';
-import { Balance, Card, DayPill, Empty, HolidayRow, Tabs, daysWord } from '@/components/hr/hr-ui';
+import { Balance, Card, DayPill, Empty, HolidayRow, Tabs, daysWord, fmtDays } from '@/components/hr/hr-ui';
 
 /** Leave — `/me/leave`. What is left, asking for time off, and what became of each request. */
 export default function MyLeavePage() {
@@ -116,7 +116,10 @@ function LeaveScreen() {
               <Balance b={b} size={66} />
               {b.paid && (
                 <div className="hr-muted">
-                  {b.quota} a year{b.carriedIn ? ` + ${b.carriedIn} carried in` : ''} · {b.used} taken
+                  {b.increasePerYear > 0
+                    ? `${fmtDays(b.baseQuota)} + ${fmtDays(b.increasePerYear)} × ${b.serviceYears} year${b.serviceYears === 1 ? '' : 's'} with us = ${fmtDays(b.quota)} this year`
+                    : `${fmtDays(b.quota)} a year`}
+                  {b.carriedIn ? ` + ${fmtDays(b.carriedIn)} carried in` : ''} · {fmtDays(b.used)} taken
                 </div>
               )}
             </div>

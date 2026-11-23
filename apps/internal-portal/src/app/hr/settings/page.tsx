@@ -214,6 +214,7 @@ export default function HrSettingsPage() {
                   <tr>
                     <th style={{ textAlign: 'left' }}>Kind</th>
                     <th>Days a year</th>
+                    <th>Added for each year of service</th>
                     <th>Most carried over</th>
                     <th>Paid</th>
                     <th>Can be taken after the day</th>
@@ -228,7 +229,10 @@ export default function HrSettingsPage() {
                           {t.emoji} {t.name}
                         </td>
                         <td style={{ textAlign: 'center' }}>
-                          <input type="number" disabled={ro || !t.paid} style={{ width: 70 }} value={t.annualQuota} onChange={(e) => set({ annualQuota: Number(e.target.value) })} aria-label={`${t.name} days a year`} />
+                          <input type="number" step={0.5} disabled={ro || !t.paid} style={{ width: 70 }} value={t.annualQuota} onChange={(e) => set({ annualQuota: Number(e.target.value) })} aria-label={`${t.name} days a year`} />
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          <input type="number" step={0.5} disabled={ro || !t.paid} style={{ width: 70 }} value={t.increasePerYear ?? 0} onChange={(e) => set({ increasePerYear: Number(e.target.value) })} aria-label={`${t.name} added each year of service`} />
                         </td>
                         <td style={{ textAlign: 'center' }}>
                           <input type="number" disabled={ro || !t.paid} style={{ width: 70 }} value={t.carryForwardMax} onChange={(e) => set({ carryForwardMax: Number(e.target.value) })} aria-label={`${t.name} carried over`} />
@@ -243,7 +247,9 @@ export default function HrSettingsPage() {
                 </tbody>
               </table>
             </div>
-            <div className="hr-muted">The leave year runs January to December. Unpaid leave has no limit; each day of it is taken off pay.</div>
+            <div className="hr-muted">
+              The leave year runs January to December. A year of service counts once it is complete on 1 January — someone who joined in March 2024 gets two years’ worth in 2026. Unpaid leave has no limit; each day of it is taken off pay.
+            </div>
           </Card>
         )}
 

@@ -171,8 +171,10 @@ export interface Correction {
 export interface LeaveType {
   code: string;
   name: string;
-  /** Days a year. 0 for unpaid leave, which has no quota. */
+  /** Days a year — the base. 0 for unpaid leave, which has no quota. */
   annualQuota: number;
+  /** Days added to the yearly quota for every completed year with the company (privilege leave: 1.5). */
+  increasePerYear: number;
   /** Most days that roll into next year. */
   carryForwardMax: number;
   paid: boolean;
@@ -188,7 +190,12 @@ export interface LeaveBalance {
   emoji: string;
   hue: string;
   paid: boolean;
+  /** This year's quota: the base plus what years of service add. */
   quota: number;
+  baseQuota: number;
+  increasePerYear: number;
+  /** Completed years with the company at the start of the leave year. */
+  serviceYears: number;
   carriedIn: number;
   used: number;
   pending: number;

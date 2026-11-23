@@ -30,13 +30,17 @@ export function balances(
   requests: LeaveRequest[],
   year: string,
   carried: Record<string, number> = {},
+  /** Completed years with the company at the start of the leave year — privilege leave grows with them. */
+  serviceYears = 0,
 ): LeaveBalance[] {
   return types.map((t) => {
     const mine = requests.filter((r) => r.type === t.code && leaveYearOf(r.from) === year);
     const used = mine.filter((r) => r.status === 'APPROVED').reduce((a, r) => a + r.days, 0);
     const pending = mine.filter((r) => r.status === 'PENDING').reduce((a, r) => a + r.days, 0);
     const carriedIn = Math.min(carried[t.code] ?? 0, t.carryForwardMax);
-    const quota = t.annualQuota;
+    const years = Math.max(0, serviceYears);
+    const perYear = t.increasePerYear ?? 0;
+    const quota = t.annualQuota + perYear * years;
     return {
       code: t.code,
       name: t.name,
@@ -44,6 +48,9 @@ export function balances(
       hue: t.hue,
       paid: t.paid,
       quota,
+      baseQuota: t.annualQuota,
+      increasePerYear: perYear,
+      serviceYears: years,
       carriedIn,
       used,
       pending,

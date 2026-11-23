@@ -2,7 +2,7 @@
  * HR in the browser — the stand-in for the HR API, the same way `index.ts`
  * stands in for the freight API.
  *
- * Kept in its own file and its own saved copy (`nexraah.hr.v1`), apart from
+ * Kept in its own file and its own saved copy (`nexraah.hr.v2`), apart from
  * the freight data: the two never share a record, and HR's data can be reset
  * without touching anybody's loads.
  *
@@ -98,7 +98,9 @@ interface HrDb {
   seq: number;
 }
 
-const STORE_KEY = 'nexraah.hr.v1';
+// v2 (23 Nov 2026): earned leave became privilege leave and quotas changed — every browser starts again.
+const STORE_KEY = 'nexraah.hr.v2';
+const RETIRED_KEYS = ['nexraah.hr.v1', 'nexraah.hr.v1.first-use'];
 let hr: HrDb | null = null;
 
 const storage = (): Storage | null => {
@@ -112,6 +114,7 @@ const storage = (): Storage | null => {
 function load(): HrDb {
   if (hr) return hr;
   try {
+    for (const k of RETIRED_KEYS) storage()?.removeItem(k);
     const raw = storage()?.getItem(STORE_KEY);
     if (raw) {
       const saved = JSON.parse(raw) as HrDb;
@@ -296,20 +299,20 @@ function seed(): HrDb {
       decisionNote: status === 'REJECTED' ? 'Month-end close that week — can we move it?' : null,
     });
   };
-  leave('e-sunita', 'EL', '2026-10-12', '2026-10-16', 'APPROVED', 'Family trip to Goa');
+  leave('e-sunita', 'PL', '2026-10-12', '2026-10-16', 'APPROVED', 'Family trip to Goa');
   leave('e-meera', 'SL', '2026-11-05', '2026-11-06', 'APPROVED', 'Viral fever');
   leave('e-rakesh', 'CL', '2026-09-28', '2026-09-28', 'APPROVED', 'Bank work');
   leave('e-suresh', 'LOP', '2026-10-26', '2026-10-27', 'APPROVED', 'Village festival');
   leave('e-kiran', 'CL', '2026-11-16', '2026-11-16', 'APPROVED', 'Personal work', 'SECOND');
-  leave('e-deepa', 'EL', '2026-10-28', '2026-10-30', 'REJECTED', 'Cousin’s wedding');
-  leave('e-anil', 'EL', '2026-09-21', '2026-09-23', 'APPROVED', 'Short break');
+  leave('e-deepa', 'PL', '2026-10-28', '2026-10-30', 'REJECTED', 'Cousin’s wedding');
+  leave('e-anil', 'PL', '2026-09-21', '2026-09-23', 'APPROVED', 'Short break');
   leave('e-kiran', 'CL', '2026-12-01', '2026-12-02', 'PENDING', 'Sister’s engagement');
-  leave('e-lakshmi', 'EL', '2026-12-24', '2026-12-31', 'PENDING', 'Christmas with family in Kerala');
+  leave('e-lakshmi', 'PL', '2026-12-24', '2026-12-31', 'PENDING', 'Christmas with family in Kerala');
   leave('e-arjun', 'SL', '2026-11-19', '2026-11-19', 'PENDING', 'Fever — doctor’s note attached');
   leave('e-neha', 'CL', '2026-11-27', '2026-11-27', 'PENDING', 'Parent–teacher meeting');
-  leave('e-farhan', 'EL', '2026-12-14', '2026-12-18', 'PENDING', 'Hometown visit');
+  leave('e-farhan', 'PL', '2026-12-14', '2026-12-18', 'PENDING', 'Hometown visit');
 
-  db.carried = Object.fromEntries(db.employees.map((e) => [e.id, { EL: between(0, 14, e.id, 'carry') }]));
+  db.carried = Object.fromEntries(db.employees.map((e) => [e.id, { PL: between(0, 14, e.id, 'carry') }]));
 
   fillAttendance(db, '2026-10-31');
 
@@ -489,7 +492,7 @@ function monthFor(db: HrDb, e: Employee, month: string) {
 }
 
 function balancesOf(db: HrDb, e: Employee, year = leaveYearOf(today())) {
-  return balances(db.policy.leaveTypes, db.leaves.filter((l) => l.employeeId === e.id), year, db.carried[e.id] ?? {});
+  return balances(db.policy.leaveTypes, db.leaves.filter((l) => l.employeeId === e.id), year, db.carried[e.id] ?? {}, yearsBetween(e.joinedOn, `${year}-01-01`));
 }
 
 function upcomingHolidays(db: HrDb, branchCode: string, n = 5): Holiday[] {

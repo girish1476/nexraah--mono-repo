@@ -78,7 +78,7 @@ describe('My HR', () => {
 
   it('refuses leave that is not there, or that overlaps', async () => {
     expect(await failure('BD', 'POST', '/me/leave', { type: 'CL', from: '2026-12-01', to: '2026-12-31', reason: 'Long trip' })).toBe('LEAVE_REFUSED');
-    await call('BD', 'POST', '/me/leave', { type: 'EL', from: '2026-12-14', to: '2026-12-14', reason: 'Errand' });
+    await call('BD', 'POST', '/me/leave', { type: 'PL', from: '2026-12-14', to: '2026-12-14', reason: 'Errand' });
     expect(await failure('BD', 'POST', '/me/leave', { type: 'CL', from: '2026-12-14', to: '2026-12-15', reason: 'Errand' })).toBe('LEAVE_REFUSED');
   });
 

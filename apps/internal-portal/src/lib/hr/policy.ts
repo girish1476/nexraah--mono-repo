@@ -11,10 +11,11 @@ import { BranchPlace, HrPolicy, LeaveType } from './types';
  */
 
 export const DEFAULT_LEAVE_TYPES: LeaveType[] = [
-  { code: 'CL', name: 'Casual leave', annualQuota: 12, carryForwardMax: 0, paid: true, allowBackdated: false, emoji: '🌤️', hue: '#2f6fd6' },
-  { code: 'SL', name: 'Sick leave', annualQuota: 12, carryForwardMax: 0, paid: true, allowBackdated: true, emoji: '🤒', hue: '#c0365f' },
-  { code: 'EL', name: 'Earned leave', annualQuota: 15, carryForwardMax: 30, paid: true, allowBackdated: false, emoji: '🌴', hue: '#1c8a5e' },
-  { code: 'LOP', name: 'Unpaid leave', annualQuota: 0, carryForwardMax: 0, paid: false, allowBackdated: true, emoji: '🕳️', hue: '#6b7686' },
+  { code: 'CL', name: 'Casual leave', annualQuota: 7.5, increasePerYear: 0, carryForwardMax: 0, paid: true, allowBackdated: false, emoji: '🌤️', hue: '#2f6fd6' },
+  { code: 'SL', name: 'Sick leave', annualQuota: 7.5, increasePerYear: 0, carryForwardMax: 0, paid: true, allowBackdated: true, emoji: '🤒', hue: '#c0365f' },
+  // Privilege leave (owner's policy, 23 Nov 2026): 8 days to start, and 1.5 more for every completed year with the company.
+  { code: 'PL', name: 'Privilege leave', annualQuota: 8, increasePerYear: 1.5, carryForwardMax: 30, paid: true, allowBackdated: false, emoji: '🌴', hue: '#1c8a5e' },
+  { code: 'LOP', name: 'Unpaid leave', annualQuota: 0, increasePerYear: 0, carryForwardMax: 0, paid: false, allowBackdated: true, emoji: '🕳️', hue: '#6b7686' },
 ];
 
 export const DEFAULT_POLICY: HrPolicy = {

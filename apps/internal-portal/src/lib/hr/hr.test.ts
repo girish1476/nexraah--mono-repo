@@ -107,21 +107,32 @@ describe('leave', () => {
 
   it('keeps balances per type and refuses what is not there', () => {
     const reqs: LeaveRequest[] = [
-      { id: 'a', employeeId: 'e1', type: 'CL', from: '2026-03-02', to: '2026-03-11', halfDay: null, days: 10, reason: 'x', status: 'APPROVED', appliedAt: '', decidedBy: null, decidedAt: null, decisionNote: null },
+      { id: 'a', employeeId: 'e1', type: 'CL', from: '2026-03-02', to: '2026-03-06', halfDay: null, days: 5, reason: 'x', status: 'APPROVED', appliedAt: '', decidedBy: null, decidedAt: null, decisionNote: null },
       { id: 'b', employeeId: 'e1', type: 'CL', from: '2026-12-01', to: '2026-12-01', halfDay: null, days: 1, reason: 'x', status: 'PENDING', appliedAt: '', decidedBy: null, decidedAt: null, decisionNote: null },
     ];
     const cl = balances(policy.leaveTypes, reqs, '2026').find((b) => b.code === 'CL')!;
-    expect(cl.available).toBe(1);
+    // 7.5 a year − 5 taken − 1 waiting.
+    expect(cl.available).toBe(1.5);
     const type = policy.leaveTypes.find((t) => t.code === 'CL');
     expect(
       leaveProblem({ type: 'CL', from: '2026-12-10', to: '2026-12-11', halfDay: null, reason: 'Family function' }, { today: '2026-11-20', type, days: 2, balance: cl, existing: reqs }),
-    ).toMatch(/Only 1 day/);
+    ).toMatch(/Only 1.5 days/);
     expect(
       leaveProblem({ type: 'CL', from: '2026-11-18', to: '2026-11-18', halfDay: null, reason: 'Late notice' }, { today: '2026-11-20', type, days: 1, balance: cl, existing: [] }),
     ).toMatch(/ahead of time/);
     expect(
       leaveProblem({ type: 'CL', from: '2026-12-01', to: '2026-12-02', halfDay: null, reason: 'Trip' }, { today: '2026-11-20', type, days: 2, balance: { ...cl, available: 5 }, existing: reqs }),
     ).toMatch(/already have leave/);
+  });
+});
+
+describe('the leave policy', () => {
+  it('gives 7.5 casual and 7.5 sick a year, and privilege leave of 8 that grows 1.5 a year of service', () => {
+    const at = (years: number) => Object.fromEntries(balances(policy.leaveTypes, [], '2026', {}, years).map((b) => [b.code, b.quota]));
+    expect(at(0)).toMatchObject({ CL: 7.5, SL: 7.5, PL: 8 });
+    expect(at(1).PL).toBe(9.5);
+    expect(at(3)).toMatchObject({ CL: 7.5, SL: 7.5, PL: 12.5 });
+    expect(policy.leaveTypes.map((t) => t.code)).toEqual(['CL', 'SL', 'PL', 'LOP']);
   });
 });
 

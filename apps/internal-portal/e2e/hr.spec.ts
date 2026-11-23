@@ -47,7 +47,7 @@ test('leave goes to the manager, who approves it from My HR', async ({ page }) =
   await as(page, 'LOADING_SUPERVISOR');
   await page.goto('/me/leave?apply=1');
   const dialog = page.getByRole('dialog');
-  await dialog.getByRole('button', { name: /Earned leave/ }).click();
+  await dialog.getByRole('button', { name: /Privilege leave/ }).click();
   const first = new Date(Date.now() + 20 * 86_400_000);
   while ([0, 6].includes(first.getUTCDay())) first.setUTCDate(first.getUTCDate() + 1);
   const day = first.toISOString().slice(0, 10);
